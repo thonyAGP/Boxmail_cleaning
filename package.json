@@ -1,0 +1,39 @@
+{
+  "name": "boxmail-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Serveur MCP distant (Streamable HTTP) pour trier/nettoyer des boites Outlook.com/Hotmail personnelles via IMAP/SMTP XOAUTH2, destine a Claude Cowork.",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "boxmail-enroll": "dist/cli/enroll.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "enroll": "tsx src/cli/enroll.ts",
+    "genkey": "node --input-type=module -e \"import{randomBytes}from'node:crypto';console.log(randomBytes(32).toString('base64'))\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.16.2",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "imapflow": "^1.0.171",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^6.9.16",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/mailparser": "^3.4.5",
+    "@types/node": "^20.17.10",
+    "@types/nodemailer": "^6.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

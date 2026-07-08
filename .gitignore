@@ -1,0 +1,16 @@
+# Secrets & runtime state — NEVER commit
+.env
+accounts.json
+logs/
+*.log
+
+# Node
+node_modules/
+dist/
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
