@@ -718,17 +718,13 @@ function openEnrollModal() {
       <form id="enroll-form" style="display:flex; gap:10px; margin-top:12px">
         <input type="text" id="enroll-name" placeholder="nom-de-la-boite" pattern="[A-Za-z0-9_-]{1,40}"
           style="flex:1; border:1px solid var(--border); border-radius:8px; padding:9px 12px" required>
-        <button type="submit" class="btn btn-primary">Obtenir le code</button>
+        <button type="submit" class="btn btn-primary">Choisir le compte Microsoft</button>
       </form>
-      <div class="notice warn" style="margin-top:12px">
-        ⚠️ <strong>Important :</strong> ouvre le lien Microsoft en
-        <strong>navigation privée</strong> (Ctrl+Maj+N, puis colle le lien).
-        Sinon Microsoft utilise <em>silencieusement</em> le compte déjà connecté
-        dans ton navigateur, sans te demander lequel — et tu enrôles la mauvaise
-        boîte. En navigation privée, il te demande explicitement le compte.</div>
       <p class="muted" style="margin-top:10px; font-size:12.5px">
-        Le mot de passe ne passe jamais par cette page : tout se joue entre toi
-        et Microsoft.</p>
+        Une fenêtre Microsoft s'ouvre avec le <strong>choix du compte</strong>
+        (« Utiliser un autre compte » pour une boîte non connectée). Le mot de
+        passe ne passe jamais par cette page.
+        <a href="#" id="enroll-code-method">Méthode alternative par code</a></p>
       <div id="enroll-zone"></div>
     </div>
     <div class="modal-foot"><button class="btn" id="enroll-cancel">Fermer</button></div>
@@ -737,10 +733,81 @@ function openEnrollModal() {
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
   $('#enroll-cancel').addEventListener('click', closeModal);
 
+  let method = 'popup';
+  $('#enroll-code-method').addEventListener('click', (e) => {
+    e.preventDefault();
+    method = 'code';
+    $('#enroll-form').querySelector('button').textContent = 'Obtenir le code';
+    e.target.remove();
+  });
+
+  // Succès commun aux deux méthodes (popup et code).
+  const showEnrollSuccess = (r, name) => {
+    const zone = $('#enroll-zone');
+    zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
+      <strong>${esc(r.account ?? name)}</strong>.<br>
+      <span class="muted" style="font-size:12.5px">Vérifie que l'adresse ci-dessus est bien
+      celle attendue.</span></div>
+      ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà enrôlée</strong>
+        sous le nom « ${esc(r.duplicateOf)} » ! Tu as probablement choisi le mauvais compte.
+        Refais « Ajouter un compte » avec le même nom <strong>${esc(r.account ?? name)}</strong>
+        et choisis « Utiliser un autre compte » dans la fenêtre Microsoft.</div>` : ''}`;
+    $('.modal-foot').innerHTML = `
+      <button class="btn" id="enroll-close">Fermer</button>
+      <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser cette boîte maintenant</button>`;
+    $('#enroll-close').addEventListener('click', async () => {
+      closeModal();
+      await refreshOverview();
+    });
+    $('#enroll-sync').addEventListener('click', async () => {
+      closeModal();
+      await refreshOverview();
+      pendingAutoSync = r.account ?? name;
+      location.hash = `#/account/${encodeURIComponent(r.account ?? name)}`;
+      if (location.hash === `#/account/${encodeURIComponent(r.account ?? name)}`) route();
+    });
+  };
+
   $('#enroll-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('#enroll-name').value.trim();
     const zone = $('#enroll-zone');
+
+    if (method === 'popup') {
+      let start;
+      try {
+        start = await api.enrollStart(name);
+      } catch (err) {
+        zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+        return;
+      }
+      const popup = window.open(start.authUrl, 'boxmail-enroll', 'width=540,height=720');
+      if (!popup) {
+        zone.innerHTML = `<div class="notice warn">⚠️ Popup bloquée par le navigateur — autorise les
+          popups pour ce site, ou utilise la méthode par code.</div>`;
+        return;
+      }
+      zone.innerHTML = `
+        ${start.replacing ? `<div class="notice warn">Ce nom existait déjà (${esc(start.replacing)}) — il sera remplacé.</div>` : ''}
+        <div class="empty"><span class="spinner"></span>Choisis le compte dans la fenêtre Microsoft…
+        <br><span class="muted" style="font-size:12px">Astuce : « Utiliser un autre compte » si la boîte
+        voulue n'est pas dans la liste.</span></div>`;
+      const onMessage = (ev) => {
+        if (ev.origin !== location.origin || ev.data?.source !== 'boxmail-enroll') return;
+        window.removeEventListener('message', onMessage);
+        if (ev.data.ok) showEnrollSuccess(ev.data, name);
+        else {
+          zone.innerHTML = `<div class="notice warn">❌ Échec de l'enrôlement : ${esc(ev.data.error ?? '')}<br>
+            <span class="muted" style="font-size:12px">Si l'erreur mentionne « redirect URI »
+            (AADSTS50011), il faut déclarer l'URL de retour dans Entra — voir le README §4bis —
+            ou utiliser la méthode par code.</span></div>`;
+        }
+      };
+      window.addEventListener('message', onMessage);
+      return;
+    }
+
+    // Méthode par code (device flow) — secours.
     zone.innerHTML = `<div class="empty"><span class="spinner"></span>Demande du code à Microsoft…</div>`;
     let jobId, replacing;
     try {
@@ -776,29 +843,7 @@ function openEnrollModal() {
       if (j.status !== 'running') {
         clearInterval(timer);
         if (j.status === 'done') {
-          const r = j.result ?? {};
-          zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
-            <strong>${esc(r.account ?? name)}</strong>.<br>
-            <span class="muted" style="font-size:12.5px">Vérifie que l'adresse ci-dessus est bien
-            celle attendue — sinon, recommence en navigation privée.</span></div>
-            ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà enrôlée</strong>
-              sous le nom « ${esc(r.duplicateOf)} » ! Tu t'es probablement connecté avec le mauvais
-              compte (session Microsoft du navigateur). Refais « Ajouter un compte » avec le même nom
-              <strong>${esc(r.account ?? name)}</strong>, en ouvrant le lien en navigation privée.</div>` : ''}`;
-          $('.modal-foot').innerHTML = `
-            <button class="btn" id="enroll-close">Fermer</button>
-            <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser cette boîte maintenant</button>`;
-          $('#enroll-close').addEventListener('click', async () => {
-            closeModal();
-            await refreshOverview();
-          });
-          $('#enroll-sync').addEventListener('click', async () => {
-            closeModal();
-            await refreshOverview();
-            pendingAutoSync = r.account ?? name;
-            location.hash = `#/account/${encodeURIComponent(r.account ?? name)}`;
-            if (location.hash === `#/account/${encodeURIComponent(r.account ?? name)}`) route();
-          });
+          showEnrollSuccess(j.result ?? {}, name);
         } else {
           zone.innerHTML = `<div class="notice warn">❌ Échec de l'enrôlement : ${esc(j.error ?? '')}<br>
             <span class="muted" style="font-size:12px">Causes fréquentes : code expiré (15 min),

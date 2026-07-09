@@ -1,9 +1,11 @@
 import {
   PublicClientApplication,
+  CryptoProvider,
   LogLevel,
   type ICachePlugin,
   type TokenCacheContext,
 } from '@azure/msal-node';
+import { randomBytes } from 'node:crypto';
 
 /** Sous-ensemble du DeviceCodeResponse MSAL utilisé pour l'affichage CLI. */
 export interface DeviceCodeInfo {
@@ -106,6 +108,98 @@ export async function enrollAccount(
     username: result.account.username,
     homeAccountId: result.account.homeAccountId,
     cacheBlob: encrypt(holder.data),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Enrôlement interactif (auth code + PKCE) — utilisé par l'interface web.
+// `prompt=select_account` force Microsoft à afficher le sélecteur de compte,
+// même si une session est déjà ouverte dans le navigateur : plus besoin de
+// navigation privée, plus de code à recopier.
+// ---------------------------------------------------------------------------
+
+interface PendingEnroll {
+  account: string;
+  pca: PublicClientApplication;
+  holder: CacheHolder;
+  verifier: string;
+  redirectUri: string;
+  createdAt: number;
+}
+
+const pendingEnrolls = new Map<string, PendingEnroll>();
+const PENDING_TTL_MS = 10 * 60_000;
+
+function gcPending(): void {
+  const now = Date.now();
+  for (const [state, p] of pendingEnrolls) {
+    if (now - p.createdAt > PENDING_TTL_MS) pendingEnrolls.delete(state);
+  }
+}
+
+/** Démarre un enrôlement interactif : renvoie l'URL Microsoft à ouvrir. */
+export async function beginInteractiveEnroll(
+  account: string,
+  redirectUri: string,
+): Promise<{ state: string; authUrl: string }> {
+  gcPending();
+  const holder: CacheHolder = { data: null, changed: false };
+  const pca = buildPca(holder);
+  const cryptoProvider = new CryptoProvider();
+  const { verifier, challenge } = await cryptoProvider.generatePkceCodes();
+  const state = randomBytes(24).toString('base64url');
+
+  const authUrl = await pca.getAuthCodeUrl({
+    scopes: [...config.oauth.scopes],
+    redirectUri,
+    prompt: 'select_account',
+    state,
+    codeChallenge: challenge,
+    codeChallengeMethod: 'S256',
+  });
+
+  pendingEnrolls.set(state, {
+    account,
+    pca,
+    holder,
+    verifier,
+    redirectUri,
+    createdAt: Date.now(),
+  });
+  return { state, authUrl };
+}
+
+/** Termine l'enrôlement au retour de Microsoft (échange du code). */
+export async function completeInteractiveEnroll(
+  state: string,
+  code: string,
+): Promise<{ account: string; enrolled: EnrolledAccount }> {
+  const p = pendingEnrolls.get(state);
+  pendingEnrolls.delete(state);
+  if (!p || Date.now() - p.createdAt > PENDING_TTL_MS) {
+    throw new Error("Session d'enrôlement expirée ou inconnue — relancer depuis l'interface.");
+  }
+
+  const result = await p.pca.acquireTokenByCode({
+    code,
+    scopes: [...config.oauth.scopes],
+    redirectUri: p.redirectUri,
+    codeVerifier: p.verifier,
+  });
+  if (!result || !result.account) {
+    throw new Error('Enrôlement échoué : aucun compte retourné par Microsoft.');
+  }
+  if (!p.holder.data) {
+    throw new Error('Enrôlement échoué : cache MSAL vide (pas de refresh token).');
+  }
+
+  return {
+    account: p.account,
+    enrolled: {
+      username: result.account.username,
+      homeAccountId: result.account.homeAccountId,
+      cacheBlob: encrypt(p.holder.data),
+    },
   };
 }
 

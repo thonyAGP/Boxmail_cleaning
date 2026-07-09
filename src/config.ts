@@ -76,6 +76,9 @@ export const config = {
     // (le serveur MCP fonctionne normalement).
     password: process.env.ADMIN_PASSWORD?.trim() || null,
     sessionTtlMs: int('ADMIN_SESSION_TTL_MINUTES', 24 * 60) * 60_000,
+    // URL publique de l'interface (sert au retour OAuth de l'enrôlement).
+    // En local la valeur par défaut suffit ; sur le serveur : https://mcp.lb2i.fr
+    publicBaseUrl: optional('PUBLIC_BASE_URL', `http://localhost:${int('PORT', 8787)}`),
   },
   files: {
     accounts: resolve(projectRoot, optional('ACCOUNTS_FILE', 'accounts.json')),

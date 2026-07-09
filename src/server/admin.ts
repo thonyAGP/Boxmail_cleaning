@@ -8,7 +8,11 @@ import {
   resolveAccount,
   upsertAccount,
 } from '../services/accounts.js';
-import { enrollAccount } from '../services/oauth.js';
+import {
+  enrollAccount,
+  beginInteractiveEnroll,
+  completeInteractiveEnroll,
+} from '../services/oauth.js';
 import { globalOverview, mailboxOverview, senderStatsFromIndex, isFolderIndexed } from '../services/index-stats.js';
 import {
   getCleanupCandidates,
@@ -128,6 +132,41 @@ export function buildAdminRouter(): Router {
 
   router.get('/me', (req, res) => {
     res.json({ authenticated: sessionValid(req) });
+  });
+
+  // Retour OAuth de l'enrôlement interactif. Arrive SANS cookie de session
+  // (redirection cross-site + SameSite=Strict) : la sécurité repose sur le
+  // `state` aléatoire à usage unique, créé par un admin authentifié (TTL 10 min).
+  router.get('/enroll/callback', (req, res) => {
+    void (async () => {
+      const state = String(req.query.state ?? '');
+      const code = String(req.query.code ?? '');
+      if (req.query.error) {
+        popupResult(res, {
+          ok: false,
+          error: `${req.query.error} — ${req.query.error_description ?? ''}`,
+        });
+        return;
+      }
+      if (!state || !code) {
+        popupResult(res, { ok: false, error: 'Réponse Microsoft incomplète (state/code).' });
+        return;
+      }
+      try {
+        const { account, enrolled } = await completeInteractiveEnroll(state, code);
+        let duplicateOf: string | null = null;
+        for (const n of await listAccountNames()) {
+          if (n === account) continue;
+          const r = await getAccountRecord(n);
+          if (r && r.username.toLowerCase() === enrolled.username.toLowerCase()) duplicateOf = n;
+        }
+        await upsertAccount(account, enrolled);
+        logger.info('enrôlement interactif réussi', { account, username: enrolled.username });
+        popupResult(res, { ok: true, account, username: enrolled.username, duplicateOf });
+      } catch (err) {
+        popupResult(res, { ok: false, error: (err as Error).message });
+      }
+    })();
   });
 
   // Tout le reste exige une session.
@@ -250,6 +289,24 @@ export function buildAdminRouter(): Router {
       }
       const job = startJob('update', (progress) => applyUpdate(progress));
       res.json({ jobId: job.id });
+    }),
+  );
+
+  // --- Enrôlement interactif (recommandé) : popup avec sélecteur de compte ------
+  router.post(
+    '/enroll/start',
+    guard(async (req, res) => {
+      const account = String(req.body?.account ?? '').trim();
+      if (!/^[a-z0-9_-]{1,40}$/i.test(account)) {
+        res.status(400).json({
+          error: 'Nom invalide : lettres, chiffres, tirets et underscores uniquement.',
+        });
+        return;
+      }
+      const redirectUri = `${config.admin.publicBaseUrl.replace(/\/$/, '')}/api/enroll/callback`;
+      const { authUrl } = await beginInteractiveEnroll(account, redirectUri);
+      const existing = await getAccountRecord(account);
+      res.json({ authUrl, replacing: existing?.username ?? null, redirectUri });
     }),
   );
 
@@ -399,6 +456,7 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  // (routes suivantes : journal, etc.)
   // --- Journal des opérations ---------------------------------------------------
   router.get(
     '/operations',
@@ -409,4 +467,44 @@ export function buildAdminRouter(): Router {
   );
 
   return router;
+}
+
+/**
+ * Page de résultat affichée dans la popup d'enrôlement : montre le résultat et
+ * le transmet à la fenêtre principale via postMessage (même origine).
+ */
+function popupResult(
+  res: Response,
+  payload: {
+    ok: boolean;
+    account?: string;
+    username?: string;
+    duplicateOf?: string | null;
+    error?: string;
+  },
+): void {
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const message = payload.ok
+    ? `✅ <strong>${escapeHtml(payload.username ?? '')}</strong> ajouté sous le nom « ${escapeHtml(
+        payload.account ?? '',
+      )} ».<br>Cette fenêtre va se fermer toute seule.`
+    : `❌ Échec de l'enrôlement :<br>${escapeHtml(payload.error ?? 'erreur inconnue')}`;
+  res
+    .status(payload.ok ? 200 : 400)
+    .type('html')
+    .send(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Boxmail — enrôlement</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;
+min-height:90vh;background:#f3f5f9;color:#1a2235}div{background:#fff;border-radius:14px;
+padding:34px 38px;max-width:460px;box-shadow:0 10px 40px rgba(0,0,0,.12);font-size:15px;line-height:1.5}</style>
+</head><body><div>${message}</div>
+<script>
+  try {
+    window.opener && window.opener.postMessage(
+      Object.assign({ source: 'boxmail-enroll' }, ${JSON.stringify(payload)}),
+      window.location.origin
+    );
+  } catch (e) {}
+  ${payload.ok ? 'setTimeout(function(){ window.close(); }, 3500);' : ''}
+</script></body></html>`);
 }

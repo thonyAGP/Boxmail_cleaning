@@ -52,6 +52,7 @@ export const api = {
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),
+  enrollStart: (account) => request('POST', '/enroll/start', { account }),
   version: () => request('GET', '/version'),
   updateCheck: () => request('GET', '/update/check'),
   updateApply: () => request('POST', '/update/apply'),

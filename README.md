@@ -162,6 +162,13 @@ Après création :
    (Le scope `offline_access` est demandé automatiquement par MSAL pour obtenir
    le refresh token — ne pas l'ajouter manuellement.)
 3. Copier l'**Application (client) ID** → `MS_CLIENT_ID` dans `.env`.
+4. **Pour l'enrôlement en un clic depuis l'interface web** (recommandé) :
+   **Authentication** → **Add a platform** → **Mobile and desktop applications**
+   → cocher/ajouter l'URI de redirection personnalisée :
+   `http://localhost:8787/api/enroll/callback`
+   (au déploiement, ajouter aussi `https://mcp.lb2i.fr/api/enroll/callback`).
+   Sans cette étape, la fenêtre Microsoft affichera l'erreur AADSTS50011 —
+   la méthode alternative « par code » reste utilisable.
 
 > Si Exchange Online n'apparaît pas dans les APIs, utiliser les scopes complets
 > `https://outlook.office.com/IMAP.AccessAsUser.All` et
@@ -174,10 +181,13 @@ Après création :
 Deux méthodes (jamais via Claude) :
 
 **A. Depuis l'interface web (recommandé)** : bouton **« ＋ Ajouter un compte »**
-dans la barre latérale → donner un nom court → la page affiche le lien
-`microsoft.com/devicelogin` et le code à saisir → se connecter avec la boîte
-à ajouter → sync proposée immédiatement. Le mot de passe et le token ne
-transitent jamais par la page (tout reste côté serveur, chiffré).
+→ donner un nom court → **une fenêtre Microsoft s'ouvre avec le choix du
+compte** (« Utiliser un autre compte » pour une boîte non connectée) → sync
+proposée immédiatement. Le sélecteur de compte est forcé (`prompt=select_account`),
+donc pas de piège de session déjà ouverte. Prérequis : l'URI de redirection
+déclarée dans Entra (§4 point 4). Une méthode alternative « par code »
+(device flow) reste disponible dans la même fenêtre. Le mot de passe et le
+token ne transitent jamais par la page (tout reste côté serveur, chiffré).
 
 **B. En ligne de commande (SSH)** :
 
