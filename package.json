@@ -16,6 +16,7 @@
     "dev": "tsx watch src/index.ts",
     "enroll": "tsx src/cli/enroll.ts",
     "check": "tsx src/cli/check.ts",
+    "stats": "tsx src/cli/stats.ts",
     "genkey": "node --input-type=module -e \"import{randomBytes}from'node:crypto';console.log(randomBytes(32).toString('base64'))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
