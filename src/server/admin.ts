@@ -42,6 +42,7 @@ import {
 } from '../services/deadlines.js';
 import { searchIndex, indexedMessage, reflectActionInIndex } from '../services/search.js';
 import { imapService } from '../services/imap.js';
+import { toVCard, toOutlookCsv } from '../services/export.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
@@ -665,6 +666,46 @@ export function buildAdminRouter(): Router {
       }
       await reflectActionInIndex(slug, folder, uid, action as 'delete' | 'move' | 'seen' | 'unseen');
       res.json({ ok: true, action, ...result });
+    }),
+  );
+
+  // --- Export contacts (L4) : fichier vCard/CSV téléchargeable -------------------
+  router.post(
+    '/accounts/:slug/export-contacts',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      if (!(await getAccountRecord(slug))) {
+        res.status(404).json({ error: `Compte « ${slug} » inconnu.` });
+        return;
+      }
+      const format = req.body?.format === 'csv' ? 'csv' : 'vcard';
+      const raw = Array.isArray(req.body?.senders) ? (req.body.senders as unknown[]) : [];
+      const senders = raw
+        .filter(
+          (s): s is { address: string; name?: string } =>
+            typeof s === 'object' &&
+            s !== null &&
+            typeof (s as { address?: unknown }).address === 'string' &&
+            /.+@.+\..+/.test((s as { address: string }).address),
+        )
+        .slice(0, 2000)
+        .map((s) => ({ address: s.address.trim(), name: typeof s.name === 'string' ? s.name : undefined }));
+      if (senders.length === 0) {
+        res.status(400).json({ error: 'Aucun contact valide dans la sélection.' });
+        return;
+      }
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (format === 'csv') {
+        res
+          .type('text/csv; charset=utf-8')
+          .setHeader('Content-Disposition', `attachment; filename="contacts-${slug}-${stamp}.csv"`)
+          .send(toOutlookCsv(senders));
+      } else {
+        res
+          .type('text/vcard; charset=utf-8')
+          .setHeader('Content-Disposition', `attachment; filename="contacts-${slug}-${stamp}.vcf"`)
+          .send(toVCard(senders));
+      }
     }),
   );
 

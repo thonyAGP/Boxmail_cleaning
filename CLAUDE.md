@@ -90,6 +90,17 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L4 livrée : Export contacts.** POST `/api/accounts/:slug/export-contacts`
+({senders:[{address,name}], format:'vcard'|'csv'} → fichier en pièce jointe
+`contacts-<slug>-<date>.vcf|csv`, emails invalides filtrés, cap 2000, 404 si
+compte inconnu) ; réutilise services/export.ts (toVCard/toOutlookCsv, v1).
+UI : colonne cases à cocher dans le tableau stats de la vue compte
+(statsState.selected Map — persiste au tri, vidée au rechargement), case
+« tout cocher », barre `.export-bar` (compteur, boutons .vcf/.csv, tout
+décocher, rappel import Outlook.com → Contacts → Gérer → Importer),
+téléchargement blob avec nom de fichier issu du Content-Disposition.
+Seed : scratchpad `seed-export.mts` ; test download réel via playwright.
+
 **L3 livrée : Recherche & lecture dans l'interface.** `services/search.ts`
 (recherche métadata index-only multi-comptes : q = OR sujet/adresse/nom,
 filtres account/folder/from/subject/since/before/unseen, tri date desc,

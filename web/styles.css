@@ -221,6 +221,13 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .score-pill.low { background: #9aa4b8; }
 .op-line .score-pill { width: 30px; height: 30px; font-size: 12px; margin-top: 0; align-self: center; }
 
+/* ---------- Barre d'export contacts ---------- */
+.export-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--accent-soft); border-bottom: 1px solid #d7e4ff;
+  padding: 10px 14px; font-size: 13px;
+}
+
 /* ---------- Modale ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15, 27, 61, .55); z-index: 100;

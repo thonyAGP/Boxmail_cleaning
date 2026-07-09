@@ -182,7 +182,12 @@ mail sans ouvrir Outlook.
 
 ---
 
-## ⬜ L4 — Export contacts depuis l'interface
+## ✅ L4 — Export contacts depuis l'interface — LIVRÉ
+
+POST `/api/accounts/:slug/export-contacts` (fichier en pièce jointe, emails
+invalides filtrés, cap 2000), cases à cocher dans le tableau stats (sélection
+persistante au tri, case « tout cocher »), barre d'export (.vcf/.csv, compteur,
+mode d'emploi import Outlook.com), téléchargement via blob.
 
 **Objectif.** Cocher des expéditeurs « légitimes » dans l'écran stats d'un
 compte → télécharger un `.vcf` / `.csv` à importer dans Outlook.com.

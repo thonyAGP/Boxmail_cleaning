@@ -712,7 +712,7 @@ function opLine(op) {
 }
 
 // ---------------------------------------------------------------- Vue compte
-const statsState = { sortKey: 'count', sortDir: -1, data: null };
+const statsState = { sortKey: 'count', sortDir: -1, data: null, selected: new Map() };
 
 async function renderAccount(slug) {
   const main = $('#main');
@@ -831,6 +831,7 @@ async function loadStats(slug) {
       limit: Number($('#f-limit').value),
     });
     statsState.data = data;
+    statsState.selected.clear();
     renderStatsTable();
   } catch (err) {
     el.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
@@ -850,14 +851,19 @@ function renderStatsTable() {
     `<th class="${num ? 'num' : ''} ${sortKey === key ? 'sorted' : ''}" data-sort="${key}">${label}
      ${sortKey === key ? (sortDir < 0 ? '↓' : '↑') : ''}</th>`;
 
+  const sel = statsState.selected;
   el.innerHTML = `
+    <div id="export-bar" class="export-bar ${sel.size ? '' : 'hidden'}"></div>
     <table><thead><tr>
+      <th style="width:30px"><input type="checkbox" id="stats-check-all" title="Tout cocher / décocher"></th>
       <th data-sort="address">Expéditeur</th>
       ${th('count', 'Mails')}${th('totalSizeBytes', 'Taille')}${th('unsubscribePct', 'Newsletter')}${th('latestDate', 'Dernier mail')}
     </tr></thead>
     <tbody>${senders
       .map(
         (s) => `<tr>
+        <td><input type="checkbox" class="stats-check" data-address="${esc(s.address)}"
+          data-name="${esc(s.name || '')}" ${sel.has(s.address) ? 'checked' : ''}></td>
         <td>${esc(s.name || s.address)}<br><span class="muted" style="font-size:12px">${esc(s.address)}</span></td>
         <td class="num"><strong>${fmtNum(s.count)}</strong></td>
         <td class="num">${fmtSize(s.totalSizeBytes)}</td>
@@ -867,7 +873,8 @@ function renderStatsTable() {
       )
       .join('')}</tbody></table>
     <div class="panel-body muted" style="font-size:12.5px">
-      ${fmtNum(data.totalMessages)} messages analysés (index local — instantané).</div>`;
+      ${fmtNum(data.totalMessages)} messages analysés (index local — instantané).
+      Coche des expéditeurs pour les exporter en contacts (.vcf/.csv).</div>`;
 
   el.querySelectorAll('th[data-sort]').forEach((thEl) => {
     thEl.addEventListener('click', () => {
@@ -880,6 +887,75 @@ function renderStatsTable() {
       renderStatsTable();
     });
   });
+
+  renderExportBar();
+  const checkAll = $('#stats-check-all');
+  checkAll.checked = senders.length > 0 && senders.every((s) => sel.has(s.address));
+  checkAll.addEventListener('change', () => {
+    for (const s of senders) {
+      if (checkAll.checked) sel.set(s.address, s.name || '');
+      else sel.delete(s.address);
+    }
+    renderStatsTable();
+  });
+  el.querySelectorAll('.stats-check').forEach((box) => {
+    box.addEventListener('change', () => {
+      if (box.checked) sel.set(box.dataset.address, box.dataset.name);
+      else sel.delete(box.dataset.address);
+      renderExportBar();
+    });
+  });
+}
+
+// Barre d'action au-dessus du tableau : export de la sélection en contacts.
+function renderExportBar() {
+  const bar = $('#export-bar');
+  if (!bar) return;
+  const sel = statsState.selected;
+  bar.classList.toggle('hidden', sel.size === 0);
+  if (sel.size === 0) return;
+  bar.innerHTML = `📇 <strong>${fmtNum(sel.size)}</strong> contact(s) sélectionné(s)
+    <button class="btn btn-sm btn-primary" id="export-vcf">⬇ Exporter .vcf</button>
+    <button class="btn btn-sm" id="export-csv">⬇ Exporter .csv</button>
+    <button class="btn btn-sm" id="export-clear">Tout décocher</button>
+    <span class="muted" style="font-size:12px">puis importe le fichier dans Outlook.com → Contacts → Gérer → Importer</span>`;
+  $('#export-vcf').addEventListener('click', () => downloadContacts('vcard'));
+  $('#export-csv').addEventListener('click', () => downloadContacts('csv'));
+  $('#export-clear').addEventListener('click', () => {
+    sel.clear();
+    renderStatsTable();
+  });
+}
+
+async function downloadContacts(format) {
+  const slug = decodeURIComponent((location.hash.split('/')[2] ?? ''));
+  const senders = [...statsState.selected.entries()].map(([address, name]) => ({ address, name }));
+  try {
+    const res = await fetch(`/api/accounts/${encodeURIComponent(slug)}/export-contacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ senders, format }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error || `Erreur ${res.status}`);
+    }
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ??
+      `contacts.${format === 'csv' ? 'csv' : 'vcf'}`;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 // ---------------------------------------------------------------- Sync + jobs
