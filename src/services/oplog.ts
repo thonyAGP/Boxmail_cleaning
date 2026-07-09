@@ -1,4 +1,5 @@
-import { appendFile, mkdir } from 'node:fs/promises';
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -28,6 +29,23 @@ function scrub(obj: Record<string, unknown>): Record<string, unknown> {
     out[k] = SENSITIVE_KEYS.test(k) ? '***' : v;
   }
   return out;
+}
+
+/** Dernières opérations journalisées (les plus récentes d'abord). */
+export async function readOperations(limit = 30): Promise<Record<string, unknown>[]> {
+  if (!existsSync(config.files.operationsLog)) return [];
+  const raw = await readFile(config.files.operationsLog, 'utf8');
+  const lines = raw.split('\n').filter((l) => l.trim() !== '');
+  return lines
+    .slice(-limit)
+    .reverse()
+    .map((l) => {
+      try {
+        return JSON.parse(l) as Record<string, unknown>;
+      } catch {
+        return { raw: l };
+      }
+    });
 }
 
 export async function recordOperation(entry: OperationEntry): Promise<void> {

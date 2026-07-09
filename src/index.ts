@@ -1,11 +1,13 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { resolve } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { imapService } from './services/imap.js';
+import { buildAdminRouter } from './server/admin.js';
 
 /**
  * Bootstrap serveur HTTP + MCP (transport Streamable HTTP).
@@ -68,6 +70,11 @@ async function main() {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'boxmail-mcp', version: '1.0.0' });
   });
+
+  // Interface web d'administration : API + fichiers statiques.
+  app.use('/api', rateLimit, buildAdminRouter());
+  app.use('/admin', express.static(resolve(process.cwd(), 'web')));
+  app.get('/', (_req, res) => res.redirect('/admin/'));
 
   app.use('/mcp', rateLimit, checkBearer);
 

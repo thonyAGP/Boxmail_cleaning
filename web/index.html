@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Mail Assistant — Boxmail</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📬</text></svg>">
+</head>
+<body>
+  <!-- Écran de connexion -->
+  <div id="login-view" class="login-wrap hidden">
+    <div class="login-card">
+      <div class="login-logo">📬</div>
+      <h1>Mail Assistant</h1>
+      <p class="muted">Gestion des boîtes Outlook/Hotmail</p>
+      <form id="login-form">
+        <input type="password" id="login-password" placeholder="Mot de passe" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+      </form>
+      <p id="login-error" class="error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Application -->
+  <div id="app-view" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">📬</div>
+        <div>
+          <div class="brand-name">Mail Assistant</div>
+          <div class="brand-sub">Vue d'ensemble</div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">COMPTES</div>
+        <nav id="accounts-nav"></nav>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">NAVIGATION</div>
+        <nav>
+          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 Tableau de bord</a>
+          <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
+        </nav>
+      </div>
+
+      <div class="side-section side-soon">
+        <div class="side-title">ANALYSE &amp; ACTIONS <span class="soon-badge">bientôt</span></div>
+        <div class="side-link disabled">⭐ Mails importants</div>
+        <div class="side-link disabled">↩️ Réponses en attente</div>
+        <div class="side-link disabled">⏰ Relances à faire</div>
+        <div class="side-link disabled">📅 Échéances</div>
+      </div>
+
+      <div class="side-footer">
+        <button id="logout-btn" class="btn btn-ghost">Se déconnecter</button>
+      </div>
+    </aside>
+
+    <main id="main" class="main"></main>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

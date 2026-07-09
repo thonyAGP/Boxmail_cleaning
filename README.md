@@ -353,6 +353,27 @@ le pivot vers Graph ne touche ni la couche MCP ni les garde-fous.
 
 ---
 
+## Interface web d'administration
+
+Une interface graphique (« Mail Assistant ») est servie par le même serveur sur
+**`http://<hôte>:<port>/admin`** : tableau de bord multi-boîtes, statistiques
+par expéditeur (triables, instantanées via l'index), nettoyage conseillé,
+synchronisation en un clic avec progression, journal d'activité.
+
+Activation :
+
+1. Ajouter dans `.env` : `ADMIN_PASSWORD=<mot de passe fort>` (ex. `npm run genkey`)
+2. `npm start` puis ouvrir `http://localhost:8787/admin`
+
+Sécurité : session cookie httpOnly SameSite=Strict, login à comparaison en
+temps constant limité à 10 tentatives/15 min/IP, mêmes services et mêmes
+garde-fous que les tools MCP, tout est journalisé dans `operations.jsonl`.
+Sans `ADMIN_PASSWORD`, l'interface est désactivée (le MCP fonctionne normalement).
+
+> Prochaines passes : suppression en masse guidée (aperçu → confirmation →
+> lots de 200 avec progression), enrôlement d'une boîte depuis le navigateur,
+> recherche/lecture de mails, export contacts.
+
 ## Index local des mails (Phase 3 — SPEC V2)
 
 Le serveur maintient un **index SQLite** (`data/boxmail.db`) des métadonnées de

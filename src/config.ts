@@ -71,6 +71,12 @@ export const config = {
     max: int('RATE_LIMIT_MAX', 60),
     windowMs: int('RATE_LIMIT_WINDOW_MS', 60_000),
   },
+  admin: {
+    // Mot de passe de l'interface web. Si absent, l'interface est désactivée
+    // (le serveur MCP fonctionne normalement).
+    password: process.env.ADMIN_PASSWORD?.trim() || null,
+    sessionTtlMs: int('ADMIN_SESSION_TTL_MINUTES', 24 * 60) * 60_000,
+  },
   files: {
     accounts: resolve(projectRoot, optional('ACCOUNTS_FILE', 'accounts.json')),
     operationsLog: resolve(projectRoot, optional('OPERATIONS_LOG', 'logs/operations.jsonl')),
