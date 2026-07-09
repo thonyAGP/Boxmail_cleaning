@@ -213,8 +213,9 @@ async function runDelete(
     tool,
     folder,
     dryRun: false,
-    params: { ...extraParams, count: uids.length },
+    params: { ...extraParams, count: uids.length, destination: res.destination },
     affectedUids: uids,
+    items: preview.items,
     result: `soft-deleted ${res.moved} -> ${res.destination}`,
   });
   return jsonResult({

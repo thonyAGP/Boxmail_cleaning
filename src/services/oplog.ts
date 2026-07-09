@@ -18,6 +18,8 @@ export interface OperationEntry {
   folder?: string;
   dryRun?: boolean;
   result?: string;
+  /** Contenu concerné (sujet + date par mail) pour savoir EXACTEMENT quoi. */
+  items?: { subject: string; date: string | null }[];
 }
 
 const SENSITIVE_KEYS = /token|secret|password|authorization|bearer|cache/i;
@@ -57,6 +59,7 @@ export async function recordOperation(entry: OperationEntry): Promise<void> {
     folder: entry.folder,
     params: scrub(entry.params),
     affectedUids: entry.affectedUids,
+    items: entry.items?.slice(0, 500),
     result: entry.result,
   });
   try {

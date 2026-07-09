@@ -242,17 +242,49 @@ function bindCleanupButtons(root) {
 }
 
 function opLine(op) {
-  const label = {
-    create_folder: '📁 Dossier créé',
-    move_emails: '📦 Mails déplacés',
-    mark_emails: '🏷️ Flags modifiés',
-    delete_emails: '🗑️ Suppression',
-    bulk_delete_by_sender: '🗑️ Suppression par expéditeur',
-  }[op.tool] ?? `⚙️ ${op.tool ?? 'opération'}`;
+  const p = op.params ?? {};
+  const n = p.count ?? op.affectedUids?.length ?? 0;
+  const senderLabel = p.senderName && p.senderName !== p.sender
+    ? `${esc(p.senderName)} (${esc(p.sender ?? '')})`
+    : esc(p.sender ?? '');
+
+  let title;
+  switch (op.tool) {
+    case 'ui_cleanup_sender':
+      title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille` +
+        (p.batch ? ` <span class="muted">(lot ${esc(p.batch)})</span>` : '');
+      break;
+    case 'bulk_delete_by_sender':
+      title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
+      break;
+    case 'delete_emails':
+      title = `🗑️ <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(via Claude)</span>`;
+      break;
+    case 'move_emails':
+      title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
+      break;
+    case 'mark_emails':
+      title = `🏷️ <strong>${fmtNum(n)} mails</strong> marqués « ${esc(p.flag ?? '')} »`;
+      break;
+    case 'create_folder':
+      title = `📁 Dossier <strong>${esc(p.path ?? '')}</strong> créé`;
+      break;
+    default:
+      title = `⚙️ ${esc(op.tool ?? 'opération')}`;
+  }
+
+  const meta = [op.account, op.folder].filter(Boolean).map(esc).join(' · ');
+  const items = Array.isArray(op.items) && op.items.length
+    ? `<details class="op-details"><summary>Voir les ${fmtNum(op.items.length)} mails concernés</summary>
+       <div class="op-items">${op.items
+         .map((i) => `<div><span class="mail-date">${fmtDate(i.date)}</span> ${esc(i.subject)}</div>`)
+         .join('')}</div></details>`
+    : '';
+
   return `<div class="op-line"><span class="op-time">${fmtDateTime(op.ts)}</span>
-    <span>${label} — <strong>${esc(op.account ?? '')}</strong>
-    ${op.dryRun ? '<span class="badge gray">dry-run</span>' : ''}
-    <span class="muted">${esc(op.result ?? '')}</span></span></div>`;
+    <span style="flex:1">${title}
+    ${op.dryRun ? '<span class="badge gray">simulation — rien touché</span>' : ''}
+    <span class="muted" style="font-size:12px">— ${meta}</span>${items}</span></div>`;
 }
 
 // ---------------------------------------------------------------- Vue compte
@@ -468,34 +500,100 @@ async function openCleanupModal(account, sender, senderName) {
     if (e.target === overlay) closeModal();
   });
 
-  // Étape 1 : aperçu (index local, ne touche à rien).
-  let preview;
+  // Étape 1 : aperçu + liste complète classée (index local, ne touche à rien).
+  let preview, list;
   try {
-    preview = await api.cleanupPreview(account, sender);
+    [preview, list] = await Promise.all([
+      api.cleanupPreview(account, sender),
+      api.cleanupMessages(account, sender),
+    ]);
   } catch (err) {
     $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     $('#modal-foot').innerHTML = `<button class="btn" onclick="document.querySelector('.modal-overlay').remove()">Fermer</button>`;
     return;
   }
 
+  const autos = list.messages.filter((m) => m.kind === 'auto');
+  const persos = list.messages.filter((m) => m.kind === 'personal');
+  // Sélection par défaut : uniquement les mails clairement automatiques.
+  const selected = new Set(autos.map((m) => m.uid));
+
   $('#modal-body').innerHTML = `
-    <p>Voici ce qui serait déplacé vers la <strong>corbeille</strong> pour
-      <strong>${esc(sender)}</strong> (dossier ${esc(preview.folder)}) :</p>
+    <p>Mails de <strong>${esc(sender)}</strong> (dossier ${esc(preview.folder)}) :</p>
     <div class="preview-grid">
-      <div class="preview-item"><div class="lbl">Mails concernés</div><div class="val">${fmtNum(preview.count)}</div></div>
-      <div class="preview-item"><div class="lbl">Taille libérée</div><div class="val">${fmtSize(preview.totalSizeBytes)}</div></div>
+      <div class="preview-item"><div class="lbl">Mails au total</div><div class="val">${fmtNum(preview.count)}</div></div>
+      <div class="preview-item"><div class="lbl">Taille totale</div><div class="val">${fmtSize(preview.totalSizeBytes)}</div></div>
       <div class="preview-item"><div class="lbl">Plus ancien</div><div class="val" style="font-size:13px">${fmtDate(preview.oldestMessageAt)}</div></div>
       <div class="preview-item"><div class="lbl">Plus récent</div><div class="val" style="font-size:13px">${fmtDate(preview.newestMessageAt)}</div></div>
     </div>
-    <div class="lbl muted" style="font-size:12px">Derniers sujets :</div>
-    <div class="subject-list">${preview.sampleSubjects.map((s) => `<div>${esc(s)}</div>`).join('')}</div>
-    <div class="trash-note">🛟 Soft delete uniquement : les mails vont dans la corbeille Outlook et restent
-      récupérables ~30 jours. L'opération se fait par lots de 200 et chaque lot est journalisé.</div>`;
+
+    <div class="cat-toggle">
+      <label><input type="checkbox" id="cat-auto" checked>
+        🤖 <strong>Automatiques</strong> (${fmtNum(autos.length)}) — lien de désinscription ou expéditeur noreply</label>
+      <label><input type="checkbox" id="cat-perso">
+        👤 <strong>Possiblement personnels</strong> (${fmtNum(persos.length)}) — répondu, suivi, conversation,
+        ou sans marqueur automatique. <strong>Décochés par défaut.</strong></label>
+    </div>
+
+    <button class="btn btn-sm" id="toggle-list">📋 Voir la liste complète (${fmtNum(list.messages.length)})</button>
+    ${list.truncated ? `<span class="muted" style="font-size:12px"> (${fmtNum(list.total)} au total, affichage limité à ${fmtNum(list.messages.length)})</span>` : ''}
+    <div class="mail-list hidden" id="mail-list">
+      ${list.messages.map((m) => `
+        <label class="mail-row ${m.kind}">
+          <input type="checkbox" data-uid="${m.uid}" data-kind="${m.kind}" ${m.kind === 'auto' ? 'checked' : ''}>
+          <span class="mail-date">${fmtDate(m.date)}</span>
+          <span class="mail-subject" title="${esc(m.signals.join(' · '))}">${esc(m.subject)}</span>
+          <span class="badge ${m.kind === 'auto' ? 'gray' : 'blue'}">${m.kind === 'auto' ? '🤖 auto' : '👤 perso'}</span>
+          ${m.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+        </label>`).join('')}
+    </div>
+    <div class="trash-note">🛟 Soft delete uniquement : les mails cochés vont dans la corbeille Outlook et restent
+      récupérables ~30 jours. Lots de 200, chaque lot journalisé avec la liste exacte des mails.</div>`;
 
   $('#modal-foot').innerHTML = `
     <button class="btn" id="modal-cancel">Annuler</button>
-    <button class="btn btn-green" id="modal-confirm">Déplacer ${fmtNum(preview.count)} mails vers la corbeille</button>`;
+    <button class="btn btn-green" id="modal-confirm"></button>`;
   $('#modal-cancel').addEventListener('click', closeModal);
+
+  const confirmBtn = $('#modal-confirm');
+  const updateConfirm = () => {
+    confirmBtn.textContent = `Déplacer ${fmtNum(selected.size)} mails vers la corbeille`;
+    confirmBtn.disabled = selected.size === 0;
+  };
+  updateConfirm();
+
+  $('#toggle-list').addEventListener('click', () => $('#mail-list').classList.toggle('hidden'));
+
+  const rowBoxes = [...overlay.querySelectorAll('.mail-row input[type=checkbox]')];
+  const syncCategoryBox = (kind) => {
+    const boxes = rowBoxes.filter((b) => b.dataset.kind === kind);
+    const box = kind === 'auto' ? $('#cat-auto') : $('#cat-perso');
+    const checkedCount = boxes.filter((b) => b.checked).length;
+    box.checked = checkedCount === boxes.length && boxes.length > 0;
+    box.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  };
+  const bindCategory = (boxId, kind) => {
+    $(boxId).addEventListener('change', (e) => {
+      for (const b of rowBoxes.filter((x) => x.dataset.kind === kind)) {
+        b.checked = e.target.checked;
+        const uid = Number(b.dataset.uid);
+        if (e.target.checked) selected.add(uid);
+        else selected.delete(uid);
+      }
+      updateConfirm();
+    });
+  };
+  bindCategory('#cat-auto', 'auto');
+  bindCategory('#cat-perso', 'personal');
+  for (const b of rowBoxes) {
+    b.addEventListener('change', () => {
+      const uid = Number(b.dataset.uid);
+      if (b.checked) selected.add(uid);
+      else selected.delete(uid);
+      syncCategoryBox(b.dataset.kind);
+      updateConfirm();
+    });
+  }
 
   // Étape 2 : confirmation → exécution avec progression.
   $('#modal-confirm').addEventListener('click', async () => {
@@ -504,7 +602,7 @@ async function openCleanupModal(account, sender, senderName) {
       <div class="sync-log" id="cleanup-log"></div>`;
     let jobId;
     try {
-      ({ jobId } = await api.cleanupExecute(account, sender));
+      ({ jobId } = await api.cleanupExecute(account, sender, [...selected]));
     } catch (err) {
       $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
       $('#modal-foot').innerHTML = `<button class="btn" id="modal-cancel2">Fermer</button>`;

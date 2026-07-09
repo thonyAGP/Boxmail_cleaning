@@ -37,8 +37,18 @@ export const api = {
   cleanup: (slug) => request('GET', `/accounts/${encodeURIComponent(slug)}/cleanup`),
   cleanupPreview: (slug, sender, folder = 'INBOX') =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/cleanup/preview`, { sender, folder }),
-  cleanupExecute: (slug, sender, folder = 'INBOX') =>
-    request('POST', `/accounts/${encodeURIComponent(slug)}/cleanup/execute`, { sender, folder }),
+  cleanupMessages: (slug, sender, folder = 'INBOX') =>
+    request(
+      'GET',
+      `/accounts/${encodeURIComponent(slug)}/cleanup/messages?` +
+        new URLSearchParams({ sender, folder }),
+    ),
+  cleanupExecute: (slug, sender, uids, folder = 'INBOX') =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/cleanup/execute`, {
+      sender,
+      folder,
+      uids,
+    }),
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   job: (id) => request('GET', `/jobs/${encodeURIComponent(id)}`),

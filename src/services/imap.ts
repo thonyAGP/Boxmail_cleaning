@@ -62,6 +62,8 @@ export interface DeletePreview {
   senders: { address: string; name: string; count: number }[];
   sampleSubjects: string[];
   dateRange: { from: string | null; to: string | null };
+  /** Détail par mail (sujet + date), pour la journalisation exacte. */
+  items: { subject: string; date: string | null }[];
 }
 
 export function normalizeSubject(subject: string | undefined): string {
@@ -454,7 +456,13 @@ class ImapService {
   /** Résumé "ce qui SERAIT supprimé" pour le mode dry-run (SPEC §6.1). */
   async summarize(rec: AccountRecord, folder: string, uids: number[]): Promise<DeletePreview> {
     if (uids.length === 0) {
-      return { count: 0, senders: [], sampleSubjects: [], dateRange: { from: null, to: null } };
+      return {
+        count: 0,
+        senders: [],
+        sampleSubjects: [],
+        dateRange: { from: null, to: null },
+        items: [],
+      };
     }
     const metas = await (async () => {
       const client = await this.getClient(rec);
@@ -485,6 +493,7 @@ class ImapService {
       senders: [...senderMap.values()].sort((a, b) => b.count - a.count),
       sampleSubjects: metas.slice(0, 20).map((m) => m.subject),
       dateRange: { from: minDate, to: maxDate },
+      items: metas.slice(0, 500).map((m) => ({ subject: m.subject, date: m.date })),
     };
   }
 }

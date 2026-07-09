@@ -136,26 +136,182 @@ export async function previewSenderCleanup(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Classification par MESSAGE : automatique vs possiblement personnel.
+// Un même expéditeur peut envoyer les deux (ex. une banque : relevés
+// automatiques ET messages du conseiller). Par prudence, tout mail SANS
+// marqueur d'automatisation est classé « personnel ».
+// ---------------------------------------------------------------------------
+
+const AUTO_SENDER_RE =
+  /(no-?reply|nepasrepondre|ne-pas-repondre|donotreply|do-not-reply|notification|mailer-daemon|newsletter|automat)/i;
+
+export interface CleanupMessage {
+  uid: number;
+  subject: string;
+  date: string | null;
+  isSeen: boolean;
+  sizeBytes: number;
+  kind: 'auto' | 'personal';
+  /** Pourquoi ce classement (affiché dans l'interface). */
+  signals: string[];
+}
+
+/**
+ * Liste complète et classée des mails d'un expéditeur dans un dossier
+ * (depuis l'index — instantané, ne touche à rien).
+ */
+export async function listCleanupMessages(
+  account: string,
+  folder: string,
+  sender: string,
+  limit = 2000,
+): Promise<{ messages: CleanupMessage[]; total: number; truncated: boolean }> {
+  await ensureDbReady();
+  const f = await db.folder.findUnique({
+    where: { accountSlug_path: { accountSlug: account, path: folder } },
+    select: { id: true },
+  });
+  if (!f) throw new Error(`Dossier "${folder}" absent de l'index.`);
+
+  const where = { folderId: f.id, isDeleted: false, fromEmail: sender.toLowerCase() };
+  const total = await db.message.count({ where });
+  const msgs = await db.message.findMany({
+    where,
+    orderBy: { date: 'desc' },
+    take: limit,
+    select: {
+      uid: true,
+      subject: true,
+      date: true,
+      isSeen: true,
+      isAnswered: true,
+      isFlagged: true,
+      hasListUnsubscribe: true,
+      sizeBytes: true,
+      threadId: true,
+      fromEmail: true,
+    },
+  });
+
+  // Fils dans lesquels l'utilisateur a écrit → conversation personnelle.
+  const threadIds = [...new Set(msgs.map((m) => m.threadId).filter((t): t is number => t !== null))];
+  const outbound = threadIds.length
+    ? await db.message.findMany({
+        where: { accountSlug: account, isOutbound: true, threadId: { in: threadIds } },
+        select: { threadId: true },
+        distinct: ['threadId'],
+      })
+    : [];
+  const conversationThreads = new Set(outbound.map((o) => o.threadId));
+
+  const messages: CleanupMessage[] = msgs.map((m) => {
+    const signals: string[] = [];
+    if (m.isAnswered) signals.push('tu y as répondu');
+    if (m.isFlagged) signals.push('marqué/suivi');
+    if (m.threadId && conversationThreads.has(m.threadId)) signals.push('conversation avec toi');
+    if (/^(re|tr|fwd?|aw)\s*:/i.test(m.subject ?? '')) signals.push('sujet de réponse');
+    const personal = signals.length > 0;
+
+    if (!personal) {
+      if (m.hasListUnsubscribe) signals.push('lien de désinscription');
+      if (AUTO_SENDER_RE.test(m.fromEmail ?? '')) signals.push('expéditeur automatique');
+    }
+    const auto = !personal && signals.length > 0;
+    if (!personal && !auto) signals.push("aucun marqueur d'automatisation");
+
+    return {
+      uid: m.uid,
+      subject: m.subject ?? '(sans sujet)',
+      date: m.date?.toISOString() ?? null,
+      isSeen: m.isSeen,
+      sizeBytes: m.sizeBytes,
+      kind: auto ? 'auto' : 'personal',
+      signals,
+    };
+  });
+
+  return { messages, total, truncated: total > limit };
+}
+
 const CLEANUP_BATCH = 200;
 
 /**
- * Exécute le nettoyage d'un expéditeur : recherche IMAP (vérité serveur),
- * déplacement vers la corbeille par lots de 200, journalisation de chaque lot,
- * puis mise à jour de l'index. Jamais d'EXPUNGE — récupérable ~30 j.
+ * Exécute le nettoyage d'un expéditeur : déplacement vers la corbeille par
+ * lots de 200, journalisation de chaque lot, puis mise à jour de l'index.
+ * Jamais d'EXPUNGE — récupérable ~30 j.
+ *
+ * Si `selectedUids` est fourni (sélection fine dans l'interface), seuls ces
+ * mails sont traités — après validation qu'ils appartiennent bien à cet
+ * expéditeur dans ce dossier (aucun UID arbitraire ne peut passer).
+ * Sinon : tous les mails de l'expéditeur (recherche IMAP = vérité serveur).
  */
 export async function executeSenderCleanup(
   rec: AccountRecord,
   folder: string,
   sender: string,
   progress: (message: string) => void,
+  selectedUids?: number[],
 ): Promise<{ deleted: number; batches: number; destination: string }> {
-  progress(`Recherche des mails de ${sender} sur le serveur…`);
-  const uids = await imapService.searchUids(rec, folder, { from: sender });
+  let uids: number[];
+  if (selectedUids?.length) {
+    progress(`Validation de la sélection (${selectedUids.length} mails)…`);
+    const f = await db.folder.findUnique({
+      where: { accountSlug_path: { accountSlug: rec.account, path: folder } },
+      select: { id: true },
+    });
+    if (!f) throw new Error(`Dossier "${folder}" absent de l'index.`);
+    const valid = await db.message.findMany({
+      where: {
+        folderId: f.id,
+        isDeleted: false,
+        fromEmail: sender.toLowerCase(),
+        uid: { in: selectedUids },
+      },
+      select: { uid: true },
+    });
+    uids = valid.map((v) => v.uid);
+    if (uids.length < selectedUids.length) {
+      progress(
+        `${selectedUids.length - uids.length} mails écartés (n'appartiennent pas à cet expéditeur/dossier).`,
+      );
+    }
+  } else {
+    progress(`Recherche des mails de ${sender} sur le serveur…`);
+    uids = await imapService.searchUids(rec, folder, { from: sender });
+  }
   if (uids.length === 0) {
-    progress('Aucun mail trouvé côté serveur (déjà nettoyé ?).');
+    progress('Aucun mail à traiter.');
     return { deleted: 0, batches: 0, destination: '' };
   }
   progress(`${uids.length} mails à déplacer vers la corbeille, par lots de ${CLEANUP_BATCH}.`);
+
+  // Nom affiché + sujets/dates depuis l'index, pour un journal qui dit
+  // exactement QUI et QUOI (pas juste un compteur).
+  const senderRow = await db.sender.findUnique({
+    where: { accountSlug_email: { accountSlug: rec.account, email: sender.toLowerCase() } },
+    select: { displayName: true },
+  });
+  const senderName = senderRow?.displayName ?? sender;
+  const detailMap = new Map<number, { subject: string; date: string | null }>();
+  const folderRow = await db.folder.findUnique({
+    where: { accountSlug_path: { accountSlug: rec.account, path: folder } },
+    select: { id: true },
+  });
+  if (folderRow) {
+    for (let i = 0; i < uids.length; i += 900) {
+      const rows = await db.message.findMany({
+        where: { folderId: folderRow.id, uid: { in: uids.slice(i, i + 900) } },
+        select: { uid: true, subject: true, date: true },
+      });
+      for (const r of rows) {
+        detailMap.set(r.uid, {
+          subject: r.subject ?? '(sans sujet)',
+          date: r.date?.toISOString() ?? null,
+        });
+      }
+    }
+  }
 
   const batches = [];
   for (let i = 0; i < uids.length; i += CLEANUP_BATCH) batches.push(uids.slice(i, i + CLEANUP_BATCH));
@@ -174,8 +330,17 @@ export async function executeSenderCleanup(
       tool: 'ui_cleanup_sender',
       folder,
       dryRun: false,
-      params: { sender, batch: `${i + 1}/${batches.length}`, count: batch.length },
+      params: {
+        sender,
+        senderName,
+        batch: `${i + 1}/${batches.length}`,
+        count: batch.length,
+        destination: res.destination,
+      },
       affectedUids: batch,
+      items: batch.map(
+        (uid) => detailMap.get(uid) ?? { subject: '(hors index)', date: null },
+      ),
       result: `soft-deleted ${res.moved} -> ${res.destination}`,
     });
     progress(`Lot ${i + 1}/${batches.length} : ${res.moved} mails → ${res.destination}`);

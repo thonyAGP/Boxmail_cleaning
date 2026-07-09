@@ -8,6 +8,7 @@ import {
   getCleanupCandidates,
   previewSenderCleanup,
   executeSenderCleanup,
+  listCleanupMessages,
 } from '../services/cleanup.js';
 import { syncAccount } from '../services/sync.js';
 import { startJob, getJob, hasRunningJob } from '../services/jobs.js';
@@ -232,6 +233,21 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  // Liste complète et classée (automatique / possiblement personnel) des mails
+  // d'un expéditeur — pour valider le contenu AVANT de confirmer.
+  router.get(
+    '/accounts/:slug/cleanup/messages',
+    guard(async (req, res) => {
+      const sender = String(req.query.sender ?? '').trim();
+      const folder = String(req.query.folder ?? 'INBOX');
+      if (!sender) {
+        res.status(400).json({ error: 'Paramètre "sender" requis.' });
+        return;
+      }
+      res.json(await listCleanupMessages(req.params.slug, folder, sender));
+    }),
+  );
+
   router.post(
     '/accounts/:slug/cleanup/execute',
     guard(async (req, res) => {
@@ -242,6 +258,17 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'Paramètre "sender" requis.' });
         return;
       }
+      // Sélection fine optionnelle : seuls ces UIDs seront traités (revalidés
+      // côté service contre l'index — impossible d'y glisser d'autres mails).
+      const uids = Array.isArray(req.body?.uids)
+        ? (req.body.uids as unknown[])
+            .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+            .slice(0, 20_000)
+        : undefined;
+      if (uids !== undefined && uids.length === 0) {
+        res.status(400).json({ error: 'Sélection vide : aucun mail coché.' });
+        return;
+      }
       const kind = `cleanup:${slug}`;
       if (hasRunningJob(kind) || hasRunningJob(`sync:${slug}`)) {
         res.status(409).json({ error: 'Une opération est déjà en cours sur ce compte.' });
@@ -249,7 +276,7 @@ export function buildAdminRouter(): Router {
       }
       const rec = await resolveAccount(slug);
       const job = startJob(kind, (progress) =>
-        executeSenderCleanup(rec, folder, sender, progress),
+        executeSenderCleanup(rec, folder, sender, progress, uids),
       );
       res.json({ jobId: job.id });
     }),

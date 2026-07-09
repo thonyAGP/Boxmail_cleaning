@@ -217,3 +217,31 @@ select, input[type="date"], input[type="number"] {
   background: #fdf5e6; border: 1px solid #f5e0b8; color: #92600a;
   border-radius: 8px; padding: 10px 14px; font-size: 12.5px; margin-top: 12px;
 }
+.cat-toggle { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.cat-toggle label {
+  display: flex; gap: 8px; align-items: baseline; font-size: 13px;
+  background: var(--bg); border-radius: 8px; padding: 9px 12px; cursor: pointer;
+}
+.mail-list {
+  margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;
+  max-height: 280px; overflow-y: auto;
+}
+.mail-row {
+  display: flex; gap: 8px; align-items: center; padding: 6px 10px;
+  border-bottom: 1px solid #f0f2f7; font-size: 12.5px; cursor: pointer;
+}
+.mail-row:last-child { border-bottom: none; }
+.mail-row:hover { background: #fafbfe; }
+.mail-row.personal { background: #fffdf5; }
+.mail-date { color: var(--muted); font-size: 11.5px; white-space: nowrap; min-width: 82px; }
+.mail-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-details summary {
+  cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 4px;
+  user-select: none;
+}
+.op-items {
+  margin: 6px 0 4px; border: 1px solid var(--border); border-radius: 8px;
+  max-height: 220px; overflow-y: auto; font-size: 12.5px; padding: 4px 10px;
+}
+.op-items div { padding: 3px 0; border-bottom: 1px solid #f0f2f7; }
+.op-items div:last-child { border-bottom: none; }
