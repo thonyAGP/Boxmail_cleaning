@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { imapService } from './services/imap.js';
 import { buildAdminRouter } from './server/admin.js';
+import { startAutoSync } from './services/autosync.js';
 
 /**
  * Bootstrap serveur HTTP + MCP (transport Streamable HTTP).
@@ -137,6 +138,7 @@ async function main() {
       port: config.http.port,
       smtpEnabled: config.smtp.enabled,
     });
+    startAutoSync();
   });
 
   // Arrêt propre.

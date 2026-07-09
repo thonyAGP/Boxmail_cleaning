@@ -86,6 +86,11 @@ export const config = {
     accounts: resolve(projectRoot, optional('ACCOUNTS_FILE', 'accounts.json')),
     operationsLog: resolve(projectRoot, optional('OPERATIONS_LOG', 'logs/operations.jsonl')),
   },
+  sync: {
+    // Synchronisation automatique (L5.11) : 0 = désactivée (défaut, usage
+    // local à la demande) ; 30 recommandé sur le serveur 24/7 (L6).
+    autoIntervalMinutes: int('SYNC_INTERVAL_MINUTES', 0),
+  },
   limits: {
     // Plafond dur par opération de suppression (SPEC §6.3).
     maxDeletePerCall: 200,

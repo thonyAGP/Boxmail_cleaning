@@ -2534,6 +2534,17 @@ function renderHelp() {
     </ul>`)}`;
 }
 
+// Libellé de l'auto-sync (L5.11) pour le panneau Serveur des Paramètres.
+function autoSyncLabel(a) {
+  if (!a || !a.intervalMinutes) {
+    return '✕ désactivée (SYNC_INTERVAL_MINUTES=0) — synchronise à la demande';
+  }
+  const mins = a.nextRunAt
+    ? Math.max(0, Math.round((new Date(a.nextRunAt).getTime() - Date.now()) / 60000))
+    : null;
+  return `✅ toutes les ${fmtNum(a.intervalMinutes)} min${mins !== null ? ` · prochaine dans ~${fmtNum(mins)} min` : ''}`;
+}
+
 // ---------------------------------------------------------------- Paramètres (L5.8)
 async function renderSettings() {
   const main = $('#main');
@@ -2545,6 +2556,7 @@ async function renderSettings() {
     <div id="settings-notice"></div>
     <div id="settings-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
   await refreshOverview().catch(() => {});
+  await api.version().then((v) => { serverVersion = v; }).catch(() => {});
   renderSettingsBody();
 }
 
@@ -2593,6 +2605,8 @@ function renderSettingsBody() {
           <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
         <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>
           <span>${smtpEnabled ? '✅ activé' : '✕ désactivé (ENABLE_SMTP_SEND=false)'}</span></div>
+        <div class="set-line"><span class="muted">Synchronisation automatique</span>
+          <span>${autoSyncLabel(v?.autoSync)}</span></div>
         <div class="set-line"><span class="muted">Boîtes indexées</span>
           <span>${fmtNum(overviewCache?.totals?.accounts ?? 0)} boîte(s) · ${fmtNum(overviewCache?.totals?.indexedMessages ?? 0)} mails</span></div>
       </div>

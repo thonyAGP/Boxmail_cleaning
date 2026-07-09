@@ -69,6 +69,7 @@ import { imapService } from '../services/imap.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
+import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -1355,7 +1356,7 @@ export function buildAdminRouter(): Router {
   router.get(
     '/version',
     guard(async (_req, res) => {
-      res.json(await version());
+      res.json({ ...(await version()), autoSync: autoSyncStatus() });
     }),
   );
 
@@ -1562,28 +1563,10 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'Aucun compte enrôlé.' });
         return;
       }
-      const job = startJob('sync-all', async (progress) => {
-        const results: Record<string, unknown>[] = [];
-        for (const name of names) {
-          if (hasRunningJob(`sync:${name}`)) {
-            progress(`[${name}] une sync est déjà en cours — sauté.`);
-            continue;
-          }
-          try {
-            const rec = await resolveAccount(name);
-            const r = await syncAccount(rec, {
-              mode,
-              onProgress: (m) => progress(`[${name}] ${m}`),
-            });
-            progress(`[${name}] ✅ +${r.newMessages} nouveaux, ${r.foldersSynced.length} dossiers.`);
-            results.push({ account: name, newMessages: r.newMessages, errors: r.errors });
-          } catch (err) {
-            progress(`[${name}] ❌ ${(err as Error).message}`);
-            results.push({ account: name, error: (err as Error).message });
-          }
-        }
-        return { results };
-      });
+      const job = startSyncAllJob(
+        mode,
+        names.filter((n) => !hasRunningJob(`sync:${n}`)),
+      );
       res.json({ jobId: job.id });
     }),
   );

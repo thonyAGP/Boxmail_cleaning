@@ -94,10 +94,23 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
-**Batch L5.6 → L5.11 EN COURS (demande utilisateur : « Lance L5.6 à L5.11
-à suivre », un commit/push PAR livraison).** Ordre modifié : L5.9 (pièces
-jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
-possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
+**Batch L5.6 → L5.11 TERMINÉ (demande utilisateur : « Lance L5.6 à L5.11
+à suivre », un commit/push par livraison — 6 livraisons poussées dans cette
+session).** Ordre suivi : L5.6 → L5.9 (priorisée sur retour utilisateur
+« pas de possibilité d'ouvrir les pièces jointes ») → L5.7 → L5.8 → L5.10 →
+L5.11. L'utilisateur doit encore VALIDER EN RÉEL sur son PC : pièces
+jointes (téléchargement réel IMAP), actions en masse multi-boîtes, envoi
+SMTP (toujours testé mocké uniquement), renommage/suppression de compte.
+
+**L5.11 livrée : Auto-sync périodique (pré-requis L6).**
+`services/autosync.ts` : `startAutoSync()` au listen d'index.ts ;
+`SYNC_INTERVAL_MINUTES` (config.sync, défaut 0=off, .env.example documenté,
+30 recommandé serveur) → setInterval unref ; chaque tick SAUTE si un job
+tourne, sinon `startSyncAllJob('recent')` (corps factorisé de /api/sync-all
+qui le réutilise) → suivi par la pastille d'activité comme une sync
+manuelle. `autoSyncStatus()` dans GET /api/version → ligne du panneau
+Serveur des Paramètres (désactivée / toutes les X min · prochaine dans ~Y).
+Testé en réel avec intervalle 1 min : job déclenché au tick.
 
 **L5.10 livrée : Aide & finitions UX.** Page `#/help` (7 rubriques en
 dépliants : démarrage, enrôlement, sync, nettoyage, lecture/envoi/PJ,

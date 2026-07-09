@@ -379,13 +379,20 @@ brouillon d'envoi est en cours) ; bouton ⬆ haut de page (fixe, apparaît
 après 600 px) ; focus auto du champ recherche (modales déjà focus). Tests :
 curl tri + ui-help.mjs (13 checks playwright).
 
-### ⬜ L5.11 — Auto-sync locale (pré-requis L6)
+### ✅ L5.11 — Auto-sync locale (pré-requis L6)
 
-Env `SYNC_INTERVAL_MINUTES` (défaut 0=off en local, 30 recommandé serveur) :
-planificateur dans index.ts (setInterval) qui lance le job sync-all `recent`
-si aucun job en cours ; visible dans le chip d'activité ; ligne « prochaine
-sync auto dans X min » dans Paramètres ; log discret. Transforme l'assistant
-en outil « toujours à jour » et déverrouille la L6.
+**LIVRÉE.** `services/autosync.ts` : `startAutoSync()` appelé au listen
+d'index.ts — si `SYNC_INTERVAL_MINUTES` > 0 (config.sync, défaut 0,
+documenté dans .env.example, 30 recommandé serveur), setInterval (unref)
+qui à chaque tick SAUTE si n'importe quel job tourne, sinon lance
+`startSyncAllJob('recent', names)` — factorisation du corps de la route
+`/api/sync-all` (qui la réutilise), donc même gestionnaire de jobs → la
+pastille d'activité de l'interface suit l'auto-sync comme une sync
+manuelle. `autoSyncStatus()` (intervalMinutes + nextRunAt) exposé dans GET
+`/api/version` → ligne « Synchronisation automatique » du panneau Serveur
+des Paramètres (✕ désactivée / ✅ toutes les X min · prochaine dans ~Y min).
+Test réel : serveur lancé avec SYNC_INTERVAL_MINUTES=1 → job sync-all
+déclenché au tick, statut visible via /api/version et /api/jobs.
 
 ---
 
