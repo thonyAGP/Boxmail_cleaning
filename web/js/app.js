@@ -256,6 +256,8 @@ function highlightNav() {
     document.querySelector(`[data-account="${CSS.escape(slug)}"]`)?.classList.add('active');
   } else if (hash.startsWith('#/operations')) {
     document.querySelector('[data-nav="operations"]')?.classList.add('active');
+  } else if (hash.startsWith('#/search')) {
+    document.querySelector('[data-nav="search"]')?.classList.add('active');
   } else if (hash.startsWith('#/replies')) {
     document.querySelector('[data-nav="replies"]')?.classList.add('active');
   } else if (hash.startsWith('#/followups')) {
@@ -279,6 +281,8 @@ function route() {
     renderAccount(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/operations')) {
     renderOperations();
+  } else if (hash.startsWith('#/search')) {
+    renderSearch();
   } else if (hash.startsWith('#/replies')) {
     renderReplies();
   } else if (hash.startsWith('#/followups')) {
@@ -670,6 +674,15 @@ function opLine(op) {
       break;
     case 'delete_emails':
       title = `🗑️ <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(via Claude)</span>`;
+      break;
+    case 'ui_delete_message':
+      title = `🗑️ <strong>1 mail</strong> → corbeille <span class="muted">(depuis la recherche)</span>`;
+      break;
+    case 'ui_move_message':
+      title = `📦 <strong>1 mail</strong> déplacé vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(depuis la recherche)</span>`;
+      break;
+    case 'ui_mark_message':
+      title = `🏷️ <strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
       break;
     case 'move_emails':
       title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
@@ -1902,6 +1915,318 @@ function deadlineRow(x) {
       <div class="reply-actions">${actions}</div>
     </div>
   </div>`;
+}
+
+// ---------------------------------------------------------------- Recherche (L3)
+const searchState = {
+  q: '',
+  account: '',
+  folder: '',
+  from: '',
+  subject: '',
+  since: '',
+  before: '',
+  unseen: false,
+  showFilters: false,
+  data: null,
+  searched: false,
+};
+
+const FOLDER_LABELS = { inbox: '📥', sent: '📤 envoyés', trash: '🗑️ corbeille', spam: '⚠️ spam', archive: '📦 archive', drafts: '📝 brouillons' };
+
+function folderBadge(i) {
+  if (i.folderRole === 'inbox') return '';
+  const label = FOLDER_LABELS[i.folderRole] ?? esc(i.folder);
+  return `<span class="badge gray">${label}</span>`;
+}
+
+async function renderSearch() {
+  const main = $('#main');
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🔎 Recherche</h1>
+      <div class="sub">Cherche dans toutes tes boîtes d'un coup (index local — instantané), puis clique un mail
+      pour le lire ici, sans ouvrir Outlook. Synchronise tes boîtes pour des résultats à jour.</div></div></div>
+    <form class="search-bar" id="search-form">
+      <input type="search" id="s-q" placeholder="Sujet, expéditeur, adresse… (ex. facture, EDF, marie)"
+        value="${esc(searchState.q)}" autocomplete="off">
+      <button type="submit" class="btn btn-primary">🔎 Rechercher</button>
+      <button type="button" class="btn" id="s-toggle-filters">${searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres'}</button>
+    </form>
+    <div class="search-filters ${searchState.showFilters ? '' : 'hidden'}" id="search-filters">
+      <label>Boîte <select id="s-account">
+        <option value="">toutes</option>
+        ${accounts.map((a) => `<option value="${esc(a)}" ${a === searchState.account ? 'selected' : ''}>${esc(a)}</option>`).join('')}
+      </select></label>
+      <label>Dossier <input type="text" id="s-folder" placeholder="tous (ex. INBOX)" value="${esc(searchState.folder)}" style="width:130px"></label>
+      <label>Expéditeur <input type="text" id="s-from" placeholder="nom ou adresse" value="${esc(searchState.from)}" style="width:150px"></label>
+      <label>Sujet <input type="text" id="s-subject" placeholder="contient…" value="${esc(searchState.subject)}" style="width:150px"></label>
+      <label>Du <input type="date" id="s-since" value="${esc(searchState.since)}"></label>
+      <label>Au <input type="date" id="s-before" value="${esc(searchState.before)}"></label>
+      <label><input type="checkbox" id="s-unseen" ${searchState.unseen ? 'checked' : ''}> non lus seulement</label>
+    </div>
+    <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot-clé ci-dessus, ou ouvre les filtres pour chercher par expéditeur ou par date.</div>`}</div>`;
+
+  $('#s-toggle-filters').addEventListener('click', () => {
+    searchState.showFilters = !searchState.showFilters;
+    $('#search-filters').classList.toggle('hidden', !searchState.showFilters);
+    $('#s-toggle-filters').textContent = searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres';
+  });
+  $('#search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    searchState.q = $('#s-q').value.trim();
+    searchState.account = $('#s-account').value;
+    searchState.folder = $('#s-folder').value.trim();
+    searchState.from = $('#s-from').value.trim();
+    searchState.subject = $('#s-subject').value.trim();
+    searchState.since = $('#s-since').value;
+    searchState.before = $('#s-before').value;
+    searchState.unseen = $('#s-unseen').checked;
+    runSearch();
+  });
+
+  // Résultats encore en mémoire (retour sur l'écran) : on les réaffiche.
+  if (searchState.data) renderSearchResults();
+}
+
+async function runSearch() {
+  const el = $('#search-results');
+  const hasCriteria =
+    searchState.q || searchState.account || searchState.folder || searchState.from ||
+    searchState.subject || searchState.since || searchState.before || searchState.unseen;
+  if (!hasCriteria) {
+    el.innerHTML = '<div class="empty">Donne au moins un critère (mot-clé, expéditeur, date…).</div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty"><span class="spinner"></span>Recherche…</div>';
+  searchState.searched = true;
+  try {
+    searchState.data = await api.search({
+      q: searchState.q,
+      account: searchState.account,
+      folder: searchState.folder,
+      from: searchState.from,
+      subject: searchState.subject,
+      since: searchState.since,
+      before: searchState.before,
+      unseen: searchState.unseen,
+      limit: 200,
+    });
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+    return;
+  }
+  renderSearchResults();
+}
+
+function renderSearchResults() {
+  const el = $('#search-results');
+  const d = searchState.data;
+  if (!el || !d) return;
+  if (d.items.length === 0) {
+    el.innerHTML = '<div class="empty">Aucun mail trouvé avec ces critères. 🤷</div>';
+    return;
+  }
+
+  // Groupé par compte, dans l'ordre des résultats (déjà triés par date desc).
+  const groups = new Map();
+  d.items.forEach((item, idx) => {
+    if (!groups.has(item.account)) groups.set(item.account, []);
+    groups.get(item.account).push({ item, idx });
+  });
+
+  el.innerHTML = `
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px 8px">
+      <strong>${fmtNum(d.total)}</strong> mail(s) trouvé(s)${d.truncated ? ` — les ${fmtNum(d.items.length)} plus récents sont affichés (affine avec les filtres)` : ''}.
+    </div>
+    ${[...groups.entries()].map(([account, rows]) => `
+      <div class="panel">
+        <div class="result-group-head">📧 ${esc(account)}
+          <span class="badge blue">${fmtNum(rows.length)}</span></div>
+        <div class="panel-body tight">
+          ${rows.map(({ item: i, idx }) => `
+            <div class="result-row ${i.isSeen ? '' : 'unread'}" data-idx="${idx}">
+              <span class="mail-date">${fmtDate(i.date)}</span>
+              <span class="result-from" title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</span>
+              <span class="result-subject">${esc(i.subject)}</span>
+              ${folderBadge(i)}
+              ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 La recherche lit uniquement l'index local. Ouvrir un mail le télécharge en direct depuis la
+      boîte ; les actions (corbeille, déplacer…) sont journalisées et le soft delete reste la règle.</div>`;
+
+  el.querySelectorAll('.result-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const item = searchState.data.items[Number(row.dataset.idx)];
+      if (item) openReader(item, row);
+    });
+  });
+}
+
+// --------------------------------------------------- Panneau de lecture (L3)
+function closeReader() {
+  document.querySelector('.reader-overlay')?.remove();
+  document.querySelector('.reader')?.remove();
+  document.querySelector('.result-row.selected')?.classList.remove('selected');
+}
+
+async function openReader(item, row) {
+  closeReader();
+  row?.classList.add('selected');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'reader-overlay';
+  overlay.addEventListener('click', closeReader);
+  const panel = document.createElement('div');
+  panel.className = 'reader';
+  panel.innerHTML = `
+    <div class="reader-head">
+      <h2>${esc(item.subject)}</h2>
+      <button class="modal-close" title="Fermer">✕</button>
+    </div>
+    <div class="reader-meta">
+      <div><strong>${esc(item.fromName || item.fromEmail)}</strong>
+        <span class="muted">${esc(item.fromEmail)}</span></div>
+      <div class="muted">${fmtDateTime(item.date)} · ${esc(item.account)} · dossier ${esc(item.folder)}
+        ${item.isSeen ? '' : ' · <span class="badge orange">non lu</span>'}</div>
+      <div class="muted" id="reader-to"></div>
+    </div>
+    <div class="reader-body" id="reader-body"><div class="empty"><span class="spinner"></span>
+      Téléchargement du mail depuis la boîte…</div></div>
+    <div class="reader-attachments hidden" id="reader-attachments"></div>
+    <div class="reader-actions" id="reader-actions">
+      <button class="btn btn-sm" id="reader-toggle-seen">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
+      <select id="reader-move"><option value="">📦 Déplacer vers…</option></select>
+      <button class="btn btn-sm" id="reader-delete" style="color:var(--red)">🗑️ Corbeille</button>
+      <span class="muted" style="font-size:11.5px; margin-left:auto">soft delete — récupérable ~30 j</span>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.appendChild(panel);
+  panel.querySelector('.modal-close').addEventListener('click', closeReader);
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      closeReader();
+      document.removeEventListener('keydown', onKey);
+    }
+  };
+  document.addEventListener('keydown', onKey);
+
+  // Corps du mail : lecture IMAP live. En cas d'échec (boîte injoignable),
+  // on l'explique proprement — les actions restent disponibles.
+  api.readMessage(item.account, item.folder, item.uid).then((body) => {
+    const el = $('#reader-body');
+    if (!el) return;
+    el.textContent = body.text || '(mail sans contenu texte)';
+    if (body.truncated) {
+      const note = document.createElement('div');
+      note.className = 'notice warn';
+      note.style.marginTop = '14px';
+      note.textContent = '✂️ Mail très long : seul le début est affiché ici. L\'original complet reste dans ta boîte.';
+      el.appendChild(note);
+    }
+    if (body.to) {
+      const to = $('#reader-to');
+      if (to) to.textContent = `À : ${body.to}`;
+    }
+    if (body.attachments?.length) {
+      const az = $('#reader-attachments');
+      if (az) {
+        az.classList.remove('hidden');
+        az.innerHTML = `<strong>📎 ${fmtNum(body.attachments.length)} pièce(s) jointe(s)</strong>
+          <span class="muted">(à ouvrir depuis Outlook)</span>
+          ${body.attachments.map((a) => `<div class="att">📄 ${esc(a.filename || 'sans nom')}
+            <span class="muted">${fmtSize(a.sizeBytes)}</span></div>`).join('')}`;
+      }
+    }
+    // Ouvrir un mail non lu le marque lu côté serveur (comportement IMAP
+    // standard du download) : on met l'affichage en cohérence.
+    if (!item.isSeen) markItemSeen(item, true);
+  }).catch((err) => {
+    const el = $('#reader-body');
+    if (!el) return;
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>
+      <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
+      injoignable ou mail déplacé). Les infos ci-dessus viennent de l'index local.</div>`;
+  });
+
+  // Liste des dossiers du compte pour l'action « Déplacer ».
+  api.folders(item.account).then(({ folders }) => {
+    const sel = $('#reader-move');
+    if (!sel) return;
+    for (const f of folders) {
+      if (f.path === item.folder) continue;
+      const opt = document.createElement('option');
+      opt.value = f.path;
+      opt.textContent = f.path;
+      sel.appendChild(opt);
+    }
+  }).catch(() => {});
+
+  const doAction = async (btn, action, destination) => {
+    btn.disabled = true;
+    try {
+      await api.messageAction(item.account, { folder: item.folder, uid: item.uid, action, destination });
+      return true;
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      return false;
+    }
+  };
+
+  $('#reader-toggle-seen').addEventListener('click', async (e) => {
+    const toSeen = !item.isSeen;
+    if (await doAction(e.target, toSeen ? 'seen' : 'unseen')) {
+      markItemSeen(item, toSeen);
+      e.target.disabled = false;
+      e.target.textContent = item.isSeen ? 'Marquer non lu' : 'Marquer lu';
+    }
+  });
+
+  $('#reader-move').addEventListener('change', async (e) => {
+    const destination = e.target.value;
+    if (!destination) return;
+    if (!confirm(`Déplacer ce mail vers « ${destination} » ?`)) {
+      e.target.value = '';
+      return;
+    }
+    if (await doAction(e.target, 'move', destination)) {
+      removeItemFromResults(item);
+      closeReader();
+    }
+  });
+
+  $('#reader-delete').addEventListener('click', async (e) => {
+    if (!confirm('Déplacer ce mail vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)')) return;
+    if (await doAction(e.target, 'delete')) {
+      removeItemFromResults(item);
+      closeReader();
+    }
+  });
+}
+
+// Met à jour l'état lu/non lu dans les résultats affichés (sans re-requêter).
+function markItemSeen(item, seen) {
+  item.isSeen = seen;
+  renderSearchResults();
+  const btn = $('#reader-toggle-seen');
+  if (btn) btn.textContent = seen ? 'Marquer non lu' : 'Marquer lu';
+}
+
+// Retire un mail supprimé/déplacé de la liste de résultats.
+function removeItemFromResults(item) {
+  const d = searchState.data;
+  if (!d) return;
+  const idx = d.items.indexOf(item);
+  if (idx >= 0) {
+    d.items.splice(idx, 1);
+    d.total = Math.max(0, d.total - 1);
+  }
+  renderSearchResults();
 }
 
 // ---------------------------------------------------------------- Journal

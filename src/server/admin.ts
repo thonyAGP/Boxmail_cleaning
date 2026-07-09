@@ -40,8 +40,10 @@ import {
   completeDeadline,
   restoreDeadline,
 } from '../services/deadlines.js';
+import { searchIndex, indexedMessage, reflectActionInIndex } from '../services/search.js';
+import { imapService } from '../services/imap.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
-import { readOperations } from '../services/oplog.js';
+import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
 
@@ -530,6 +532,141 @@ export function buildAdminRouter(): Router {
   router.post('/accounts/:slug/deadlines/:id/dismiss', deadlineAction(dismissDeadline));
   router.post('/accounts/:slug/deadlines/:id/done', deadlineAction(completeDeadline));
   router.post('/accounts/:slug/deadlines/:id/restore', deadlineAction(restoreDeadline));
+
+  // --- Recherche & lecture (L3) ---------------------------------------------------
+  // Recherche dans l'INDEX local (métadonnées uniquement — instantané, aucune
+  // connexion IMAP). Tous comptes si `account` absent.
+  router.get(
+    '/search',
+    guard(async (req, res) => {
+      const str = (k: string) => {
+        const v = String(req.query[k] ?? '').trim();
+        return v || undefined;
+      };
+      const date = (k: string) => {
+        const v = str(k);
+        if (!v) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const result = await searchIndex({
+        q: str('q'),
+        account: str('account'),
+        folder: str('folder'),
+        from: str('from'),
+        subject: str('subject'),
+        since: date('since'),
+        before: date('before'),
+        unseen: ['1', 'true'].includes(String(req.query.unseen ?? '')),
+        limit: Number.parseInt(String(req.query.limit ?? '100'), 10) || 100,
+      });
+      res.json(result);
+    }),
+  );
+
+  // Corps d'un mail : lecture IMAP live (texte + pièces jointes listées).
+  // Ça ne marche que là où la boîte est joignable (chez l'utilisateur) — en cas
+  // d'échec, l'erreur est renvoyée telle quelle et affichée proprement.
+  router.get(
+    '/accounts/:slug/messages/:folder/:uid',
+    guard(async (req, res) => {
+      const uid = Number.parseInt(String(req.params.uid), 10);
+      if (!Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'UID invalide.' });
+        return;
+      }
+      const folder = String(req.params.folder);
+      const rec = await resolveAccount(req.params.slug);
+      try {
+        const body = await imapService.readEmail(rec, folder, uid);
+        // Le FETCH du corps marque le mail \Seen côté serveur : l'index suit.
+        await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
+        res.json({ account: rec.account, folder, ...body });
+      } catch (err) {
+        res.status(502).json({
+          error:
+            `Lecture impossible depuis la boîte : ${(err as Error).message}. ` +
+            'Le mail existe peut-être encore — réessaie, ou ouvre-le dans Outlook.',
+        });
+      }
+    }),
+  );
+
+  // Action sur UN mail depuis le panneau de lecture : corbeille (soft delete),
+  // déplacement, lu/non lu. L'UID est revalidé contre l'index, tout est
+  // journalisé avec le sujet et la date exacts du mail.
+  router.post(
+    '/accounts/:slug/messages/actions',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.body?.uid ?? ''), 10);
+      const action = String(req.body?.action ?? '');
+      const destination = String(req.body?.destination ?? '').trim();
+      if (!folder || !Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "uid" requis.' });
+        return;
+      }
+      if (!['delete', 'move', 'seen', 'unseen'].includes(action)) {
+        res.status(400).json({ error: `Action inconnue : "${action}".` });
+        return;
+      }
+      if (action === 'move' && !destination) {
+        res.status(400).json({ error: 'Destination requise pour un déplacement.' });
+        return;
+      }
+      const meta = await indexedMessage(slug, folder, uid);
+      if (!meta) {
+        res.status(404).json({ error: 'Mail introuvable dans l\'index — resynchronise la boîte.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      const items = [{ subject: meta.subject, date: meta.date }];
+
+      let result: Record<string, unknown>;
+      if (action === 'delete') {
+        const r = await imapService.moveToTrash(rec, folder, [uid]);
+        await recordOperation({
+          account: rec.account,
+          tool: 'ui_delete_message',
+          folder,
+          params: { count: 1, destination: r.destination },
+          affectedUids: [uid],
+          items,
+          result: `soft-deleted 1 -> ${r.destination}`,
+        });
+        result = { deleted: r.moved, destination: r.destination };
+      } else if (action === 'move') {
+        const r = await imapService.moveEmails(rec, folder, [uid], destination);
+        await recordOperation({
+          account: rec.account,
+          tool: 'ui_move_message',
+          folder,
+          params: { count: 1, destination },
+          affectedUids: [uid],
+          items,
+          result: `moved ${r.moved} -> ${destination}`,
+        });
+        result = { moved: r.moved, destination };
+      } else {
+        const add = action === 'seen' ? ['\\Seen'] : [];
+        const remove = action === 'unseen' ? ['\\Seen'] : [];
+        const r = await imapService.markEmails(rec, folder, [uid], add, remove);
+        await recordOperation({
+          account: rec.account,
+          tool: 'ui_mark_message',
+          folder,
+          params: { count: 1, flag: action },
+          affectedUids: [uid],
+          items,
+          result: `flagged ${r.affected}`,
+        });
+        result = { affected: r.affected, flag: action };
+      }
+      await reflectActionInIndex(slug, folder, uid, action as 'delete' | 'move' | 'seen' | 'unseen');
+      res.json({ ok: true, action, ...result });
+    }),
+  );
 
   // --- Version & mise à jour -----------------------------------------------------
   router.get(

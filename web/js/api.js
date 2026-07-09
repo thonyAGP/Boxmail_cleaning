@@ -58,6 +58,25 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/deadlines/detect`, { deep, sinceDays }),
   deadlineAction: (slug, id, action) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/deadlines/${id}/${action}`),
+  search: (params) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, String(v));
+    }
+    return request('GET', `/search?${q}`);
+  },
+  readMessage: (slug, folder, uid) =>
+    request(
+      'GET',
+      `/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}`,
+    ),
+  messageAction: (slug, { folder, uid, action, destination }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/actions`, {
+      folder,
+      uid,
+      action,
+      destination,
+    }),
   version: () => request('GET', '/version'),
   updateCheck: () => request('GET', '/update/check'),
   updateApply: () => request('POST', '/update/apply'),

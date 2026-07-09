@@ -150,7 +150,17 @@ dashboard « Échéances à venir » (top 5 confirmées+proposées futures).
 
 ---
 
-## ⬜ L3 — Recherche & lecture de mails dans l'interface
+## ✅ L3 — Recherche & lecture de mails dans l'interface — LIVRÉ
+
+`services/search.ts` (recherche métadata dans l'index, multi-comptes,
+`reflectActionInIndex` pour tenir l'index à jour après action), API GET
+`/api/search` + GET `/api/accounts/:slug/messages/:folder/:uid` (corps via
+IMAP live, 502 propre si boîte injoignable, marque lu dans l'index) + POST
+`/api/accounts/:slug/messages/actions` (corbeille soft/déplacer/lu-non lu,
+UID revalidé contre l'index, journalisé avec sujet+date), écran `#/search`
+(barre + filtres repliables, résultats groupés par compte, panneau latéral
+de lecture avec actions). AUCUN LLM dans la boucle (décision : l'analyse de
+contenu par LLM viendra plus tard, via Sonnet — voir backlog).
 
 **Objectif.** Chercher dans TOUTES les boîtes depuis l'interface et lire un
 mail sans ouvrir Outlook.
@@ -251,6 +261,10 @@ l'utilisateur (interface), 24/7.
   privée, superviseur, AADSTS50011).
 - Désinscription newsletters assistée (V3 SPEC), règles de classement (Phase 7
   SPEC : suggest_mail_rules/preview/apply — gros morceau, planifier comme L7).
+- Analyse fine du CONTENU des mails par LLM (résumés, tri intelligent…) :
+  décision utilisateur (07/2026) — pas de lecture de mails par le LLM de la
+  session de dev (trop cher) ; à faire dans un 2e temps via un modèle Sonnet
+  dédié, appelé par le serveur.
 
 ---
 

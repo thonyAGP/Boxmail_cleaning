@@ -90,6 +90,27 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L3 livrée : Recherche & lecture dans l'interface.** `services/search.ts`
+(recherche métadata index-only multi-comptes : q = OR sujet/adresse/nom,
+filtres account/folder/from/subject/since/before/unseen, tri date desc,
+limite 500 ; `indexedMessage` revalide un UID + fournit sujet/date pour le
+journal ; `reflectActionInIndex` répercute delete/move/seen dans l'index sans
+attendre la sync). API : GET `/api/search`, GET `/api/accounts/:slug/messages/
+:folder/:uid` (corps via `imapService.readEmail` — 502 avec message clair si
+boîte injoignable ; marque lu dans l'index car le FETCH pose \Seen), POST
+`/api/accounts/:slug/messages/actions` (delete soft/move/seen/unseen sur UN
+mail, UID revalidé contre l'index, journal `ui_delete_message`/
+`ui_move_message`/`ui_mark_message` avec sujet+date). Écran `#/search` (lien
+sidebar 🔎) : barre + filtres repliables, résultats groupés par compte,
+panneau latéral `.reader` (corps texte scrollable, pièces jointes listées,
+note de troncature, actions corbeille/déplacer/lu-non lu avec confirm ;
+erreur IMAP affichée proprement, actions restent dispo). **DÉCISION
+UTILISATEUR (07/2026) : aucun LLM dans cette boucle** — pas de lecture ni
+d'analyse de contenu de mails par le LLM de la session de dev (trop cher) ;
+l'analyse fine par LLM viendra dans un 2e temps via un Sonnet dédié (backlog
+ROADMAP). Seed : scratchpad `seed-search.mts` (2 comptes, 7 mails, 13
+asserts) ; test du panneau de lecture via playwright `page.route` (mock JSON).
+
 **Phase 4 brique 4 (L2) livrée : Échéances.** Modèle `Deadline` + migration,
 `services/deadlines.ts` : parseur de dates FR maison (14 tests — tournures
 fortes conf 0.9, dates nues avec contexte typé conf 0.6, année implicite →
@@ -152,7 +173,7 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 ## PROCHAINE ÉTAPE
 
 **Suivre `docs/ROADMAP.md`** : plans d'implémentation détaillés de toutes les
-livraisons restantes (L2 Échéances → L3 Recherche → L4 Export contacts →
-L5 Briefs → L6 Déploiement Oracle/Cowork + backlog).
+livraisons restantes (L4 Export contacts → L5 Briefs → L6 Déploiement
+Oracle/Cowork + backlog).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.
