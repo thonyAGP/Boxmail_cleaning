@@ -12,6 +12,8 @@ export interface Job {
   kind: string;
   status: 'running' | 'done' | 'error';
   progress: string[];
+  /** Données structurées exposées par le job (ex. code device flow). */
+  meta: Record<string, unknown>;
   result: unknown;
   error: string | null;
   startedAt: string;
@@ -31,13 +33,17 @@ function gc(): void {
 
 export function startJob(
   kind: string,
-  run: (progress: (message: string) => void) => Promise<unknown>,
+  run: (
+    progress: (message: string) => void,
+    setMeta: (data: Record<string, unknown>) => void,
+  ) => Promise<unknown>,
 ): Job {
   const job: Job = {
     id: randomUUID(),
     kind,
     status: 'running',
     progress: [],
+    meta: {},
     result: null,
     error: null,
     startedAt: new Date().toISOString(),
@@ -46,10 +52,15 @@ export function startJob(
   jobs.set(job.id, job);
   gc();
 
-  void run((message) => {
-    job.progress.push(message);
-    if (job.progress.length > 200) job.progress.splice(0, job.progress.length - 200);
-  })
+  void run(
+    (message) => {
+      job.progress.push(message);
+      if (job.progress.length > 200) job.progress.splice(0, job.progress.length - 200);
+    },
+    (data) => {
+      Object.assign(job.meta, data);
+    },
+  )
     .then((result) => {
       job.status = 'done';
       job.result = result;

@@ -61,6 +61,12 @@ $('#logout-btn').addEventListener('click', async () => {
   showLogin();
 });
 
+$('#add-account-btn').addEventListener('click', openEnrollModal);
+
+// Compte dont la sync doit démarrer automatiquement à l'ouverture de sa vue
+// (après un enrôlement réussi).
+let pendingAutoSync = null;
+
 // ---------------------------------------------------------------- Sidebar
 async function refreshOverview() {
   overviewCache = await api.overview();
@@ -304,6 +310,12 @@ async function renderAccount(slug) {
 
   $('#sync-recent').addEventListener('click', () => runSync(slug, 'recent'));
   $('#sync-full').addEventListener('click', () => runSync(slug, 'full'));
+
+  // Sync automatique juste après un enrôlement réussi.
+  if (pendingAutoSync === slug) {
+    pendingAutoSync = null;
+    runSync(slug, 'full');
+  }
 
   const body = $('#account-body');
   let ov = null;
@@ -635,6 +647,102 @@ async function openCleanupModal(account, sender, senderName) {
         clearInterval(timer);
       }
     }, 1000);
+  });
+}
+
+// ---------------------------------------------------------------- Modale enrôlement
+function openEnrollModal() {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>＋ Ajouter une boîte mail</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body" id="modal-body">
+      <p>Donne un <strong>nom court</strong> à cette boîte (ex. <code>brimmo</code>,
+      <code>colocar</code>, <code>econom</code>) :</p>
+      <form id="enroll-form" style="display:flex; gap:10px; margin-top:12px">
+        <input type="text" id="enroll-name" placeholder="nom-de-la-boite" pattern="[A-Za-z0-9_-]{1,40}"
+          style="flex:1; border:1px solid var(--border); border-radius:8px; padding:9px 12px" required>
+        <button type="submit" class="btn btn-primary">Obtenir le code</button>
+      </form>
+      <p class="muted" style="margin-top:12px; font-size:12.5px">
+        Étape suivante : Microsoft affichera un code à saisir sur
+        <strong>microsoft.com/devicelogin</strong>, où tu te connecteras avec la boîte
+        Hotmail/Outlook <strong>à ajouter</strong> (pas ton compte principal, sauf si
+        c'est celui-là). Le mot de passe ne passe jamais par cette page.</p>
+      <div id="enroll-zone"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="enroll-cancel">Fermer</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  $('#enroll-cancel').addEventListener('click', closeModal);
+
+  $('#enroll-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('#enroll-name').value.trim();
+    const zone = $('#enroll-zone');
+    zone.innerHTML = `<div class="empty"><span class="spinner"></span>Demande du code à Microsoft…</div>`;
+    let jobId, replacing;
+    try {
+      ({ jobId, replacing } = await api.enroll(name));
+    } catch (err) {
+      zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      return;
+    }
+    $('#enroll-form').classList.add('hidden');
+
+    let codeShown = false;
+    const timer = setInterval(async () => {
+      let j;
+      try {
+        j = await api.job(jobId);
+      } catch {
+        clearInterval(timer);
+        return;
+      }
+      if (!codeShown && j.meta?.userCode) {
+        codeShown = true;
+        zone.innerHTML = `
+          ${replacing ? `<div class="notice warn">Ce nom existait déjà (${esc(replacing)}) — il sera remplacé.</div>` : ''}
+          <div class="device-box">
+            <div class="lbl">1. Ouvre cette page :</div>
+            <a class="device-link" href="${esc(j.meta.verificationUri)}" target="_blank" rel="noopener">${esc(j.meta.verificationUri)}</a>
+            <div class="lbl" style="margin-top:14px">2. Saisis ce code :</div>
+            <div class="device-code">${esc(j.meta.userCode)}</div>
+            <div class="lbl" style="margin-top:14px">3. Connecte-toi avec la boîte <strong>à ajouter</strong> et accepte.</div>
+          </div>
+          <div class="empty" style="padding:14px"><span class="spinner"></span>En attente de ta validation chez Microsoft…</div>`;
+      }
+      if (j.status !== 'running') {
+        clearInterval(timer);
+        if (j.status === 'done') {
+          const r = j.result ?? {};
+          zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
+            <strong>${esc(r.account ?? name)}</strong>.</div>`;
+          $('.modal-foot').innerHTML = `
+            <button class="btn" id="enroll-close">Fermer</button>
+            <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser cette boîte maintenant</button>`;
+          $('#enroll-close').addEventListener('click', async () => {
+            closeModal();
+            await refreshOverview();
+          });
+          $('#enroll-sync').addEventListener('click', async () => {
+            closeModal();
+            await refreshOverview();
+            pendingAutoSync = r.account ?? name;
+            location.hash = `#/account/${encodeURIComponent(r.account ?? name)}`;
+            if (location.hash === `#/account/${encodeURIComponent(r.account ?? name)}`) route();
+          });
+        } else {
+          zone.innerHTML = `<div class="notice warn">❌ Échec de l'enrôlement : ${esc(j.error ?? '')}<br>
+            <span class="muted" style="font-size:12px">Causes fréquentes : code expiré (15 min),
+            connexion refusée, ou mauvaise boîte utilisée. Tu peux réessayer.</span></div>`;
+          $('#enroll-form').classList.remove('hidden');
+        }
+      }
+    }, 1500);
   });
 }
 

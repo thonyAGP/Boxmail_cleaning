@@ -2,7 +2,13 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { listAccountNames, getAccountRecord, resolveAccount } from '../services/accounts.js';
+import {
+  listAccountNames,
+  getAccountRecord,
+  resolveAccount,
+  upsertAccount,
+} from '../services/accounts.js';
+import { enrollAccount } from '../services/oauth.js';
 import { globalOverview, mailboxOverview, senderStatsFromIndex, isFolderIndexed } from '../services/index-stats.js';
 import {
   getCleanupCandidates,
@@ -216,6 +222,44 @@ export function buildAdminRouter(): Router {
     '/accounts/:slug/cleanup',
     guard(async (req, res) => {
       res.json(await getCleanupCandidates(req.params.slug));
+    }),
+  );
+
+  // --- Enrôlement d'une nouvelle boîte (device code flow) -----------------------
+  // Le job expose le code Microsoft via job.meta ; l'utilisateur le saisit sur
+  // microsoft.com/devicelogin en se connectant avec la boîte à ajouter. Le
+  // refresh token est chiffré côté serveur — il ne transite jamais par la page.
+  router.post(
+    '/enroll',
+    guard(async (req, res) => {
+      const account = String(req.body?.account ?? '').trim();
+      if (!/^[a-z0-9_-]{1,40}$/i.test(account)) {
+        res.status(400).json({
+          error: 'Nom invalide : lettres, chiffres, tirets et underscores uniquement.',
+        });
+        return;
+      }
+      const kind = `enroll:${account}`;
+      if (hasRunningJob(kind)) {
+        res.status(409).json({ error: 'Un enrôlement est déjà en cours pour ce nom.' });
+        return;
+      }
+      const existing = await getAccountRecord(account);
+      const job = startJob(kind, async (progress, setMeta) => {
+        progress('Demande du code de connexion à Microsoft…');
+        const enrolled = await enrollAccount((info) => {
+          setMeta({
+            userCode: info.userCode,
+            verificationUri: info.verificationUri,
+            expiresInSeconds: info.expiresIn,
+          });
+          progress('Code généré — en attente de ta validation chez Microsoft…');
+        });
+        await upsertAccount(account, enrolled);
+        progress(`✅ ${enrolled.username} enrôlé sous le nom « ${account} ».`);
+        return { account, username: enrolled.username, replaced: Boolean(existing) };
+      });
+      res.json({ jobId: job.id, replacing: existing?.username ?? null });
     }),
   );
 

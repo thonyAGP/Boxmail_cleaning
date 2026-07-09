@@ -171,7 +171,15 @@ Après création :
 
 ## 5. Enrôlement d'un compte
 
-Se fait **en SSH sur le serveur**, jamais via Claude.
+Deux méthodes (jamais via Claude) :
+
+**A. Depuis l'interface web (recommandé)** : bouton **« ＋ Ajouter un compte »**
+dans la barre latérale → donner un nom court → la page affiche le lien
+`microsoft.com/devicelogin` et le code à saisir → se connecter avec la boîte
+à ajouter → sync proposée immédiatement. Le mot de passe et le token ne
+transitent jamais par la page (tout reste côté serveur, chiffré).
+
+**B. En ligne de commande (SSH)** :
 
 ```bash
 npm run enroll -- --account brimmo
@@ -376,8 +384,12 @@ expéditeur candidat → aperçu détaillé (nombre, taille, dates, derniers suj
 avec progression en direct. Soft delete uniquement (récupérable ~30 jours),
 chaque lot journalisé, index mis à jour immédiatement.
 
-> Prochaines passes : enrôlement d'une boîte depuis le navigateur,
-> recherche/lecture de mails, export contacts.
+L'**enrôlement d'une nouvelle boîte** se fait aussi depuis l'interface
+(« ＋ Ajouter un compte ») : le code Microsoft s'affiche dans la page,
+plus besoin de terminal.
+
+> Prochaines passes : recherche/lecture de mails, export contacts,
+> puis Phase 4 (intelligence : importants, réponses oubliées, échéances).
 
 ## Index local des mails (Phase 3 — SPEC V2)
 
