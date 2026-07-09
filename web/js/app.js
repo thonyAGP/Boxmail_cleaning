@@ -52,6 +52,22 @@ async function showApp() {
   refreshFollowupsBadge();
   refreshImportantBadge();
   refreshDeadlinesBadge();
+  refreshTasksBadge();
+}
+
+// Badge tâches : nombre à faire (rouge si au moins une en retard).
+async function refreshTasksBadge(data) {
+  try {
+    const d = data ?? (await api.tasks());
+    const el = $('#tasks-badge');
+    if (!el) return;
+    el.textContent = fmtNum(d.counts.todo);
+    el.classList.toggle('hidden', d.counts.todo === 0);
+    el.classList.toggle('red', d.counts.overdue > 0);
+    el.classList.toggle('orange', d.counts.overdue === 0);
+  } catch {
+    /* pas de badge */
+  }
 }
 
 // Badge « importance haute » (score ≥ 70) sur le lien ⭐ Mails importants.
@@ -270,6 +286,8 @@ function highlightNav() {
     document.querySelector('[data-nav="deadlines"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
+  } else if (hash.startsWith('#/tasks')) {
+    document.querySelector('[data-nav="tasks"]')?.classList.add('active');
   } else {
     document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
   }
@@ -297,6 +315,8 @@ function route() {
     renderDeadlines();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
+  } else if (hash.startsWith('#/tasks')) {
+    renderTasks();
   } else {
     renderDashboard();
   }
@@ -444,6 +464,9 @@ async function renderDashboard() {
         <div class="panel-head"><h2>📅 Échéances à venir</h2>
           <a class="btn btn-sm" href="#/deadlines">Voir tout</a></div>
         <div class="panel-body" id="dash-deadlines"><span class="spinner"></span></div>
+        <div class="panel-head"><h2>☑️ Tâches à faire</h2>
+          <a class="btn btn-sm" href="#/tasks">Voir tout</a></div>
+        <div class="panel-body" id="dash-tasks"><span class="spinner"></span></div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Activité récente</h2>
@@ -557,6 +580,27 @@ async function renderDashboard() {
   }).catch(() => {
     const el = $('#dash-deadlines');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
+  });
+
+  // Tâches à faire (top 5, échéances proches en tête).
+  api.tasks().then((d) => {
+    refreshTasksBadge(d);
+    const el = $('#dash-tasks');
+    if (!el) return;
+    const top = d.items.filter((i) => i.status === 'todo').slice(0, 5);
+    el.innerHTML = top.length
+      ? top.map((t) => `<div class="op-line">
+          <span style="flex:1">${esc(t.title)}
+            ${t.account ? `<span class="muted" style="font-size:12px">· ${esc(t.account)}</span>` : ''}</span>
+          ${t.dueDate ? `<span class="badge ${t.overdue ? 'red' : t.inDays <= 3 ? 'orange' : 'gray'}">${deadlineCountdown(t.inDays)}</span>` : ''}
+        </div>`).join('') +
+        (d.counts.todo > 5
+          ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.todo - 5)} autre(s) — <a href="#/tasks">voir tout</a>.</div>`
+          : '')
+      : '<div class="empty">Aucune tâche — ajoute-les depuis un mail ouvert ou une échéance.</div>';
+  }).catch(() => {
+    const el = $('#dash-tasks');
+    if (el) el.innerHTML = '<div class="empty">Tâches indisponibles.</div>';
   });
 
   bindCleanupButtons(body);
@@ -674,6 +718,7 @@ function renderBrief(b) {
     chip('↩️', b.replies.overdue, 'réponses en retard', '#/replies', b.replies.overdue ? 'hot' : ''),
     chip('⏰', b.followups.overdue, 'relances à faire', '#/followups', b.followups.overdue ? 'hot' : ''),
     chip('📅', b.deadlines.upcoming, 'échéances < 14 j', '#/deadlines', b.deadlines.toValidate ? 'hot' : ''),
+    ...(b.tasks ? [chip('☑️', b.tasks.todo, 'tâches à faire', '#/tasks', b.tasks.overdue ? 'hot' : '')] : []),
     chip('🧹', b.cleanup.deletableEstimate, 'mails supprimables', ''),
   ].join('');
 
@@ -917,6 +962,24 @@ function opLine(op) {
     case 'ui_send_mail':
       title = `✉️ Mail envoyé — <strong>${esc(p.subject ?? '')}</strong> à ${esc(((p.to ?? [])).join(', '))}` +
         (p.mode === 'reply' ? ' <span class="muted">(réponse)</span>' : p.mode === 'forward' ? ' <span class="muted">(transfert)</span>' : '');
+      break;
+    case 'propose_deadline':
+      title = `📅 Échéance proposée depuis un mail ouvert`;
+      break;
+    case 'create_task':
+      title = `☑️ Tâche créée`;
+      break;
+    case 'task_from_deadline':
+      title = `☑️ Tâche créée depuis une échéance`;
+      break;
+    case 'complete_task':
+      title = `☑️ Tâche terminée`;
+      break;
+    case 'dismiss_task':
+      title = `☑️ Tâche ignorée`;
+      break;
+    case 'reopen_task':
+      title = `☑️ Tâche remise à faire`;
       break;
     case 'move_emails':
       title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
@@ -2229,7 +2292,10 @@ function renderDeadlinesBody() {
   };
   body.querySelectorAll('[data-dl-action]').forEach((btn) => {
     btn.addEventListener('click', () =>
-      act(btn, () => api.deadlineAction(btn.dataset.account, Number(btn.dataset.id), btn.dataset.dlAction)),
+      act(btn, async () => {
+        await api.deadlineAction(btn.dataset.account, Number(btn.dataset.id), btn.dataset.dlAction);
+        if (btn.dataset.dlAction === 'task') refreshTasksBadge();
+      }),
     );
   });
 }
@@ -2245,6 +2311,7 @@ function deadlineRow(x, idx) {
       <button class="btn btn-sm" ${ident} data-dl-action="dismiss" title="Fausse détection ou sans importance">✕ Ignorer</button>`;
   } else if (x.status === 'confirmed') {
     actions = `<button class="btn btn-sm btn-green" ${ident} data-dl-action="done">✓ Fait</button>
+      <button class="btn btn-sm" ${ident} data-dl-action="task" title="Ajouter à ta liste de tâches">☑️ → tâche</button>
       <button class="btn btn-sm" ${ident} data-dl-action="dismiss">✕ Ignorer</button>`;
   } else {
     actions = `<button class="btn btn-sm" ${ident} data-dl-action="restore">↩︎ Rétablir</button>`;
@@ -2271,6 +2338,192 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ---------------------------------------------------------------- Tâches (L5.5)
+const tasksState = { tab: 'todo', data: null };
+
+async function renderTasks() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>☑️ Tâches</h1>
+      <div class="sub">Ta liste à faire : ajoutée à la main, depuis un mail (panneau de lecture)
+      ou depuis une échéance. Rien ici ne touche aux mails.</div></div>
+    <div class="head-actions">
+      <button class="btn" id="tasks-refresh">↻ Actualiser</button>
+      <button class="btn btn-primary" id="tasks-new">＋ Nouvelle tâche</button>
+    </div></div>
+    <div id="tasks-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  $('#tasks-refresh').addEventListener('click', loadTasks);
+  $('#tasks-new').addEventListener('click', () => openTaskModal({}));
+  await loadTasks();
+}
+
+async function loadTasks() {
+  const body = $('#tasks-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
+  try {
+    tasksState.data = await api.tasks();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  refreshTasksBadge(tasksState.data);
+  renderTasksBody();
+}
+
+function renderTasksBody() {
+  const body = $('#tasks-body');
+  const d = tasksState.data;
+  if (!body || !d) return;
+  const tabs = [
+    { key: 'todo', label: 'À faire', n: d.counts.todo },
+    { key: 'done', label: 'Terminées', n: d.counts.done },
+    { key: 'dismissed', label: 'Ignorées', n: d.counts.dismissed },
+  ];
+  const items = d.items.filter((i) => i.status === tasksState.tab);
+  const emptyMessages = {
+    todo: 'Rien à faire ! Ajoute une tâche avec « ＋ Nouvelle tâche », depuis un mail ouvert, ou depuis une échéance.',
+    done: 'Aucune tâche terminée pour l\'instant.',
+    dismissed: 'Aucune tâche ignorée.',
+  };
+
+  body.innerHTML = `
+    <div class="tabs">${tabs
+      .map(
+        (t) => `<button class="tab ${tasksState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
+        ${t.label} <span class="badge ${t.key === 'todo' && d.counts.overdue > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+      )
+      .join('')}</div>
+    <div class="panel"><div class="panel-body tight">
+      ${items.length === 0
+        ? `<div class="empty">${emptyMessages[tasksState.tab]}</div>`
+        : items.map(taskRow).join('')}
+    </div></div>`;
+
+  body.querySelectorAll('.tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tasksState.tab = btn.dataset.tab;
+      renderTasksBody();
+    });
+  });
+
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadTasks();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  };
+  body.querySelectorAll('[data-task-action]').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.taskAction(Number(btn.dataset.id), btn.dataset.taskAction)),
+    );
+  });
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const t = items[Number(el.dataset.open)];
+      openReaderFor(
+        { account: t.account, folder: t.folder, uid: t.uid, subject: t.subject ?? t.title,
+          fromName: t.fromName, fromEmail: t.fromEmail ?? '', date: t.dueDate, isSeen: true },
+        { onRemoved: () => loadTasks() },
+      );
+    });
+  });
+}
+
+const TASK_SOURCE_LABELS = {
+  manual: '',
+  mail: '<span class="badge gray">✉️ depuis un mail</span>',
+  deadline: '<span class="badge gray">📅 depuis une échéance</span>',
+};
+
+function taskRow(t, idx) {
+  const canOpen = t.uid != null && t.folder && t.account;
+  const due =
+    t.dueDate === null
+      ? ''
+      : t.overdue
+        ? `<span class="badge red">⏰ en retard — ${deadlineCountdown(t.inDays)}</span>`
+        : `<span class="badge ${t.inDays <= 3 ? 'orange' : 'gray'}">${deadlineCountdown(t.inDays)}</span>`;
+  const actions =
+    t.status === 'todo'
+      ? `<button class="btn btn-sm btn-green" data-task-action="done" data-id="${t.id}">✓ Fait</button>
+         <button class="btn btn-sm" data-task-action="dismiss" data-id="${t.id}" title="Retirer sans marquer fait">✕ Ignorer</button>`
+      : `<button class="btn btn-sm" data-task-action="reopen" data-id="${t.id}">↩︎ Remettre à faire</button>`;
+  return `<div class="reply-row">
+    <div class="reply-main">
+      <div class="reply-top">
+        <strong class="${canOpen ? 'openable' : ''}" ${canOpen ? `data-open="${idx}" title="Ouvrir le mail d'origine"` : ''}>${esc(t.title)}</strong>
+        ${t.dueDate ? `<span class="muted" style="font-size:12px">pour le ${fmtDate(t.dueDate)}</span>` : ''}
+        ${t.account ? `<span class="badge blue">${esc(t.account)}</span>` : ''}
+        ${TASK_SOURCE_LABELS[t.source] ?? ''}
+      </div>
+      ${t.fromName || t.fromEmail ? `<div class="reply-reason muted">mail de ${esc(t.fromName || t.fromEmail)}</div>` : ''}
+      ${t.notes ? `<div class="reply-reason muted">${esc(t.notes)}</div>` : ''}
+    </div>
+    <div class="reply-side">
+      ${t.status === 'done' ? `<span class="badge green">✓ faite le ${fmtDate(t.doneAt)}</span>` : due}
+      <div class="reply-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+
+// Modale de création (utilisée par l'écran, le panneau de lecture et les échéances).
+function openTaskModal({ title = '', dueDate = '', account = null, messageRef = null, notes = '' }) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>☑️ Nouvelle tâche</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="compose-grid">
+        <label>Titre</label><input type="text" id="t-title" maxlength="300" value="${esc(title)}" placeholder="Ce qu'il y a à faire">
+        <label>Pour le</label><input type="date" id="t-due" value="${esc(dueDate)}">
+        <label>Notes</label><input type="text" id="t-notes" maxlength="2000" value="${esc(notes)}" placeholder="optionnel">
+      </div>
+      ${messageRef ? '<p class="muted" style="margin-top:10px; font-size:12.5px">📎 La tâche gardera un lien vers le mail ouvert.</p>' : ''}
+      <div id="t-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="t-cancel">Annuler</button>
+      <button class="btn btn-primary" id="t-save">Créer la tâche</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  $('#t-cancel').addEventListener('click', closeModal);
+  $('#t-title').focus();
+
+  $('#t-save').addEventListener('click', async () => {
+    const titleVal = $('#t-title').value.trim();
+    if (!titleVal) {
+      $('#t-error').innerHTML = '<div class="notice warn" style="margin-top:10px">Le titre est requis.</div>';
+      return;
+    }
+    const btn = $('#t-save');
+    btn.disabled = true;
+    try {
+      await api.taskCreate({
+        title: titleVal,
+        notes: $('#t-notes').value.trim() || undefined,
+        dueDate: $('#t-due').value || undefined,
+        account: account ?? undefined,
+        messageRef: messageRef ?? undefined,
+      });
+      closeModal();
+      refreshTasksBadge();
+      if ((location.hash || '').startsWith('#/tasks')) loadTasks();
+    } catch (err) {
+      btn.disabled = false;
+      $('#t-error').innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
+    }
+  });
 }
 
 // ------------------------------------------- Boîte de réception navigable (L5.2)
@@ -2723,6 +2976,7 @@ async function openReader(item, row, opts = {}) {
     <div class="reader-actions" id="reader-actions">
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
+      <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
       <button class="btn btn-sm" id="reader-toggle-seen">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
       <select id="reader-move"><option value="">📦 Déplacer vers…</option></select>
       <button class="btn btn-sm" id="reader-delete" style="color:var(--red)">🗑️ Corbeille</button>
@@ -2863,6 +3117,13 @@ async function openReader(item, row, opts = {}) {
       subject: /^re\s*:/i.test(item.subject) ? item.subject : `Re: ${item.subject}`,
       text: `\n\nLe ${fmtDateTime(item.date)}, ${item.fromName || item.fromEmail} a écrit :\n${quoted()}`,
       replyRef: { folder: item.folder, uid: item.uid, mode: 'reply' },
+    });
+  });
+  $('#reader-task')?.addEventListener('click', () => {
+    openTaskModal({
+      title: item.subject,
+      account: item.account,
+      messageRef: { folder: item.folder, uid: item.uid },
     });
   });
   $('#reader-forward')?.addEventListener('click', () => {

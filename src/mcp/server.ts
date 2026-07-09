@@ -8,6 +8,7 @@ import { registerSyncTools } from './tools/sync.js';
 import { registerDeadlineTools } from './tools/deadlines.js';
 import { registerAttentionTools } from './tools/attention.js';
 import { registerBriefTools } from './tools/brief.js';
+import { registerTaskTools } from './tools/tasks.js';
 
 /**
  * Construit une instance McpServer avec tous les tools enregistrés.
@@ -41,6 +42,7 @@ export function buildMcpServer(): McpServer {
   registerDeadlineTools(server);
   registerAttentionTools(server);
   registerBriefTools(server);
+  registerTaskTools(server);
 
   return server;
 }

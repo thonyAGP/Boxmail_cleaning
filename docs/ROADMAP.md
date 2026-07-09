@@ -251,26 +251,27 @@ d'origine), les 4 panneaux du dashboard et les sections du brief.
 null s'il a disparu) ; les résumés du brief portent folder/uid. Actions du
 panneau (corbeille/déplacer/lu) rafraîchissent l'écran appelant.
 
-### ⬜ L5.2 — Boîte de réception navigable
+### ✅ L5.2 — Boîte de réception navigable — LIVRÉ
 
-Parcourir n'importe quel dossier depuis l'interface (l'équivalent de la liste
-« Boîte de réception » de la maquette) : API GET
-`/api/accounts/:slug/messages?folder&offset&limit&unseen` (INDEX only, tri
-date desc, total pour pagination) ; écran `#/inbox/<slug>` (ou onglet dans la
-vue compte) : liste paginée 50/page, filtres non-lus/dossier, clic → panneau
-de lecture existant, lien depuis la sidebar et les compteurs du dashboard.
-Prévoir la sélection multiple → actions en masse (corbeille/déplacer/lu) via
-un POST bulk journalisé (réutiliser lots de 200 + garde-fous cleanup).
+`listFolderMessages` (index only, offset/limit/total, filtre non-lus) +
+`validateUids`/`reflectBulkInIndex` ; API GET `/api/accounts/:slug/messages`
+(409 si dossier non indexé) + POST `.../messages/bulk` (corbeille soft /
+déplacer / lu / non-lu, lots de 200, journal `ui_bulk_*` avec liste exacte) ;
+écran `#/inbox[/slug]` (sélecteurs boîte+dossier, filtre non-lus, pagination
+50/page, clic sujet → lecture, sélection multiple + barre d'actions avec
+confirmations), lien sidebar 📥 + bouton « Parcourir » dans la vue compte.
 
-### ⬜ L5.3 — Répondre / transférer / nouveau mail
+### ✅ L5.3 — Répondre / transférer / nouveau mail — LIVRÉ
 
-`services/smtp.ts` existe (XOAUTH2) mais ENABLE_SMTP_SEND=false. Livraison :
-composer depuis le panneau de lecture (Répondre / Transférer) et bouton
-« Nouveau mail » ; API POST `/api/accounts/:slug/send` (garde-fous : aperçu
-avant envoi, confirmation explicite, journal `ui_send_mail` avec destinataires
-+ sujet, jamais d'envoi automatique) ; en-têtes In-Reply-To/References pour
-rester dans le fil ; copie dans Éléments envoyés (IMAP APPEND) + reflet index.
-Après envoi : proposer « marquer la réponse/relance traitée ».
+`smtp.ts` réécrit : message RFC822 composé une fois (MailComposer, headers
+In-Reply-To/References), `validateRecipients`, ENABLE_SMTP_SEND **true par
+défaut** (mais confirmation + journal à chaque envoi, jamais d'auto) ;
+`imapService.appendToSent` (copie Éléments envoyés — Outlook ne le fait pas
+pour SMTP) ; API POST `/api/accounts/:slug/send` (fil relié via Message-ID de
+l'index, original marqué \Answered IMAP+index en cas de réponse, journal
+`ui_send_mail`) ; UI : ↩️ Répondre / ➡️ Transférer dans le panneau de lecture
+(citation, Re:/Fwd:), modale À/Cc/Objet/texte, ✉️ Nouveau mail (inbox),
+`/api/me` expose `smtpEnabled`.
 
 ### ⬜ L5.4 — Analyse du mail dans le panneau de lecture
 
@@ -281,12 +282,17 @@ attendue ?, relance suggérée ?, échéance détectée dans le corps affiché
 (reporter/ignorer/confirmer l'échéance). API GET
 `/api/accounts/:slug/messages/:folder/:uid/analysis`.
 
-### ⬜ L5.5 — Tâches
+### ✅ L5.5 — Tâches — LIVRÉ
 
-Modèle `Task` (title, dueDate?, accountSlug?, messageId?, status todo/done/
-dismissed, source manual/mail/deadline) ; créer une tâche depuis un mail
-(panneau de lecture) ou une échéance ; écran `#/tasks` (À faire / Terminées),
-badge sidebar, panneau dashboard, intégration au brief. 2-3 tools MCP.
+Modèle `Task` + migration (références souples message/deadline, contexte
+dénormalisé) ; `services/tasks.ts` (list/create/complete/dismiss/reopen +
+`taskFromDeadline` idempotent, tout journalisé) ; 4 tools MCP (list_tasks /
+create_task / complete_task / dismiss_task — 38 au total) ; API `/api/tasks`
+CRUD + POST `/api/accounts/:slug/deadlines/:id/task` ; écran `#/tasks`
+(onglets À faire/Terminées/Ignorées, titre cliquable → mail d'origine,
+modale ＋ Nouvelle tâche), badge sidebar (rouge si retard), panneau
+dashboard, bouton ☑️ Tâche dans le panneau de lecture, « ☑️ → tâche » sur
+les échéances confirmées, rubrique tasks du brief (chip cliquable).
 
 ### Ensuite (déjà au backlog, ordre à décider avec l'utilisateur)
 

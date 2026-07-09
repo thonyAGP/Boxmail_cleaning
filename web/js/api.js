@@ -53,6 +53,9 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),
   enrollStart: (account) => request('POST', '/enroll/start', { account }),
+  tasks: () => request('GET', '/tasks'),
+  taskCreate: (payload) => request('POST', '/tasks', payload),
+  taskAction: (id, action) => request('POST', `/tasks/${id}/${action}`),
   deadlines: () => request('GET', '/attention/deadlines'),
   deadlinesDetect: (slug, deep = false, sinceDays = 30) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/deadlines/detect`, { deep, sinceDays }),

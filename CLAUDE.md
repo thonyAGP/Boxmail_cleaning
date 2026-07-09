@@ -38,8 +38,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 34 tools MCP (accounts, folders, read, write, sync, export,
-  attention : réponses/relances/importance, échéances, briefs)
+- `mcp/tools/*` — 38 tools MCP (accounts, folders, read, write, sync, export,
+  attention : réponses/relances/importance, échéances, briefs, tâches)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -56,7 +56,10 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
     device code + auth code PKCE `prompt=select_account`), `jobs.ts` (tâches
     asynchrones + meta), `oplog.ts` (journal JSONL avec items sujet+date),
     `index-stats.ts`, `update.ts` (version/check/apply, BOXMAIL_SUPERVISED),
-    `brief.ts` (agrégat brief quotidien/hebdo, archivé dans BriefRun)
+    `brief.ts` (agrégat brief quotidien/hebdo, archivé dans BriefRun),
+    `tasks.ts` (liste à faire, sources manual/mail/deadline),
+    `smtp.ts` (envoi XOAUTH2 ACTIF par défaut : RFC822 composé une fois,
+    In-Reply-To/References, copie Envoyés via imapService.appendToSent)
 - `prisma/schema.prisma` — Account, Folder, Message, Thread, Sender (SQLite,
   `connection_limit=1` forcé dans `db/client.ts`)
 - `web/` — SPA vanilla (AUCUN framework/build) : `js/app.js` (routing hash,
@@ -90,6 +93,35 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**Rattrapage maquette TERMINÉ (L5.1 → L5.5, même session).**
+- **L5.2 Boîte de réception navigable** : `listFolderMessages` (index only,
+  pagination offset/limit + total, filtre non-lus), `validateUids` +
+  `reflectBulkInIndex` ; GET `/api/accounts/:slug/messages`, POST
+  `.../messages/bulk` (corbeille/déplacer/lu/non-lu, lots de 200, journal
+  `ui_bulk_*`) ; écran `#/inbox[/slug]` (sélecteurs boîte+dossier, 50/page,
+  clic → lecture, sélection multiple + barre d'actions), lien sidebar 📥.
+- **L5.3 Envoi** : `smtp.ts` réécrit (MailComposer → RFC822 unique, headers de
+  fil, `validateRecipients`), ENABLE_SMTP_SEND **true par défaut**,
+  `appendToSent` (copie Envoyés), POST `/api/accounts/:slug/send` (original
+  marqué \\Answered IMAP+index si réponse, journal `ui_send_mail`), boutons
+  ↩️ Répondre / ➡️ Transférer dans le panneau (citation, Re:/Fwd:), modale de
+  composition, ✉️ Nouveau mail (inbox), `/api/me` → `smtpEnabled`.
+- **L5.4 Analyse du mail ouvert** : POST `.../messages/analysis` (importance
+  + raisons, état du fil, échéances connues + dates extraites du sujet ET du
+  corps fourni par le client — zéro IMAP en plus, zéro LLM), `proposeDeadline`
+  + POST `.../messages/propose-deadline` (idempotent) ; section « 🤖 Analyse
+  Mail Assistant » dans le panneau (bouton ➕ Proposer par date).
+- **L5.5 Tâches** : modèle `Task` + migration, `services/tasks.ts`
+  (list/create/complete/dismiss/reopen, `taskFromDeadline` idempotent), 4
+  tools MCP (38 au total), API `/api/tasks` + `/deadlines/:id/task`, écran
+  `#/tasks` (3 onglets, titre → mail d'origine, modale ＋), badge sidebar
+  (rouge si retard), panneau dashboard, ☑️ Tâche dans le panneau de lecture,
+  « ☑️ → tâche » sur échéance confirmée, rubrique `tasks` du brief (chip).
+- Tests par livraison : scripts service (`test-inbox/send/tasks.mts`) +
+  parcours playwright (`shot-inbox/compose/analysis/tasks.mjs`), corps IMAP
+  et envoi SMTP mockés via `page.route`. Un bug UX réel trouvé et corrigé
+  (panneau de lecture restait ouvert après envoi).
 
 **L5.1 livrée : Lire les mails PARTOUT (début du rattrapage maquette).**
 L'utilisateur a fourni une maquette cible et acté : combler les trous
@@ -220,9 +252,12 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Suivre `docs/ROADMAP.md`, section « Rattrapage maquette »** : L5.2 boîte de
-réception navigable → L5.3 répondre/transférer/nouveau mail → L5.4 analyse du
-mail ouvert → L5.5 tâches. La L6 (déploiement Oracle + Cowork) vient APRÈS le
-rattrapage (décision utilisateur 07/2026).
+**Le rattrapage maquette est terminé (L5.1 → L5.5). Prochaine grande étape :
+L6 — déploiement Oracle Cloud + connecteur Cowork** (voir ROADMAP ; nécessite
+l'utilisateur pour SSH/DNS/Entra). Reste aussi au backlog : calendrier des
+échéances (vue mois), règles de classement (L7), renommer/supprimer un compte
+depuis l'interface, page Aide. IMPORTANT avant L6 : l'utilisateur doit valider
+en réel (sur son PC) la lecture des mails, les actions en masse et l'ENVOI
+(testé uniquement mocké — pas d'IMAP/SMTP dans l'environnement de dev).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.

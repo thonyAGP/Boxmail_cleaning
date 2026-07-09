@@ -5,6 +5,7 @@ import { getFollowupsDue } from './followups.js';
 import { getImportantEmails, type ImportantItem } from './importance.js';
 import { listDeadlines, type DeadlineItem } from './deadlines.js';
 import { getCleanupCandidates } from './cleanup.js';
+import { listTasks, type TaskItem } from './tasks.js';
 import { logger } from '../logger.js';
 
 /**
@@ -51,6 +52,8 @@ export interface Brief {
   replies: { overdue: number; top: OverdueSummary[] };
   followups: { overdue: number; top: FollowupSummary[] };
   deadlines: { upcoming: number; toValidate: number; items: DeadlineItem[] };
+  /** Tâches à faire (L5.5) — absent des briefs archivés avant cette version. */
+  tasks: { todo: number; overdue: number; top: TaskItem[] };
   cleanup: { deletableEstimate: number; topSenders: CleanupSummary[] };
   /** Comptes ignorés (non indexés…) avec la raison — le brief reste utilisable. */
   skippedAccounts: { account: string; error: string }[];
@@ -272,6 +275,19 @@ export async function generateBrief(opts: GenerateBriefOptions = {}): Promise<Br
     }
   }
 
+  // Tâches (globales, pas par compte).
+  let tasks: Brief['tasks'] = { todo: 0, overdue: 0, top: [] };
+  try {
+    const t = await listTasks({ limit: 200 });
+    tasks = {
+      todo: t.counts.todo,
+      overdue: t.counts.overdue,
+      top: t.items.filter((i) => i.status === 'todo').slice(0, topLimit),
+    };
+  } catch (err) {
+    logger.warn('brief : tâches indisponibles', { error: (err as Error).message });
+  }
+
   importantAll.sort((a, b) => b.score - a.score);
   repliesTop.sort((a, b) => b.waitingHours - a.waitingHours);
   followupsTop.sort((a, b) => b.waitingHours - a.waitingHours);
@@ -301,6 +317,7 @@ export async function generateBrief(opts: GenerateBriefOptions = {}): Promise<Br
       toValidate: deadlinesAll.filter((d) => d.status === 'proposed').length,
       items: deadlinesAll.slice(0, Math.max(topLimit, 10)),
     },
+    tasks,
     cleanup: { deletableEstimate, topSenders: cleanupTop.slice(0, topLimit) },
     skippedAccounts,
   };

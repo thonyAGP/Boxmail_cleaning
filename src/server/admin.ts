@@ -54,6 +54,14 @@ import {
   reflectBulkInIndex,
 } from '../services/search.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
+import {
+  listTasks,
+  createTask,
+  completeTask,
+  dismissTask,
+  reopenTask,
+  taskFromDeadline,
+} from '../services/tasks.js';
 import { imapService } from '../services/imap.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
@@ -547,6 +555,64 @@ export function buildAdminRouter(): Router {
   router.post('/accounts/:slug/deadlines/:id/dismiss', deadlineAction(dismissDeadline));
   router.post('/accounts/:slug/deadlines/:id/done', deadlineAction(completeDeadline));
   router.post('/accounts/:slug/deadlines/:id/restore', deadlineAction(restoreDeadline));
+  // Transforme une échéance en tâche (idempotent : réutilise la tâche existante).
+  router.post('/accounts/:slug/deadlines/:id/task', deadlineAction(taskFromDeadline));
+
+  // --- Tâches (L5.5) ---------------------------------------------------------------
+  router.get(
+    '/tasks',
+    guard(async (_req, res) => {
+      res.json(await listTasks());
+    }),
+  );
+
+  router.post(
+    '/tasks',
+    guard(async (req, res) => {
+      const title = String(req.body?.title ?? '').trim();
+      if (!title) {
+        res.status(400).json({ error: 'Le titre est requis.' });
+        return;
+      }
+      let dueDate: Date | null = null;
+      if (req.body?.dueDate) {
+        dueDate = new Date(String(req.body.dueDate));
+        if (Number.isNaN(dueDate.getTime())) {
+          res.status(400).json({ error: 'Date invalide.' });
+          return;
+        }
+      }
+      const ref = req.body?.messageRef as { folder?: unknown; uid?: unknown } | undefined;
+      const messageRef =
+        ref && typeof ref.folder === 'string' && Number.isInteger(ref.uid)
+          ? { folder: ref.folder, uid: ref.uid as number }
+          : null;
+      res.json(
+        await createTask({
+          title,
+          notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
+          dueDate,
+          account: typeof req.body?.account === 'string' ? req.body.account : null,
+          messageRef,
+        }),
+      );
+    }),
+  );
+
+  const taskAction =
+    (fn: (id: number) => Promise<unknown>) =>
+    guard(async (req: Request, res: Response) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      res.json(await fn(id));
+    });
+
+  router.post('/tasks/:id/done', taskAction(completeTask));
+  router.post('/tasks/:id/dismiss', taskAction(dismissTask));
+  router.post('/tasks/:id/reopen', taskAction(reopenTask));
 
   // --- Brief quotidien / revue hebdo (L5) -----------------------------------------
   // GET = dernier brief enregistré (aucun calcul — null si jamais généré).

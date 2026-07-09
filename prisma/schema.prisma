@@ -165,6 +165,33 @@ model Deadline {
   @@index([accountSlug, status, date])
 }
 
+// Tâche (L5.5) : créée à la main, depuis un mail ou depuis une échéance.
+// Références souples (pas de FK Message/Deadline : l'index est reconstructible,
+// la tâche doit survivre) ; contexte dénormalisé pour l'affichage.
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  notes       String?
+  dueDate     DateTime?
+  // todo | done | dismissed
+  status      String    @default("todo")
+  // manual | mail | deadline
+  source      String    @default("manual")
+  accountSlug String?
+  messageId   Int?
+  deadlineId  Int?
+  subject     String?
+  fromEmail   String?
+  fromName    String?
+  folder      String?
+  uid         Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  doneAt      DateTime?
+
+  @@index([status, dueDate])
+}
+
 // Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké
 // tel quel : il sert d'historique et de référence « nouveaux mails depuis le
 // dernier brief ». Global (tous comptes), pas de relation Account.
