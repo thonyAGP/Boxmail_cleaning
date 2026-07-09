@@ -83,11 +83,21 @@ function runStep(command: string, progress: (m: string) => void): Promise<void> 
 export async function applyUpdate(progress: (m: string) => void): Promise<{ restarted: boolean }> {
   const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
   await runStep(`git pull --ff-only origin ${branch}`, progress);
-  await runStep('npm install --no-audit --no-fund', progress);
-  await runStep('npm run db:setup', progress);
-  await runStep('npm run build', progress);
+
+  if (process.platform === 'win32') {
+    // Windows verrouille les fichiers natifs (.dll/.node) chargés par le
+    // processus : `prisma generate` échouerait (EPERM) tant que le serveur
+    // tourne. On délègue install + db:setup + build à start-boxmail.bat,
+    // qui les exécute après l'arrêt du serveur, juste avant de le relancer.
+    progress('Code récupéré — installation et compilation au redémarrage (start-boxmail.bat)…');
+  } else {
+    await runStep('npm install --no-audit --no-fund', progress);
+    await runStep('npm run db:setup', progress);
+    await runStep('npm run build', progress);
+  }
+
   cachedVersion = null;
-  progress('✅ Mise à jour appliquée — redémarrage du serveur dans 2 secondes…');
+  progress('✅ Mise à jour prête — redémarrage du serveur dans 2 secondes…');
   logger.info('mise à jour appliquée, redémarrage');
   // Le superviseur (bat/pm2/systemd) relance le processus sur le nouveau code.
   setTimeout(() => process.exit(0), 2000);
