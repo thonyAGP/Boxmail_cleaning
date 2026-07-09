@@ -5,6 +5,7 @@ import { registerReadTools } from './tools/read.js';
 import { registerWriteTools } from './tools/write.js';
 import { registerExportTools } from './tools/export.js';
 import { registerSyncTools } from './tools/sync.js';
+import { registerDeadlineTools } from './tools/deadlines.js';
 import { registerAttentionTools } from './tools/attention.js';
 
 /**
@@ -34,6 +35,7 @@ export function buildMcpServer(): McpServer {
   registerWriteTools(server);
   registerExportTools(server);
   registerSyncTools(server);
+  registerDeadlineTools(server);
   registerAttentionTools(server);
 
   return server;

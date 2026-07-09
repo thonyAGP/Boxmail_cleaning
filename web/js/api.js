@@ -53,6 +53,11 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),
   enrollStart: (account) => request('POST', '/enroll/start', { account }),
+  deadlines: () => request('GET', '/attention/deadlines'),
+  deadlinesDetect: (slug, deep = false, sinceDays = 30) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/deadlines/detect`, { deep, sinceDays }),
+  deadlineAction: (slug, id, action) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/deadlines/${id}/${action}`),
   version: () => request('GET', '/version'),
   updateCheck: () => request('GET', '/update/check'),
   updateApply: () => request('POST', '/update/apply'),

@@ -5,7 +5,7 @@
 Assistant email personnel multi-boîtes pour comptes **Outlook.com/Hotmail
 personnels** (refusés par le connecteur M365 officiel de Claude). Deux façades
 sur les mêmes services :
-1. **Serveur MCP distant** (Streamable HTTP, 26 tools) — destiné à Claude
+1. **Serveur MCP distant** (Streamable HTTP, 32 tools) — destiné à Claude
    Cowork après déploiement ;
 2. **Interface web** « Mail Assistant » sur `/admin` — utilisée quotidiennement
    par l'utilisateur dès maintenant, en local sur son PC Windows.
@@ -38,8 +38,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 26 tools MCP (accounts, folders, read, write, sync, export,
-  attention : réponses/relances/importance)
+- `mcp/tools/*` — 32 tools MCP (accounts, folders, read, write, sync, export,
+  attention : réponses/relances/importance, échéances)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -89,6 +89,17 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**Phase 4 brique 4 (L2) livrée : Échéances.** Modèle `Deadline` + migration,
+`services/deadlines.ts` : parseur de dates FR maison (14 tests — tournures
+fortes conf 0.9, dates nues avec contexte typé conf 0.6, année implicite →
+prochaine occurrence avec tolérance 45 j, heures « à 14h30 », rejets 31/02 et
+« 15/300 € »), détection sujets (index) + deep corps (IMAP, cap 50/boîte),
+newsletters exclues, upsert idempotent qui n'écrase jamais un statut validé.
+6 tools MCP (32 au total), API + job `deadlines:<slug>`, écran `#/deadlines`
+(bouton Analyser + case analyse approfondie, onglets Proposées/Confirmées/
+Passées-faites/Ignorées, extrait du mail affiché), badge sidebar (proposées +
+confirmées ≤ 7 j), panneau dashboard. Seed : scratchpad `seed-deadlines.mts`.
 
 Fait : serveur MCP complet, index SQLite + syncs (incrémentales, résilientes,
 « Tout synchroniser », suivi global), interface (dashboard, stats, nettoyage

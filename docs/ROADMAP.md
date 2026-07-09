@@ -90,7 +90,17 @@ vérifier reasons non vides et tri. + capture navigateur.
 
 ---
 
-## ⬜ L2 — Échéances (Phase 4, brique 4)
+## ✅ L2 — Échéances (Phase 4, brique 4) — LIVRÉ
+
+Modèle `Deadline` (statuts proposed/confirmed/done/dismissed, contexte
+dénormalisé), `services/deadlines.ts` (parseur FR sans dépendance — tournures
+« avant le / d'ici / échéance du / rdv le »… conf 0.9, dates nues + contexte
+typé conf 0.6, année implicite → prochaine occurrence (tolérance 45 j), heures ;
+detect sujets + deep corps IMAP cap 50, newsletters exclues, statuts jamais
+écrasés), 6 tools MCP (detect/list/confirm/dismiss/complete/restore_deadline —
+32 tools au total), API `/api/attention/deadlines` + detect en job + actions,
+écran `#/deadlines` (Analyser mes mails + analyse approfondie, onglets
+Proposées/Confirmées/Passées-faites/Ignorées), badge sidebar, panneau dashboard.
 
 **Objectif.** Détecter les dates limites dans les mails (sujets d'abord,
 corps à la demande), les proposer, laisser l'utilisateur confirmer/ignorer.

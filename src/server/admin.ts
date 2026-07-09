@@ -32,6 +32,14 @@ import {
 } from '../services/attention.js';
 import { getFollowupsDue } from '../services/followups.js';
 import { getImportantEmails } from '../services/importance.js';
+import {
+  detectDeadlines,
+  listDeadlines,
+  confirmDeadline,
+  dismissDeadline,
+  completeDeadline,
+  restoreDeadline,
+} from '../services/deadlines.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
@@ -453,6 +461,75 @@ export function buildAdminRouter(): Router {
       });
     }),
   );
+
+  // --- Échéances (Phase 4, brique 4 — L2) -----------------------------------------
+  router.get(
+    '/attention/deadlines',
+    guard(async (_req, res) => {
+      const all = [];
+      for (const name of await listAccountNames()) {
+        try {
+          all.push(...(await listDeadlines(name, { limit: 500 })));
+        } catch (err) {
+          logger.warn('échéances : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      all.sort((a, b) => a.date.localeCompare(b.date));
+      const now = Date.now();
+      const isFuture = (d: { date: string }) => new Date(d.date).getTime() >= now - 86_400_000;
+      res.json({
+        counts: {
+          proposed: all.filter((d) => d.status === 'proposed' && isFuture(d)).length,
+          confirmed: all.filter((d) => d.status === 'confirmed' && isFuture(d)).length,
+          past: all.filter((d) => (!isFuture(d) && d.status !== 'dismissed') || d.status === 'done').length,
+          dismissed: all.filter((d) => d.status === 'dismissed').length,
+        },
+        items: all,
+      });
+    }),
+  );
+
+  // Détection (job — la passe deep lit les corps via IMAP, potentiellement longue).
+  router.post(
+    '/accounts/:slug/deadlines/detect',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const deep = Boolean(req.body?.deep);
+      const sinceDays = Math.min(
+        Math.max(Number.parseInt(String(req.body?.sinceDays ?? '30'), 10) || 30, 1),
+        365,
+      );
+      const kind = `deadlines:${slug}`;
+      if (hasRunningJob(kind)) {
+        res.status(409).json({ error: 'Une détection est déjà en cours pour ce compte.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      const job = startJob(kind, (progress) =>
+        detectDeadlines(rec, { sinceDays, deep, onProgress: progress }),
+      );
+      res.json({ jobId: job.id });
+    }),
+  );
+
+  const deadlineAction =
+    (fn: (account: string, id: number) => Promise<unknown>) =>
+    guard(async (req: Request, res: Response) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      res.json(await fn(req.params.slug, id));
+    });
+
+  router.post('/accounts/:slug/deadlines/:id/confirm', deadlineAction(confirmDeadline));
+  router.post('/accounts/:slug/deadlines/:id/dismiss', deadlineAction(dismissDeadline));
+  router.post('/accounts/:slug/deadlines/:id/done', deadlineAction(completeDeadline));
+  router.post('/accounts/:slug/deadlines/:id/restore', deadlineAction(restoreDeadline));
 
   // --- Version & mise à jour -----------------------------------------------------
   router.get(

@@ -27,6 +27,7 @@ model Account {
   threads         Thread[]
   senders         Sender[]
   attentionStates AttentionState[]
+  deadlines       Deadline[]
 }
 
 model Folder {
@@ -128,6 +129,40 @@ model AttentionState {
   account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
 
   @@unique([accountSlug, threadId, kind])
+}
+
+// Échéance détectée dans un mail (Phase 4, brique 4 — L2). Cycle de vie :
+// proposed (détectée, à valider) → confirmed → done, ou dismissed.
+// messageId/threadId sont des références souples (pas de FK vers Message :
+// l'index des mails est un cache reconstructible, l'échéance doit survivre).
+model Deadline {
+  id          Int      @id @default(autoincrement())
+  accountSlug String
+  // id interne (colonne Message.id) du mail source
+  messageId   Int
+  threadId    Int?
+  title       String
+  date        DateTime
+  // payment | document | appointment | renewal | other
+  type        String   @default("other")
+  // proposed | confirmed | dismissed | done
+  status      String   @default("proposed")
+  confidence  Float    @default(0.6)
+  // Justification en français (affichée telle quelle)
+  reason      String
+  // Extrait du texte où la date a été trouvée
+  sourceText  String
+  // Contexte d'affichage (dénormalisé pour survivre aux resync)
+  fromEmail   String?
+  fromName    String?
+  subject     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([accountSlug, messageId, date])
+  @@index([accountSlug, status, date])
 }
 
 // Agrégat par expéditeur, recalculé à chaque sync. kind/category/notes seront

@@ -49,6 +49,7 @@ async function showApp() {
   refreshRepliesBadge();
   refreshFollowupsBadge();
   refreshImportantBadge();
+  refreshDeadlinesBadge();
 }
 
 // Badge « importance haute » (score ≥ 70) sur le lien ⭐ Mails importants.
@@ -61,6 +62,23 @@ async function refreshImportantBadge(data) {
     el.classList.toggle('hidden', d.counts.high === 0);
   } catch {
     /* index pas prêt : pas de badge */
+  }
+}
+
+// Badge échéances : propositions à valider + confirmées sous 7 jours.
+async function refreshDeadlinesBadge(data) {
+  try {
+    const d = data ?? (await api.deadlines());
+    const el = $('#deadlines-badge');
+    if (!el) return;
+    const soon = d.items.filter(
+      (x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays >= -1 && x.inDays <= 7,
+    ).length;
+    const n = d.counts.proposed + soon > 0 ? Math.max(d.counts.proposed, soon) : 0;
+    el.textContent = fmtNum(n);
+    el.classList.toggle('hidden', n === 0);
+  } catch {
+    /* index pas prêt */
   }
 }
 
@@ -107,6 +125,7 @@ function jobLabel(kind) {
   if (kind.startsWith('sync:')) return `🔄 Sync ${kind.slice(5)}`;
   if (kind.startsWith('cleanup:')) return `🧹 Nettoyage ${kind.slice(8)}`;
   if (kind.startsWith('enroll:')) return `＋ Ajout ${kind.slice(7)}`;
+  if (kind.startsWith('deadlines:')) return `📅 Détection échéances ${kind.slice(10)}`;
   if (kind === 'sync-all') return '🔄 Sync de toutes les boîtes';
   if (kind === 'update') return '⬆️ Mise à jour';
   return `⚙️ ${kind}`;
@@ -241,6 +260,8 @@ function highlightNav() {
     document.querySelector('[data-nav="replies"]')?.classList.add('active');
   } else if (hash.startsWith('#/followups')) {
     document.querySelector('[data-nav="followups"]')?.classList.add('active');
+  } else if (hash.startsWith('#/deadlines')) {
+    document.querySelector('[data-nav="deadlines"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else {
@@ -262,6 +283,8 @@ function route() {
     renderReplies();
   } else if (hash.startsWith('#/followups')) {
     renderFollowups();
+  } else if (hash.startsWith('#/deadlines')) {
+    renderDeadlines();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else {
@@ -392,8 +415,9 @@ async function renderDashboard() {
         <div class="panel-head"><h2>⏰ Relances à faire</h2>
           <a class="btn btn-sm" href="#/followups">Voir tout</a></div>
         <div class="panel-body" id="dash-followups"><span class="spinner"></span></div>
-        <div class="panel-body muted" style="font-size:12px; padding-top:0">
-          📅 Les échéances arrivent dans une prochaine étape.</div>
+        <div class="panel-head"><h2>📅 Échéances à venir</h2>
+          <a class="btn btn-sm" href="#/deadlines">Voir tout</a></div>
+        <div class="panel-body" id="dash-deadlines"><span class="spinner"></span></div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Activité récente</h2>
@@ -476,6 +500,29 @@ async function renderDashboard() {
       : '<div class="empty">👍 Personne à relancer sur les 60 derniers jours.</div>';
   }).catch(() => {
     const el = $('#dash-followups');
+    if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
+  });
+
+  // Échéances à venir (top 5 futures, proposées + confirmées).
+  api.deadlines().then((d) => {
+    refreshDeadlinesBadge(d);
+    const el = $('#dash-deadlines');
+    if (!el) return;
+    const top = d.items
+      .filter((x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays >= -1)
+      .slice(0, 5);
+    el.innerHTML = top.length
+      ? top.map((x) => `<div class="op-line">
+          <span class="op-time">${fmtDate(x.date)}</span>
+          <span style="flex:1">${esc(x.title)}
+            <span class="muted" style="font-size:12px">· ${esc(x.account)}</span>
+            ${x.status === 'proposed' ? '<span class="badge orange">à valider</span>' : ''}</span>
+          <span class="badge ${x.inDays <= 3 ? 'red' : 'gray'}">${deadlineCountdown(x.inDays)}</span>
+        </div>`).join('')
+      : `<div class="empty">Aucune échéance à venir — lance une
+         <a href="#/deadlines">détection</a>.</div>`;
+  }).catch(() => {
+    const el = $('#dash-deadlines');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
@@ -602,6 +649,21 @@ function opLine(op) {
       break;
     case 'restore_followup':
       title = `↩️ Fil remis dans « Relances à faire »`;
+      break;
+    case 'detect_deadlines':
+      title = `📅 <strong>${fmtNum(p.created ?? 0)} échéance(s)</strong> détectée(s) et proposée(s)`;
+      break;
+    case 'confirm_deadline':
+      title = `📅 Échéance confirmée`;
+      break;
+    case 'dismiss_deadline':
+      title = `📅 Échéance ignorée`;
+      break;
+    case 'complete_deadline':
+      title = `📅 Échéance marquée faite`;
+      break;
+    case 'restore_deadline':
+      title = `📅 Échéance rétablie`;
       break;
     case 'bulk_delete_by_sender':
       title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
@@ -1629,6 +1691,215 @@ function importantRow(i) {
         : i.level === 'medium'
           ? '<span class="badge orange">importance moyenne</span>'
           : '<span class="badge gray">importance faible</span>'}
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Échéances
+const deadlinesState = { tab: 'proposed', data: null };
+
+function deadlineCountdown(inDays) {
+  if (inDays > 1) return `dans ${fmtNum(inDays)} j`;
+  if (inDays === 1) return 'demain';
+  if (inDays === 0) return "aujourd'hui";
+  if (inDays === -1) return 'hier';
+  return `il y a ${fmtNum(-inDays)} j`;
+}
+
+const DEADLINE_TYPES = {
+  payment: { label: '💶 Paiement', badge: 'red' },
+  document: { label: '📄 Document', badge: 'blue' },
+  appointment: { label: '📅 Rendez-vous', badge: 'green' },
+  renewal: { label: '🔁 Renouvellement', badge: 'orange' },
+  other: { label: '📌 Autre', badge: 'gray' },
+};
+
+async function renderDeadlines() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>📅 Échéances</h1>
+      <div class="sub">Dates limites détectées dans tes mails (paiements, documents à fournir,
+      rendez-vous…). Chaque échéance est PROPOSÉE : à toi de la confirmer ou de l'ignorer —
+      rien n'est ajouté à un calendrier automatiquement.</div></div>
+    <div class="head-actions">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
+        title="Lit aussi le CONTENU des mails au sujet évocateur (max 50 par boîte) — plus lent">
+        <input type="checkbox" id="deadlines-deep"> analyse approfondie</label>
+      <button class="btn btn-primary" id="deadlines-detect">🔍 Analyser mes mails</button>
+      <button class="btn" id="deadlines-refresh">↻ Actualiser</button>
+    </div></div>
+    <div id="deadlines-detect-zone"></div>
+    <div id="deadlines-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  $('#deadlines-refresh').addEventListener('click', loadDeadlines);
+  $('#deadlines-detect').addEventListener('click', runDeadlineDetect);
+  await loadDeadlines();
+}
+
+async function runDeadlineDetect() {
+  const btn = $('#deadlines-detect');
+  const zone = $('#deadlines-detect-zone');
+  const deep = $('#deadlines-deep').checked;
+  btn.disabled = true;
+  zone.innerHTML = `<div class="notice"><span class="spinner"></span>
+    Détection en cours sur toutes les boîtes${deep ? ' (analyse approfondie — lecture des contenus)' : ''}…
+    <span class="muted" id="detect-status"></span></div>`;
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  const jobIds = [];
+  for (const slug of accounts) {
+    try {
+      const { jobId } = await api.deadlinesDetect(slug, deep);
+      jobIds.push(jobId);
+    } catch {
+      /* détection déjà en cours pour ce compte : on suit quand même */
+    }
+  }
+  if (jobIds.length === 0) {
+    zone.innerHTML = '<div class="notice warn">Aucune boîte à analyser (ou détection déjà en cours).</div>';
+    btn.disabled = false;
+    return;
+  }
+  const timer = setInterval(async () => {
+    let done = 0;
+    let created = 0;
+    let lastMsg = '';
+    for (const id of jobIds) {
+      try {
+        const j = await api.job(id);
+        if (j.status !== 'running') {
+          done++;
+          created += j.result?.created ?? 0;
+        } else if (j.progress.length) {
+          lastMsg = j.progress[j.progress.length - 1];
+        }
+      } catch {
+        done++;
+      }
+    }
+    const st = $('#detect-status');
+    if (st) st.textContent = lastMsg ? ` ${lastMsg}` : '';
+    if (done === jobIds.length) {
+      clearInterval(timer);
+      zone.innerHTML = `<div class="notice">✅ Détection terminée :
+        <strong>${fmtNum(created)}</strong> nouvelle(s) échéance(s) proposée(s).</div>`;
+      btn.disabled = false;
+      await loadDeadlines();
+    }
+  }, 1200);
+}
+
+async function loadDeadlines() {
+  const body = $('#deadlines-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
+  try {
+    deadlinesState.data = await api.deadlines();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  refreshDeadlinesBadge(deadlinesState.data);
+  renderDeadlinesBody();
+}
+
+function renderDeadlinesBody() {
+  const body = $('#deadlines-body');
+  const d = deadlinesState.data;
+  if (!body || !d) return;
+  const now = Date.now();
+  const isFuture = (x) => new Date(x.date).getTime() >= now - 86_400_000;
+  const inTab = (x, tab) =>
+    tab === 'proposed' ? x.status === 'proposed' && isFuture(x)
+    : tab === 'confirmed' ? x.status === 'confirmed' && isFuture(x)
+    : tab === 'past' ? (!isFuture(x) && x.status !== 'dismissed') || x.status === 'done'
+    : x.status === 'dismissed';
+  const tabs = [
+    { key: 'proposed', label: 'Proposées', n: d.counts.proposed },
+    { key: 'confirmed', label: 'Confirmées', n: d.counts.confirmed },
+    { key: 'past', label: 'Passées / faites', n: d.counts.past },
+    { key: 'dismissed', label: 'Ignorées', n: d.counts.dismissed },
+  ];
+  const items = d.items.filter((x) => inTab(x, deadlinesState.tab));
+  const emptyMessages = {
+    proposed: 'Aucune échéance à valider. Clique « 🔍 Analyser mes mails » pour lancer une détection.',
+    confirmed: 'Aucune échéance confirmée à venir.',
+    past: 'Aucune échéance passée.',
+    dismissed: 'Aucune échéance ignorée.',
+  };
+
+  body.innerHTML = `
+    <div class="tabs">${tabs
+      .map(
+        (t) => `<button class="tab ${deadlinesState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
+        ${t.label} <span class="badge ${t.key === 'proposed' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+      )
+      .join('')}</div>
+    <div class="panel"><div class="panel-body tight">
+      ${items.length === 0
+        ? `<div class="empty">${emptyMessages[deadlinesState.tab]}</div>`
+        : items.map(deadlineRow).join('')}
+    </div></div>
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 Détection heuristique : vérifie la date avant de confirmer (l'extrait du mail est affiché).
+      Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
+
+  body.querySelectorAll('.tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      deadlinesState.tab = btn.dataset.tab;
+      renderDeadlinesBody();
+    });
+  });
+
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadDeadlines();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  };
+  body.querySelectorAll('[data-dl-action]').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.deadlineAction(btn.dataset.account, Number(btn.dataset.id), btn.dataset.dlAction)),
+    );
+  });
+}
+
+function deadlineRow(x) {
+  const type = DEADLINE_TYPES[x.type] ?? DEADLINE_TYPES.other;
+  const ident = `data-account="${esc(x.account)}" data-id="${x.id}"`;
+  let actions = '';
+  if (x.status === 'proposed') {
+    actions = `<button class="btn btn-sm btn-green" ${ident} data-dl-action="confirm">✓ Confirmer</button>
+      <button class="btn btn-sm" ${ident} data-dl-action="done" title="Déjà réglé/fait">Fait</button>
+      <button class="btn btn-sm" ${ident} data-dl-action="dismiss" title="Fausse détection ou sans importance">✕ Ignorer</button>`;
+  } else if (x.status === 'confirmed') {
+    actions = `<button class="btn btn-sm btn-green" ${ident} data-dl-action="done">✓ Fait</button>
+      <button class="btn btn-sm" ${ident} data-dl-action="dismiss">✕ Ignorer</button>`;
+  } else {
+    actions = `<button class="btn btn-sm" ${ident} data-dl-action="restore">↩︎ Rétablir</button>`;
+  }
+  const statusBadge =
+    x.status === 'done' ? '<span class="badge green">✓ fait</span>'
+    : x.status === 'dismissed' ? '<span class="badge gray">ignorée</span>'
+    : x.status === 'confirmed' ? '<span class="badge blue">confirmée</span>'
+    : '<span class="badge orange">à valider</span>';
+  return `<div class="reply-row">
+    <div class="reply-main">
+      <div class="reply-top">
+        <strong>${fmtDate(x.date)}</strong>
+        <span class="badge ${x.inDays <= 3 && x.inDays >= -1 ? 'red' : 'gray'}">${deadlineCountdown(x.inDays)}</span>
+        <span class="badge ${type.badge}">${type.label}</span>
+        ${statusBadge}
+        <span class="badge blue">${esc(x.account)}</span>
+        ${x.confidence < 0.9 ? '<span class="badge gray" title="Date trouvée sans tournure explicite">à vérifier</span>' : ''}
+      </div>
+      <div class="reply-subject">${esc(x.title)}</div>
+      <div class="reply-reason muted">${esc(x.fromName || x.fromEmail || '')} · ${esc(x.reason)}</div>
+    </div>
+    <div class="reply-side">
+      <div class="reply-actions">${actions}</div>
     </div>
   </div>`;
 }
