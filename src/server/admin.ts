@@ -659,6 +659,7 @@ export function buildAdminRouter(): Router {
         since: date('since'),
         before: date('before'),
         unseen: ['1', 'true'].includes(String(req.query.unseen ?? '')),
+        withAttachments: ['1', 'true'].includes(String(req.query.attachments ?? '')),
         limit: Number.parseInt(String(req.query.limit ?? '100'), 10) || 100,
       });
       res.json(result);
@@ -677,7 +678,8 @@ export function buildAdminRouter(): Router {
         200,
       );
       const unseen = ['1', 'true'].includes(String(req.query.unseen ?? ''));
-      res.json(await listUnifiedInbox({ offset, limit, unseen }));
+      const withAttachments = ['1', 'true'].includes(String(req.query.attachments ?? ''));
+      res.json(await listUnifiedInbox({ offset, limit, unseen, withAttachments }));
     }),
   );
 
@@ -698,7 +700,10 @@ export function buildAdminRouter(): Router {
         });
         return;
       }
-      res.json(await listFolderMessages(req.params.slug, folder, { offset, limit, unseen }));
+      const withAttachments = ['1', 'true'].includes(String(req.query.attachments ?? ''));
+      res.json(
+        await listFolderMessages(req.params.slug, folder, { offset, limit, unseen, withAttachments }),
+      );
     }),
   );
 
@@ -807,6 +812,59 @@ export function buildAdminRouter(): Router {
           error:
             `Lecture impossible depuis la boîte : ${(err as Error).message}. ` +
             'Le mail existe peut-être encore — réessaie, ou ouvre-le dans Outlook.',
+        });
+      }
+    }),
+  );
+
+  // Téléchargement d'UNE pièce jointe (L5.9). `index` = position dans la liste
+  // renvoyée par la lecture du mail (même parseur, même ordre). Lecture seule —
+  // pas de journalisation. Cap : mails > 25 Mo refusés (limite de confort).
+  router.get(
+    '/accounts/:slug/messages/:folder/:uid/attachments/:index',
+    guard(async (req, res) => {
+      const uid = Number.parseInt(String(req.params.uid), 10);
+      const index = Number.parseInt(String(req.params.index), 10);
+      if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(index) || index < 0) {
+        res.status(400).json({ error: 'UID ou index de pièce jointe invalide.' });
+        return;
+      }
+      const folder = String(req.params.folder);
+      const slug = req.params.slug;
+      const meta = await indexedMessage(slug, folder, uid);
+      if (!meta) {
+        res.status(404).json({ error: "Mail introuvable dans l'index — resynchronise la boîte." });
+        return;
+      }
+      const MAX_ATTACHMENT_MAIL_BYTES = 25 * 1024 * 1024;
+      if (meta.sizeBytes > MAX_ATTACHMENT_MAIL_BYTES) {
+        res.status(413).json({
+          error: 'Mail trop volumineux (> 25 Mo) — ouvre cette pièce jointe depuis Outlook.',
+        });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      try {
+        const att = await imapService.downloadAttachment(rec, folder, uid, index);
+        if (!att) {
+          res.status(404).json({ error: 'Pièce jointe introuvable dans ce mail.' });
+          return;
+        }
+        // Le download du mail pose \Seen côté serveur : l'index suit.
+        await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
+        const safeName = att.filename.replace(/[\r\n"\\]/g, '_');
+        res
+          .type(att.contentType)
+          .setHeader(
+            'Content-Disposition',
+            `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(att.filename)}`,
+          )
+          .send(att.content);
+      } catch (err) {
+        res.status(502).json({
+          error:
+            `Téléchargement impossible depuis la boîte : ${(err as Error).message}. ` +
+            'Réessaie, ou ouvre la pièce jointe dans Outlook.',
         });
       }
     }),

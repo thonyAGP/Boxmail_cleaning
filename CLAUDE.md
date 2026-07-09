@@ -99,6 +99,21 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
 possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
 
+**L5.9 livrée : Pièces jointes (badge, filtre, téléchargement).**
+Migration Message.hasAttachments/attachmentCount ; sync fetch
+`bodyStructure` → `countAttachments()` exporté (feuille avec disposition
+attachment OU nom de fichier) sur les nouveaux mails seulement — backfill =
+resync complète (tooltip + état vide le signalent). Filtre `withAttachments`
+sur searchIndex/listFolderMessages/listUnifiedInbox (`attachments=1`), badge
+📎 inbox (compteur si > 1) + recherche. Téléchargement : GET
+`.../messages/:folder/:uid/attachments/:index` — imapService.
+downloadAttachment (download complet + mailparser, même ordre que la liste
+du panneau), Content-Disposition filename* UTF-8, 413 si mail > 25 Mo
+(sizeBytes via indexedMessage étendu), 404/502 propres, index marqué lu.
+Panneau : liens ⬇️ directs (cookie même origine). Tests : seed-unified.mts
+(16 asserts) + ui-attachments.mjs (9 checks, corps ET download mockés
+page.route) + curl 400/404/413/502.
+
 **L5.6 livrée : Boîte unifiée + code couleur par boîte.**
 `listUnifiedInbox` (search.ts, Message role=inbox tous comptes hors
 supprimés, tri date desc, pagination+total) + GET `/api/messages` ; inbox

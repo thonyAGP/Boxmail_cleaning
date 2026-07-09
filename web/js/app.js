@@ -2566,6 +2566,7 @@ const inboxState = {
   offset: 0,
   pageSize: 50,
   unseen: false,
+  attachments: false,
   data: null,
   folders: [],
   selected: new Set(), // clés `compte|dossier|uid` (page courante uniquement)
@@ -2600,6 +2601,9 @@ async function renderInbox(slugFromHash) {
       <select id="inbox-folder" title="Dossier"></select>
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
         <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
+        title="Seuls les mails indexés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
+        <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> 📎 avec PJ</label>
       <button class="btn" id="inbox-refresh">↻ Actualiser</button>
       <button class="btn btn-primary" id="inbox-compose">✉️ Nouveau mail</button>
     </div></div>
@@ -2623,6 +2627,12 @@ async function renderInbox(slugFromHash) {
   });
   $('#inbox-unseen').addEventListener('change', (e) => {
     inboxState.unseen = e.target.checked;
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+    loadInbox();
+  });
+  $('#inbox-attachments').addEventListener('change', (e) => {
+    inboxState.attachments = e.target.checked;
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
@@ -2682,12 +2692,14 @@ async function loadInbox() {
           offset: inboxState.offset,
           limit: inboxState.pageSize,
           unseen: inboxState.unseen,
+          attachments: inboxState.attachments,
         })
       : await api.listMessages(inboxState.account, {
           folder: inboxState.folder,
           offset: inboxState.offset,
           limit: inboxState.pageSize,
           unseen: inboxState.unseen,
+          attachments: inboxState.attachments,
         });
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
@@ -2712,7 +2724,11 @@ function renderInboxBody() {
     <div id="inbox-bulkbar" class="export-bar ${sel.size ? '' : 'hidden'}"></div>
     <div class="panel"><div class="panel-body tight">
       ${d.items.length === 0
-        ? `<div class="empty">${inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'}</div>`
+        ? `<div class="empty">${
+            inboxState.attachments
+              ? 'Aucun mail avec pièce jointe ici. NB : seuls les mails indexés depuis la version « pièces jointes » portent cette info — une resynchronisation complète la pose sur les nouveaux arrivages.'
+              : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'
+          }</div>`
         : `<table><thead><tr>
             <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
             <th style="width:100px">Date</th>
@@ -2728,7 +2744,8 @@ function renderInboxBody() {
               <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px"
                 title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</td>
               <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span></td>
-              <td style="white-space:nowrap">${i.hasListUnsubscribe ? '<span class="badge gray">📰</span>' : ''}
+              <td style="white-space:nowrap">${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>` : ''}
+                ${i.hasListUnsubscribe ? '<span class="badge gray">📰</span>' : ''}
                 ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}</td>
             </tr>`,
             )
@@ -2868,6 +2885,7 @@ const searchState = {
   since: '',
   before: '',
   unseen: false,
+  attachments: false,
   showFilters: false,
   data: null,
   searched: false,
@@ -2905,6 +2923,8 @@ async function renderSearch() {
       <label>Du <input type="date" id="s-since" value="${esc(searchState.since)}"></label>
       <label>Au <input type="date" id="s-before" value="${esc(searchState.before)}"></label>
       <label><input type="checkbox" id="s-unseen" ${searchState.unseen ? 'checked' : ''}> non lus seulement</label>
+      <label title="Info posée à la synchronisation — les mails indexés avant la version « pièces jointes » ne la portent pas encore.">
+        <input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}> 📎 avec pièces jointes</label>
     </div>
     <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot-clé ci-dessus, ou ouvre les filtres pour chercher par expéditeur ou par date.</div>`}</div>`;
 
@@ -2923,6 +2943,7 @@ async function renderSearch() {
     searchState.since = $('#s-since').value;
     searchState.before = $('#s-before').value;
     searchState.unseen = $('#s-unseen').checked;
+    searchState.attachments = $('#s-attachments').checked;
     runSearch();
   });
 
@@ -2934,7 +2955,8 @@ async function runSearch() {
   const el = $('#search-results');
   const hasCriteria =
     searchState.q || searchState.account || searchState.folder || searchState.from ||
-    searchState.subject || searchState.since || searchState.before || searchState.unseen;
+    searchState.subject || searchState.since || searchState.before || searchState.unseen ||
+    searchState.attachments;
   if (!hasCriteria) {
     el.innerHTML = '<div class="empty">Donne au moins un critère (mot-clé, expéditeur, date…).</div>';
     return;
@@ -2951,6 +2973,7 @@ async function runSearch() {
       since: searchState.since,
       before: searchState.before,
       unseen: searchState.unseen,
+      attachments: searchState.attachments,
       limit: 200,
     });
   } catch (err) {
@@ -2991,6 +3014,7 @@ function renderSearchResults() {
               <span class="mail-date">${fmtDate(i.date)}</span>
               <span class="result-from" title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</span>
               <span class="result-subject">${esc(i.subject)}</span>
+              ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎</span>` : ''}
               ${folderBadge(i)}
               ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
             </div>`).join('')}
@@ -3097,9 +3121,14 @@ async function openReader(item, row, opts = {}) {
       const az = $('#reader-attachments');
       if (az) {
         az.classList.remove('hidden');
+        // Lien direct même origine : le cookie de session part avec la requête,
+        // le serveur renvoie Content-Disposition → le navigateur télécharge.
         az.innerHTML = `<strong>📎 ${fmtNum(body.attachments.length)} pièce(s) jointe(s)</strong>
-          <span class="muted">(à ouvrir depuis Outlook)</span>
-          ${body.attachments.map((a) => `<div class="att">📄 ${esc(a.filename || 'sans nom')}
+          <span class="muted">(clique pour télécharger)</span>
+          ${body.attachments.map((a, ai) => `<div class="att">
+            <a class="att-dl" href="${api.attachmentUrl(item.account, item.folder, item.uid, ai)}"
+              download="${esc(a.filename || `piece-jointe-${ai + 1}`)}"
+              title="Télécharger ${esc(a.filename || 'la pièce jointe')}">⬇️ ${esc(a.filename || 'sans nom')}</a>
             <span class="muted">${fmtSize(a.sizeBytes)}</span></div>`).join('')}`;
       }
     }

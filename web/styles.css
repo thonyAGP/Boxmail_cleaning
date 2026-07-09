@@ -401,6 +401,8 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 }
 .reader-attachments { padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12.5px; }
 .reader-attachments .att { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+.reader-attachments .att-dl { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.reader-attachments .att-dl:hover { text-decoration: underline; }
 .reader-actions {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   padding: 12px 20px; border-top: 1px solid var(--border); background: #fafbfe;

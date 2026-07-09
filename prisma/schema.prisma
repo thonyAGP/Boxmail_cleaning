@@ -71,6 +71,11 @@ model Message {
   isOutbound         Boolean   @default(false)
   sizeBytes          Int       @default(0)
   hasListUnsubscribe Boolean   @default(false)
+  // Pièces jointes (L5.9) — rempli à la sync via bodyStructure. Les mails
+  // indexés AVANT cette version restent à false tant qu'ils ne sont pas
+  // resynchronisés à neuf (l'info n'est pas rejouée sur l'existant).
+  hasAttachments     Boolean   @default(false)
+  attachmentCount    Int       @default(0)
   // true si le mail a disparu du serveur (supprimé/déplacé) depuis la sync
   isDeleted          Boolean   @default(false)
   createdAt          DateTime  @default(now())

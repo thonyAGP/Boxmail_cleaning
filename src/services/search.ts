@@ -24,6 +24,8 @@ export interface SearchOptions {
   before?: Date;
   /** true = non lus uniquement. */
   unseen?: boolean;
+  /** true = mails avec pièces jointes uniquement (info posée à la sync). */
+  withAttachments?: boolean;
   limit?: number;
 }
 
@@ -41,6 +43,8 @@ export interface SearchResultItem {
   isSeen: boolean;
   isOutbound: boolean;
   hasListUnsubscribe: boolean;
+  hasAttachments: boolean;
+  attachmentCount: number;
   sizeBytes: number;
 }
 
@@ -80,6 +84,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
     ...(opts.account ? { accountSlug: opts.account } : {}),
     ...(opts.folder ? { folder: { path: opts.folder } } : {}),
     ...(opts.unseen ? { isSeen: false } : {}),
+    ...(opts.withAttachments ? { hasAttachments: true } : {}),
     ...(opts.since || opts.before
       ? {
           date: {
@@ -109,6 +114,8 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         isSeen: true,
         isOutbound: true,
         hasListUnsubscribe: true,
+        hasAttachments: true,
+        attachmentCount: true,
         sizeBytes: true,
         folder: { select: { path: true, role: true } },
       },
@@ -132,6 +139,8 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
       isSeen: m.isSeen,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
+      hasAttachments: m.hasAttachments,
+      attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
     })),
   };
@@ -156,7 +165,7 @@ export interface FolderListing {
  * (chaque item porte son account/folder/uid → lecture et actions OK).
  */
 export async function listUnifiedInbox(
-  opts: { offset?: number; limit?: number; unseen?: boolean } = {},
+  opts: { offset?: number; limit?: number; unseen?: boolean; withAttachments?: boolean } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -165,6 +174,7 @@ export async function listUnifiedInbox(
     isDeleted: false,
     folder: { is: { role: 'inbox' } },
     ...(opts.unseen ? { isSeen: false } : {}),
+    ...(opts.withAttachments ? { hasAttachments: true } : {}),
   };
   const [total, rows] = await Promise.all([
     db.message.count({ where }),
@@ -185,6 +195,8 @@ export async function listUnifiedInbox(
         isSeen: true,
         isOutbound: true,
         hasListUnsubscribe: true,
+        hasAttachments: true,
+        attachmentCount: true,
         sizeBytes: true,
         folder: { select: { path: true, role: true } },
       },
@@ -209,6 +221,8 @@ export async function listUnifiedInbox(
       isSeen: m.isSeen,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
+      hasAttachments: m.hasAttachments,
+      attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
     })),
   };
@@ -217,7 +231,7 @@ export async function listUnifiedInbox(
 export async function listFolderMessages(
   account: string,
   folder: string,
-  opts: { offset?: number; limit?: number; unseen?: boolean } = {},
+  opts: { offset?: number; limit?: number; unseen?: boolean; withAttachments?: boolean } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -227,6 +241,7 @@ export async function listFolderMessages(
     isDeleted: false,
     folder: { path: folder },
     ...(opts.unseen ? { isSeen: false } : {}),
+    ...(opts.withAttachments ? { hasAttachments: true } : {}),
   };
   const [total, rows] = await Promise.all([
     db.message.count({ where }),
@@ -247,6 +262,8 @@ export async function listFolderMessages(
         isSeen: true,
         isOutbound: true,
         hasListUnsubscribe: true,
+        hasAttachments: true,
+        attachmentCount: true,
         sizeBytes: true,
         folder: { select: { path: true, role: true } },
       },
@@ -271,6 +288,8 @@ export async function listFolderMessages(
       isSeen: m.isSeen,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
+      hasAttachments: m.hasAttachments,
+      attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
     })),
   };
@@ -335,11 +354,17 @@ export async function indexedMessage(
   account: string,
   folder: string,
   uid: number,
-): Promise<{ id: number; subject: string; date: string | null; isSeen: boolean } | null> {
+): Promise<{
+  id: number;
+  subject: string;
+  date: string | null;
+  isSeen: boolean;
+  sizeBytes: number;
+} | null> {
   await ensureDbReady();
   const m = await db.message.findFirst({
     where: { accountSlug: account, uid, isDeleted: false, folder: { path: folder } },
-    select: { id: true, subject: true, date: true, isSeen: true },
+    select: { id: true, subject: true, date: true, isSeen: true, sizeBytes: true },
   });
   if (!m) return null;
   return {
@@ -347,6 +372,7 @@ export async function indexedMessage(
     subject: m.subject ?? '(sans sujet)',
     date: m.date?.toISOString() ?? null,
     isSeen: m.isSeen,
+    sizeBytes: m.sizeBytes,
   };
 }
 

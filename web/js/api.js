@@ -49,10 +49,12 @@ export const api = {
       folder,
       uids,
     }),
-  messagesUnified: ({ offset = 0, limit = 50, unseen = false } = {}) =>
+  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false } = {}) =>
     request(
       'GET',
-      `/messages?offset=${offset}&limit=${limit}` + (unseen ? '&unseen=1' : ''),
+      `/messages?offset=${offset}&limit=${limit}` +
+        (unseen ? '&unseen=1' : '') +
+        (attachments ? '&attachments=1' : ''),
     ),
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
@@ -85,9 +87,10 @@ export const api = {
     }),
   sendMail: (slug, payload) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),
-  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false } = {}) => {
+  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false, attachments = false } = {}) => {
     const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit) });
     if (unseen) q.set('unseen', '1');
+    if (attachments) q.set('attachments', '1');
     return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${q}`);
   },
   bulkAction: (slug, { folder, uids, action, destination }) =>
@@ -97,6 +100,9 @@ export const api = {
       action,
       destination,
     }),
+  // URL directe (même origine, cookie de session) : le navigateur télécharge.
+  attachmentUrl: (slug, folder, uid, index) =>
+    `/api/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}/attachments/${index}`,
   readMessage: (slug, folder, uid) =>
     request(
       'GET',

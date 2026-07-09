@@ -359,6 +359,35 @@ class ImapService {
     }
   }
 
+  /**
+   * Télécharge UNE pièce jointe d'un mail (L5.9). `index` = position dans la
+   * liste `attachments` renvoyée par readEmail (même parseur, même ordre).
+   * Retourne null si l'index n'existe pas. Le mail complet est téléchargé puis
+   * parsé — le cap de taille est vérifié en amont (route) sur sizeBytes.
+   */
+  async downloadAttachment(
+    rec: AccountRecord,
+    folder: string,
+    uid: number,
+    index: number,
+  ): Promise<{ filename: string; contentType: string; content: Buffer } | null> {
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const dl = await client.download(String(uid), undefined, { uid: true });
+      const parsed = await simpleParser(dl.content);
+      const att = (parsed.attachments ?? [])[index];
+      if (!att) return null;
+      return {
+        filename: att.filename ?? `piece-jointe-${index + 1}`,
+        contentType: att.contentType ?? 'application/octet-stream',
+        content: att.content,
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
   // --- Fil de discussion ----------------------------------------------------
 
   async getThread(rec: AccountRecord, folder: string, uid: number): Promise<EmailMeta[]> {

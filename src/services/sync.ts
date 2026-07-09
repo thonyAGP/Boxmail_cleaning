@@ -75,6 +75,35 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+// Nœud de bodyStructure imapflow (typé au minimum nécessaire).
+type BodyStructNode = {
+  type?: string;
+  disposition?: string;
+  dispositionParameters?: { filename?: string };
+  parameters?: { name?: string };
+  childNodes?: BodyStructNode[];
+};
+
+/**
+ * Compte les pièces jointes d'un bodyStructure (L5.9) : toute partie feuille
+ * avec une disposition « attachment » OU un nom de fichier (les images inline
+ * nommées comptent — mailparser les liste aussi dans le panneau de lecture).
+ */
+export function countAttachments(node: BodyStructNode | undefined | null): number {
+  if (!node) return 0;
+  let count = 0;
+  const walk = (n: BodyStructNode) => {
+    if (n.childNodes?.length) {
+      for (const c of n.childNodes) walk(c);
+      return;
+    }
+    const filename = n.dispositionParameters?.filename ?? n.parameters?.name;
+    if (n.disposition?.toLowerCase() === 'attachment' || filename) count++;
+  };
+  walk(node);
+  return count;
+}
+
 /**
  * Plage IMAP compacte "premier:dernier" pour un lot d'UIDs triés.
  * Une liste explicite de milliers d'UIDs dépasse la longueur de commande
@@ -207,6 +236,8 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             isOutbound: boolean;
             sizeBytes: number;
             hasListUnsubscribe: boolean;
+            hasAttachments: boolean;
+            attachmentCount: number;
           }[] = [];
           // Plage compacte plutôt que liste d'UIDs (limite de longueur de
           // commande Outlook). Les UIDs du trou éventuel n'existent pas côté
@@ -219,6 +250,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               flags: true,
               size: true,
               internalDate: true,
+              bodyStructure: true,
               headers: ['list-unsubscribe'],
             },
             { uid: true },
@@ -226,6 +258,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const from = msg.envelope?.from?.[0];
             const fromEmail = from?.address?.toLowerCase() ?? null;
             const flags = msg.flags ?? new Set<string>();
+            const attachmentCount = countAttachments(msg.bodyStructure as BodyStructNode);
             rows.push({
               accountSlug: rec.account,
               folderId: folder.id,
@@ -249,6 +282,8 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               sizeBytes: msg.size ?? 0,
               hasListUnsubscribe:
                 !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8')),
+              hasAttachments: attachmentCount > 0,
+              attachmentCount,
             });
           }
           if (rows.length) {

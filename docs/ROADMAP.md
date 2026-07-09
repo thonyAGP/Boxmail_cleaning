@@ -332,15 +332,23 @@ adresse, état token, dernière sync ; actions par compte : ✏️ Renommer
 serveur : version, superviseur, SMTP on/off (lecture seule), chemin base.
 Journalisation des 3 actions.
 
-### ⬜ L5.9 — Pièces jointes : indexation légère + téléchargement (PRIORISÉE — passe avant L5.7/L5.8, retour utilisateur 07/2026 : « pas de possibilité d'ouvrir les pièces jointes »)
+### ✅ L5.9 — Pièces jointes : indexation légère + téléchargement (passée avant L5.7/L5.8 — retour utilisateur 07/2026 : « pas de possibilité d'ouvrir les pièces jointes »)
 
-Sync : fetch `bodyStructure` → colonnes `hasAttachments Boolean` +
-`attachmentCount Int` (migration) sur les NOUVEAUX mails (backfill = resync
-complète, le signaler dans l'UI). Inbox/recherche : badge 📎 + filtre
-« avec pièces jointes ». Panneau de lecture : téléchargement d'une pièce
-jointe — GET `/api/accounts/:slug/messages/:folder/:uid/attachments/:index`
-(imapflow download de la partie, Content-Disposition, cap 25 Mo, journal
-non requis — lecture). Workflow SPEC « retrouve le dernier contrat ».
+**LIVRÉE.** Migration `hasAttachments Boolean` + `attachmentCount Int` sur
+Message ; sync : fetch `bodyStructure` → `countAttachments()` (partie
+feuille avec disposition attachment OU nom de fichier — même périmètre que
+mailparser dans le panneau) sur les NOUVEAUX mails uniquement (backfill =
+resync complète, signalé en tooltip + état vide). Inbox unifiée/par boîte :
+badge 📎 (compteur si > 1) + case « 📎 avec PJ » ; recherche : filtre +
+badge. Panneau de lecture : liens ⬇️ de téléchargement direct — GET
+`/api/accounts/:slug/messages/:folder/:uid/attachments/:index`
+(`imapService.downloadAttachment` : download complet + mailparser, MÊME
+parseur/ordre que la liste affichée ; Content-Disposition avec filename*
+UTF-8 ; cap 413 si mail > 25 Mo via sizeBytes de l'index ; 404 hors index ;
+502 boîte injoignable ; index marqué lu — le download pose \Seen). Tests :
+seed-unified.mts étendu (16 asserts dont countAttachments multipart) +
+ui-attachments.mjs (9 checks playwright : badges, filtre, liens, événement
+download, nom de fichier suggéré) + curl 400/404/413/502.
 
 ### ⬜ L5.10 — Aide & finitions UX
 
