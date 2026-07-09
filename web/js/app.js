@@ -316,6 +316,8 @@ function highlightNav() {
     document.querySelector('[data-nav="followups"]')?.classList.add('active');
   } else if (hash.startsWith('#/deadlines')) {
     document.querySelector('[data-nav="deadlines"]')?.classList.add('active');
+  } else if (hash.startsWith('#/calendar')) {
+    document.querySelector('[data-nav="calendar"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -345,6 +347,8 @@ function route() {
     renderFollowups();
   } else if (hash.startsWith('#/deadlines')) {
     renderDeadlines();
+  } else if (hash.startsWith('#/calendar')) {
+    renderCalendar();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -2370,6 +2374,203 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------------- Calendrier des échéances (L5.7)
+// Vue mois posée sur les données EXISTANTES (/api/attention/deadlines +
+// /api/tasks) : aucun nouveau backend, rien n'est écrit depuis cet écran.
+const calState = { year: null, month: null, selected: null, deadlines: [], tasks: [] };
+
+const CAL_TYPE_EMOJI = { payment: '💶', document: '📄', appointment: '📅', renewal: '🔁', other: '📌' };
+
+function calDateKey(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+async function renderCalendar() {
+  const main = $('#main');
+  const now = new Date();
+  if (calState.year === null) {
+    calState.year = now.getFullYear();
+    calState.month = now.getMonth();
+    calState.selected = calDateKey(now);
+  }
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🗓️ Calendrier</h1>
+      <div class="sub">Tes échéances (confirmées ET proposées) et tes tâches à date, posées sur le mois.
+      Clique un jour pour le détail, puis une échéance pour lire le mail d'origine.</div></div>
+    <div class="head-actions">
+      <a class="btn" href="#/deadlines">📅 Gérer les échéances</a>
+      <a class="btn" href="#/tasks">☑️ Gérer les tâches</a>
+    </div></div>
+    <div id="cal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  try {
+    const [dl, tk] = await Promise.all([api.deadlines(), api.tasks()]);
+    calState.deadlines = dl.items.filter((x) => x.status !== 'dismissed');
+    calState.tasks = tk.items.filter((t) => t.status === 'todo' && t.dueDate);
+  } catch (err) {
+    $('#cal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  renderCalendarBody();
+}
+
+function calEventsByDay() {
+  const map = new Map();
+  const add = (key, ev) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(ev);
+  };
+  for (const x of calState.deadlines) add(calDateKey(x.date), { kind: 'deadline', item: x });
+  for (const t of calState.tasks) add(calDateKey(t.dueDate), { kind: 'task', item: t });
+  return map;
+}
+
+function renderCalendarBody() {
+  const body = $('#cal-body');
+  if (!body) return;
+  const { year, month } = calState;
+  const events = calEventsByDay();
+  const todayKey = calDateKey(new Date());
+  const monthLabel = new Date(year, month, 1).toLocaleDateString('fr-FR', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  // Grille lun→dim : 6 semaines fixes, jours des mois voisins grisés.
+  const firstDay = new Date(year, month, 1);
+  const offset = (firstDay.getDay() + 6) % 7; // lundi = 0
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(year, month, 1 + i - offset);
+    const key = calDateKey(d);
+    const evs = events.get(key) ?? [];
+    const classes = [
+      'cal-cell',
+      d.getMonth() !== month ? 'out' : '',
+      d.getDay() === 0 || d.getDay() === 6 ? 'weekend' : '',
+      key === todayKey ? 'today' : '',
+      key === calState.selected ? 'selected' : '',
+    ].filter(Boolean).join(' ');
+    const chips = evs.slice(0, 3).map((ev) => {
+      const i = ev.item;
+      const color = accountColor(i.account ?? '');
+      const label = ev.kind === 'task' ? `☑️ ${i.title}` : `${CAL_TYPE_EMOJI[i.type] ?? '📌'} ${i.title}`;
+      return `<span class="cal-ev ${ev.kind === 'deadline' && i.status === 'proposed' ? 'proposed' : ''}"
+        style="border-left-color:${color}" title="${esc(label)}${i.account ? ` · ${esc(i.account)}` : ''}">${esc(label)}</span>`;
+    }).join('');
+    cells.push(`<div class="${classes}" data-day="${key}">
+      <span class="cal-daynum">${d.getDate()}</span>${chips}
+      ${evs.length > 3 ? `<span class="cal-more muted">+${evs.length - 3} autre(s)</span>` : ''}
+    </div>`);
+  }
+
+  const dows = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+  body.innerHTML = `
+    <div class="cal-layout">
+      <div>
+        <div class="cal-head">
+          <button class="btn btn-sm" id="cal-prev" title="Mois précédent">‹</button>
+          <span class="cal-title">${esc(monthLabel)}</span>
+          <button class="btn btn-sm" id="cal-next" title="Mois suivant">›</button>
+          <button class="btn btn-sm" id="cal-today">Aujourd'hui</button>
+          <span class="muted" style="font-size:12px; margin-left:auto">
+            ${fmtNum(calState.deadlines.length)} échéance(s) · ${fmtNum(calState.tasks.length)} tâche(s) à date</span>
+        </div>
+        <div class="cal-grid">
+          ${dows.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
+          ${cells.join('')}
+        </div>
+        <div class="panel-body muted" style="font-size:12.5px; padding:8px 4px 0">
+          🛟 Lecture seule : rien n'est créé ni modifié depuis le calendrier. Les échéances en
+          pointillé sont encore <em>proposées</em> — confirme-les depuis l'écran Échéances.</div>
+      </div>
+      <div class="cal-side" id="cal-side"></div>
+    </div>`;
+
+  $('#cal-prev').addEventListener('click', () => {
+    calState.month--;
+    if (calState.month < 0) { calState.month = 11; calState.year--; }
+    renderCalendarBody();
+  });
+  $('#cal-next').addEventListener('click', () => {
+    calState.month++;
+    if (calState.month > 11) { calState.month = 0; calState.year++; }
+    renderCalendarBody();
+  });
+  $('#cal-today').addEventListener('click', () => {
+    const n = new Date();
+    calState.year = n.getFullYear();
+    calState.month = n.getMonth();
+    calState.selected = todayKey;
+    renderCalendarBody();
+  });
+  body.querySelectorAll('.cal-cell').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      calState.selected = cell.dataset.day;
+      renderCalendarBody();
+    });
+  });
+
+  renderCalendarSide(events);
+}
+
+function renderCalendarSide(events) {
+  const side = $('#cal-side');
+  if (!side) return;
+  const key = calState.selected;
+  if (!key) {
+    side.innerHTML = '<div class="panel"><div class="panel-body"><div class="empty">Clique un jour du calendrier pour voir son détail.</div></div></div>';
+    return;
+  }
+  const evs = events.get(key) ?? [];
+  const dayLabel = new Date(`${key}T12:00:00`).toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const deadlines = evs.filter((e) => e.kind === 'deadline');
+  const tasks = evs.filter((e) => e.kind === 'task');
+
+  const dlRow = (x, idx) => {
+    const type = DEADLINE_TYPES[x.type] ?? DEADLINE_TYPES.other;
+    const canOpen = x.uid != null && x.folder;
+    return `<div class="cal-side-row">
+      <div>
+        <span class="badge ${type.badge}">${type.label}</span>
+        ${x.status === 'proposed' ? '<span class="badge orange">à valider</span>'
+          : x.status === 'done' ? '<span class="badge green">✓ fait</span>'
+          : '<span class="badge blue">confirmée</span>'}
+        ${accountChip(x.account)}
+      </div>
+      <div class="${canOpen ? 'openable' : ''}" ${canOpen ? `data-cal-open="${idx}" title="Lire le mail d'origine"` : ''}>${esc(x.title)}</div>
+      ${x.fromName || x.fromEmail ? `<div class="muted" style="font-size:12px">${esc(x.fromName || x.fromEmail)}</div>` : ''}
+    </div>`;
+  };
+  const taskRowSide = (t) => `<div class="cal-side-row">
+    <div><span class="badge gray">☑️ tâche</span>${t.account ? ` ${accountChip(t.account)}` : ''}</div>
+    <div>${esc(t.title)}</div>
+    ${t.notes ? `<div class="muted" style="font-size:12px">${esc(t.notes)}</div>` : ''}
+  </div>`;
+
+  side.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2 style="text-transform:capitalize">${esc(dayLabel)}</h2></div>
+    <div class="panel-body">
+      ${evs.length === 0 ? '<div class="empty">Rien ce jour-là. 🎉</div>' : ''}
+      ${deadlines.map((e, idx) => dlRow(e.item, idx)).join('')}
+      ${tasks.map((e) => taskRowSide(e.item)).join('')}
+    </div>
+  </div>`;
+
+  side.querySelectorAll('[data-cal-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const x = deadlines[Number(el.dataset.calOpen)]?.item;
+      if (!x) return;
+      openReaderFor(
+        { ...x, subject: x.subject ?? x.title, date: x.msgDate ?? x.date },
+        { onRemoved: () => renderCalendar() },
+      );
+    });
+  });
 }
 
 // ---------------------------------------------------------------- Tâches (L5.5)

@@ -311,15 +311,20 @@ totaux agrégés + mention « (N boîtes) » ; déplacement masqué en unifié
 (dossiers ambigus). Tests : seed-unified.mts (8 asserts service) +
 ui-unified.mjs playwright (18 checks, bulk mocké via page.route).
 
-### ⬜ L5.7 — Calendrier des échéances (vue mois)
+### ✅ L5.7 — Calendrier des échéances (vue mois)
 
-Écran `#/calendar` (lien sidebar 🗓️ ou onglet dans Échéances) : grille
-mensuelle (lun→dim, navigation ‹ mois ›), échéances confirmées+proposées
-posées sur leurs jours (pastille type + couleur du compte), clic jour →
-liste latérale des échéances + tâches à échéance du jour, clic échéance →
-panneau de lecture du mail source. Données : `/api/attention/deadlines` +
-`/api/tasks` (dueDate) existants — AUCUN nouveau backend. Aujourd'hui
-surligné, week-ends grisés.
+**LIVRÉE.** Écran `#/calendar` (lien sidebar 🗓️) : grille lun→dim 6
+semaines fixes (jours voisins grisés), navigation ‹ mois › + bouton
+Aujourd'hui, aujourd'hui surligné, week-ends grisés. Échéances non
+ignorées (proposées EN POINTILLÉ + confirmées + faites) et tâches todo à
+dueDate posées sur leurs jours : chip emoji type + liseré couleur du
+compte, cap 3 + « +N autre(s) ». Clic jour → liste latérale (type, statut,
+chip compte, expéditeur ; tâches ☑️), clic échéance → panneau de lecture
+du mail source (openReaderFor). Lecture seule, AUCUN nouveau backend
+(`/api/attention/deadlines` + `/api/tasks`). Tests : seed-unified.mts
+étendu (5 échéances dont 1 dismissed exclue, 2 tâches dont 1 sans date
+exclue) + ui-calendar.mjs (15 checks playwright : grille, événements,
+pointillé, détail du jour, lecture, navigation mois).
 
 ### ⬜ L5.8 — Paramètres : comptes (renommer, supprimer, couleur)
 

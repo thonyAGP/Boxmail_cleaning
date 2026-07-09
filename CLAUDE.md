@@ -99,6 +99,14 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
 possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
 
+**L5.7 livrée : Calendrier des échéances (vue mois).** Écran `#/calendar`
+(sidebar 🗓️), grille lun→dim 6 semaines, ‹ mois › + Aujourd'hui, week-ends
+grisés, aujourd'hui surligné. Échéances non ignorées (proposées en
+POINTILLÉ) + tâches todo datées, chips emoji type + liseré couleur compte,
+cap 3/jour + « +N ». Clic jour → liste latérale, clic échéance →
+openReaderFor du mail source. Lecture seule, zéro nouveau backend. Tests :
+seed étendu + ui-calendar.mjs (15 checks).
+
 **L5.9 livrée : Pièces jointes (badge, filtre, téléchargement).**
 Migration Message.hasAttachments/attachmentCount ; sync fetch
 `bodyStructure` → `countAttachments()` exporté (feuille avec disposition

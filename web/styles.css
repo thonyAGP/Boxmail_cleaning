@@ -422,3 +422,32 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
   border-radius: 10px; padding: 12px 16px; margin-top: 6px; display: inline-block;
   user-select: all;
 }
+
+/* ---------- Calendrier des échéances (L5.7) ---------- */
+.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .cal-layout { grid-template-columns: 1fr; } }
+.cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.cal-title { font-size: 17px; font-weight: 700; text-transform: capitalize; min-width: 160px; text-align: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 4px 0; letter-spacing: .04em; }
+.cal-cell {
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  min-height: 84px; padding: 5px 6px; cursor: pointer; overflow: hidden;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cal-cell:hover { border-color: var(--accent); }
+.cal-cell.out { opacity: .38; }
+.cal-cell.weekend { background: #f4f6fa; }
+.cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-cell.selected { background: var(--accent-soft); border-color: var(--accent); }
+.cal-daynum { font-size: 12px; font-weight: 600; }
+.cal-cell.today .cal-daynum { color: var(--accent); }
+.cal-ev {
+  font-size: 11px; line-height: 1.3; border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: 1px 5px; background: #f1f4fa;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
+}
+.cal-ev.proposed { border-left-style: dashed; opacity: .8; }
+.cal-more { font-size: 11px; }
+.cal-side-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.cal-side-row:last-child { border-bottom: none; }
