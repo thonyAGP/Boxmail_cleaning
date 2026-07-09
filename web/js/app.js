@@ -9,6 +9,36 @@ import { api, fmtSize, fmtDate, fmtDateTime, fmtNum, esc } from './api.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 let overviewCache = null;
 let serverVersion = null;
+
+// ---------------------------------------------------------------- Couleurs par boîte
+// Une couleur STABLE par compte (L5.6) : attribution par position dans la
+// liste des comptes (distinctes jusqu'à 10 boîtes), repli sur un hash sinon.
+const ACCOUNT_PALETTE = [
+  '#2563eb', '#0d9488', '#ea8a0c', '#dc2626', '#7c3aed',
+  '#0891b2', '#be185d', '#65a30d', '#b45309', '#475569',
+];
+let accountColorMap = new Map();
+
+function rebuildAccountColors() {
+  accountColorMap = new Map(
+    (overviewCache?.enrolled ?? []).map((e, i) => [e.account, ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]]),
+  );
+}
+
+function accountColor(slug) {
+  const known = accountColorMap.get(slug);
+  if (known) return known;
+  let h = 0;
+  for (let i = 0; i < (slug ?? '').length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+  return ACCOUNT_PALETTE[h % ACCOUNT_PALETTE.length];
+}
+
+/** Pastille de compte colorée, utilisée sur tous les écrans. */
+function accountChip(slug) {
+  if (!slug) return '';
+  const c = accountColor(slug);
+  return `<span class="badge acct-chip" style="background:${c}1f; color:${c}; border:1px solid ${c}55">${esc(slug)}</span>`;
+}
 let smtpEnabled = false; // renseigné par /api/me au chargement
 
 // ---------------------------------------------------------------- Auth & boot
@@ -250,13 +280,15 @@ let pendingAutoSync = null;
 // ---------------------------------------------------------------- Sidebar
 async function refreshOverview() {
   overviewCache = await api.overview();
+  rebuildAccountColors();
   const nav = $('#accounts-nav');
   const bySlug = new Map(overviewCache.accounts.map((a) => [a.account, a]));
   const items = overviewCache.enrolled.map((e) => {
     const ov = bySlug.get(e.account);
     const unseen = ov?.inbox?.unseen;
     return `<a href="#/account/${esc(e.account)}" class="side-link" data-account="${esc(e.account)}">
-      📧 <span class="account-email" title="${esc(e.username)}">${esc(e.account)}</span>
+      <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
+      <span class="account-email" title="${esc(e.username)}">${esc(e.account)}</span>
       ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à sync</span>'}
     </a>`;
   });
@@ -1798,7 +1830,7 @@ function replyRow(i, idx) {
       <div class="reply-top">
         <strong>${esc(i.fromName || i.fromEmail)}</strong>
         <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
-        <span class="badge blue">${esc(i.account)}</span>
+        ${accountChip(i.account)}
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
       </div>
       <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}
@@ -1972,7 +2004,7 @@ function followupRow(i, idx) {
         <span class="muted" style="font-size:12px">À relancer :</span>
         <strong>${esc(i.counterpartyName || i.counterpartyEmail)}</strong>
         <span class="muted" style="font-size:12px">${esc(i.counterpartyEmail)}</span>
-        <span class="badge blue">${esc(i.account)}</span>
+        ${accountChip(i.account)}
         ${i.hasInbound ? '' : '<span class="badge gray">premier contact</span>'}
       </div>
       <div class="reply-subject openable" data-open="${idx}" title="Relire ton mail envoyé">${esc(i.subject)}
@@ -2097,7 +2129,7 @@ function importantRow(i, idx) {
       <div class="reply-top">
         <strong>${esc(i.fromName || i.fromEmail)}</strong>
         <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
-        <span class="badge blue">${esc(i.account)}</span>
+        ${accountChip(i.account)}
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
         ${i.senderKind === 'person' ? '<span class="badge green">👤 personne</span>' : ''}
       </div>
@@ -2328,7 +2360,7 @@ function deadlineRow(x, idx) {
         <span class="badge ${x.inDays <= 3 && x.inDays >= -1 ? 'red' : 'gray'}">${deadlineCountdown(x.inDays)}</span>
         <span class="badge ${type.badge}">${type.label}</span>
         ${statusBadge}
-        <span class="badge blue">${esc(x.account)}</span>
+        ${accountChip(x.account)}
         ${x.confidence < 0.9 ? '<span class="badge gray" title="Date trouvée sans tournure explicite">à vérifier</span>' : ''}
       </div>
       <div class="reply-subject ${canOpen ? 'openable' : ''}" ${canOpen ? `data-open="${idx}" title="Lire le mail d'origine"` : ''}>${esc(x.title)}</div>
@@ -2460,7 +2492,7 @@ function taskRow(t, idx) {
       <div class="reply-top">
         <strong class="${canOpen ? 'openable' : ''}" ${canOpen ? `data-open="${idx}" title="Ouvrir le mail d'origine"` : ''}>${esc(t.title)}</strong>
         ${t.dueDate ? `<span class="muted" style="font-size:12px">pour le ${fmtDate(t.dueDate)}</span>` : ''}
-        ${t.account ? `<span class="badge blue">${esc(t.account)}</span>` : ''}
+        ${t.account ? accountChip(t.account) : ''}
         ${TASK_SOURCE_LABELS[t.source] ?? ''}
       </div>
       ${t.fromName || t.fromEmail ? `<div class="reply-reason muted">mail de ${esc(t.fromName || t.fromEmail)}</div>` : ''}
@@ -2528,15 +2560,19 @@ function openTaskModal({ title = '', dueDate = '', account = null, messageRef = 
 
 // ------------------------------------------- Boîte de réception navigable (L5.2)
 const inboxState = {
-  account: '',
+  // '' = 🌐 toutes les boîtes (défaut) ; mémorisé entre les visites.
+  account: localStorage.getItem('bm.inboxAccount') ?? '',
   folder: '',
   offset: 0,
   pageSize: 50,
   unseen: false,
   data: null,
   folders: [],
-  selected: new Set(), // uids sélectionnés (page courante uniquement)
+  selected: new Set(), // clés `compte|dossier|uid` (page courante uniquement)
 };
+
+const isUnifiedInbox = () => inboxState.account === '';
+const inboxKey = (i) => `${i.account}|${i.folder}|${i.uid}`;
 
 async function renderInbox(slugFromHash) {
   const main = $('#main');
@@ -2547,8 +2583,8 @@ async function renderInbox(slugFromHash) {
     return;
   }
   if (slugFromHash && accounts.includes(slugFromHash)) inboxState.account = slugFromHash;
-  if (!inboxState.account || !accounts.includes(inboxState.account)) {
-    inboxState.account = accounts[0];
+  if (inboxState.account && !accounts.includes(inboxState.account)) {
+    inboxState.account = ''; // compte disparu → retour à la vue unifiée
   }
 
   main.innerHTML = `<div class="page-head">
@@ -2556,9 +2592,11 @@ async function renderInbox(slugFromHash) {
       <div class="sub">Tous les mails du dossier, page par page (index local — instantané).
       Clique un mail pour le lire ; coche pour agir en masse. Synchronise pour des résultats à jour.</div></div>
     <div class="head-actions">
-      <select id="inbox-account" title="Boîte">${accounts
-        .map((a) => `<option value="${esc(a)}" ${a === inboxState.account ? 'selected' : ''}>${esc(a)}</option>`)
-        .join('')}</select>
+      <select id="inbox-account" title="Boîte">
+        <option value="" ${inboxState.account === '' ? 'selected' : ''}>🌐 Toutes les boîtes</option>
+        ${accounts
+          .map((a) => `<option value="${esc(a)}" ${a === inboxState.account ? 'selected' : ''}>${esc(a)}</option>`)
+          .join('')}</select>
       <select id="inbox-folder" title="Dossier"></select>
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
         <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
@@ -2570,6 +2608,7 @@ async function renderInbox(slugFromHash) {
 
   $('#inbox-account').addEventListener('change', async (e) => {
     inboxState.account = e.target.value;
+    localStorage.setItem('bm.inboxAccount', inboxState.account);
     inboxState.folder = '';
     inboxState.offset = 0;
     inboxState.selected.clear();
@@ -2594,7 +2633,7 @@ async function renderInbox(slugFromHash) {
       alert("Envoi désactivé sur ce serveur (ENABLE_SMTP_SEND=false dans le .env).");
       return;
     }
-    openComposeModal({ account: inboxState.account });
+    openComposeModal({ account: inboxState.account || accounts[0] });
   });
 
   await loadInboxFolders();
@@ -2605,6 +2644,14 @@ async function renderInbox(slugFromHash) {
 async function loadInboxFolders() {
   const sel = $('#inbox-folder');
   if (!sel) return;
+  if (isUnifiedInbox()) {
+    sel.innerHTML = '<option value="">📥 INBOX de toutes les boîtes</option>';
+    sel.disabled = true;
+    inboxState.folder = '';
+    inboxState.folders = [];
+    return;
+  }
+  sel.disabled = false;
   sel.innerHTML = '<option>…</option>';
   try {
     const { folders } = await api.folders(inboxState.account);
@@ -2630,12 +2677,18 @@ async function loadInbox() {
   if (!body) return;
   body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
   try {
-    inboxState.data = await api.listMessages(inboxState.account, {
-      folder: inboxState.folder,
-      offset: inboxState.offset,
-      limit: inboxState.pageSize,
-      unseen: inboxState.unseen,
-    });
+    inboxState.data = isUnifiedInbox()
+      ? await api.messagesUnified({
+          offset: inboxState.offset,
+          limit: inboxState.pageSize,
+          unseen: inboxState.unseen,
+        })
+      : await api.listMessages(inboxState.account, {
+          folder: inboxState.folder,
+          offset: inboxState.offset,
+          limit: inboxState.pageSize,
+          unseen: inboxState.unseen,
+        });
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
       err.data?.needsSync
@@ -2662,13 +2715,16 @@ function renderInboxBody() {
         ? `<div class="empty">${inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'}</div>`
         : `<table><thead><tr>
             <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
-            <th style="width:100px">Date</th><th style="width:220px">Expéditeur</th><th>Sujet</th><th></th>
+            <th style="width:100px">Date</th>
+            ${isUnifiedInbox() ? '<th style="width:110px">Boîte</th>' : ''}
+            <th style="width:220px">Expéditeur</th><th>Sujet</th><th></th>
           </tr></thead>
           <tbody>${d.items
             .map(
               (i, k) => `<tr class="${i.isSeen ? '' : 'unread-row'}">
-              <td><input type="checkbox" class="inbox-check" data-uid="${i.uid}" ${sel.has(i.uid) ? 'checked' : ''}></td>
+              <td style="box-shadow: inset 3px 0 ${accountColor(i.account)}"><input type="checkbox" class="inbox-check" data-key="${esc(inboxKey(i))}" ${sel.has(inboxKey(i)) ? 'checked' : ''}></td>
               <td class="muted" style="white-space:nowrap; font-size:12px">${fmtDate(i.date)}</td>
+              ${isUnifiedInbox() ? `<td>${accountChip(i.account)}</td>` : ''}
               <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px"
                 title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</td>
               <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span></td>
@@ -2708,20 +2764,19 @@ function renderInboxBody() {
 
   const checkAll = $('#inbox-check-all');
   if (checkAll) {
-    checkAll.checked = d.items.length > 0 && d.items.every((i) => sel.has(i.uid));
+    checkAll.checked = d.items.length > 0 && d.items.every((i) => sel.has(inboxKey(i)));
     checkAll.addEventListener('change', () => {
       for (const i of d.items) {
-        if (checkAll.checked) sel.add(i.uid);
-        else sel.delete(i.uid);
+        if (checkAll.checked) sel.add(inboxKey(i));
+        else sel.delete(inboxKey(i));
       }
       renderInboxBody();
     });
   }
   body.querySelectorAll('.inbox-check').forEach((box) => {
     box.addEventListener('change', () => {
-      const uid = Number(box.dataset.uid);
-      if (box.checked) sel.add(uid);
-      else sel.delete(uid);
+      if (box.checked) sel.add(box.dataset.key);
+      else sel.delete(box.dataset.key);
       renderInboxBulkbar();
     });
   });
@@ -2735,16 +2790,19 @@ function renderInboxBulkbar() {
   const sel = inboxState.selected;
   bar.classList.toggle('hidden', sel.size === 0);
   if (sel.size === 0) return;
-  const others = inboxState.folders.filter(
-    (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
-  );
+  const others = isUnifiedInbox()
+    ? []
+    : inboxState.folders.filter(
+        (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
+      );
   bar.innerHTML = `✅ <strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
     <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)">🗑️ Corbeille</button>
-    <select id="bulk-move"><option value="">📦 Déplacer vers…</option>
-      ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>
+    ${isUnifiedInbox() ? '' : `<select id="bulk-move"><option value="">📦 Déplacer vers…</option>
+      ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>`}
     <button class="btn btn-sm" id="bulk-seen">Marquer lus</button>
     <button class="btn btn-sm" id="bulk-unseen">Marquer non lus</button>
-    <button class="btn btn-sm" id="bulk-clear">Tout décocher</button>`;
+    <button class="btn btn-sm" id="bulk-clear">Tout décocher</button>
+    ${isUnifiedInbox() ? '<span class="muted" style="font-size:12px">(déplacement : choisir une boîte précise — les dossiers diffèrent selon les comptes)</span>' : ''}`;
 
   const run = async (action, destination) => {
     const n = inboxState.selected.size;
@@ -2754,17 +2812,32 @@ function renderInboxBulkbar() {
     const notice = $('#inbox-notice');
     notice.innerHTML = `<div class="notice"><span class="spinner"></span>Action en cours sur ${fmtNum(n)} mail(s)…</div>`;
     try {
-      const r = await api.bulkAction(inboxState.account, {
-        folder: inboxState.folder,
-        uids: [...inboxState.selected],
-        action,
-        destination,
-      });
+      // Les clés sélectionnées peuvent couvrir plusieurs boîtes (vue unifiée) :
+      // on groupe par compte+dossier et on appelle l'API existante par groupe.
+      const groups = new Map(); // 'compte|dossier' -> uids[]
+      for (const key of inboxState.selected) {
+        const [acct, folder, uid] = key.split('|');
+        const gk = `${acct}|${folder}`;
+        if (!groups.has(gk)) groups.set(gk, []);
+        groups.get(gk).push(Number(uid));
+      }
+      let moved = 0;
+      let count = 0;
+      let skipped = 0;
+      for (const [gk, uids] of groups) {
+        const [acct, folder] = gk.split('|');
+        const r = await api.bulkAction(acct, { folder, uids, action, destination });
+        moved += r.moved ?? 0;
+        count += r.count ?? 0;
+        skipped += r.skipped ?? 0;
+      }
       notice.innerHTML = `<div class="notice">✅ ${
-        action === 'delete' ? `${fmtNum(r.moved ?? 0)} mail(s) → corbeille (récupérables ~30 j)`
-        : action === 'move' ? `${fmtNum(r.moved ?? 0)} mail(s) déplacés vers ${esc(destination)}`
-        : `${fmtNum(r.count ?? 0)} mail(s) marqués ${action === 'seen' ? 'lus' : 'non lus'}`
-      }${r.skipped ? ` — ${fmtNum(r.skipped)} ignoré(s) (plus dans l'index)` : ''}.</div>`;
+        action === 'delete' ? `${fmtNum(moved)} mail(s) → corbeille (récupérables ~30 j)`
+        : action === 'move' ? `${fmtNum(moved)} mail(s) déplacés vers ${esc(destination)}`
+        : `${fmtNum(count)} mail(s) marqués ${action === 'seen' ? 'lus' : 'non lus'}`
+      }${skipped ? ` — ${fmtNum(skipped)} ignoré(s) (plus dans l'index)` : ''}${
+        groups.size > 1 ? ` <span class="muted">(${groups.size} boîtes)</span>` : ''
+      }.</div>`;
       inboxState.selected.clear();
       await loadInbox();
       refreshOverview().catch(() => {});
@@ -2773,7 +2846,7 @@ function renderInboxBulkbar() {
     }
   };
   $('#bulk-delete').addEventListener('click', () => run('delete'));
-  $('#bulk-move').addEventListener('change', (e) => {
+  $('#bulk-move')?.addEventListener('change', (e) => {
     if (e.target.value) run('move', e.target.value);
     e.target.value = '';
   });

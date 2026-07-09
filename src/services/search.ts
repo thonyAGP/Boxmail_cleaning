@@ -150,6 +150,70 @@ export interface FolderListing {
  * Index only : tri date desc, `offset`/`limit` pour la pagination, `total`
  * pour afficher « page X / Y ». Même forme d'items que la recherche.
  */
+/**
+ * Boîte de réception UNIFIÉE (L5.6) : les INBOX de tous les comptes, triées
+ * par date décroissante, paginées. Même forme d'items que listFolderMessages
+ * (chaque item porte son account/folder/uid → lecture et actions OK).
+ */
+export async function listUnifiedInbox(
+  opts: { offset?: number; limit?: number; unseen?: boolean } = {},
+): Promise<FolderListing> {
+  await ensureDbReady();
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const where = {
+    isDeleted: false,
+    folder: { is: { role: 'inbox' } },
+    ...(opts.unseen ? { isSeen: false } : {}),
+  };
+  const [total, rows] = await Promise.all([
+    db.message.count({ where }),
+    db.message.findMany({
+      where,
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      skip: offset,
+      take: limit,
+      select: {
+        id: true,
+        accountSlug: true,
+        uid: true,
+        threadId: true,
+        subject: true,
+        fromName: true,
+        fromEmail: true,
+        date: true,
+        isSeen: true,
+        isOutbound: true,
+        hasListUnsubscribe: true,
+        sizeBytes: true,
+        folder: { select: { path: true, role: true } },
+      },
+    }),
+  ]);
+  return {
+    account: '',
+    folder: '(toutes les boîtes)',
+    total,
+    offset,
+    items: rows.map((m) => ({
+      account: m.accountSlug,
+      folder: m.folder.path,
+      folderRole: m.folder.role,
+      uid: m.uid,
+      messageId: m.id,
+      threadId: m.threadId,
+      subject: m.subject ?? '(sans sujet)',
+      fromName: m.fromName ?? '',
+      fromEmail: m.fromEmail ?? '',
+      date: m.date?.toISOString() ?? null,
+      isSeen: m.isSeen,
+      isOutbound: m.isOutbound,
+      hasListUnsubscribe: m.hasListUnsubscribe,
+      sizeBytes: m.sizeBytes,
+    })),
+  };
+}
+
 export async function listFolderMessages(
   account: string,
   folder: string,

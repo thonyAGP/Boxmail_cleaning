@@ -294,25 +294,22 @@ modale ＋ Nouvelle tâche), badge sidebar (rouge si retard), panneau
 dashboard, bouton ☑️ Tâche dans le panneau de lecture, « ☑️ → tâche » sur
 les échéances confirmées, rubrique tasks du brief (chip cliquable).
 
-### ⬜ L5.6 — Boîte unifiée + code couleur par boîte (retour utilisateur 07/2026)
+### ✅ L5.6 — Boîte unifiée + code couleur par boîte (retour utilisateur 07/2026)
 
-**Objectif.** « Pas pratique d'avoir tous les mails sans différencier les
-boîtes » : vue « Toutes les boîtes » dans la boîte de réception, et une
-COULEUR stable par compte, visible partout.
-
-- Helper `accountColor(slug)` (web) : palette de 10 teintes distinctes,
-  attribution déterministe par hash du slug (candidate à la personnalisation
-  en L5.8). Helper `accountChip(slug)` : pastille colorée réutilisable.
-- Sidebar : point coloré devant chaque compte.
-- Inbox : option « 🌐 Toutes les boîtes » (DÉFAUT, mémorisé localStorage) ;
-  backend GET `/api/messages?offset&limit&unseen` (service
-  `listUnifiedInbox` : Message role=inbox tous comptes, tri date desc,
-  total) ; colonne Boîte (chip colorée) + liseré gauche coloré par ligne ;
-  actions en masse multi-comptes (groupage par compte → endpoints bulk
-  existants, séquentiel) ; lecture OK (item porte account/folder/uid).
-- Chips compte colorées sur TOUS les écrans qui affichent `badge blue`
-  account (réponses, relances, importants, échéances, tâches, recherche,
-  dashboard).
+**LIVRÉE.** Vue « Toutes les boîtes » (DÉFAUT dans l'inbox, mémorisé
+localStorage `bm.inboxAccount`) : backend `listUnifiedInbox` (search.ts) +
+GET `/api/messages?offset&limit&unseen` — Message role=inbox tous comptes,
+tri date desc, total. Couleurs : palette 10 teintes, attribution par
+position d'enrôlement (`rebuildAccountColors` dans refreshOverview, repli
+hash), helpers `accountColor(slug)`/`accountChip(slug)` ; point coloré
+sidebar, colonne Boîte (chip) + liseré gauche coloré par ligne (sur le 1er
+td — le fond des lignes non lues masquait le tr), chips colorées sur tous
+les écrans (réponses, relances, importants, échéances, tâches, dashboard).
+Actions en masse multi-comptes : sélection par clé `account|folder|uid`,
+groupage par compte+dossier → endpoints bulk existants en séquentiel,
+totaux agrégés + mention « (N boîtes) » ; déplacement masqué en unifié
+(dossiers ambigus). Tests : seed-unified.mts (8 asserts service) +
+ui-unified.mjs playwright (18 checks, bulk mocké via page.route).
 
 ### ⬜ L5.7 — Calendrier des échéances (vue mois)
 
@@ -335,7 +332,7 @@ adresse, état token, dernière sync ; actions par compte : ✏️ Renommer
 serveur : version, superviseur, SMTP on/off (lecture seule), chemin base.
 Journalisation des 3 actions.
 
-### ⬜ L5.9 — Pièces jointes : indexation légère + téléchargement
+### ⬜ L5.9 — Pièces jointes : indexation légère + téléchargement (PRIORISÉE — passe avant L5.7/L5.8, retour utilisateur 07/2026 : « pas de possibilité d'ouvrir les pièces jointes »)
 
 Sync : fetch `bodyStructure` → colonnes `hasAttachments Boolean` +
 `attachmentCount Int` (migration) sur les NOUVEAUX mails (backfill = resync

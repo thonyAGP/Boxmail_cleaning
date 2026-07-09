@@ -49,6 +49,11 @@ export const api = {
       folder,
       uids,
     }),
+  messagesUnified: ({ offset = 0, limit = 50, unseen = false } = {}) =>
+    request(
+      'GET',
+      `/messages?offset=${offset}&limit=${limit}` + (unseen ? '&unseen=1' : ''),
+    ),
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),

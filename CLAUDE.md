@@ -94,6 +94,27 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Batch L5.6 → L5.11 EN COURS (demande utilisateur : « Lance L5.6 à L5.11
+à suivre », un commit/push PAR livraison).** Ordre modifié : L5.9 (pièces
+jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
+possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
+
+**L5.6 livrée : Boîte unifiée + code couleur par boîte.**
+`listUnifiedInbox` (search.ts, Message role=inbox tous comptes hors
+supprimés, tri date desc, pagination+total) + GET `/api/messages` ; inbox
+par défaut sur « 🌐 Toutes les boîtes » (localStorage `bm.inboxAccount`),
+colonne Boîte + liseré coloré par ligne (posé sur le 1er td — le fond
+`.unread-row td` masque un box-shadow posé sur le tr), sélection par clés
+`account|folder|uid`, bulk groupé par compte+dossier (appels séquentiels à
+l'API existante, totaux agrégés, mention « (N boîtes) », déplacement masqué
+en unifié — dossiers ambigus) ; couleurs : palette 10 teintes attribuées
+par position d'enrôlement (`rebuildAccountColors` dans refreshOverview,
+repli hash), helpers `accountColor`/`accountChip`, points colorés sidebar,
+chips colorées sur tous les écrans (remplace les `badge blue`). Tests :
+scratchpad seed-unified.mts (8 asserts service, purge les comptes de seeds
+précédents d'accounts.json) + ui-unified.mjs (18 checks playwright, bulk
+mocké via page.route).
+
 **Rattrapage maquette TERMINÉ (L5.1 → L5.5, même session).**
 - **L5.2 Boîte de réception navigable** : `listFolderMessages` (index only,
   pagination offset/limit + total, filtre non-lus), `validateUids` +

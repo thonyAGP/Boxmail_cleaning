@@ -50,6 +50,7 @@ import {
   indexedMessage,
   reflectActionInIndex,
   listFolderMessages,
+  listUnifiedInbox,
   validateUids,
   reflectBulkInIndex,
 } from '../services/search.js';
@@ -666,6 +667,20 @@ export function buildAdminRouter(): Router {
 
   // --- Boîte de réception navigable (L5.2) -----------------------------------------
   // Liste paginée des mails d'un dossier, depuis l'INDEX (instantané).
+  // Boîte unifiée (L5.6) : les INBOX de tous les comptes en un seul flux.
+  router.get(
+    '/messages',
+    guard(async (req, res) => {
+      const offset = Math.max(Number.parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+      const limit = Math.min(
+        Math.max(Number.parseInt(String(req.query.limit ?? '50'), 10) || 50, 1),
+        200,
+      );
+      const unseen = ['1', 'true'].includes(String(req.query.unseen ?? ''));
+      res.json(await listUnifiedInbox({ offset, limit, unseen }));
+    }),
+  );
+
   router.get(
     '/accounts/:slug/messages',
     guard(async (req, res) => {
