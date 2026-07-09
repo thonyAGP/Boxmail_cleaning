@@ -1,4 +1,8 @@
 import { db, ensureDbReady } from '../db/client.js';
+import { imapService } from './imap.js';
+import { rebuildSenders } from './sync.js';
+import { recordOperation } from './oplog.js';
+import type { AccountRecord } from './accounts.js';
 
 /**
  * Cleanup Engine — version 1 (heuristiques déterministes, SPEC V2 §8.8).
