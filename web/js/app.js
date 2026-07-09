@@ -363,13 +363,13 @@ async function renderDashboard() {
 }
 
 async function applyUpdateFlow(container, confirmed = false) {
-  // Sans superviseur (start-boxmail.bat / pm2), le serveur ne PEUT PAS se
+  // Sans superviseur (MailAssistant.bat / pm2), le serveur ne PEUT PAS se
   // relancer tout seul apres l'arret : on previent avant, pas apres.
   if (serverVersion && !serverVersion.supervised && !confirmed) {
     container.innerHTML = `<div class="notice warn">\u26a0\ufe0f Ton serveur n'a pas \u00e9t\u00e9 lanc\u00e9 via
-      <strong>start-boxmail.bat</strong> : apr\u00e8s la mise \u00e0 jour il s'arr\u00eatera et
+      <strong>MailAssistant.bat</strong> : apr\u00e8s la mise \u00e0 jour il s'arr\u00eatera et
       <strong>ne red\u00e9marrera pas tout seul</strong>. Le mieux : ferme le serveur, relance-le en
-      double-cliquant <strong>start-boxmail.bat</strong> (il se mettra \u00e0 jour au passage), et
+      double-cliquant <strong>MailAssistant.bat</strong> (il se mettra \u00e0 jour au passage), et
       utilise ce bouton les prochaines fois.<br><br>
       <button class="btn" id="update-anyway">Mettre \u00e0 jour quand m\u00eame (je relancerai \u00e0 la main)</button></div>`;
     $('#update-anyway').addEventListener('click', () => applyUpdateFlow(container, true));
@@ -406,7 +406,7 @@ async function applyUpdateFlow(container, confirmed = false) {
       clearInterval(poll);
       if (!supervised) {
         container.innerHTML = `<div class="notice warn">\ud83d\udca4 Le serveur s'est arr\u00eat\u00e9 pour appliquer
-          la mise \u00e0 jour. <strong>Relance start-boxmail.bat</strong> (ou <code>npm start</code>),
+          la mise \u00e0 jour. <strong>Relance MailAssistant.bat</strong> (ou <code>npm start</code>),
           puis recharge cette page.</div>`;
         return;
       }
@@ -423,7 +423,7 @@ async function applyUpdateFlow(container, confirmed = false) {
         if (Date.now() - startedWait > 180_000) {
           clearInterval(waitUp);
           container.innerHTML = `<div class="notice warn">\u23f1\ufe0f Le serveur n'est pas revenu apr\u00e8s 3 minutes.
-            V\u00e9rifie la fen\u00eatre noire <strong>start-boxmail.bat</strong> (elle affiche peut-\u00eatre une
+            V\u00e9rifie la fen\u00eatre noire <strong>MailAssistant.bat</strong> (elle affiche peut-\u00eatre une
             erreur), relance-la si besoin, puis recharge cette page.</div>`;
         }
       }, 2000);

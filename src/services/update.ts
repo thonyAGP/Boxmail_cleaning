@@ -10,7 +10,7 @@ const execFileP = promisify(execFile);
  * - version()      : commit/branche/date actuels (affichés dans l'interface)
  * - checkUpdates() : git fetch + nombre de commits de retard + leurs titres
  * - applyUpdate()  : pull --ff-only → npm install → db:setup → build → exit(0)
- *   Le superviseur (start-boxmail.bat, pm2, systemd) relance le processus,
+ *   Le superviseur (MailAssistant.bat, pm2, systemd) relance le processus,
  *   qui repart sur le nouveau code. Aucune entrée utilisateur n'est passée
  *   aux commandes (fixes), le tout derrière la session admin.
  */
@@ -24,7 +24,7 @@ export interface VersionInfo {
   commit: string;
   date: string;
   branch: string;
-  /** true si un superviseur (start-boxmail.bat, pm2, systemd) relance le
+  /** true si un superviseur (MailAssistant.bat, pm2, systemd) relance le
    *  processus après un arrêt — condition du redémarrage automatique. */
   supervised: boolean;
 }
@@ -91,9 +91,9 @@ export async function applyUpdate(progress: (m: string) => void): Promise<{ rest
   if (process.platform === 'win32') {
     // Windows verrouille les fichiers natifs (.dll/.node) chargés par le
     // processus : `prisma generate` échouerait (EPERM) tant que le serveur
-    // tourne. On délègue install + db:setup + build à start-boxmail.bat,
+    // tourne. On délègue install + db:setup + build à MailAssistant.bat,
     // qui les exécute après l'arrêt du serveur, juste avant de le relancer.
-    progress('Code récupéré — installation et compilation au redémarrage (start-boxmail.bat)…');
+    progress('Code récupéré — installation et compilation au redémarrage (MailAssistant.bat)…');
   } else {
     await runStep('npm install --no-audit --no-fund', progress);
     await runStep('npm run db:setup', progress);
