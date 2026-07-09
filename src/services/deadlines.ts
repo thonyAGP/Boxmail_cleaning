@@ -523,3 +523,62 @@ export function completeDeadline(account: string, id: number): Promise<DeadlineI
 export function restoreDeadline(account: string, id: number): Promise<DeadlineItem> {
   return setStatus(account, id, 'proposed', 'restore_deadline', 'échéance remise en proposition');
 }
+
+/**
+ * Propose une échéance depuis le panneau de lecture (L5.4) : l'utilisateur a
+ * vu la date dans le mail ouvert et clique « Proposer ». Idempotent (contrainte
+ * unique compte+mail+date) et jamais d'écrasement d'un statut travaillé.
+ */
+export async function proposeDeadline(
+  account: string,
+  messageId: number,
+  input: { date: Date; type?: DeadlineType; sourceText?: string },
+): Promise<DeadlineItem> {
+  await ensureDbReady();
+  const msg = await db.message.findFirst({
+    where: { id: messageId, accountSlug: account, isDeleted: false },
+    select: {
+      id: true,
+      threadId: true,
+      subject: true,
+      fromEmail: true,
+      fromName: true,
+    },
+  });
+  if (!msg) throw new Error(`Mail ${messageId} introuvable pour le compte « ${account} ».`);
+  if (Number.isNaN(input.date.getTime())) throw new Error('Date invalide.');
+
+  const existing = await db.deadline.findUnique({
+    where: {
+      accountSlug_messageId_date: { accountSlug: account, messageId, date: input.date },
+    },
+  });
+  const metas = await loadSourceMeta([messageId]);
+  if (existing) return toItem(existing, metas.get(messageId));
+
+  const row = await db.deadline.create({
+    data: {
+      accountSlug: account,
+      messageId,
+      threadId: msg.threadId,
+      title: msg.subject ?? '(sans sujet)',
+      date: input.date,
+      type: input.type ?? 'other',
+      status: 'proposed',
+      confidence: 0.9,
+      reason: 'proposée depuis le panneau de lecture (date vérifiée dans le mail ouvert)',
+      sourceText: (input.sourceText ?? '').slice(0, 300),
+      fromEmail: msg.fromEmail,
+      fromName: msg.fromName,
+      subject: msg.subject,
+    },
+  });
+  await recordOperation({
+    account,
+    tool: 'propose_deadline',
+    params: { messageId, date: input.date.toISOString(), type: row.type },
+    items: [{ subject: row.title, date: input.date.toISOString() }],
+    result: 'échéance proposée depuis la lecture',
+  });
+  return toItem(row, metas.get(messageId));
+}

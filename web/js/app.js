@@ -2716,6 +2716,7 @@ async function openReader(item, row, opts = {}) {
         ${item.isSeen ? '' : ' · <span class="badge orange">non lu</span>'}</div>
       <div class="muted" id="reader-to"></div>
     </div>
+    <div class="reader-analysis hidden" id="reader-analysis"></div>
     <div class="reader-body" id="reader-body"><div class="empty"><span class="spinner"></span>
       Téléchargement du mail depuis la boîte…</div></div>
     <div class="reader-attachments hidden" id="reader-attachments"></div>
@@ -2737,6 +2738,14 @@ async function openReader(item, row, opts = {}) {
     }
   };
   document.addEventListener('keydown', onKey);
+
+  // Analyse heuristique du mail (L5.4) : importance, état du fil, échéances
+  // trouvées dans le texte affiché. Local, sans IMAP supplémentaire, sans LLM.
+  const loadAnalysis = (text) => {
+    api.analyzeMessage(item.account, { folder: item.folder, uid: item.uid, text })
+      .then((a) => renderReaderAnalysis(a, item))
+      .catch(() => {});
+  };
 
   // Corps du mail : lecture IMAP live. En cas d'échec (boîte injoignable),
   // on l'explique proprement — les actions restent disponibles.
@@ -2770,12 +2779,14 @@ async function openReader(item, row, opts = {}) {
     // Ouvrir un mail non lu le marque lu côté serveur (comportement IMAP
     // standard du download) : on met l'affichage en cohérence.
     if (!item.isSeen) setSeen(true);
+    loadAnalysis(loadedText);
   }).catch((err) => {
     const el = $('#reader-body');
     if (!el) return;
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>
       <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
       injoignable ou mail déplacé). Les infos ci-dessus viennent de l'index local.</div>`;
+    loadAnalysis(''); // l'analyse marche quand même (index + sujet)
   });
 
   // Liste des dossiers du compte pour l'action « Déplacer ».
@@ -2941,6 +2952,70 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
       btn.textContent = '✉️ Envoyer';
       errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
     }
+  });
+}
+
+// Section « 🤖 Analyse » du panneau de lecture (L5.4) — heuristiques locales.
+function renderReaderAnalysis(a, item) {
+  const el = $('#reader-analysis');
+  if (!el) return;
+  el.classList.remove('hidden');
+
+  const replyBadge =
+    a.reply.kind === 'awaiting' ? 'orange'
+    : a.reply.kind === 'you-last' ? 'blue'
+    : a.reply.kind === 'answered' ? 'green'
+    : 'gray';
+  const impLine = a.importance
+    ? `<div class="ra-line">${scoreBadge(a.importance.score)}
+        <span>importance ${a.importance.level === 'high' ? 'haute' : a.importance.level === 'medium' ? 'moyenne' : 'faible'}
+        <span class="muted" style="font-size:11.5px" title="${esc(a.importance.reasons.join(' · '))}">
+        — ${a.importance.reasons.slice(0, 2).map(esc).join(' · ')}${a.importance.reasons.length > 2 ? ' …' : ''}</span></span></div>`
+    : '';
+  const existing = a.deadlines.existing
+    .map(
+      (d) => `<span class="badge ${d.status === 'confirmed' ? 'blue' : d.status === 'proposed' ? 'orange' : 'gray'}"
+        title="statut : ${esc(d.status)}">📅 ${fmtDate(d.date)}</span>`,
+    )
+    .join(' ');
+  const detected = a.deadlines.detected
+    .map(
+      (d, k) => `<span class="ra-deadline">📅 ${fmtDate(d.date)}
+        <span class="muted" style="font-size:11px" title="${esc(d.sourceText)}">(${esc(d.type)})</span>
+        <button class="btn btn-sm ra-propose" data-k="${k}">➕ Proposer</button></span>`,
+    )
+    .join(' ');
+
+  el.innerHTML = `
+    <div class="ra-title">🤖 Analyse Mail Assistant <span class="muted" style="font-size:11px">(règles locales — rien n'est envoyé à un service externe)</span></div>
+    ${impLine}
+    <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
+    ${existing || detected
+      ? `<div class="ra-line"><span>Échéances :</span> ${existing} ${detected}</div>`
+      : ''}`;
+
+  el.querySelectorAll('.ra-propose').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const d = a.deadlines.detected[Number(btn.dataset.k)];
+      btn.disabled = true;
+      try {
+        await api.proposeDeadline(item.account, {
+          folder: item.folder,
+          uid: item.uid,
+          date: d.date,
+          type: d.type,
+          sourceText: d.sourceText,
+        });
+        btn.replaceWith(Object.assign(document.createElement('span'), {
+          className: 'badge orange',
+          textContent: '✓ proposée — à valider dans 📅 Échéances',
+        }));
+        refreshDeadlinesBadge();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
+    });
   });
 }
 

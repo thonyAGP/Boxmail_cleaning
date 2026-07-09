@@ -39,7 +39,12 @@ import {
   dismissDeadline,
   completeDeadline,
   restoreDeadline,
+  proposeDeadline,
+  extractDeadlines,
+  type DeadlineType,
 } from '../services/deadlines.js';
+import { explainImportance } from '../services/importance.js';
+import { AUTO_SENDER_RE } from '../services/attention.js';
 import {
   searchIndex,
   indexedMessage,
@@ -799,6 +804,144 @@ export function buildAdminRouter(): Router {
       }
       await reflectActionInIndex(slug, folder, uid, action as 'delete' | 'move' | 'seen' | 'unseen');
       res.json({ ok: true, action, ...result });
+    }),
+  );
+
+  // --- Analyse du mail ouvert (L5.4) ---------------------------------------------
+  // Tout est heuristique et local : importance (règles L1), état du fil,
+  // échéances trouvées dans le texte FOURNI par le client (le corps déjà
+  // téléchargé pour l'affichage — aucune lecture IMAP supplémentaire, aucun LLM).
+  router.post(
+    '/accounts/:slug/messages/analysis',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.body?.uid ?? ''), 10);
+      const text = String(req.body?.text ?? '').slice(0, 200_000);
+      if (!folder || !Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "uid" requis.' });
+        return;
+      }
+      const m = await db.message.findFirst({
+        where: { accountSlug: slug, uid, isDeleted: false, folder: { path: folder } },
+        select: {
+          id: true,
+          threadId: true,
+          isOutbound: true,
+          subject: true,
+          date: true,
+          fromEmail: true,
+          hasListUnsubscribe: true,
+        },
+      });
+      if (!m) {
+        res.status(404).json({ error: 'Mail introuvable dans l\'index — resynchronise la boîte.' });
+        return;
+      }
+
+      // Importance (mails reçus uniquement — le score n'a pas de sens pour tes envois).
+      let importance: { score: number; level: string; reasons: string[] } | null = null;
+      if (!m.isOutbound && m.fromEmail) {
+        try {
+          const imp = await explainImportance(slug, { messageId: m.id });
+          importance = { score: imp.score, level: imp.level, reasons: imp.reasons };
+        } catch {
+          /* index incomplet : pas de score */
+        }
+      }
+
+      // État du fil : qui a écrit en dernier, une réponse est-elle attendue ?
+      let reply: { kind: string; label: string } = { kind: 'none', label: 'Mail isolé (pas de fil).' };
+      if (m.threadId && m.date) {
+        const [outAfter, inAfter] = await Promise.all([
+          db.message.count({
+            where: { threadId: m.threadId, isDeleted: false, isOutbound: true, date: { gte: m.date } },
+          }),
+          db.message.count({
+            where: { threadId: m.threadId, isDeleted: false, isOutbound: false, date: { gt: m.date } },
+          }),
+        ]);
+        if (m.isOutbound) {
+          reply = inAfter > 0
+            ? { kind: 'answered', label: 'Le correspondant a répondu depuis.' }
+            : { kind: 'you-last', label: 'Tu as écrit en dernier — réponse externe attendue.' };
+        } else if (m.hasListUnsubscribe || (m.fromEmail && AUTO_SENDER_RE.test(m.fromEmail))) {
+          reply = { kind: 'auto', label: 'Expéditeur automatique : pas de réponse à prévoir.' };
+        } else if (outAfter > 0) {
+          reply = { kind: 'answered', label: 'Tu y as déjà répondu.' };
+        } else if (inAfter > 0) {
+          reply = { kind: 'none', label: 'Un mail plus récent existe dans ce fil.' };
+        } else {
+          reply = { kind: 'awaiting', label: 'Dernier message du fil : il attend probablement ta réponse.' };
+        }
+      }
+
+      // Échéances : déjà connues sur ce mail + nouvelles dates trouvées dans le
+      // sujet + corps affiché. Dédup par date (à la minute près).
+      const existingRows = await db.deadline.findMany({
+        where: { accountSlug: slug, messageId: m.id },
+        orderBy: { date: 'asc' },
+      });
+      const knownKeys = new Set(existingRows.map((d) => d.date.toISOString().slice(0, 16)));
+      const detected = extractDeadlines(`${m.subject ?? ''}\n${text}`, m.date ?? new Date())
+        .filter((ex) => !knownKeys.has(ex.date.toISOString().slice(0, 16)))
+        .slice(0, 5)
+        .map((ex) => ({
+          date: ex.date.toISOString(),
+          type: ex.type,
+          confidence: ex.confidence,
+          sourceText: ex.sourceText,
+        }));
+
+      res.json({
+        messageId: m.id,
+        importance,
+        reply,
+        deadlines: {
+          existing: existingRows.map((d) => ({
+            id: d.id,
+            date: d.date.toISOString(),
+            status: d.status,
+            type: d.type,
+          })),
+          detected,
+        },
+      });
+    }),
+  );
+
+  // Proposer une échéance depuis le panneau de lecture (date vue dans le mail).
+  router.post(
+    '/accounts/:slug/messages/propose-deadline',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.body?.uid ?? ''), 10);
+      const date = new Date(String(req.body?.date ?? ''));
+      if (!folder || !Number.isInteger(uid) || uid <= 0 || Number.isNaN(date.getTime())) {
+        res.status(400).json({ error: 'Paramètres "folder", "uid" et "date" requis.' });
+        return;
+      }
+      const m = await db.message.findFirst({
+        where: { accountSlug: slug, uid, isDeleted: false, folder: { path: folder } },
+        select: { id: true },
+      });
+      if (!m) {
+        res.status(404).json({ error: 'Mail introuvable dans l\'index.' });
+        return;
+      }
+      const type = ['payment', 'document', 'appointment', 'renewal', 'other'].includes(
+        String(req.body?.type),
+      )
+        ? (String(req.body.type) as DeadlineType)
+        : 'other';
+      res.json(
+        await proposeDeadline(slug, m.id, {
+          date,
+          type,
+          sourceText: String(req.body?.sourceText ?? ''),
+        }),
+      );
     }),
   );
 

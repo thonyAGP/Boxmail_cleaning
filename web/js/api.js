@@ -65,6 +65,16 @@ export const api = {
     }
     return request('GET', `/search?${q}`);
   },
+  analyzeMessage: (slug, { folder, uid, text }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
+  proposeDeadline: (slug, { folder, uid, date, type, sourceText }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/propose-deadline`, {
+      folder,
+      uid,
+      date,
+      type,
+      sourceText,
+    }),
   sendMail: (slug, payload) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),
   listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false } = {}) => {
