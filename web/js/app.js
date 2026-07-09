@@ -349,6 +349,22 @@ async function renderDashboard() {
     .sort((a, b) => b.messageCount - a.messageCount);
 
   body.innerHTML = `
+    <div class="panel" id="brief-panel">
+      <div class="panel-head">
+        <h2 id="brief-toggle" style="cursor:pointer" title="Replier / déplier le brief">
+          <span id="brief-caret">▾</span> ☀️ Brief du jour
+          <span class="muted brief-when" id="brief-when"></span></h2>
+        <div class="head-actions">
+          <select id="brief-type" title="Brief du jour (24 h) ou revue de la semaine (7 jours)">
+            <option value="daily">Jour (24 h)</option>
+            <option value="weekly">Semaine (7 j)</option>
+          </select>
+          <button class="btn btn-sm btn-primary" id="brief-generate">☀️ Régénérer</button>
+        </div>
+      </div>
+      <div class="panel-body" id="brief-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
+    </div>
+
     <div class="cards">
       <div class="kpi"><div class="kpi-label">📥 Mails en boîte de réception</div>
         <div class="kpi-value">${fmtNum(totalInbox)}</div>
@@ -429,6 +445,8 @@ async function renderDashboard() {
         <div class="panel-body" id="dash-ops"><span class="spinner"></span></div>
       </div>
     </div>`;
+
+  initBriefPanel();
 
   api.operations(6).then(({ operations }) => {
     const el = $('#dash-ops');
@@ -543,6 +561,159 @@ async function renderDashboard() {
     body.prepend(el);
     $('#update-btn').addEventListener('click', () => applyUpdateFlow(el));
   }).catch(() => {});
+}
+
+// ---------------------------------------------------------------- Brief (L5)
+// Panneau « ☀️ Brief du jour » en tête de dashboard : affiche le dernier brief
+// archivé (aucun calcul au chargement), bouton pour en générer un frais.
+const briefState = { type: 'daily' };
+
+function initBriefPanel() {
+  const typeSel = $('#brief-type');
+  typeSel.value = briefState.type;
+  typeSel.addEventListener('change', () => {
+    briefState.type = typeSel.value === 'weekly' ? 'weekly' : 'daily';
+    $('#brief-toggle').innerHTML = `<span id="brief-caret">▾</span> ${
+      briefState.type === 'weekly' ? '📆 Revue de la semaine' : '☀️ Brief du jour'
+    } <span class="muted brief-when" id="brief-when"></span>`;
+    applyBriefCollapsed();
+    loadBrief();
+  });
+  $('#brief-generate').addEventListener('click', generateBriefNow);
+  $('#brief-toggle').addEventListener('click', () => {
+    const collapsed = localStorage.getItem('bm.briefCollapsed') === '1';
+    localStorage.setItem('bm.briefCollapsed', collapsed ? '0' : '1');
+    applyBriefCollapsed();
+  });
+  applyBriefCollapsed();
+  loadBrief();
+}
+
+function applyBriefCollapsed() {
+  const collapsed = localStorage.getItem('bm.briefCollapsed') === '1';
+  $('#brief-body')?.classList.toggle('hidden', collapsed);
+  const caret = $('#brief-caret');
+  if (caret) caret.textContent = collapsed ? '▸' : '▾';
+}
+
+async function loadBrief() {
+  const body = $('#brief-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
+  try {
+    const { brief } = await api.brief(briefState.type);
+    renderBrief(brief);
+  } catch (err) {
+    body.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+async function generateBriefNow() {
+  const btn = $('#brief-generate');
+  const body = $('#brief-body');
+  if (!btn || !body) return;
+  // Un brief replié qu'on régénère, c'est pour le lire : on le déplie.
+  localStorage.setItem('bm.briefCollapsed', '0');
+  applyBriefCollapsed();
+  btn.disabled = true;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse de tes boîtes…</div>';
+  try {
+    const { brief } = await api.briefGenerate(briefState.type);
+    renderBrief(brief);
+  } catch (err) {
+    body.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderBrief(b) {
+  const body = $('#brief-body');
+  if (!body) return;
+  const when = $('#brief-when');
+  if (when) when.textContent = b ? `généré le ${fmtDateTime(b.generatedAt)}` : '';
+  if (!b) {
+    body.innerHTML = `<div class="empty">Aucun brief pour l'instant — clique sur
+      <strong>☀️ Régénérer</strong> pour faire le point sur tes boîtes (instantané,
+      calculé depuis l'index local).</div>`;
+    return;
+  }
+
+  const chip = (icon, n, label, href, cls = '') =>
+    `<a class="brief-chip ${cls}" ${href ? `href="${href}"` : ''}>
+      ${icon} <strong>${fmtNum(n)}</strong> ${label}</a>`;
+
+  const chips = [
+    chip('📥', b.totals.newMessages, `nouveaux (${esc(b.periodLabel)})`, ''),
+    chip('🔵', b.totals.unseenInbox, 'non lus au total', ''),
+    chip('⭐', b.important.high, 'importants (haute)', '#/important', b.important.high ? 'hot' : ''),
+    chip('↩️', b.replies.overdue, 'réponses en retard', '#/replies', b.replies.overdue ? 'hot' : ''),
+    chip('⏰', b.followups.overdue, 'relances à faire', '#/followups', b.followups.overdue ? 'hot' : ''),
+    chip('📅', b.deadlines.upcoming, 'échéances < 14 j', '#/deadlines', b.deadlines.toValidate ? 'hot' : ''),
+    chip('🧹', b.cleanup.deletableEstimate, 'mails supprimables', ''),
+  ].join('');
+
+  const section = (title, rows) =>
+    rows.length
+      ? `<div class="brief-section"><h3>${title}</h3>${rows.join('')}</div>`
+      : '';
+
+  const importantRows = b.important.top.slice(0, 3).map(
+    (i) => `<div class="op-line">${scoreBadge(i.score)}
+      <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> — ${esc(i.subject)}
+        <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
+      <span class="op-time">${fmtDate(i.date)}</span></div>`,
+  );
+  const deadlineRows = b.deadlines.items.slice(0, 3).map(
+    (d) => `<div class="op-line"><span class="op-time">${fmtDate(d.date)}</span>
+      <span style="flex:1">${esc(d.title)}
+        <span class="muted" style="font-size:12px">· ${esc(d.account)}</span>
+        ${d.status === 'proposed' ? '<span class="badge orange">à valider</span>' : ''}</span>
+      <span class="badge ${d.inDays <= 3 ? 'red' : 'gray'}">${deadlineCountdown(d.inDays)}</span></div>`,
+  );
+  const replyRows = b.replies.top.slice(0, 3).map(
+    (r) => `<div class="op-line"><span class="op-time">${fmtDate(r.date)}</span>
+      <span style="flex:1"><strong>${esc(r.fromName || r.fromEmail)}</strong> — ${esc(r.subject)}
+        <span class="muted" style="font-size:12px">· ${esc(r.account)}</span></span>
+      <span class="badge red">attend depuis ${waitLabel(r.waitingHours)}</span></div>`,
+  );
+  const followupRows = b.followups.top.slice(0, 3).map(
+    (f) => `<div class="op-line"><span class="op-time">${fmtDate(f.date)}</span>
+      <span style="flex:1"><strong>${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — ${esc(f.subject)}
+        <span class="muted" style="font-size:12px">· ${esc(f.account)}</span></span>
+      <span class="badge red">sans réponse depuis ${waitLabel(f.waitingHours)}</span></div>`,
+  );
+
+  const accountsLine = b.accounts
+    .map(
+      (a) => `<span class="brief-account"><strong>${esc(a.account)}</strong> :
+        ${fmtNum(a.newMessages)} nouveau(x) · ${fmtNum(a.inbox.unseen)} non lu(s)</span>`,
+    )
+    .join(' <span class="muted">|</span> ');
+
+  body.innerHTML = `
+    <div class="brief-chips">${chips}</div>
+    ${b.previousBrief ? `<div class="muted" style="font-size:12px; margin-bottom:10px">
+      Depuis le brief précédent (${fmtDateTime(b.previousBrief.at)}) :
+      ${fmtNum(b.previousBrief.newMessagesSince)} nouveau(x) mail(s) indexé(s).</div>` : ''}
+    <div class="grid-2">
+      <div>
+        ${section('⭐ À regarder en premier', importantRows)}
+        ${section('📅 Échéances proches', deadlineRows)}
+      </div>
+      <div>
+        ${section('↩️ Réponses en retard', replyRows)}
+        ${section('⏰ À relancer', followupRows)}
+      </div>
+    </div>
+    ${!importantRows.length && !deadlineRows.length && !replyRows.length && !followupRows.length
+      ? '<div class="empty">🎉 Rien d\'urgent : pas de mail important non lu, pas de retard, pas d\'échéance proche.</div>'
+      : ''}
+    ${b.skippedAccounts.length ? `<div class="notice warn" style="margin-top:10px; margin-bottom:6px">
+      ⚠️ Compte(s) non couvert(s) : ${b.skippedAccounts
+        .map((s) => `<strong>${esc(s.account)}</strong> (${esc(s.error)})`)
+        .join(', ')}</div>` : ''}
+    <div class="muted" style="font-size:12px; margin-top:8px">${accountsLine}</div>`;
 }
 
 async function applyUpdateFlow(container, confirmed = false) {

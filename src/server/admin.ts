@@ -41,6 +41,7 @@ import {
   restoreDeadline,
 } from '../services/deadlines.js';
 import { searchIndex, indexedMessage, reflectActionInIndex } from '../services/search.js';
+import { generateBrief, latestBrief } from '../services/brief.js';
 import { imapService } from '../services/imap.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
@@ -533,6 +534,25 @@ export function buildAdminRouter(): Router {
   router.post('/accounts/:slug/deadlines/:id/dismiss', deadlineAction(dismissDeadline));
   router.post('/accounts/:slug/deadlines/:id/done', deadlineAction(completeDeadline));
   router.post('/accounts/:slug/deadlines/:id/restore', deadlineAction(restoreDeadline));
+
+  // --- Brief quotidien / revue hebdo (L5) -----------------------------------------
+  // GET = dernier brief enregistré (aucun calcul — null si jamais généré).
+  // POST = régénère (index local, instantané) et archive dans BriefRun.
+  router.get(
+    '/brief',
+    guard(async (req, res) => {
+      const type = req.query.type === 'weekly' ? 'weekly' : 'daily';
+      res.json({ type, brief: await latestBrief(type) });
+    }),
+  );
+
+  router.post(
+    '/brief/generate',
+    guard(async (req, res) => {
+      const type = req.body?.type === 'weekly' ? 'weekly' : 'daily';
+      res.json({ type, brief: await generateBrief({ type }) });
+    }),
+  );
 
   // --- Recherche & lecture (L3) ---------------------------------------------------
   // Recherche dans l'INDEX local (métadonnées uniquement — instantané, aucune

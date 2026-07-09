@@ -38,8 +38,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 32 tools MCP (accounts, folders, read, write, sync, export,
-  attention : réponses/relances/importance, échéances)
+- `mcp/tools/*` — 34 tools MCP (accounts, folders, read, write, sync, export,
+  attention : réponses/relances/importance, échéances, briefs)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -55,7 +55,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
   - `accounts.ts` (accounts.json chiffré AES-256-GCM), `oauth.ts` (MSAL :
     device code + auth code PKCE `prompt=select_account`), `jobs.ts` (tâches
     asynchrones + meta), `oplog.ts` (journal JSONL avec items sujet+date),
-    `index-stats.ts`, `update.ts` (version/check/apply, BOXMAIL_SUPERVISED)
+    `index-stats.ts`, `update.ts` (version/check/apply, BOXMAIL_SUPERVISED),
+    `brief.ts` (agrégat brief quotidien/hebdo, archivé dans BriefRun)
 - `prisma/schema.prisma` — Account, Folder, Message, Thread, Sender (SQLite,
   `connection_limit=1` forcé dans `db/client.ts`)
 - `web/` — SPA vanilla (AUCUN framework/build) : `js/app.js` (routing hash,
@@ -89,6 +90,25 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**L5 livrée : Brief quotidien & revue hebdo.** Modèle `BriefRun` + migration
+(type daily/weekly, periodStart/End, summaryJson — chaque brief archivé tel
+quel). `services/brief.ts` : `generateBrief({type})` agrège depuis l'index
+(aucun IMAP) : nouveaux mails de la période (approx `Message.createdAt`, hors
+corbeille/spam/brouillons), importants minScore 60 (fenêtre 7 j daily / 30 j
+weekly), réponses & relances en retard (60 j), échéances proposées+confirmées
+sous 14 j, candidats nettoyage, volumétrie par compte ; `previousBrief` =
+nouveaux depuis le brief précédent du même type ; comptes en erreur →
+`skippedAccounts` sans casser le brief ; `latestBrief(type)`. 2 tools MCP
+`generate_daily_brief`/`generate_weekly_review` (34 au total, descriptions
+« narrer en français, tutoyer, ne pas recopier le JSON »). API : GET
+`/api/brief?type=` (dernier archivé — aucun calcul au chargement du
+dashboard), POST `/api/brief/generate`. UI : panneau « ☀️ Brief du jour » en
+tête de dashboard — repliable (mémorisé, localStorage `bm.briefCollapsed`),
+sélecteur Jour (24 h)/Semaine (7 j), chips cliquables vers les écrans,
+sections top 3 (importants/échéances/réponses/relances), ligne par compte,
+bouton ☀️ Régénérer. Seed : scratchpad `seed-brief.mts` (2 comptes, 15 mails,
+22 asserts) ; capture navigateur OK (panneau, repli, bascule hebdo).
 
 **L4 livrée : Export contacts.** POST `/api/accounts/:slug/export-contacts`
 ({senders:[{address,name}], format:'vcard'|'csv'} → fichier en pièce jointe
@@ -183,8 +203,9 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Suivre `docs/ROADMAP.md`** : plans d'implémentation détaillés de toutes les
-livraisons restantes (L4 Export contacts → L5 Briefs → L6 Déploiement
-Oracle/Cowork + backlog).
+**Suivre `docs/ROADMAP.md`** : il reste la L6 (déploiement Oracle Cloud +
+connecteur Cowork — nécessite l'utilisateur pour SSH/DNS/Entra) et le backlog
+(renommer/supprimer un compte depuis l'interface, page Aide, règles de
+classement L7, analyse LLM via Sonnet dédié…).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.

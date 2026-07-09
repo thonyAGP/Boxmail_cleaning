@@ -165,6 +165,21 @@ model Deadline {
   @@index([accountSlug, status, date])
 }
 
+// Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké
+// tel quel : il sert d'historique et de référence « nouveaux mails depuis le
+// dernier brief ». Global (tous comptes), pas de relation Account.
+model BriefRun {
+  id          Int      @id @default(autoincrement())
+  // daily | weekly
+  type        String
+  periodStart DateTime
+  periodEnd   DateTime
+  summaryJson String
+  createdAt   DateTime @default(now())
+
+  @@index([type, createdAt])
+}
+
 // Agrégat par expéditeur, recalculé à chaque sync. kind/category/notes seront
 // enrichis en Phase 4 (profils de correspondants).
 model Sender {

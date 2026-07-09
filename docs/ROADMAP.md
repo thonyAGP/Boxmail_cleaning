@@ -203,7 +203,19 @@ compte → télécharger un `.vcf` / `.csv` à importer dans Outlook.com.
 
 ---
 
-## ⬜ L5 — Brief quotidien & revue hebdo (Phase 8)
+## ✅ L5 — Brief quotidien & revue hebdo (Phase 8) — LIVRÉ
+
+Modèle `BriefRun` (type, periodStart/End, summaryJson — chaque brief archivé),
+`services/brief.ts` (`generateBrief({type:'daily'|'weekly'})` : agrégat
+index-only des briques L1/1/2/L2 + nettoyage + volumétrie, `previousBrief` =
+écart depuis le brief précédent, comptes en échec listés sans casser le brief ;
+`latestBrief(type)`), 2 tools MCP `generate_daily_brief` /
+`generate_weekly_review` (34 tools au total — descriptions qui guident Claude
+à NARRER le JSON en français), API GET `/api/brief?type=` (dernier archivé,
+aucun calcul) + POST `/api/brief/generate`, panneau « ☀️ Brief du jour » en
+tête de dashboard (repliable — mémorisé, sélecteur Jour/Semaine, chips
+cliquables vers les écrans, bouton Régénérer). Seed : scratchpad
+`seed-brief.mts` (2 comptes, 15 mails, 22 asserts).
 
 **Objectif.** « Fais-moi mon brief » : agrégat structuré prêt à narrer.
 

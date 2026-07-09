@@ -77,6 +77,8 @@ export const api = {
       action,
       destination,
     }),
+  brief: (type = 'daily') => request('GET', `/brief?type=${type}`),
+  briefGenerate: (type = 'daily') => request('POST', '/brief/generate', { type }),
   version: () => request('GET', '/version'),
   updateCheck: () => request('GET', '/update/check'),
   updateApply: () => request('POST', '/update/apply'),
