@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "enroll": "tsx src/cli/enroll.ts",

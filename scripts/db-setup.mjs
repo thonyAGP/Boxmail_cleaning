@@ -10,11 +10,12 @@ if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === '') {
 }
 
 const isWin = process.platform === 'win32';
-for (const args of [
-  ['prisma', 'generate'],
-  ['prisma', 'migrate', 'deploy'],
-]) {
-  const r = spawnSync('npx', args, { stdio: 'inherit', env: process.env, shell: isWin });
+for (const cmd of ['prisma generate', 'prisma migrate deploy']) {
+  // Une seule chaîne de commande avec shell:true (évite l'avertissement
+  // DEP0190 de Node sur la concaténation d'arguments).
+  const r = isWin
+    ? spawnSync(`npx ${cmd}`, { stdio: 'inherit', env: process.env, shell: true })
+    : spawnSync('npx', cmd.split(' '), { stdio: 'inherit', env: process.env });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 console.log('\n✅ Base de données prête (data/boxmail.db).');

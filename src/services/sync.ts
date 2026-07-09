@@ -37,6 +37,8 @@ export interface SyncReport {
   threadsLinked: number;
   sendersUpdated: number;
   durationMs: number;
+  /** Dossiers en échec (la sync continue sur les autres). */
+  errors: { folder: string; message: string }[];
 }
 
 const FETCH_CHUNK = 500;
@@ -72,6 +74,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Plage IMAP compacte "premier:dernier" pour un lot d'UIDs triés.
+ * Une liste explicite de milliers d'UIDs dépasse la longueur de commande
+ * acceptée par Outlook ("Command failed") ; une plage reste minuscule, et les
+ * UIDs absents de la plage sont simplement ignorés par le serveur.
+ */
+function uidRange(sortedUids: number[]): string {
+  return `${sortedUids[0]}:${sortedUids[sortedUids.length - 1]}`;
+}
+
 export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): Promise<SyncReport> {
   await ensureDbReady();
   const started = Date.now();
@@ -87,6 +99,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     threadsLinked: 0,
     sendersUpdated: 0,
     durationMs: 0,
+    errors: [],
   };
 
   const selfEmail = rec.username.toLowerCase();
@@ -140,10 +153,22 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     // --- 3. Sync par dossier ---------------------------------------------------
     for (const folder of targets) {
       progress(`Dossier ${folder.path}…`);
+      try {
+        await syncFolder(folder);
+        report.foldersSynced.push(folder.path);
+      } catch (err) {
+        const message = (err as Error).message;
+        report.errors.push({ folder: folder.path, message });
+        progress(`  ⚠️ ${folder.path} en échec (${message}) — on continue.`);
+        logger.warn('échec sync dossier', { account: rec.account, folder: folder.path, message });
+      }
+    }
+
+    async function syncFolder(folder: (typeof targets)[number]): Promise<void> {
       const lock = await client.getMailboxLock(folder.path);
       try {
         const mailbox = client.mailbox;
-        if (!mailbox || typeof mailbox === 'boolean') continue;
+        if (!mailbox || typeof mailbox === 'boolean') return;
 
         // Invalidation : si UIDVALIDITY a changé, l'index du dossier est caduc.
         let lastUidSeen = folder.lastUidSeen;
@@ -182,8 +207,11 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             sizeBytes: number;
             hasListUnsubscribe: boolean;
           }[] = [];
+          // Plage compacte plutôt que liste d'UIDs (limite de longueur de
+          // commande Outlook). Les UIDs du trou éventuel n'existent pas côté
+          // serveur, donc la plage renvoie exactement ce lot.
           for await (const msg of client.fetch(
-            uids,
+            uidRange(uids),
             {
               uid: true,
               envelope: true,
@@ -275,8 +303,10 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               })
             ).map((m) => [m.uid, m]),
           );
+          // "1:*" = tout le dossier en une seule commande courte (streamée),
+          // au lieu d'une liste d'UIDs qui dépasse la limite Outlook.
           for await (const msg of client.fetch(
-            serverUids,
+            '1:*',
             { uid: true, flags: true },
             { uid: true },
           )) {
@@ -316,7 +346,6 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             lastSyncedAt: new Date(),
           },
         });
-        report.foldersSynced.push(folder.path);
       } finally {
         lock.release();
       }

@@ -30,8 +30,14 @@ async function run() {
     onProgress: (m) => console.log(`  ${m}`),
   });
 
-  console.log(`\n✅ Sync terminée en ${(report.durationMs / 1000).toFixed(1)}s`);
+  const icon = report.errors.length === 0 ? '✅' : '⚠️';
+  console.log(`\n${icon} Sync terminée en ${(report.durationMs / 1000).toFixed(1)}s`);
   console.log(`   Dossiers synchronisés : ${report.foldersSynced.length}`);
+  if (report.errors.length) {
+    console.log(`   Dossiers en échec     : ${report.errors.length}`);
+    for (const e of report.errors) console.log(`     - ${e.folder} : ${e.message}`);
+    console.log('   → Relancer la sync : elle reprend là où chaque dossier s\'est arrêté.');
+  }
   console.log(`   Nouveaux messages     : ${report.newMessages}`);
   console.log(`   Messages disparus     : ${report.deletedMessages}`);
   if (mode === 'full') console.log(`   Flags mis à jour      : ${report.flagUpdates}`);
