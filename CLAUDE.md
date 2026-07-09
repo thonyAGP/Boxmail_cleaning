@@ -99,6 +99,14 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
 possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
 
+**L5.10 livrée : Aide & finitions UX.** Page `#/help` (7 rubriques en
+dépliants : démarrage, enrôlement, sync, nettoyage, lecture/envoi/PJ,
+raccourcis, pépins). Tri par colonnes inbox côté SERVEUR (`sort=date|from|
+subject` + `dir` sur les deux listings, en-têtes cliquables ▲▼) ; Échap
+global (panneau puis modales, confirm si brouillon `#c-text` non vide —
+installGlobalUx() au boot) ; bouton ⬆ `.scroll-top` (> 600 px) ; focus auto
+recherche. Tests : ui-help.mjs (13 checks).
+
 **L5.8 livrée : Paramètres (couleur, renommage, suppression de compte).**
 Écran `#/settings` (sidebar ⚙️) : couleur par boîte (input color + « auto »,
 migration `Account.color`, PATCH `/api/accounts/:slug`, overview expose

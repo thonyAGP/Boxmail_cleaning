@@ -49,10 +49,10 @@ export const api = {
       folder,
       uids,
     }),
-  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false } = {}) =>
+  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc' } = {}) =>
     request(
       'GET',
-      `/messages?offset=${offset}&limit=${limit}` +
+      `/messages?offset=${offset}&limit=${limit}&sort=${sort}&dir=${dir}` +
         (unseen ? '&unseen=1' : '') +
         (attachments ? '&attachments=1' : ''),
     ),
@@ -93,8 +93,8 @@ export const api = {
     }),
   sendMail: (slug, payload) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),
-  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false, attachments = false } = {}) => {
-    const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit) });
+  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc' } = {}) => {
+    const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit), sort, dir });
     if (unseen) q.set('unseen', '1');
     if (attachments) q.set('attachments', '1');
     return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${q}`);

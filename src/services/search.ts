@@ -164,8 +164,24 @@ export interface FolderListing {
  * par date décroissante, paginées. Même forme d'items que listFolderMessages
  * (chaque item porte son account/folder/uid → lecture et actions OK).
  */
+export type FolderSort = 'date' | 'from' | 'subject';
+
+/** Tri des listes de dossier (L5.10) : date (défaut), expéditeur ou sujet. */
+function folderOrderBy(sort: FolderSort | undefined, dir: 'asc' | 'desc') {
+  if (sort === 'from') return [{ fromEmail: dir }, { id: dir }] as const;
+  if (sort === 'subject') return [{ subject: dir }, { id: dir }] as const;
+  return [{ date: dir }, { id: dir }] as const;
+}
+
 export async function listUnifiedInbox(
-  opts: { offset?: number; limit?: number; unseen?: boolean; withAttachments?: boolean } = {},
+  opts: {
+    offset?: number;
+    limit?: number;
+    unseen?: boolean;
+    withAttachments?: boolean;
+    sort?: FolderSort;
+    dir?: 'asc' | 'desc';
+  } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -180,7 +196,7 @@ export async function listUnifiedInbox(
     db.message.count({ where }),
     db.message.findMany({
       where,
-      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      orderBy: [...folderOrderBy(opts.sort, opts.dir ?? 'desc')],
       skip: offset,
       take: limit,
       select: {
@@ -231,7 +247,14 @@ export async function listUnifiedInbox(
 export async function listFolderMessages(
   account: string,
   folder: string,
-  opts: { offset?: number; limit?: number; unseen?: boolean; withAttachments?: boolean } = {},
+  opts: {
+    offset?: number;
+    limit?: number;
+    unseen?: boolean;
+    withAttachments?: boolean;
+    sort?: FolderSort;
+    dir?: 'asc' | 'desc';
+  } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -247,7 +270,7 @@ export async function listFolderMessages(
     db.message.count({ where }),
     db.message.findMany({
       where,
-      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      orderBy: [...folderOrderBy(opts.sort, opts.dir ?? 'desc')],
       skip: offset,
       take: limit,
       select: {

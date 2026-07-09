@@ -791,7 +791,11 @@ export function buildAdminRouter(): Router {
       );
       const unseen = ['1', 'true'].includes(String(req.query.unseen ?? ''));
       const withAttachments = ['1', 'true'].includes(String(req.query.attachments ?? ''));
-      res.json(await listUnifiedInbox({ offset, limit, unseen, withAttachments }));
+      const sort = ['date', 'from', 'subject'].includes(String(req.query.sort ?? ''))
+        ? (String(req.query.sort) as 'date' | 'from' | 'subject')
+        : undefined;
+      const dir = String(req.query.dir ?? '') === 'asc' ? ('asc' as const) : ('desc' as const);
+      res.json(await listUnifiedInbox({ offset, limit, unseen, withAttachments, sort, dir }));
     }),
   );
 
@@ -813,8 +817,19 @@ export function buildAdminRouter(): Router {
         return;
       }
       const withAttachments = ['1', 'true'].includes(String(req.query.attachments ?? ''));
+      const sort = ['date', 'from', 'subject'].includes(String(req.query.sort ?? ''))
+        ? (String(req.query.sort) as 'date' | 'from' | 'subject')
+        : undefined;
+      const dir = String(req.query.dir ?? '') === 'asc' ? ('asc' as const) : ('desc' as const);
       res.json(
-        await listFolderMessages(req.params.slug, folder, { offset, limit, unseen, withAttachments }),
+        await listFolderMessages(req.params.slug, folder, {
+          offset,
+          limit,
+          unseen,
+          withAttachments,
+          sort,
+          dir,
+        }),
       );
     }),
   );

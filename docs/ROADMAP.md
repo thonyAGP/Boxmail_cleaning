@@ -364,14 +364,20 @@ seed-unified.mts étendu (16 asserts dont countAttachments multipart) +
 ui-attachments.mjs (9 checks playwright : badges, filtre, liens, événement
 download, nom de fichier suggéré) + curl 400/404/413/502.
 
-### ⬜ L5.10 — Aide & finitions UX
+### ✅ L5.10 — Aide & finitions UX
 
-Page `#/help` (lien sidebar ❓ Aide) : FAQ des pièges connus (navigation
-privée/enrôlement, superviseur/MàJ, AADSTS50011, corbeille 30 j, sync),
-raccourcis de l'interface, « en cas de pépin » (journal, relancer le .bat).
-Finitions : tri par colonnes dans l'inbox (date/expéditeur/sujet), Échap
-ferme panneau/modales partout, focus auto des champs, bouton ⬆ haut de page
-sur les longues listes.
+**LIVRÉE.** Page `#/help` (sidebar ❓ Aide) : 7 rubriques en dépliants
+`<details>` — démarrage/MàJ (bat, bandeau, non supervisé), boîtes &
+enrôlement (sélecteur de compte, navigation privée, AADSTS50011,
+renommer/retirer), synchronisation (rapide vs complète, jobs persistants),
+nettoyage & corbeille (~30 j, auto/perso, journal), lecture/envoi/pièces
+jointes (cap 25 Mo, backfill 📎), raccourcis, en cas de pépin. Finitions :
+tri par colonnes inbox (Date/Expéditeur/Sujet, serveur — `sort`/`dir` sur
+listFolderMessages/listUnifiedInbox + routes, flèches ▲▼, re-clic inverse) ;
+Échap GLOBAL (ferme panneau de lecture puis modales, confirmation si un
+brouillon d'envoi est en cours) ; bouton ⬆ haut de page (fixe, apparaît
+après 600 px) ; focus auto du champ recherche (modales déjà focus). Tests :
+curl tri + ui-help.mjs (13 checks playwright).
 
 ### ⬜ L5.11 — Auto-sync locale (pré-requis L6)
 

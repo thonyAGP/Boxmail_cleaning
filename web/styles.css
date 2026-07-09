@@ -460,3 +460,24 @@ input[type="color"].set-color {
   border-radius: 6px; background: var(--card); cursor: pointer; vertical-align: middle;
 }
 .set-color-reset { margin-left: 4px; }
+
+/* ---------- Aide (L5.10) ---------- */
+.help-body { display: flex; flex-direction: column; gap: 2px; }
+.help-qa summary {
+  cursor: pointer; font-weight: 600; font-size: 13.5px; padding: 8px 4px;
+  border-radius: 6px; list-style-position: inside;
+}
+.help-qa summary:hover { background: var(--accent-soft); }
+.help-qa > div { padding: 4px 8px 12px 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.help-qa code { background: #eef0f4; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+.help-list { padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+
+/* Bouton retour en haut (L5.10) */
+.scroll-top {
+  position: fixed; bottom: 22px; right: 22px; z-index: 40;
+  width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--card); color: var(--accent); font-size: 18px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, .18);
+}
+.scroll-top:hover { background: var(--accent-soft); }
+th.sortable:hover { color: var(--accent); }

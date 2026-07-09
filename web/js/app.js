@@ -45,6 +45,40 @@ function accountChip(slug) {
 }
 let smtpEnabled = false; // renseigné par /api/me au chargement
 
+// ---------------------------------------------------------------- UX globale (L5.10)
+let globalUxInstalled = false;
+function installGlobalUx() {
+  if (globalUxInstalled) return;
+  globalUxInstalled = true;
+
+  // Échap ferme le panneau de lecture, puis les modales — partout. Si un
+  // brouillon est en cours dans la modale d'envoi, on demande confirmation.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.querySelector('.reader')) {
+      closeReader();
+      return;
+    }
+    const overlay = document.querySelector('.modal-overlay');
+    if (!overlay) return;
+    const draft = overlay.querySelector('#c-text');
+    if (draft && draft.value.trim() && !confirm('Fermer sans envoyer ? Le brouillon sera perdu.')) return;
+    closeModal();
+  });
+
+  // Bouton ⬆ retour en haut sur les longues listes.
+  const topBtn = document.createElement('button');
+  topBtn.id = 'scroll-top';
+  topBtn.className = 'scroll-top hidden';
+  topBtn.title = 'Revenir en haut de la page';
+  topBtn.textContent = '⬆';
+  topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  document.body.appendChild(topBtn);
+  window.addEventListener('scroll', () => {
+    topBtn.classList.toggle('hidden', window.scrollY < 600);
+  }, { passive: true });
+}
+
 // ---------------------------------------------------------------- Auth & boot
 async function boot() {
   try {
@@ -80,6 +114,7 @@ async function showApp() {
       `version ${v.commit} · ${v.date}` + (v.supervised ? '' : ' · ⚠️ non supervisé');
   }).catch(() => {});
   await refreshOverview();
+  installGlobalUx();
   route();
   startJobWatcher();
   refreshRepliesBadge();
@@ -324,6 +359,8 @@ function highlightNav() {
     document.querySelector('[data-nav="calendar"]')?.classList.add('active');
   } else if (hash.startsWith('#/settings')) {
     document.querySelector('[data-nav="settings"]')?.classList.add('active');
+  } else if (hash.startsWith('#/help')) {
+    document.querySelector('[data-nav="help"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -357,6 +394,8 @@ function route() {
     renderCalendar();
   } else if (hash.startsWith('#/settings')) {
     renderSettings();
+  } else if (hash.startsWith('#/help')) {
+    renderHelp();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -2384,6 +2423,117 @@ function deadlineRow(x, idx) {
   </div>`;
 }
 
+// ---------------------------------------------------------------- Aide (L5.10)
+function renderHelp() {
+  const main = $('#main');
+  const section = (title, rows) => `<div class="panel">
+    <div class="panel-head"><h2>${title}</h2></div>
+    <div class="panel-body help-body">${rows}</div>
+  </div>`;
+  const qa = (q, a) => `<details class="help-qa"><summary>${q}</summary><div>${a}</div></details>`;
+
+  main.innerHTML = `<div class="page-head">
+    <div><h1>❓ Aide</h1>
+      <div class="sub">Les réponses aux questions courantes. Tout se fait depuis l'interface —
+      jamais besoin de ligne de commande.</div></div></div>
+
+  ${section('🚀 Démarrage & mises à jour', `
+    ${qa('Comment lancer Mail Assistant ?',
+      `Double-clique sur <strong>MailAssistant.bat</strong> (sur ton Bureau ou dans le dossier
+      Boxmail). Il met à jour, prépare la base, démarre le serveur et le relance tout seul en cas
+      de pépin. Laisse sa fenêtre noire ouverte — c'est le moteur.`)}
+    ${qa('Comment mettre à jour ?',
+      `Quand une mise à jour existe, un <strong>bandeau bleu</strong> apparaît en haut du tableau
+      de bord : clique dessus, le serveur télécharge la mise à jour et redémarre (quelques dizaines
+      de secondes). Si l'interface indique « ⚠️ non supervisé » en bas de la barre latérale, le
+      redémarrage automatique n'est pas possible : ferme tout et relance MailAssistant.bat.`)}
+    ${qa('L\'interface ne répond plus ?',
+      `Ferme la fenêtre noire de MailAssistant.bat puis relance-la. Tes données (index, comptes,
+      journal) sont conservées sur ton PC.`)}`)}
+
+  ${section('📧 Boîtes & enrôlement', `
+    ${qa('Ajouter une boîte',
+      `Barre latérale → <strong>＋ Ajouter un compte</strong>. Une fenêtre Microsoft s'ouvre et te
+      demande QUEL compte connecter : choisis le bon (ou « Utiliser un autre compte »). Répète pour
+      chaque boîte.`)}
+    ${qa('Microsoft connecte le mauvais compte tout seul',
+      `Le sélecteur de compte est normalement forcé. Si Microsoft passe outre, ouvre l'interface
+      dans une <strong>fenêtre de navigation privée</strong> (Ctrl+Maj+N) et recommence l'ajout :
+      aucune session mémorisée ne peut alors interférer.`)}
+    ${qa('Erreur AADSTS50011 pendant l\'ajout',
+      `L'adresse de retour n'est pas (encore) déclarée côté Microsoft Entra. Vérifie que
+      <code>http://localhost:8787/api/enroll/callback</code> figure dans l'app « boxmail-mcp »
+      (plateforme « Applications de bureau et mobiles ») et patiente 2 à 10 minutes : Microsoft
+      met un peu de temps à propager.`)}
+    ${qa('Renommer ou retirer une boîte',
+      `Écran <a href="#/settings">⚙️ Paramètres</a>. Renommer garde l'accès (il faut juste relancer
+      une synchronisation) ; retirer efface l'accès local et l'index — <strong>tes mails chez
+      Microsoft ne bougent jamais</strong>.`)}`)}
+
+  ${section('🔄 Synchronisation', `
+    ${qa('À quoi sert la synchronisation ?',
+      `Elle copie les MÉTADONNÉES de tes mails (expéditeur, sujet, date… jamais le contenu) dans un
+      index local ultra-rapide. Recherche, statistiques, importants, relances, échéances : tout lit
+      cet index. Synchronise régulièrement pour des résultats à jour.`)}
+    ${qa('Rapide ou complète ?',
+      `<strong>Rapide</strong> : boîte de réception + envoyés, nouveaux mails seulement — quelques
+      secondes, à privilégier au quotidien. <strong>Complète</strong> : tous les dossiers + statuts
+      lu/non-lu + détection des pièces jointes — plus long, utile après un renommage ou de temps
+      en temps.`)}
+    ${qa('Je change de page pendant une synchro, c\'est grave ?',
+      `Non. Les synchros continuent sur le serveur : la pastille d'activité en bas à gauche suit
+      l'avancement, et tu peux revenir sur la boîte à tout moment.`)}`)}
+
+  ${section('🧹 Nettoyage & corbeille', `
+    ${qa('Le nettoyage peut-il perdre des mails ?',
+      `Non. Tout passe par la <strong>corbeille</strong> (« Éléments supprimés ») : récupérable
+      pendant ~30 jours dans Outlook. Mail Assistant ne supprime JAMAIS définitivement, et rien ne
+      part sans aperçu + confirmation. Chaque opération est notée dans le
+      <a href="#/operations">journal</a> avec la liste exacte des mails.`)}
+    ${qa('Mails « automatiques » et « personnels » ?',
+      `Dans l'aperçu de nettoyage, chaque mail est classé : les newsletters/notifications sont
+      cochées d'office, les mails auxquels tu as répondu (ou conversations engagées) sont
+      décochés. Tu peux ajuster mail par mail avant de valider.`)}`)}
+
+  ${section('📖 Lecture, envoi, pièces jointes', `
+    ${qa('D\'où vient le contenu quand j\'ouvre un mail ?',
+      `Il est téléchargé en direct depuis ta boîte au moment du clic (rien n'est stocké). Si la
+      boîte est injoignable, un message l'explique — réessaie ou ouvre le mail dans Outlook.`)}
+    ${qa('Télécharger une pièce jointe',
+      `Ouvre le mail : les pièces jointes sont listées en bas du panneau, clique sur ⬇️ pour
+      télécharger. Limite : mails de plus de 25 Mo à ouvrir depuis Outlook. Le badge 📎 dans la
+      boîte de réception n'apparaît que sur les mails indexés récemment — une synchronisation
+      complète le pose sur les nouveaux arrivages.`)}
+    ${qa('Envoyer / répondre en sécurité',
+      `L'envoi demande toujours une confirmation, est journalisé (destinataires + objet), et une
+      copie est déposée dans « Éléments envoyés ». Le mail d'origine est marqué répondu.`)}`)}
+
+  ${section('⌨️ Raccourcis & astuces', `
+    <ul class="help-list">
+      <li><strong>Échap</strong> ferme le panneau de lecture et les fenêtres (une confirmation
+        protège les brouillons en cours).</li>
+      <li>Dans la boîte de réception, clique les en-têtes <strong>Date / Expéditeur / Sujet</strong>
+        pour trier ; re-clique pour inverser l'ordre.</li>
+      <li>« 🌐 Toutes les boîtes » mélange toutes tes INBOX par date — chaque boîte a sa couleur
+        (personnalisable dans <a href="#/settings">⚙️ Paramètres</a>).</li>
+      <li>Coche plusieurs mails pour agir en masse (corbeille, lu/non-lu, déplacer) — même dans la
+        vue toutes-boîtes.</li>
+      <li>Le bouton <strong>⬆</strong> en bas à droite remonte en haut des longues listes.</li>
+    </ul>`)}
+
+  ${section('🆘 En cas de pépin', `
+    <ul class="help-list">
+      <li>Consulte le <a href="#/operations">📜 Journal d'activité</a> : chaque action y est notée
+        avec la liste exacte des mails concernés.</li>
+      <li>Redémarre via <strong>MailAssistant.bat</strong> — l'index se reconstruit tout seul à la
+        synchronisation, rien n'est perdu.</li>
+      <li>Vérifie la version en bas de la barre latérale et l'état du serveur dans
+        <a href="#/settings">⚙️ Paramètres</a>.</li>
+      <li>Tes identifiants restent chiffrés sur TON PC (accounts.json) : ils ne transitent jamais
+        par le navigateur ni par un service externe.</li>
+    </ul>`)}`;
+}
+
 // ---------------------------------------------------------------- Paramètres (L5.8)
 async function renderSettings() {
   const main = $('#main');
@@ -2917,6 +3067,8 @@ const inboxState = {
   pageSize: 50,
   unseen: false,
   attachments: false,
+  sort: 'date',
+  dir: 'desc',
   data: null,
   folders: [],
   selected: new Set(), // clés `compte|dossier|uid` (page courante uniquement)
@@ -3043,6 +3195,8 @@ async function loadInbox() {
           limit: inboxState.pageSize,
           unseen: inboxState.unseen,
           attachments: inboxState.attachments,
+          sort: inboxState.sort,
+          dir: inboxState.dir,
         })
       : await api.listMessages(inboxState.account, {
           folder: inboxState.folder,
@@ -3050,6 +3204,8 @@ async function loadInbox() {
           limit: inboxState.pageSize,
           unseen: inboxState.unseen,
           attachments: inboxState.attachments,
+          sort: inboxState.sort,
+          dir: inboxState.dir,
         });
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
@@ -3081,9 +3237,13 @@ function renderInboxBody() {
           }</div>`
         : `<table><thead><tr>
             <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
-            <th style="width:100px">Date</th>
+            <th style="width:100px" class="sortable ${inboxState.sort === 'date' ? 'sorted' : ''}" data-sort="date"
+              title="Trier par date">Date ${sortArrow('date')}</th>
             ${isUnifiedInbox() ? '<th style="width:110px">Boîte</th>' : ''}
-            <th style="width:220px">Expéditeur</th><th>Sujet</th><th></th>
+            <th style="width:220px" class="sortable ${inboxState.sort === 'from' ? 'sorted' : ''}" data-sort="from"
+              title="Trier par expéditeur">Expéditeur ${sortArrow('from')}</th>
+            <th class="sortable ${inboxState.sort === 'subject' ? 'sorted' : ''}" data-sort="subject"
+              title="Trier par sujet">Sujet ${sortArrow('subject')}</th><th></th>
           </tr></thead>
           <tbody>${d.items
             .map(
@@ -3140,6 +3300,19 @@ function renderInboxBody() {
       renderInboxBody();
     });
   }
+  body.querySelectorAll('th.sortable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (inboxState.sort === key) {
+        inboxState.dir = inboxState.dir === 'desc' ? 'asc' : 'desc';
+      } else {
+        inboxState.sort = key;
+        inboxState.dir = key === 'date' ? 'desc' : 'asc';
+      }
+      inboxState.offset = 0;
+      loadInbox();
+    });
+  });
   body.querySelectorAll('.inbox-check').forEach((box) => {
     box.addEventListener('change', () => {
       if (box.checked) sel.add(box.dataset.key);
@@ -3148,6 +3321,11 @@ function renderInboxBody() {
     });
   });
   renderInboxBulkbar();
+}
+
+function sortArrow(key) {
+  if (inboxState.sort !== key) return '';
+  return inboxState.dir === 'desc' ? '▼' : '▲';
 }
 
 // Barre d'actions en masse (affichée dès qu'au moins un mail est coché).
@@ -3296,6 +3474,8 @@ async function renderSearch() {
     searchState.attachments = $('#s-attachments').checked;
     runSearch();
   });
+
+  $('#s-q').focus();
 
   // Résultats encore en mémoire (retour sur l'écran) : on les réaffiche.
   if (searchState.data) renderSearchResults();
