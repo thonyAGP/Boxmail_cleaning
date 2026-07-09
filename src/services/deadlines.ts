@@ -389,24 +389,54 @@ export interface DeadlineItem {
   subject: string | null;
   /** Jours restants (négatif si passée). */
   inDays: number;
+  /** Localisation du mail source dans l'index (null s'il a disparu) —
+   *  permet d'ouvrir le mail depuis l'interface. */
+  folder: string | null;
+  uid: number | null;
+  msgDate: string | null;
+  isSeen: boolean | null;
 }
 
-function toItem(d: {
-  id: number;
-  accountSlug: string;
-  messageId: number;
-  threadId: number | null;
-  title: string;
-  date: Date;
-  type: string;
-  status: string;
-  confidence: number;
-  reason: string;
-  sourceText: string;
-  fromEmail: string | null;
-  fromName: string | null;
-  subject: string | null;
-}): DeadlineItem {
+/** Métadonnées du mail source encore présent dans l'index. */
+type SourceMeta = { uid: number; isSeen: boolean; date: Date | null; folder: { path: string } };
+
+async function loadSourceMeta(messageIds: number[]): Promise<Map<number, SourceMeta>> {
+  const metas = new Map<number, SourceMeta>();
+  for (let i = 0; i < messageIds.length; i += 500) {
+    const rows = await db.message.findMany({
+      where: { id: { in: messageIds.slice(i, i + 500) }, isDeleted: false },
+      select: {
+        id: true,
+        uid: true,
+        isSeen: true,
+        date: true,
+        folder: { select: { path: true } },
+      },
+    });
+    for (const r of rows) metas.set(r.id, r);
+  }
+  return metas;
+}
+
+function toItem(
+  d: {
+    id: number;
+    accountSlug: string;
+    messageId: number;
+    threadId: number | null;
+    title: string;
+    date: Date;
+    type: string;
+    status: string;
+    confidence: number;
+    reason: string;
+    sourceText: string;
+    fromEmail: string | null;
+    fromName: string | null;
+    subject: string | null;
+  },
+  source?: SourceMeta,
+): DeadlineItem {
   return {
     id: d.id,
     account: d.accountSlug,
@@ -423,6 +453,10 @@ function toItem(d: {
     fromName: d.fromName,
     subject: d.subject,
     inDays: Math.round((d.date.getTime() - Date.now()) / 86_400_000),
+    folder: source?.folder.path ?? null,
+    uid: source?.uid ?? null,
+    msgDate: source?.date?.toISOString() ?? null,
+    isSeen: source?.isSeen ?? null,
   };
 }
 
@@ -447,7 +481,8 @@ export async function listDeadlines(
     orderBy: { date: 'asc' },
     take: Math.min(Math.max(opts.limit ?? 200, 1), 1000),
   });
-  return rows.map(toItem);
+  const metas = await loadSourceMeta(rows.map((r) => r.messageId));
+  return rows.map((r) => toItem(r, metas.get(r.messageId)));
 }
 
 async function setStatus(
@@ -468,7 +503,8 @@ async function setStatus(
     items: [{ subject: row.title, date: row.date.toISOString() }],
     result: resultLabel,
   });
-  return toItem(updated);
+  const metas = await loadSourceMeta([updated.messageId]);
+  return toItem(updated, metas.get(updated.messageId));
 }
 
 export function confirmDeadline(account: string, id: number): Promise<DeadlineItem> {

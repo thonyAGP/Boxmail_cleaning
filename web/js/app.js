@@ -463,10 +463,10 @@ async function renderDashboard() {
     if (!el) return;
     const top = d.items.slice(0, 5);
     el.innerHTML = top.length
-      ? top.map((i) => `<div class="op-line">
+      ? top.map((i, k) => `<div class="op-line">
           ${scoreBadge(i.score)}
           <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> —
-            ${esc(i.subject)}
+            <span class="openable" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span>
             <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
           <span class="op-time">${fmtDate(i.date)}</span>
         </div>`).join('') +
@@ -474,6 +474,7 @@ async function renderDashboard() {
           ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.items.length - 5)} autre(s) — <a href="#/important">voir tout</a>.</div>`
           : '')
       : '<div class="empty">Rien d\'important détecté parmi les non-lus des 30 derniers jours.</div>';
+    bindOpenables(el, top);
   }).catch(() => {
     const el = $('#dash-important');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
@@ -486,10 +487,10 @@ async function renderDashboard() {
     if (!el) return;
     const top = d.items.filter((i) => i.state === 'active').slice(0, 5);
     el.innerHTML = top.length
-      ? top.map((i) => `<div class="op-line">
+      ? top.map((i, k) => `<div class="op-line">
           <span class="op-time">${fmtDate(i.date)}</span>
           <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> —
-            ${esc(i.subject)}
+            <span class="openable" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span>
             <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
           ${i.overdue ? `<span class="badge red">en retard</span>` : `<span class="badge gray">${waitLabel(i.waitingHours)}</span>`}
         </div>`).join('') +
@@ -497,6 +498,7 @@ async function renderDashboard() {
           ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 5)} autre(s) — <a href="#/replies">voir tout</a>.</div>`
           : '')
       : '<div class="empty">🎉 Rien en attente de réponse sur les 60 derniers jours.</div>';
+    bindOpenables(el, top);
   }).catch(() => {
     const el = $('#dash-replies');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt — lance une synchronisation.</div>';
@@ -509,10 +511,10 @@ async function renderDashboard() {
     if (!el) return;
     const top = d.items.filter((i) => i.state === 'active').slice(0, 3);
     el.innerHTML = top.length
-      ? top.map((i) => `<div class="op-line">
+      ? top.map((i, k) => `<div class="op-line">
           <span class="op-time">${fmtDate(i.date)}</span>
           <span style="flex:1"><strong>${esc(i.counterpartyName || i.counterpartyEmail)}</strong> —
-            ${esc(i.subject)}
+            <span class="openable" data-open="${k}" title="Relire ton mail envoyé">${esc(i.subject)}</span>
             <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
           ${i.overdue ? `<span class="badge red">à relancer</span>` : `<span class="badge gray">${waitLabel(i.waitingHours)}</span>`}
         </div>`).join('') +
@@ -520,6 +522,7 @@ async function renderDashboard() {
           ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 3)} autre(s) — <a href="#/followups">voir tout</a>.</div>`
           : '')
       : '<div class="empty">👍 Personne à relancer sur les 60 derniers jours.</div>';
+    bindOpenables(el, top, (i) => ({ ...i, fromName: 'Toi (mail envoyé)', fromEmail: '', isSeen: true }));
   }).catch(() => {
     const el = $('#dash-followups');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
@@ -534,15 +537,17 @@ async function renderDashboard() {
       .filter((x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays >= -1)
       .slice(0, 5);
     el.innerHTML = top.length
-      ? top.map((x) => `<div class="op-line">
+      ? top.map((x, k) => `<div class="op-line">
           <span class="op-time">${fmtDate(x.date)}</span>
-          <span style="flex:1">${esc(x.title)}
+          <span style="flex:1"><span class="${x.uid != null && x.folder ? 'openable' : ''}"
+            ${x.uid != null && x.folder ? `data-open="${k}" title="Lire le mail d'origine"` : ''}>${esc(x.title)}</span>
             <span class="muted" style="font-size:12px">· ${esc(x.account)}</span>
             ${x.status === 'proposed' ? '<span class="badge orange">à valider</span>' : ''}</span>
           <span class="badge ${x.inDays <= 3 ? 'red' : 'gray'}">${deadlineCountdown(x.inDays)}</span>
         </div>`).join('')
       : `<div class="empty">Aucune échéance à venir — lance une
          <a href="#/deadlines">détection</a>.</div>`;
+    bindOpenables(el, top, (x) => ({ ...x, subject: x.subject ?? x.title, date: x.msgDate ?? x.date }));
   }).catch(() => {
     const el = $('#dash-deadlines');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
@@ -561,6 +566,19 @@ async function renderDashboard() {
     body.prepend(el);
     $('#update-btn').addEventListener('click', () => applyUpdateFlow(el));
   }).catch(() => {});
+}
+
+// Relie tous les [data-open] d'un conteneur au panneau de lecture. `mapFn`
+// adapte l'élément (ex. relance → mail envoyé) avant ouverture.
+function bindOpenables(root, items, mapFn) {
+  root.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const raw = items[Number(el.dataset.open)];
+      if (!raw) return;
+      openReaderFor(mapFn ? mapFn(raw) : raw, { onRemoved: () => route() });
+    });
+  });
 }
 
 // ---------------------------------------------------------------- Brief (L5)
@@ -658,28 +676,39 @@ function renderBrief(b) {
       ? `<div class="brief-section"><h3>${title}</h3>${rows.join('')}</div>`
       : '';
 
-  const importantRows = b.important.top.slice(0, 3).map(
-    (i) => `<div class="op-line">${scoreBadge(i.score)}
-      <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> — ${esc(i.subject)}
+  // Sujets cliquables si le brief archivé porte la localisation du mail
+  // (les briefs générés avant cette version ne l'ont pas — pas grave).
+  const openable = (it, kind, k, text) =>
+    it.uid != null && it.folder
+      ? `<span class="openable" data-open-kind="${kind}" data-open="${k}" title="Lire le mail">${text}</span>`
+      : text;
+
+  const briefImportant = b.important.top.slice(0, 3);
+  const importantRows = briefImportant.map(
+    (i, k) => `<div class="op-line">${scoreBadge(i.score)}
+      <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> — ${openable(i, 'imp', k, esc(i.subject))}
         <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
       <span class="op-time">${fmtDate(i.date)}</span></div>`,
   );
-  const deadlineRows = b.deadlines.items.slice(0, 3).map(
-    (d) => `<div class="op-line"><span class="op-time">${fmtDate(d.date)}</span>
-      <span style="flex:1">${esc(d.title)}
+  const briefDeadlines = b.deadlines.items.slice(0, 3);
+  const deadlineRows = briefDeadlines.map(
+    (d, k) => `<div class="op-line"><span class="op-time">${fmtDate(d.date)}</span>
+      <span style="flex:1">${openable(d, 'dl', k, esc(d.title))}
         <span class="muted" style="font-size:12px">· ${esc(d.account)}</span>
         ${d.status === 'proposed' ? '<span class="badge orange">à valider</span>' : ''}</span>
       <span class="badge ${d.inDays <= 3 ? 'red' : 'gray'}">${deadlineCountdown(d.inDays)}</span></div>`,
   );
-  const replyRows = b.replies.top.slice(0, 3).map(
-    (r) => `<div class="op-line"><span class="op-time">${fmtDate(r.date)}</span>
-      <span style="flex:1"><strong>${esc(r.fromName || r.fromEmail)}</strong> — ${esc(r.subject)}
+  const briefReplies = b.replies.top.slice(0, 3);
+  const replyRows = briefReplies.map(
+    (r, k) => `<div class="op-line"><span class="op-time">${fmtDate(r.date)}</span>
+      <span style="flex:1"><strong>${esc(r.fromName || r.fromEmail)}</strong> — ${openable(r, 'rep', k, esc(r.subject))}
         <span class="muted" style="font-size:12px">· ${esc(r.account)}</span></span>
       <span class="badge red">attend depuis ${waitLabel(r.waitingHours)}</span></div>`,
   );
-  const followupRows = b.followups.top.slice(0, 3).map(
-    (f) => `<div class="op-line"><span class="op-time">${fmtDate(f.date)}</span>
-      <span style="flex:1"><strong>${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — ${esc(f.subject)}
+  const briefFollowups = b.followups.top.slice(0, 3);
+  const followupRows = briefFollowups.map(
+    (f, k) => `<div class="op-line"><span class="op-time">${fmtDate(f.date)}</span>
+      <span style="flex:1"><strong>${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — ${openable(f, 'fu', k, esc(f.subject))}
         <span class="muted" style="font-size:12px">· ${esc(f.account)}</span></span>
       <span class="badge red">sans réponse depuis ${waitLabel(f.waitingHours)}</span></div>`,
   );
@@ -714,6 +743,21 @@ function renderBrief(b) {
         .map((s) => `<strong>${esc(s.account)}</strong> (${esc(s.error)})`)
         .join(', ')}</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:8px">${accountsLine}</div>`;
+
+  const kinds = {
+    imp: { items: briefImportant },
+    dl: { items: briefDeadlines, map: (x) => ({ ...x, subject: x.subject ?? x.title, date: x.msgDate ?? x.date }) },
+    rep: { items: briefReplies },
+    fu: { items: briefFollowups, map: (f) => ({ ...f, fromName: 'Toi (mail envoyé)', fromEmail: '', isSeen: true }) },
+  };
+  body.querySelectorAll('[data-open-kind]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const spec = kinds[el.dataset.openKind];
+      const raw = spec?.items[Number(el.dataset.open)];
+      if (!raw) return;
+      openReaderFor(spec.map ? spec.map(raw) : raw, { onRemoved: () => renderDashboard() });
+    });
+  });
 }
 
 async function applyUpdateFlow(container, confirmed = false) {
@@ -1596,14 +1640,24 @@ function renderRepliesBody() {
         : items.map(replyRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 « Reporter » et « Ignorer » ne touchent pas aux mails : c'est un simple marque-page local,
-      journalisé, et annulable à tout moment depuis les onglets Reportés / Ignorés.
-      Un fil ignoré réapparaît si un nouveau mail y arrive.</div>`;
+      📖 Clique un sujet pour lire le mail ici. 🛟 « Reporter » et « Ignorer » ne touchent pas
+      aux mails : simple marque-page local, journalisé, annulable depuis les onglets
+      Reportés / Ignorés. Un fil ignoré réapparaît si un nouveau mail y arrive.</div>`;
 
   body.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       repliesState.tab = btn.dataset.tab;
       renderRepliesBody();
+    });
+  });
+
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = items[Number(el.dataset.open)];
+      openReaderFor(i, {
+        onSeen: (_, seen) => { i.isSeen = seen; renderRepliesBody(); },
+        onRemoved: () => loadReplies(),
+      });
     });
   });
 
@@ -1636,17 +1690,18 @@ function renderRepliesBody() {
   });
 }
 
-function replyRow(i) {
+function replyRow(i, idx) {
   const ident = `data-account="${esc(i.account)}" data-thread="${i.threadId}"`;
   const actions =
-    i.state === 'active'
+    (i.state === 'active'
       ? `<select class="reply-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
            <option value="">⏰ Reporter…</option>
            <option value="1">1 jour</option><option value="3">3 jours</option>
            <option value="7">7 jours</option><option value="30">30 jours</option>
          </select>
          <button class="btn btn-sm reply-dismiss" ${ident} title="Pas de réponse nécessaire">🔕 Ignorer</button>`
-      : `<button class="btn btn-sm reply-restore" ${ident}>↩︎ Remettre en liste</button>`;
+      : `<button class="btn btn-sm reply-restore" ${ident}>↩︎ Remettre en liste</button>`) +
+    `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>`;
   const stateInfo =
     i.state === 'snoozed'
       ? `<span class="badge blue">reporté jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
@@ -1663,7 +1718,7 @@ function replyRow(i) {
         <span class="badge blue">${esc(i.account)}</span>
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
       </div>
-      <div class="reply-subject">${esc(i.subject)}
+      <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}
         ${i.threadMessageCount > 1 ? `<span class="muted" style="font-size:12px">· fil de ${fmtNum(i.threadMessageCount)} messages</span>` : ''}</div>
       <div class="reply-reason muted">${esc(i.reason)}</div>
     </div>
@@ -1757,14 +1812,25 @@ function renderFollowupsBody() {
         : items.map(followupRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 « Reporter » et « Traité » ne touchent pas aux mails : simple marque-page local, journalisé,
-      annulable depuis les onglets Reportées / Traitées. Un fil marqué traité réapparaît si un
-      nouveau message y arrive.</div>`;
+      📖 Clique un sujet pour relire le mail que tu avais envoyé. 🛟 « Reporter » et « Traité »
+      ne touchent pas aux mails : simple marque-page local, journalisé, annulable depuis les
+      onglets Reportées / Traitées. Un fil marqué traité réapparaît si un nouveau message y arrive.</div>`;
 
   body.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       followupsState.tab = btn.dataset.tab;
       renderFollowupsBody();
+    });
+  });
+
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = items[Number(el.dataset.open)];
+      const selfEmail = overviewCache?.enrolled.find((e) => e.account === i.account)?.username ?? '';
+      openReaderFor(
+        { ...i, fromName: 'Toi (mail envoyé)', fromEmail: selfEmail, isSeen: true },
+        { onRemoved: () => loadFollowups() },
+      );
     });
   });
 
@@ -1797,17 +1863,18 @@ function renderFollowupsBody() {
   });
 }
 
-function followupRow(i) {
+function followupRow(i, idx) {
   const ident = `data-account="${esc(i.account)}" data-thread="${i.threadId}"`;
   const actions =
-    i.state === 'active'
+    (i.state === 'active'
       ? `<select class="followup-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
            <option value="">⏰ Reporter…</option>
            <option value="1">1 jour</option><option value="3">3 jours</option>
            <option value="7">7 jours</option><option value="30">30 jours</option>
          </select>
          <button class="btn btn-sm followup-dismiss" ${ident} title="Relance envoyée ou plus nécessaire">✓ Traité</button>`
-      : `<button class="btn btn-sm followup-restore" ${ident}>↩︎ Remettre en liste</button>`;
+      : `<button class="btn btn-sm followup-restore" ${ident}>↩︎ Remettre en liste</button>`) +
+    `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>`;
   const stateInfo =
     i.state === 'snoozed'
       ? `<span class="badge blue">reportée jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
@@ -1825,7 +1892,7 @@ function followupRow(i) {
         <span class="badge blue">${esc(i.account)}</span>
         ${i.hasInbound ? '' : '<span class="badge gray">premier contact</span>'}
       </div>
-      <div class="reply-subject">${esc(i.subject)}
+      <div class="reply-subject openable" data-open="${idx}" title="Relire ton mail envoyé">${esc(i.subject)}
         ${i.threadMessageCount > 1 ? `<span class="muted" style="font-size:12px">· fil de ${fmtNum(i.threadMessageCount)} messages</span>` : ''}</div>
       <div class="reply-reason muted">${esc(i.reason)}</div>
     </div>
@@ -1926,11 +1993,21 @@ function renderImportantBody() {
         : d.items.map(importantRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 Écran en lecture seule : rien n'est modifié dans tes boîtes. Le score est indicatif —
-      les raisons listées sous chaque mail expliquent exactement pourquoi il est là.</div>`;
+      📖 Clique un sujet pour lire le mail ici (et agir : corbeille, déplacer, lu/non lu).
+      Le score est indicatif — les raisons listées sous chaque mail expliquent pourquoi il est là.</div>`;
+
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = d.items[Number(el.dataset.open)];
+      openReaderFor(i, {
+        onSeen: (_, seen) => { i.isSeen = seen; renderImportantBody(); },
+        onRemoved: () => loadImportant(),
+      });
+    });
+  });
 }
 
-function importantRow(i) {
+function importantRow(i, idx) {
   return `<div class="reply-row">
     ${scoreBadge(i.score)}
     <div class="reply-main">
@@ -1941,7 +2018,7 @@ function importantRow(i) {
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
         ${i.senderKind === 'person' ? '<span class="badge green">👤 personne</span>' : ''}
       </div>
-      <div class="reply-subject">${esc(i.subject)}</div>
+      <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}</div>
       <div class="reply-reason muted">${i.reasons.map(esc).join(' · ')}</div>
     </div>
     <div class="reply-side">
@@ -1951,6 +2028,7 @@ function importantRow(i) {
         : i.level === 'medium'
           ? '<span class="badge orange">importance moyenne</span>'
           : '<span class="badge gray">importance faible</span>'}
+      <div class="reply-actions"><button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button></div>
     </div>
   </div>`;
 }
@@ -2099,13 +2177,23 @@ function renderDeadlinesBody() {
         : items.map(deadlineRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 Détection heuristique : vérifie la date avant de confirmer (l'extrait du mail est affiché).
-      Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
+      📖 Clique le sujet pour lire le mail d'origine et vérifier la date avant de confirmer.
+      🛟 Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
 
   body.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       deadlinesState.tab = btn.dataset.tab;
       renderDeadlinesBody();
+    });
+  });
+
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const x = items[Number(el.dataset.open)];
+      openReaderFor(
+        { ...x, subject: x.subject ?? x.title, date: x.msgDate ?? x.date },
+        { onRemoved: () => loadDeadlines() },
+      );
     });
   });
 
@@ -2126,8 +2214,9 @@ function renderDeadlinesBody() {
   });
 }
 
-function deadlineRow(x) {
+function deadlineRow(x, idx) {
   const type = DEADLINE_TYPES[x.type] ?? DEADLINE_TYPES.other;
+  const canOpen = x.uid != null && x.folder;
   const ident = `data-account="${esc(x.account)}" data-id="${x.id}"`;
   let actions = '';
   if (x.status === 'proposed') {
@@ -2155,11 +2244,11 @@ function deadlineRow(x) {
         <span class="badge blue">${esc(x.account)}</span>
         ${x.confidence < 0.9 ? '<span class="badge gray" title="Date trouvée sans tournure explicite">à vérifier</span>' : ''}
       </div>
-      <div class="reply-subject">${esc(x.title)}</div>
+      <div class="reply-subject ${canOpen ? 'openable' : ''}" ${canOpen ? `data-open="${idx}" title="Lire le mail d'origine"` : ''}>${esc(x.title)}</div>
       <div class="reply-reason muted">${esc(x.fromName || x.fromEmail || '')} · ${esc(x.reason)}</div>
     </div>
     <div class="reply-side">
-      <div class="reply-actions">${actions}</div>
+      <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
 }
@@ -2315,13 +2404,19 @@ function renderSearchResults() {
 }
 
 // --------------------------------------------------- Panneau de lecture (L3)
+// Réutilisé par TOUS les écrans (recherche, importants, réponses, relances,
+// échéances, dashboard, brief) : il suffit d'un item {account, folder, uid,
+// subject, fromName, fromEmail, date, isSeen} et de deux callbacks optionnels.
 function closeReader() {
   document.querySelector('.reader-overlay')?.remove();
   document.querySelector('.reader')?.remove();
   document.querySelector('.result-row.selected')?.classList.remove('selected');
 }
 
-async function openReader(item, row) {
+async function openReader(item, row, opts = {}) {
+  // Par défaut : comportement de l'écran Recherche (rafraîchit ses résultats).
+  const onSeen = opts.onSeen ?? (() => renderSearchResults());
+  const onRemoved = opts.onRemoved ?? (() => removeItemFromResults(item));
   closeReader();
   row?.classList.add('selected');
 
@@ -2391,7 +2486,7 @@ async function openReader(item, row) {
     }
     // Ouvrir un mail non lu le marque lu côté serveur (comportement IMAP
     // standard du download) : on met l'affichage en cohérence.
-    if (!item.isSeen) markItemSeen(item, true);
+    if (!item.isSeen) setSeen(true);
   }).catch((err) => {
     const el = $('#reader-body');
     if (!el) return;
@@ -2413,6 +2508,14 @@ async function openReader(item, row) {
     }
   }).catch(() => {});
 
+  // Répercute lu/non-lu sur l'item partagé + le bouton + l'écran appelant.
+  const setSeen = (seen) => {
+    item.isSeen = seen;
+    const btn = $('#reader-toggle-seen');
+    if (btn) btn.textContent = seen ? 'Marquer non lu' : 'Marquer lu';
+    onSeen(item, seen);
+  };
+
   const doAction = async (btn, action, destination) => {
     btn.disabled = true;
     try {
@@ -2428,9 +2531,8 @@ async function openReader(item, row) {
   $('#reader-toggle-seen').addEventListener('click', async (e) => {
     const toSeen = !item.isSeen;
     if (await doAction(e.target, toSeen ? 'seen' : 'unseen')) {
-      markItemSeen(item, toSeen);
+      setSeen(toSeen);
       e.target.disabled = false;
-      e.target.textContent = item.isSeen ? 'Marquer non lu' : 'Marquer lu';
     }
   });
 
@@ -2442,7 +2544,7 @@ async function openReader(item, row) {
       return;
     }
     if (await doAction(e.target, 'move', destination)) {
-      removeItemFromResults(item);
+      onRemoved(item);
       closeReader();
     }
   });
@@ -2450,18 +2552,34 @@ async function openReader(item, row) {
   $('#reader-delete').addEventListener('click', async (e) => {
     if (!confirm('Déplacer ce mail vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)')) return;
     if (await doAction(e.target, 'delete')) {
-      removeItemFromResults(item);
+      onRemoved(item);
       closeReader();
     }
   });
 }
 
-// Met à jour l'état lu/non lu dans les résultats affichés (sans re-requêter).
-function markItemSeen(item, seen) {
-  item.isSeen = seen;
-  renderSearchResults();
-  const btn = $('#reader-toggle-seen');
-  if (btn) btn.textContent = seen ? 'Marquer non lu' : 'Marquer lu';
+// Ouvre le panneau de lecture depuis un élément « intelligence » (importants,
+// réponses, relances, échéances, brief) : construit l'item minimal et branche
+// les callbacks de rafraîchissement de l'écran appelant.
+function openReaderFor(src, { onSeen, onRemoved } = {}) {
+  if (!src || !src.folder || !src.uid) {
+    alert('Ce mail n\'est plus dans l\'index (supprimé ou déplacé) — resynchronise la boîte.');
+    return;
+  }
+  openReader(
+    {
+      account: src.account,
+      folder: src.folder,
+      uid: src.uid,
+      subject: src.subject ?? '(sans sujet)',
+      fromName: src.fromName ?? null,
+      fromEmail: src.fromEmail ?? '',
+      date: src.date,
+      isSeen: src.isSeen ?? true,
+    },
+    null,
+    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()) },
+  );
 }
 
 // Retire un mail supprimé/déplacé de la liste de résultats.

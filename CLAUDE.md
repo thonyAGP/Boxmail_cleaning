@@ -91,6 +91,23 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L5.1 livrée : Lire les mails PARTOUT (début du rattrapage maquette).**
+L'utilisateur a fourni une maquette cible et acté : combler les trous
+fonctionnels AVANT la L6 — voir la section « Rattrapage maquette » de
+ROADMAP.md (L5.2 boîte de réception navigable → L5.3 répondre/envoyer →
+L5.4 analyse du mail ouvert → L5.5 tâches). Fait dans cette passe : panneau
+de lecture généralisé (`openReader(item, row, {onSeen, onRemoved})` +
+`openReaderFor` + `bindOpenables`) et branché partout — sujets cliquables et
+bouton 📖 Lire dans ⭐ Importants, ↩️ Réponses, ⏰ Relances (relit le mail
+ENVOYÉ, « Toi (mail envoyé) »), 📅 Échéances (mail d'origine), 4 panneaux du
+dashboard, sections du brief. `listDeadlines` joint le mail source
+(folder/uid/msgDate/isSeen, null si disparu — `loadSourceMeta`) ; les résumés
+du brief (OverdueSummary/FollowupSummary) portent folder/uid. Les actions du
+panneau rafraîchissent l'écran appelant. Tests : seed-brief.mts étendu
+(25 asserts) + test playwright shot-reader.mjs (7 checks, corps IMAP mocké
+via page.route). NB test : mettre RATE_LIMIT_MAX haut dans le .env de test
+(le rate-limit 60/min sur /api fait des 429 sur les tests navigateur).
+
 **L5 livrée : Brief quotidien & revue hebdo.** Modèle `BriefRun` + migration
 (type daily/weekly, periodStart/End, summaryJson — chaque brief archivé tel
 quel). `services/brief.ts` : `generateBrief({type})` agrège depuis l'index
@@ -203,9 +220,9 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Suivre `docs/ROADMAP.md`** : il reste la L6 (déploiement Oracle Cloud +
-connecteur Cowork — nécessite l'utilisateur pour SSH/DNS/Entra) et le backlog
-(renommer/supprimer un compte depuis l'interface, page Aide, règles de
-classement L7, analyse LLM via Sonnet dédié…).
+**Suivre `docs/ROADMAP.md`, section « Rattrapage maquette »** : L5.2 boîte de
+réception navigable → L5.3 répondre/transférer/nouveau mail → L5.4 analyse du
+mail ouvert → L5.5 tâches. La L6 (déploiement Oracle + Cowork) vient APRÈS le
+rattrapage (décision utilisateur 07/2026).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.

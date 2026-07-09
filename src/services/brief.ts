@@ -59,6 +59,9 @@ export interface Brief {
 export interface OverdueSummary {
   account: string;
   threadId: number;
+  folder: string;
+  uid: number;
+  isSeen: boolean;
   fromEmail: string;
   fromName: string | null;
   subject: string;
@@ -71,6 +74,8 @@ export interface OverdueSummary {
 export interface FollowupSummary {
   account: string;
   threadId: number;
+  folder: string;
+  uid: number;
   counterpartyEmail: string;
   counterpartyName: string | null;
   subject: string;
@@ -206,6 +211,9 @@ export async function generateBrief(opts: GenerateBriefOptions = {}): Promise<Br
           .map((i) => ({
             account: i.account,
             threadId: i.threadId,
+            folder: i.folder,
+            uid: i.uid,
+            isSeen: i.isSeen,
             fromEmail: i.fromEmail,
             fromName: i.fromName,
             subject: i.subject,
@@ -225,6 +233,8 @@ export async function generateBrief(opts: GenerateBriefOptions = {}): Promise<Br
           .map((i) => ({
             account: i.account,
             threadId: i.threadId,
+            folder: i.folder,
+            uid: i.uid,
             counterpartyEmail: i.counterpartyEmail,
             counterpartyName: i.counterpartyName,
             subject: i.subject,

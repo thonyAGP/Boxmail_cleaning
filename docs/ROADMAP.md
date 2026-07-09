@@ -234,6 +234,67 @@ cliquables vers les écrans, bouton Régénérer). Seed : scratchpad
 
 ---
 
+## Rattrapage maquette (décision utilisateur 07/2026 : AVANT la L6)
+
+L'utilisateur a fourni une maquette cible (boîte de réception navigable,
+lecture/réponse, tâches, calendrier, règles…). Décision : combler les trous
+fonctionnels avant le déploiement. Une livraison par session, dans cet ordre.
+
+### ✅ L5.1 — Lire les mails PARTOUT — LIVRÉ
+
+Le panneau de lecture (L3) est réutilisable (`openReader(item, row, {onSeen,
+onRemoved})`, wrapper `openReaderFor`) et branché sur TOUS les écrans : sujets
+cliquables + bouton 📖 Lire dans ⭐ Importants, ↩️ Réponses en attente,
+⏰ Relances (relit le mail ENVOYÉ, étiqueté « Toi »), 📅 Échéances (mail
+d'origine), les 4 panneaux du dashboard et les sections du brief.
+`listDeadlines` joint désormais le mail source (folder/uid/msgDate/isSeen,
+null s'il a disparu) ; les résumés du brief portent folder/uid. Actions du
+panneau (corbeille/déplacer/lu) rafraîchissent l'écran appelant.
+
+### ⬜ L5.2 — Boîte de réception navigable
+
+Parcourir n'importe quel dossier depuis l'interface (l'équivalent de la liste
+« Boîte de réception » de la maquette) : API GET
+`/api/accounts/:slug/messages?folder&offset&limit&unseen` (INDEX only, tri
+date desc, total pour pagination) ; écran `#/inbox/<slug>` (ou onglet dans la
+vue compte) : liste paginée 50/page, filtres non-lus/dossier, clic → panneau
+de lecture existant, lien depuis la sidebar et les compteurs du dashboard.
+Prévoir la sélection multiple → actions en masse (corbeille/déplacer/lu) via
+un POST bulk journalisé (réutiliser lots de 200 + garde-fous cleanup).
+
+### ⬜ L5.3 — Répondre / transférer / nouveau mail
+
+`services/smtp.ts` existe (XOAUTH2) mais ENABLE_SMTP_SEND=false. Livraison :
+composer depuis le panneau de lecture (Répondre / Transférer) et bouton
+« Nouveau mail » ; API POST `/api/accounts/:slug/send` (garde-fous : aperçu
+avant envoi, confirmation explicite, journal `ui_send_mail` avec destinataires
++ sujet, jamais d'envoi automatique) ; en-têtes In-Reply-To/References pour
+rester dans le fil ; copie dans Éléments envoyés (IMAP APPEND) + reflet index.
+Après envoi : proposer « marquer la réponse/relance traitée ».
+
+### ⬜ L5.4 — Analyse du mail dans le panneau de lecture
+
+La colonne « Analyse Mail Assistant » de la maquette, pour LE mail ouvert :
+score d'importance + raisons (`explainImportance` existe déjà), réponse
+attendue ?, relance suggérée ?, échéance détectée dans le corps affiché
+(`extractDeadlines` sur le texte déjà téléchargé — gratuit), boutons rapides
+(reporter/ignorer/confirmer l'échéance). API GET
+`/api/accounts/:slug/messages/:folder/:uid/analysis`.
+
+### ⬜ L5.5 — Tâches
+
+Modèle `Task` (title, dueDate?, accountSlug?, messageId?, status todo/done/
+dismissed, source manual/mail/deadline) ; créer une tâche depuis un mail
+(panneau de lecture) ou une échéance ; écran `#/tasks` (À faire / Terminées),
+badge sidebar, panneau dashboard, intégration au brief. 2-3 tools MCP.
+
+### Ensuite (déjà au backlog, ordre à décider avec l'utilisateur)
+
+Calendrier des échéances (vue mois), règles de classement (L7 — gros morceau),
+renommer/supprimer un compte depuis Paramètres, page Aide.
+
+---
+
 ## ⬜ L6 — Déploiement Oracle Cloud + connecteur Cowork
 
 **Objectif.** Serveur accessible en HTTPS pour Claude Cowork ET pour

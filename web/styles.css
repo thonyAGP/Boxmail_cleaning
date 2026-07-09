@@ -221,6 +221,10 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .score-pill.low { background: #9aa4b8; }
 .op-line .score-pill { width: 30px; height: 30px; font-size: 12px; margin-top: 0; align-self: center; }
 
+/* ---------- Sujets cliquables → panneau de lecture ---------- */
+.openable { cursor: pointer; }
+.openable:hover { color: var(--accent); text-decoration: underline; }
+
 /* ---------- Brief du jour (L5) ---------- */
 .brief-when { font-weight: 400; font-size: 12px; margin-left: 6px; }
 #brief-caret { display: inline-block; width: 14px; color: var(--muted); }
