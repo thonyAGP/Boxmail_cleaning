@@ -37,6 +37,9 @@ function showLogin(message) {
 async function showApp() {
   $('#login-view').classList.add('hidden');
   $('#app-view').classList.remove('hidden');
+  api.version().then((v) => {
+    $('#version-line').textContent = `version ${v.commit} · ${v.date}`;
+  }).catch(() => {});
   await refreshOverview();
   route();
 }
@@ -237,6 +240,57 @@ async function renderDashboard() {
   });
 
   bindCleanupButtons(body);
+
+  // Vérification des mises à jour en arrière-plan (une fois par affichage).
+  api.updateCheck().then(({ behind, commits }) => {
+    if (!behind) return;
+    const el = document.createElement('div');
+    el.className = 'notice';
+    el.innerHTML = `⬆️ <strong>Mise à jour disponible</strong> (${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}) :
+      <span class="muted">${commits.slice(0, 3).map(esc).join(' · ')}</span>
+      <button class="btn btn-primary btn-sm" id="update-btn" style="margin-left:10px">Mettre à jour maintenant</button>`;
+    body.prepend(el);
+    $('#update-btn').addEventListener('click', () => applyUpdateFlow(el));
+  }).catch(() => {});
+}
+
+async function applyUpdateFlow(container) {
+  container.innerHTML = `<span class="spinner"></span><strong>Mise à jour en cours…</strong>
+    le serveur va redémarrer tout seul, la page reviendra automatiquement.
+    <div class="sync-log" id="update-log"></div>`;
+  let jobId;
+  try {
+    ({ jobId } = await api.updateApply());
+  } catch (err) {
+    container.innerHTML = `⚠️ ${esc(err.message)}`;
+    return;
+  }
+  const log = $('#update-log');
+  const poll = setInterval(async () => {
+    try {
+      const j = await api.job(jobId);
+      log.textContent = j.progress.slice(-25).join('\n');
+      log.scrollTop = log.scrollHeight;
+      if (j.status === 'error') {
+        clearInterval(poll);
+        container.innerHTML = `<div class="notice warn">❌ Échec de la mise à jour : ${esc(j.error ?? '')}</div>`;
+      }
+      // status 'done' n'arrive jamais : le serveur redémarre avant.
+    } catch {
+      // Le serveur est en train de redémarrer → on attend son retour.
+      clearInterval(poll);
+      log.textContent += '\nRedémarrage du serveur…';
+      const waitUp = setInterval(async () => {
+        try {
+          if (await api.health()) {
+            clearInterval(waitUp);
+            location.reload();
+          }
+        } catch { /* pas encore prêt */ }
+      }, 2000);
+      setTimeout(() => clearInterval(waitUp), 180_000);
+    }
+  }, 1200);
 }
 
 function bindCleanupButtons(root) {
@@ -666,11 +720,15 @@ function openEnrollModal() {
           style="flex:1; border:1px solid var(--border); border-radius:8px; padding:9px 12px" required>
         <button type="submit" class="btn btn-primary">Obtenir le code</button>
       </form>
-      <p class="muted" style="margin-top:12px; font-size:12.5px">
-        Étape suivante : Microsoft affichera un code à saisir sur
-        <strong>microsoft.com/devicelogin</strong>, où tu te connecteras avec la boîte
-        Hotmail/Outlook <strong>à ajouter</strong> (pas ton compte principal, sauf si
-        c'est celui-là). Le mot de passe ne passe jamais par cette page.</p>
+      <div class="notice warn" style="margin-top:12px">
+        ⚠️ <strong>Important :</strong> ouvre le lien Microsoft en
+        <strong>navigation privée</strong> (Ctrl+Maj+N, puis colle le lien).
+        Sinon Microsoft utilise <em>silencieusement</em> le compte déjà connecté
+        dans ton navigateur, sans te demander lequel — et tu enrôles la mauvaise
+        boîte. En navigation privée, il te demande explicitement le compte.</div>
+      <p class="muted" style="margin-top:10px; font-size:12.5px">
+        Le mot de passe ne passe jamais par cette page : tout se joue entre toi
+        et Microsoft.</p>
       <div id="enroll-zone"></div>
     </div>
     <div class="modal-foot"><button class="btn" id="enroll-cancel">Fermer</button></div>
@@ -707,7 +765,7 @@ function openEnrollModal() {
         zone.innerHTML = `
           ${replacing ? `<div class="notice warn">Ce nom existait déjà (${esc(replacing)}) — il sera remplacé.</div>` : ''}
           <div class="device-box">
-            <div class="lbl">1. Ouvre cette page :</div>
+            <div class="lbl">1. Ouvre une fenêtre de <strong>navigation privée</strong> (Ctrl+Maj+N) et va sur :</div>
             <a class="device-link" href="${esc(j.meta.verificationUri)}" target="_blank" rel="noopener">${esc(j.meta.verificationUri)}</a>
             <div class="lbl" style="margin-top:14px">2. Saisis ce code :</div>
             <div class="device-code">${esc(j.meta.userCode)}</div>
@@ -720,7 +778,13 @@ function openEnrollModal() {
         if (j.status === 'done') {
           const r = j.result ?? {};
           zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
-            <strong>${esc(r.account ?? name)}</strong>.</div>`;
+            <strong>${esc(r.account ?? name)}</strong>.<br>
+            <span class="muted" style="font-size:12.5px">Vérifie que l'adresse ci-dessus est bien
+            celle attendue — sinon, recommence en navigation privée.</span></div>
+            ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà enrôlée</strong>
+              sous le nom « ${esc(r.duplicateOf)} » ! Tu t'es probablement connecté avec le mauvais
+              compte (session Microsoft du navigateur). Refais « Ajouter un compte » avec le même nom
+              <strong>${esc(r.account ?? name)}</strong>, en ouvrant le lien en navigation privée.</div>` : ''}`;
           $('.modal-foot').innerHTML = `
             <button class="btn" id="enroll-close">Fermer</button>
             <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser cette boîte maintenant</button>`;

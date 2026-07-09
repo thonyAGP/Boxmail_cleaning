@@ -20,6 +20,7 @@ import { syncAccount } from '../services/sync.js';
 import { startJob, getJob, hasRunningJob } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
+import { version, checkUpdates, applyUpdate } from '../services/update.js';
 
 /**
  * API REST de l'interface web d'administration (/api/*).
@@ -225,6 +226,33 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  // --- Version & mise à jour -----------------------------------------------------
+  router.get(
+    '/version',
+    guard(async (_req, res) => {
+      res.json(await version());
+    }),
+  );
+
+  router.get(
+    '/update/check',
+    guard(async (_req, res) => {
+      res.json(await checkUpdates());
+    }),
+  );
+
+  router.post(
+    '/update/apply',
+    guard(async (_req, res) => {
+      if (hasRunningJob('update')) {
+        res.status(409).json({ error: 'Une mise à jour est déjà en cours.' });
+        return;
+      }
+      const job = startJob('update', (progress) => applyUpdate(progress));
+      res.json({ jobId: job.id });
+    }),
+  );
+
   // --- Enrôlement d'une nouvelle boîte (device code flow) -----------------------
   // Le job expose le code Microsoft via job.meta ; l'utilisateur le saisit sur
   // microsoft.com/devicelogin en se connectant avec la boîte à ajouter. Le
@@ -255,9 +283,25 @@ export function buildAdminRouter(): Router {
           });
           progress('Code généré — en attente de ta validation chez Microsoft…');
         });
+        // Filet de sécurité : détecte si cette adresse est déjà enrôlée sous
+        // un autre nom (signe qu'on s'est connecté avec le mauvais compte —
+        // le navigateur réutilise silencieusement la session Microsoft active).
+        let duplicateOf: string | null = null;
+        for (const n of await listAccountNames()) {
+          if (n === account) continue;
+          const r = await getAccountRecord(n);
+          if (r && r.username.toLowerCase() === enrolled.username.toLowerCase()) {
+            duplicateOf = n;
+          }
+        }
         await upsertAccount(account, enrolled);
         progress(`✅ ${enrolled.username} enrôlé sous le nom « ${account} ».`);
-        return { account, username: enrolled.username, replaced: Boolean(existing) };
+        return {
+          account,
+          username: enrolled.username,
+          replaced: Boolean(existing),
+          duplicateOf,
+        };
       });
       res.json({ jobId: job.id, replacing: existing?.username ?? null });
     }),

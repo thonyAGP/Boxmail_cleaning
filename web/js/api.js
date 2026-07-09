@@ -52,6 +52,10 @@ export const api = {
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),
+  version: () => request('GET', '/version'),
+  updateCheck: () => request('GET', '/update/check'),
+  updateApply: () => request('POST', '/update/apply'),
+  health: () => fetch('/health').then((r) => r.ok),
   job: (id) => request('GET', `/jobs/${encodeURIComponent(id)}`),
   operations: (limit = 30) => request('GET', `/operations?limit=${limit}`),
 };

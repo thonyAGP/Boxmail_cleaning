@@ -210,6 +210,22 @@ npm run enroll -- --remove nom                   # supprimer (token effacé)
 
 ## 6. Lancer le serveur
 
+### Windows — lancement en un double-clic (recommandé)
+
+Double-cliquer sur **`start-boxmail.bat`** (à la racine du projet) : il récupère
+les mises à jour, installe, compile, démarre le serveur **et le relance
+automatiquement** s'il s'arrête (ex. après une mise à jour depuis l'interface).
+
+- Créer un raccourci du `.bat` sur le Bureau pour un accès direct.
+- Démarrage automatique avec Windows : `Win+R` → `shell:startup` → glisser le
+  raccourci dans le dossier qui s'ouvre.
+- **Mises à jour** : un bandeau apparaît sur le tableau de bord quand une mise à
+  jour est disponible → bouton « Mettre à jour maintenant » → le serveur se met
+  à jour et redémarre tout seul, la page revient automatiquement. Plus besoin
+  de `git pull` ni de terminal.
+
+### Ligne de commande (toutes plateformes)
+
 ```bash
 npm run build
 npm start
