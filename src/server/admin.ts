@@ -40,7 +40,14 @@ import {
   completeDeadline,
   restoreDeadline,
 } from '../services/deadlines.js';
-import { searchIndex, indexedMessage, reflectActionInIndex } from '../services/search.js';
+import {
+  searchIndex,
+  indexedMessage,
+  reflectActionInIndex,
+  listFolderMessages,
+  validateUids,
+  reflectBulkInIndex,
+} from '../services/search.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import { imapService } from '../services/imap.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
@@ -582,6 +589,111 @@ export function buildAdminRouter(): Router {
         limit: Number.parseInt(String(req.query.limit ?? '100'), 10) || 100,
       });
       res.json(result);
+    }),
+  );
+
+  // --- Boîte de réception navigable (L5.2) -----------------------------------------
+  // Liste paginée des mails d'un dossier, depuis l'INDEX (instantané).
+  router.get(
+    '/accounts/:slug/messages',
+    guard(async (req, res) => {
+      const folder = String(req.query.folder ?? 'INBOX');
+      const offset = Math.max(Number.parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+      const limit = Math.min(
+        Math.max(Number.parseInt(String(req.query.limit ?? '50'), 10) || 50, 1),
+        200,
+      );
+      const unseen = ['1', 'true'].includes(String(req.query.unseen ?? ''));
+      if (!(await isFolderIndexed(req.params.slug, folder))) {
+        res.status(409).json({
+          error: `Le dossier "${folder}" n'est pas encore indexé — lancer une synchronisation.`,
+          needsSync: true,
+        });
+        return;
+      }
+      res.json(await listFolderMessages(req.params.slug, folder, { offset, limit, unseen }));
+    }),
+  );
+
+  // Actions en masse sur une sélection : corbeille (soft), déplacer, lu/non lu.
+  // UIDs revalidés contre l'index, exécution par lots de 200, UNE entrée de
+  // journal par opération avec la liste exacte des mails.
+  router.post(
+    '/accounts/:slug/messages/bulk',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const action = String(req.body?.action ?? '');
+      const destination = String(req.body?.destination ?? '').trim();
+      const rawUids = Array.isArray(req.body?.uids)
+        ? (req.body.uids as unknown[])
+            .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+            .slice(0, 20_000)
+        : [];
+      if (!folder || rawUids.length === 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "uids" requis.' });
+        return;
+      }
+      if (!['delete', 'move', 'seen', 'unseen'].includes(action)) {
+        res.status(400).json({ error: `Action inconnue : "${action}".` });
+        return;
+      }
+      if (action === 'move' && !destination) {
+        res.status(400).json({ error: 'Destination requise pour un déplacement.' });
+        return;
+      }
+      const { uids, items } = await validateUids(slug, folder, rawUids);
+      if (uids.length === 0) {
+        res.status(404).json({ error: 'Aucun des mails sélectionnés n\'est dans l\'index — resynchronise.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+
+      let result: Record<string, unknown>;
+      let destinationUsed = destination;
+      if (action === 'seen' || action === 'unseen') {
+        // Marquage : une seule commande IMAP suffit (pas de déplacement).
+        const add = action === 'seen' ? ['\\Seen'] : [];
+        const remove = action === 'unseen' ? ['\\Seen'] : [];
+        let affected = 0;
+        for (let i = 0; i < uids.length; i += 200) {
+          const r = await imapService.markEmails(rec, folder, uids.slice(i, i + 200), add, remove);
+          affected += r.affected;
+        }
+        result = { affected, flag: action };
+      } else {
+        let moved = 0;
+        let batches = 0;
+        for (let i = 0; i < uids.length; i += 200) {
+          const batch = uids.slice(i, i + 200);
+          const r =
+            action === 'delete'
+              ? await imapService.moveToTrash(rec, folder, batch)
+              : await imapService.moveEmails(rec, folder, batch, destination);
+          moved += r.moved;
+          if ('destination' in r) destinationUsed = r.destination;
+          batches++;
+        }
+        result = { moved, batches, destination: destinationUsed };
+      }
+
+      await recordOperation({
+        account: rec.account,
+        tool:
+          action === 'delete' ? 'ui_bulk_delete'
+          : action === 'move' ? 'ui_bulk_move'
+          : 'ui_bulk_mark',
+        folder,
+        params: { count: uids.length, action, ...(destinationUsed ? { destination: destinationUsed } : {}) },
+        affectedUids: uids,
+        items: items.slice(0, 500),
+        result:
+          action === 'delete' ? `soft-deleted ${uids.length} -> ${destinationUsed}`
+          : action === 'move' ? `moved ${uids.length} -> ${destinationUsed}`
+          : `flagged ${uids.length} ${action}`,
+      });
+      await reflectBulkInIndex(slug, folder, uids, action as 'delete' | 'move' | 'seen' | 'unseen');
+      res.json({ ok: true, action, count: uids.length, skipped: rawUids.length - uids.length, ...result });
     }),
   );
 

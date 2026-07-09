@@ -256,6 +256,8 @@ function highlightNav() {
     document.querySelector(`[data-account="${CSS.escape(slug)}"]`)?.classList.add('active');
   } else if (hash.startsWith('#/operations')) {
     document.querySelector('[data-nav="operations"]')?.classList.add('active');
+  } else if (hash.startsWith('#/inbox')) {
+    document.querySelector('[data-nav="inbox"]')?.classList.add('active');
   } else if (hash.startsWith('#/search')) {
     document.querySelector('[data-nav="search"]')?.classList.add('active');
   } else if (hash.startsWith('#/replies')) {
@@ -281,6 +283,8 @@ function route() {
     renderAccount(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/operations')) {
     renderOperations();
+  } else if (hash.startsWith('#/inbox')) {
+    renderInbox(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/search')) {
     renderSearch();
   } else if (hash.startsWith('#/replies')) {
@@ -935,6 +939,7 @@ async function renderAccount(slug) {
   main.innerHTML = `<div class="page-head">
       <div><h1>📧 ${esc(slug)}</h1><div class="sub">${esc(enrolled?.username ?? '')}</div></div>
       <div class="head-actions">
+        <a class="btn" href="#/inbox/${esc(slug)}">📥 Parcourir les mails</a>
         <button class="btn" id="sync-recent">⚡ Sync rapide</button>
         <button class="btn btn-primary" id="sync-full">🔄 Sync complète</button>
       </div></div>
@@ -2251,6 +2256,257 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------- Boîte de réception navigable (L5.2)
+const inboxState = {
+  account: '',
+  folder: '',
+  offset: 0,
+  pageSize: 50,
+  unseen: false,
+  data: null,
+  folders: [],
+  selected: new Set(), // uids sélectionnés (page courante uniquement)
+};
+
+async function renderInbox(slugFromHash) {
+  const main = $('#main');
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  if (accounts.length === 0) {
+    main.innerHTML = `<div class="page-head"><div><h1>📥 Boîte de réception</h1></div></div>
+      <div class="notice warn">Aucun compte enrôlé.</div>`;
+    return;
+  }
+  if (slugFromHash && accounts.includes(slugFromHash)) inboxState.account = slugFromHash;
+  if (!inboxState.account || !accounts.includes(inboxState.account)) {
+    inboxState.account = accounts[0];
+  }
+
+  main.innerHTML = `<div class="page-head">
+    <div><h1>📥 Boîte de réception</h1>
+      <div class="sub">Tous les mails du dossier, page par page (index local — instantané).
+      Clique un mail pour le lire ; coche pour agir en masse. Synchronise pour des résultats à jour.</div></div>
+    <div class="head-actions">
+      <select id="inbox-account" title="Boîte">${accounts
+        .map((a) => `<option value="${esc(a)}" ${a === inboxState.account ? 'selected' : ''}>${esc(a)}</option>`)
+        .join('')}</select>
+      <select id="inbox-folder" title="Dossier"></select>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
+        <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
+      <button class="btn" id="inbox-refresh">↻ Actualiser</button>
+    </div></div>
+    <div id="inbox-notice"></div>
+    <div id="inbox-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+
+  $('#inbox-account').addEventListener('change', async (e) => {
+    inboxState.account = e.target.value;
+    inboxState.folder = '';
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+    await loadInboxFolders();
+    loadInbox();
+  });
+  $('#inbox-folder').addEventListener('change', (e) => {
+    inboxState.folder = e.target.value;
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+    loadInbox();
+  });
+  $('#inbox-unseen').addEventListener('change', (e) => {
+    inboxState.unseen = e.target.checked;
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+    loadInbox();
+  });
+  $('#inbox-refresh').addEventListener('click', loadInbox);
+
+  await loadInboxFolders();
+  await loadInbox();
+}
+
+// Remplit le sélecteur de dossiers du compte courant (INBOX sélectionnée par défaut).
+async function loadInboxFolders() {
+  const sel = $('#inbox-folder');
+  if (!sel) return;
+  sel.innerHTML = '<option>…</option>';
+  try {
+    const { folders } = await api.folders(inboxState.account);
+    inboxState.folders = folders;
+    const usable = folders.filter((f) => f.messageCount > 0 || f.role === 'inbox');
+    if (!inboxState.folder) {
+      inboxState.folder = usable.find((f) => f.role === 'inbox')?.path ?? usable[0]?.path ?? 'INBOX';
+    }
+    sel.innerHTML = usable
+      .map(
+        (f) => `<option value="${esc(f.path)}" ${f.path === inboxState.folder ? 'selected' : ''}>
+          ${esc(f.path)} (${fmtNum(f.messageCount)})</option>`,
+      )
+      .join('');
+  } catch {
+    sel.innerHTML = `<option value="INBOX">INBOX</option>`;
+    inboxState.folder = 'INBOX';
+  }
+}
+
+async function loadInbox() {
+  const body = $('#inbox-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
+  try {
+    inboxState.data = await api.listMessages(inboxState.account, {
+      folder: inboxState.folder,
+      offset: inboxState.offset,
+      limit: inboxState.pageSize,
+      unseen: inboxState.unseen,
+    });
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
+      err.data?.needsSync
+        ? ` <a href="#/account/${esc(inboxState.account)}">Ouvrir la boîte pour la synchroniser</a>.`
+        : ''
+    }</div>`;
+    return;
+  }
+  inboxState.selected.clear();
+  renderInboxBody();
+}
+
+function renderInboxBody() {
+  const body = $('#inbox-body');
+  const d = inboxState.data;
+  if (!body || !d) return;
+  const sel = inboxState.selected;
+  const pageEnd = Math.min(d.offset + d.items.length, d.total);
+
+  body.innerHTML = `
+    <div id="inbox-bulkbar" class="export-bar ${sel.size ? '' : 'hidden'}"></div>
+    <div class="panel"><div class="panel-body tight">
+      ${d.items.length === 0
+        ? `<div class="empty">${inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'}</div>`
+        : `<table><thead><tr>
+            <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
+            <th style="width:100px">Date</th><th style="width:220px">Expéditeur</th><th>Sujet</th><th></th>
+          </tr></thead>
+          <tbody>${d.items
+            .map(
+              (i, k) => `<tr class="${i.isSeen ? '' : 'unread-row'}">
+              <td><input type="checkbox" class="inbox-check" data-uid="${i.uid}" ${sel.has(i.uid) ? 'checked' : ''}></td>
+              <td class="muted" style="white-space:nowrap; font-size:12px">${fmtDate(i.date)}</td>
+              <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px"
+                title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</td>
+              <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span></td>
+              <td style="white-space:nowrap">${i.hasListUnsubscribe ? '<span class="badge gray">📰</span>' : ''}
+                ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}</td>
+            </tr>`,
+            )
+            .join('')}</tbody></table>`}
+    </div></div>
+    <div class="inbox-pager">
+      <span class="muted">${d.total === 0 ? '0 mail' : `${fmtNum(d.offset + 1)}–${fmtNum(pageEnd)} sur ${fmtNum(d.total)}`}</span>
+      <button class="btn btn-sm" id="inbox-prev" ${d.offset === 0 ? 'disabled' : ''}>← Précédents</button>
+      <button class="btn btn-sm" id="inbox-next" ${pageEnd >= d.total ? 'disabled' : ''}>Suivants →</button>
+    </div>
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 Les actions en masse passent par la corbeille (soft delete, récupérable ~30 j), par lots
+      de 200, et sont journalisées avec la liste exacte des mails.</div>`;
+
+  body.querySelectorAll('[data-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const i = d.items[Number(el.dataset.open)];
+      openReaderFor(i, {
+        onSeen: (_, seen) => { i.isSeen = seen; renderInboxBody(); },
+        onRemoved: () => loadInbox(),
+      });
+    });
+  });
+
+  $('#inbox-prev')?.addEventListener('click', () => {
+    inboxState.offset = Math.max(0, inboxState.offset - inboxState.pageSize);
+    loadInbox();
+  });
+  $('#inbox-next')?.addEventListener('click', () => {
+    inboxState.offset += inboxState.pageSize;
+    loadInbox();
+  });
+
+  const checkAll = $('#inbox-check-all');
+  if (checkAll) {
+    checkAll.checked = d.items.length > 0 && d.items.every((i) => sel.has(i.uid));
+    checkAll.addEventListener('change', () => {
+      for (const i of d.items) {
+        if (checkAll.checked) sel.add(i.uid);
+        else sel.delete(i.uid);
+      }
+      renderInboxBody();
+    });
+  }
+  body.querySelectorAll('.inbox-check').forEach((box) => {
+    box.addEventListener('change', () => {
+      const uid = Number(box.dataset.uid);
+      if (box.checked) sel.add(uid);
+      else sel.delete(uid);
+      renderInboxBulkbar();
+    });
+  });
+  renderInboxBulkbar();
+}
+
+// Barre d'actions en masse (affichée dès qu'au moins un mail est coché).
+function renderInboxBulkbar() {
+  const bar = $('#inbox-bulkbar');
+  if (!bar) return;
+  const sel = inboxState.selected;
+  bar.classList.toggle('hidden', sel.size === 0);
+  if (sel.size === 0) return;
+  const others = inboxState.folders.filter(
+    (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
+  );
+  bar.innerHTML = `✅ <strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
+    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)">🗑️ Corbeille</button>
+    <select id="bulk-move"><option value="">📦 Déplacer vers…</option>
+      ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>
+    <button class="btn btn-sm" id="bulk-seen">Marquer lus</button>
+    <button class="btn btn-sm" id="bulk-unseen">Marquer non lus</button>
+    <button class="btn btn-sm" id="bulk-clear">Tout décocher</button>`;
+
+  const run = async (action, destination) => {
+    const n = inboxState.selected.size;
+    if (action === 'delete' &&
+        !confirm(`Déplacer ${n} mail(s) vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)`)) return;
+    if (action === 'move' && !confirm(`Déplacer ${n} mail(s) vers « ${destination} » ?`)) return;
+    const notice = $('#inbox-notice');
+    notice.innerHTML = `<div class="notice"><span class="spinner"></span>Action en cours sur ${fmtNum(n)} mail(s)…</div>`;
+    try {
+      const r = await api.bulkAction(inboxState.account, {
+        folder: inboxState.folder,
+        uids: [...inboxState.selected],
+        action,
+        destination,
+      });
+      notice.innerHTML = `<div class="notice">✅ ${
+        action === 'delete' ? `${fmtNum(r.moved ?? 0)} mail(s) → corbeille (récupérables ~30 j)`
+        : action === 'move' ? `${fmtNum(r.moved ?? 0)} mail(s) déplacés vers ${esc(destination)}`
+        : `${fmtNum(r.count ?? 0)} mail(s) marqués ${action === 'seen' ? 'lus' : 'non lus'}`
+      }${r.skipped ? ` — ${fmtNum(r.skipped)} ignoré(s) (plus dans l'index)` : ''}.</div>`;
+      inboxState.selected.clear();
+      await loadInbox();
+      refreshOverview().catch(() => {});
+    } catch (err) {
+      notice.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    }
+  };
+  $('#bulk-delete').addEventListener('click', () => run('delete'));
+  $('#bulk-move').addEventListener('change', (e) => {
+    if (e.target.value) run('move', e.target.value);
+    e.target.value = '';
+  });
+  $('#bulk-seen').addEventListener('click', () => run('seen'));
+  $('#bulk-unseen').addEventListener('click', () => run('unseen'));
+  $('#bulk-clear').addEventListener('click', () => {
+    inboxState.selected.clear();
+    renderInboxBody();
+  });
 }
 
 // ---------------------------------------------------------------- Recherche (L3)

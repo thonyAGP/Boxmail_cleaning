@@ -137,6 +137,132 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
   };
 }
 
+export interface FolderListing {
+  account: string;
+  folder: string;
+  total: number;
+  offset: number;
+  items: SearchResultItem[];
+}
+
+/**
+ * Liste paginée des mails d'un dossier (L5.2 — boîte de réception navigable).
+ * Index only : tri date desc, `offset`/`limit` pour la pagination, `total`
+ * pour afficher « page X / Y ». Même forme d'items que la recherche.
+ */
+export async function listFolderMessages(
+  account: string,
+  folder: string,
+  opts: { offset?: number; limit?: number; unseen?: boolean } = {},
+): Promise<FolderListing> {
+  await ensureDbReady();
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const where = {
+    accountSlug: account,
+    isDeleted: false,
+    folder: { path: folder },
+    ...(opts.unseen ? { isSeen: false } : {}),
+  };
+  const [total, rows] = await Promise.all([
+    db.message.count({ where }),
+    db.message.findMany({
+      where,
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      skip: offset,
+      take: limit,
+      select: {
+        id: true,
+        accountSlug: true,
+        uid: true,
+        threadId: true,
+        subject: true,
+        fromName: true,
+        fromEmail: true,
+        date: true,
+        isSeen: true,
+        isOutbound: true,
+        hasListUnsubscribe: true,
+        sizeBytes: true,
+        folder: { select: { path: true, role: true } },
+      },
+    }),
+  ]);
+  return {
+    account,
+    folder,
+    total,
+    offset,
+    items: rows.map((m) => ({
+      account: m.accountSlug,
+      folder: m.folder.path,
+      folderRole: m.folder.role,
+      uid: m.uid,
+      messageId: m.id,
+      threadId: m.threadId,
+      subject: m.subject ?? '(sans sujet)',
+      fromName: m.fromName ?? '',
+      fromEmail: m.fromEmail ?? '',
+      date: m.date?.toISOString() ?? null,
+      isSeen: m.isSeen,
+      isOutbound: m.isOutbound,
+      hasListUnsubscribe: m.hasListUnsubscribe,
+      sizeBytes: m.sizeBytes,
+    })),
+  };
+}
+
+/**
+ * Revalide une sélection d'UIDs contre l'index d'un dossier : ne garde que
+ * les mails réellement présents, et retourne leurs sujets/dates pour le
+ * journal. Garde-fou des actions en masse de l'interface.
+ */
+export async function validateUids(
+  account: string,
+  folder: string,
+  uids: number[],
+): Promise<{ uids: number[]; items: { subject: string; date: string | null }[] }> {
+  await ensureDbReady();
+  const valid: number[] = [];
+  const items: { subject: string; date: string | null }[] = [];
+  for (let i = 0; i < uids.length; i += 500) {
+    const rows = await db.message.findMany({
+      where: {
+        accountSlug: account,
+        isDeleted: false,
+        uid: { in: uids.slice(i, i + 500) },
+        folder: { path: folder },
+      },
+      select: { uid: true, subject: true, date: true },
+    });
+    for (const r of rows) {
+      valid.push(r.uid);
+      items.push({ subject: r.subject ?? '(sans sujet)', date: r.date?.toISOString() ?? null });
+    }
+  }
+  return { uids: valid, items };
+}
+
+/** Variante en masse de reflectActionInIndex (une requête par lot de 500). */
+export async function reflectBulkInIndex(
+  account: string,
+  folder: string,
+  uids: number[],
+  action: 'delete' | 'move' | 'seen' | 'unseen',
+): Promise<void> {
+  await ensureDbReady();
+  const data =
+    action === 'delete' || action === 'move'
+      ? { isDeleted: true }
+      : { isSeen: action === 'seen' };
+  for (let i = 0; i < uids.length; i += 500) {
+    await db.message.updateMany({
+      where: { accountSlug: account, uid: { in: uids.slice(i, i + 500) }, folder: { path: folder } },
+      data,
+    });
+  }
+}
+
 /**
  * Métadonnées d'un mail de l'index (pour journaliser les actions de l'interface
  * avec le sujet/la date exacts, et vérifier que le mail visé existe bien).

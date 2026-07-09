@@ -221,6 +221,14 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .score-pill.low { background: #9aa4b8; }
 .op-line .score-pill { width: 30px; height: 30px; font-size: 12px; margin-top: 0; align-self: center; }
 
+/* ---------- Boîte de réception navigable (L5.2) ---------- */
+.unread-row td { background: #fbfcff; }
+.unread-subject { font-weight: 700; }
+.inbox-pager {
+  display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+  margin: 2px 4px 10px; font-size: 12.5px;
+}
+
 /* ---------- Sujets cliquables → panneau de lecture ---------- */
 .openable { cursor: pointer; }
 .openable:hover { color: var(--accent); text-decoration: underline; }

@@ -65,6 +65,18 @@ export const api = {
     }
     return request('GET', `/search?${q}`);
   },
+  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false } = {}) => {
+    const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit) });
+    if (unseen) q.set('unseen', '1');
+    return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${q}`);
+  },
+  bulkAction: (slug, { folder, uids, action, destination }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/bulk`, {
+      folder,
+      uids,
+      action,
+      destination,
+    }),
   readMessage: (slug, folder, uid) =>
     request(
       'GET',
