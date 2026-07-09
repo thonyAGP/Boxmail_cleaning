@@ -12,12 +12,14 @@ import {
   restoreFollowup,
 } from '../../services/attention.js';
 import { getFollowupsDue } from '../../services/followups.js';
+import { getImportantEmails, explainImportance } from '../../services/importance.js';
 import { accountParam, guard, jsonResult } from '../util.js';
 
 /**
- * Tools MCP « intelligence » — Phase 4 : réponses oubliées (brique 1) et
- * relances (brique 2). Tout est calculé depuis l'index local (instantané,
- * aucun accès IMAP) : penser à synchroniser la boîte pour des résultats à jour.
+ * Tools MCP « intelligence » — Phase 4 : réponses oubliées (brique 1),
+ * relances (brique 2) et mails importants (brique 3). Tout est calculé depuis
+ * l'index local (instantané, aucun accès IMAP) : penser à synchroniser la
+ * boîte pour des résultats à jour.
  */
 
 const commonListParams = {
@@ -254,6 +256,101 @@ export function registerAttentionTools(server: McpServer): void {
     guard(async (args: { account?: string; threadId: number }) => {
       const rec = await resolveAccount(args.account);
       return jsonResult(await restoreFollowup(rec.account, args.threadId));
+    }),
+  );
+
+  // --- get_important_emails (brique 3 : mails importants) ---
+  server.registerTool(
+    'get_important_emails',
+    {
+      title: 'Mails importants (score /100)',
+      description:
+        "Mails entrants de la boîte de réception, scorés 0-100 par des règles explicites " +
+        '(expéditeur banque/administration +30, sujet urgent +20, vraie personne +15, ' +
+        'non lu récent +15, question / montant / attend une réponse +10, newsletter ou ' +
+        'notification −40). Chaque élément porte `score`, `level` (high ≥ 70, medium 40-69, ' +
+        "low < 40) et `reasons[]` en français. Par défaut : non lus des 30 derniers jours, " +
+        "score ≥ 40. Calculé depuis l'index local (synchroniser d'abord). Lecture seule.",
+      inputSchema: {
+        ...accountParam,
+        sinceDays: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .default(30)
+          .describe("Fenêtre d'analyse en jours (défaut 30)."),
+        minScore: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .default(40)
+          .describe('Score minimal pour apparaître dans la liste (défaut 40).'),
+        includeRead: z
+          .boolean()
+          .default(false)
+          .describe('true = inclure aussi les mails déjà lus (défaut : non lus uniquement).'),
+        limit: z.number().int().min(1).max(1000).default(100).describe('Nombre max de résultats.'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(
+      async (args: {
+        account?: string;
+        sinceDays: number;
+        minScore: number;
+        includeRead: boolean;
+        limit: number;
+      }) => {
+        const rec = await resolveAccount(args.account);
+        return jsonResult(
+          await getImportantEmails(rec.account, {
+            sinceDays: args.sinceDays,
+            minScore: args.minScore,
+            includeRead: args.includeRead,
+            limit: args.limit,
+          }),
+        );
+      },
+    ),
+  );
+
+  // --- explain_importance ---
+  server.registerTool(
+    'explain_importance',
+    {
+      title: "Expliquer le score d'un mail",
+      description:
+        "Détaille le score d'importance (0-100) d'un mail précis avec toutes les règles " +
+        'appliquées (`reasons[]`). Indiquer messageId (champ messageId retourné par ' +
+        'get_important_emails) OU threadId (→ dernier mail entrant du fil). Fonctionne ' +
+        'aussi sur un mail lu ou ancien. Lecture seule.',
+      inputSchema: {
+        ...accountParam,
+        messageId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Identifiant interne du mail (champ messageId des tools attention).'),
+        threadId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Identifiant du fil : le dernier mail entrant du fil sera expliqué.'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(async (args: { account?: string; messageId?: number; threadId?: number }) => {
+      const rec = await resolveAccount(args.account);
+      return jsonResult(
+        await explainImportance(rec.account, {
+          messageId: args.messageId,
+          threadId: args.threadId,
+        }),
+      );
     }),
   );
 }

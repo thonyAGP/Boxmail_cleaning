@@ -63,6 +63,12 @@ export const api = {
   operations: (limit = 30) => request('GET', `/operations?limit=${limit}`),
   replies: (sinceDays = 60) => request('GET', `/attention/replies?sinceDays=${sinceDays}`),
   followups: (sinceDays = 60) => request('GET', `/attention/followups?sinceDays=${sinceDays}`),
+  important: (sinceDays = 30, minScore = 40, includeRead = false) =>
+    request(
+      'GET',
+      `/attention/important?sinceDays=${sinceDays}&minScore=${minScore}` +
+        (includeRead ? '&includeRead=1' : ''),
+    ),
   followupSnooze: (slug, threadId, days) =>
     request(
       'POST',

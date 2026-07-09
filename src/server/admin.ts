@@ -31,6 +31,7 @@ import {
   restoreFollowup,
 } from '../services/attention.js';
 import { getFollowupsDue } from '../services/followups.js';
+import { getImportantEmails } from '../services/importance.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
@@ -406,6 +407,51 @@ export function buildAdminRouter(): Router {
   router.post(
     '/accounts/:slug/attention/followups/:threadId/restore',
     threadAction((account, threadId) => restoreFollowup(account, threadId)),
+  );
+
+  // --- Mails importants (Phase 4, brique 3) — lecture seule en v1 ----------------
+  router.get(
+    '/attention/important',
+    guard(async (req, res) => {
+      const sinceDays = Math.min(
+        Math.max(Number.parseInt(String(req.query.sinceDays ?? '30'), 10) || 30, 1),
+        365,
+      );
+      const minScoreRaw = Number.parseInt(String(req.query.minScore ?? '40'), 10);
+      const minScore = Math.min(Math.max(Number.isNaN(minScoreRaw) ? 40 : minScoreRaw, 0), 100);
+      const includeRead = ['1', 'true'].includes(String(req.query.includeRead ?? ''));
+      const results = [];
+      for (const name of await listAccountNames()) {
+        try {
+          results.push(
+            await getImportantEmails(name, { sinceDays, minScore, includeRead, limit: 500 }),
+          );
+        } catch (err) {
+          logger.warn('mails importants : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      res.json({
+        sinceDays,
+        minScore,
+        includeRead,
+        counts: results.reduce(
+          (acc, r) => ({
+            high: acc.high + r.counts.high,
+            medium: acc.medium + r.counts.medium,
+            low: acc.low + r.counts.low,
+          }),
+          { high: 0, medium: 0, low: 0 },
+        ),
+        items: results
+          .flatMap((r) => r.items)
+          .sort(
+            (a, b) => b.score - a.score || new Date(b.date).getTime() - new Date(a.date).getTime(),
+          ),
+      });
+    }),
   );
 
   // --- Version & mise à jour -----------------------------------------------------

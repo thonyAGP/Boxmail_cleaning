@@ -2,6 +2,7 @@ import type { ImapFlow } from 'imapflow';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService, normalizeSubject } from './imap.js';
+import { AUTO_SENDER_RE } from './attention.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -461,6 +462,28 @@ function rawToDate(v: string | number | bigint | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Classification déterministe d'un expéditeur (Sender.kind, Phase 4 L1) :
+ *  - newsletter    : ≥ 80 % de ses mails portent un lien de désinscription ;
+ *  - notification  : adresse automatique (no-reply, mailer-daemon…) ;
+ *  - person        : au moins un fil avec lui contient un message sortant
+ *                    (vraie conversation) ;
+ *  - company       : le reste (services, boutiques, plateformes…).
+ * v1 : recalculée à chaque sync (un kind posé à la main serait écrasé — assumé,
+ * aucun outil ne permet encore de le poser à la main).
+ */
+function classifySenderKind(
+  email: string,
+  messageCount: number,
+  unsubscribeCount: number,
+  conversational: Set<string>,
+): string {
+  if (messageCount > 0 && unsubscribeCount / messageCount >= 0.8) return 'newsletter';
+  if (AUTO_SENDER_RE.test(email)) return 'notification';
+  if (conversational.has(email)) return 'person';
+  return 'company';
+}
+
 /** Recalcule les agrégats Sender depuis l'index des messages (entrants). */
 export async function rebuildSenders(accountSlug: string): Promise<number> {
   type Row = {
@@ -490,10 +513,30 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
     GROUP BY fromEmail
   `;
 
+  // Expéditeurs « en conversation » : au moins un de leurs fils contient un
+  // message sortant de l'utilisateur.
+  const conversationalRows = await db.$queryRaw<{ fromEmail: string }[]>`
+    SELECT DISTINCT m.fromEmail
+    FROM Message m
+    WHERE m.accountSlug = ${accountSlug}
+      AND m.isDeleted = 0
+      AND m.isOutbound = 0
+      AND m.fromEmail IS NOT NULL
+      AND m.threadId IN (
+        SELECT threadId FROM Message
+        WHERE accountSlug = ${accountSlug}
+          AND isDeleted = 0
+          AND isOutbound = 1
+          AND threadId IS NOT NULL
+      )
+  `;
+  const conversational = new Set(conversationalRows.map((r) => r.fromEmail));
+
   const present = new Set<string>();
   for (const r of rows) {
     present.add(r.fromEmail);
     const domain = r.fromEmail.includes('@') ? r.fromEmail.split('@')[1] : null;
+    const kind = classifySenderKind(r.fromEmail, Number(r.cnt), Number(r.unsub), conversational);
     await db.sender.upsert({
       where: { accountSlug_email: { accountSlug, email: r.fromEmail } },
       create: {
@@ -507,6 +550,7 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
         totalSizeBytes: BigInt(r.size ?? 0),
         firstMessageAt: rawToDate(r.first),
         lastMessageAt: rawToDate(r.last),
+        kind,
       },
       update: {
         displayName: r.fromName ?? undefined,
@@ -517,6 +561,7 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
         totalSizeBytes: BigInt(r.size ?? 0),
         firstMessageAt: rawToDate(r.first),
         lastMessageAt: rawToDate(r.last),
+        kind,
       },
     });
   }

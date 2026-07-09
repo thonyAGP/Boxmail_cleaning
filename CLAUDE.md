@@ -5,7 +5,7 @@
 Assistant email personnel multi-boîtes pour comptes **Outlook.com/Hotmail
 personnels** (refusés par le connecteur M365 officiel de Claude). Deux façades
 sur les mêmes services :
-1. **Serveur MCP distant** (Streamable HTTP, 15 tools) — destiné à Claude
+1. **Serveur MCP distant** (Streamable HTTP, 26 tools) — destiné à Claude
    Cowork après déploiement ;
 2. **Interface web** « Mail Assistant » sur `/admin` — utilisée quotidiennement
    par l'utilisateur dès maintenant, en local sur son PC Windows.
@@ -38,7 +38,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 15 tools MCP (accounts, folders, read, write, sync, export)
+- `mcp/tools/*` — 26 tools MCP (accounts, folders, read, write, sync, export,
+  attention : réponses/relances/importance)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -94,6 +95,23 @@ Fait : serveur MCP complet, index SQLite + syncs (incrémentales, résilientes,
 fin auto/perso avec liste cochable, journal détaillé, enrôlement popup,
 mise à jour 1-clic, détection superviseur). ~18 000 mails indexés, 2 boîtes.
 
+**Phase 4 brique 3 (L1) livrée : Mails importants.** `services/importance.ts`
+(score additif 0-100 plafonné, chaque règle ajoute sa raison en français :
+banque/admin +30, sujet urgent +20, personne +15 / conversation +10, non lu
+récent +15, question +10, montant +10, attend une réponse +10, newsletter/
+notification −40 ; level high ≥ 70 / medium 40-69 / low < 40 ;
+`explainImportance` par messageId ou threadId). `Sender.kind` recalculé à
+chaque sync dans `rebuildSenders()` (newsletter si ≥ 80 % unsubscribe,
+notification si AUTO_SENDER_RE, person si un fil de l'expéditeur contient un
+sortant, sinon company — recalcul systématique v1, écraserait un kind manuel).
+2 tools MCP (get_important_emails, explain_importance — 26 tools au total),
+API GET `/api/attention/important` (agrégée, lecture seule en v1 : pas
+d'AttentionState), écran `#/important` (KPIs par niveau, filtres minScore
+40/50/70 + fenêtre 7-90 j + lus/non lus, pastille de score colorée
+`.score-pill`, raisons affichées), panneau dashboard top 5, badge sidebar =
+nb high. Seed : scratchpad `seed-important.mts` (2 comptes, 7 mails, asserts
+Sender.kind + scores + tri + explain).
+
 **Phase 4 briques 1 ET 2 livrées.** Brique 2 (Relances) :
 `services/followups.ts` (dernier message du fil SORTANT, dossier Envoyés,
 sans réponse externe ; correspondant = dernier entrant du fil sinon
@@ -123,7 +141,7 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 ## PROCHAINE ÉTAPE
 
 **Suivre `docs/ROADMAP.md`** : plans d'implémentation détaillés de toutes les
-livraisons restantes (L1 Mails importants → L2 Échéances → L3 Recherche →
-L4 Export contacts → L5 Briefs → L6 Déploiement Oracle/Cowork + backlog).
+livraisons restantes (L2 Échéances → L3 Recherche → L4 Export contacts →
+L5 Briefs → L6 Déploiement Oracle/Cowork + backlog).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.

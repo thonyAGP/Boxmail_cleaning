@@ -48,6 +48,20 @@ async function showApp() {
   startJobWatcher();
   refreshRepliesBadge();
   refreshFollowupsBadge();
+  refreshImportantBadge();
+}
+
+// Badge « importance haute » (score ≥ 70) sur le lien ⭐ Mails importants.
+async function refreshImportantBadge(data) {
+  try {
+    const d = data ?? (await api.important());
+    const el = $('#important-badge');
+    if (!el) return;
+    el.textContent = fmtNum(d.counts.high);
+    el.classList.toggle('hidden', d.counts.high === 0);
+  } catch {
+    /* index pas prêt : pas de badge */
+  }
 }
 
 // Badge « en retard » sur le lien Relances à faire de la sidebar.
@@ -124,6 +138,8 @@ async function pollJobs() {
       })
       .catch(() => {});
     refreshRepliesBadge();
+    refreshFollowupsBadge();
+    refreshImportantBadge();
   }
 
   // Chip d'activité en bas à droite (toutes pages).
@@ -225,6 +241,8 @@ function highlightNav() {
     document.querySelector('[data-nav="replies"]')?.classList.add('active');
   } else if (hash.startsWith('#/followups')) {
     document.querySelector('[data-nav="followups"]')?.classList.add('active');
+  } else if (hash.startsWith('#/important')) {
+    document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else {
     document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
   }
@@ -244,6 +262,8 @@ function route() {
     renderReplies();
   } else if (hash.startsWith('#/followups')) {
     renderFollowups();
+  } else if (hash.startsWith('#/important')) {
+    renderImportant();
   } else {
     renderDashboard();
   }
@@ -363,6 +383,9 @@ async function renderDashboard() {
 
     <div class="grid-2">
       <div class="panel">
+        <div class="panel-head"><h2>⭐ Mails importants</h2>
+          <a class="btn btn-sm" href="#/important">Voir tout</a></div>
+        <div class="panel-body" id="dash-important"><span class="spinner"></span></div>
         <div class="panel-head"><h2>↩️ Réponses en attente</h2>
           <a class="btn btn-sm" href="#/replies">Voir tout</a></div>
         <div class="panel-body" id="dash-replies"><span class="spinner"></span></div>
@@ -370,7 +393,7 @@ async function renderDashboard() {
           <a class="btn btn-sm" href="#/followups">Voir tout</a></div>
         <div class="panel-body" id="dash-followups"><span class="spinner"></span></div>
         <div class="panel-body muted" style="font-size:12px; padding-top:0">
-          ⭐ Mails importants et 📅 échéances arrivent dans les prochaines étapes.</div>
+          📅 Les échéances arrivent dans une prochaine étape.</div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Activité récente</h2>
@@ -385,6 +408,29 @@ async function renderDashboard() {
     el.innerHTML = operations.length
       ? operations.map(opLine).join('')
       : '<div class="empty">Aucune opération pour l\'instant.</div>';
+  });
+
+  // Mails importants (top 5, score le plus haut d'abord).
+  api.important().then((d) => {
+    refreshImportantBadge(d);
+    const el = $('#dash-important');
+    if (!el) return;
+    const top = d.items.slice(0, 5);
+    el.innerHTML = top.length
+      ? top.map((i) => `<div class="op-line">
+          ${scoreBadge(i.score)}
+          <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> —
+            ${esc(i.subject)}
+            <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
+          <span class="op-time">${fmtDate(i.date)}</span>
+        </div>`).join('') +
+        (d.items.length > 5
+          ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.items.length - 5)} autre(s) — <a href="#/important">voir tout</a>.</div>`
+          : '')
+      : '<div class="empty">Rien d\'important détecté parmi les non-lus des 30 derniers jours.</div>';
+  }).catch(() => {
+    const el = $('#dash-important');
+    if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
   // Réponses en attente (top 5, les plus en retard d'abord).
@@ -1466,6 +1512,123 @@ function followupRow(i) {
       ${followupCategoryBadge(i)}
       ${stateInfo}
       <div class="reply-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Mails importants
+const importantState = { sinceDays: 30, minScore: 40, includeRead: false, data: null };
+
+// Pastille de score colorée : rouge ≥ 70, orange 40-69, gris < 40.
+function scoreBadge(score) {
+  const cls = score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low';
+  return `<span class="score-pill ${cls}" title="Score d'importance sur 100">${score}</span>`;
+}
+
+async function renderImportant() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>⭐ Mails importants</h1>
+      <div class="sub">Chaque mail reçu est noté sur 100 par des règles simples (banque/administration,
+      urgence, vraie personne, question, montant…) — les raisons sont affichées sous chaque mail.
+      Détecté depuis l'index local : synchronise tes boîtes pour des résultats à jour.</div></div>
+    <div class="head-actions">
+      <select id="important-minscore" title="Score minimal affiché">
+        ${[[40, 'Score ≥ 40'], [50, 'Score ≥ 50'], [70, 'Score ≥ 70 (haute importance)']]
+          .map(([v, l]) => `<option value="${v}" ${v === importantState.minScore ? 'selected' : ''}>${l}</option>`)
+          .join('')}
+      </select>
+      <select id="important-window" title="Fenêtre d'analyse">
+        ${[7, 30, 60, 90].map((d) => `<option value="${d}" ${d === importantState.sinceDays ? 'selected' : ''}>Analyser ${d} jours</option>`).join('')}
+      </select>
+      <select id="important-read" title="Inclure ou non les mails déjà lus">
+        <option value="" ${importantState.includeRead ? '' : 'selected'}>Non lus seulement</option>
+        <option value="1" ${importantState.includeRead ? 'selected' : ''}>Lus inclus</option>
+      </select>
+      <button class="btn" id="important-refresh">↻ Actualiser</button>
+    </div></div>
+    <div id="important-body"><div class="empty"><span class="spinner"></span>Calcul des scores…</div></div>`;
+  $('#important-minscore').addEventListener('change', (e) => {
+    importantState.minScore = Number(e.target.value);
+    loadImportant();
+  });
+  $('#important-window').addEventListener('change', (e) => {
+    importantState.sinceDays = Number(e.target.value);
+    loadImportant();
+  });
+  $('#important-read').addEventListener('change', (e) => {
+    importantState.includeRead = e.target.value === '1';
+    loadImportant();
+  });
+  $('#important-refresh').addEventListener('click', loadImportant);
+  await loadImportant();
+}
+
+async function loadImportant() {
+  const body = $('#important-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Calcul des scores…</div>';
+  try {
+    importantState.data = await api.important(
+      importantState.sinceDays,
+      importantState.minScore,
+      importantState.includeRead,
+    );
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+    return;
+  }
+  refreshImportantBadge(importantState.data);
+  renderImportantBody();
+}
+
+function renderImportantBody() {
+  const body = $('#important-body');
+  const d = importantState.data;
+  if (!body || !d) return;
+
+  body.innerHTML = `
+    <div class="cards">
+      <div class="kpi"><div class="kpi-label">🔴 Importance haute (≥ 70)</div>
+        <div class="kpi-value">${fmtNum(d.counts.high)}</div></div>
+      <div class="kpi orange"><div class="kpi-label">🟠 Importance moyenne (40-69)</div>
+        <div class="kpi-value">${fmtNum(d.counts.medium)}</div></div>
+      <div class="kpi"><div class="kpi-label">⚪ Faible (&lt; 40)</div>
+        <div class="kpi-value">${fmtNum(d.counts.low)}</div>
+        <div class="kpi-sub">masqués par le filtre de score</div></div>
+    </div>
+    <div class="panel"><div class="panel-body tight">
+      ${d.items.length === 0
+        ? `<div class="empty">Aucun mail à score ≥ ${d.minScore} sur cette période${d.includeRead ? '' : ' (parmi les non-lus)'}. 👍</div>`
+        : d.items.map(importantRow).join('')}
+    </div></div>
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 Écran en lecture seule : rien n'est modifié dans tes boîtes. Le score est indicatif —
+      les raisons listées sous chaque mail expliquent exactement pourquoi il est là.</div>`;
+}
+
+function importantRow(i) {
+  return `<div class="reply-row">
+    ${scoreBadge(i.score)}
+    <div class="reply-main">
+      <div class="reply-top">
+        <strong>${esc(i.fromName || i.fromEmail)}</strong>
+        <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
+        <span class="badge blue">${esc(i.account)}</span>
+        ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+        ${i.senderKind === 'person' ? '<span class="badge green">👤 personne</span>' : ''}
+      </div>
+      <div class="reply-subject">${esc(i.subject)}</div>
+      <div class="reply-reason muted">${i.reasons.map(esc).join(' · ')}</div>
+    </div>
+    <div class="reply-side">
+      <div class="reply-date">${fmtDate(i.date)}</div>
+      ${i.level === 'high'
+        ? '<span class="badge red">importance haute</span>'
+        : i.level === 'medium'
+          ? '<span class="badge orange">importance moyenne</span>'
+          : '<span class="badge gray">importance faible</span>'}
     </div>
   </div>`;
 }

@@ -27,7 +27,14 @@ test** (Prisma direct + `linkThreads`/`rebuildSenders`, cf. scratchpad
 
 ---
 
-## ⬜ L1 — Mails importants : score /100 (Phase 4, brique 3)
+## ✅ L1 — Mails importants : score /100 (Phase 4, brique 3) — LIVRÉ
+
+`services/importance.ts` (score additif 0-100, reasons[] en français),
+`Sender.kind` recalculé à chaque sync (newsletter/notification/person/company),
+tools `get_important_emails` / `explain_importance`, API
+`/api/attention/important`, écran `#/important` (KPIs par niveau, filtres
+score/fenêtre/lus, pastilles de score), panneau dashboard top 5, badge sidebar
+(nb high). Lecture seule en v1.
 
 **Objectif.** Chaque mail entrant reçoit un score d'importance 0-100 avec
 `reasons[]` explicites ; écran « ⭐ Mails importants » ; enrichissement de

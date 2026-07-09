@@ -210,6 +210,17 @@ select, input[type="date"], input[type="number"] {
 .reply-actions { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; justify-content: flex-end; }
 .reply-actions select { padding: 5px 8px; font-size: 12px; }
 
+/* ---------- Mails importants ---------- */
+.score-pill {
+  flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14.5px; color: #fff; margin-top: 2px;
+}
+.score-pill.high { background: var(--red, #d64545); }
+.score-pill.medium { background: var(--orange, #d98324); }
+.score-pill.low { background: #9aa4b8; }
+.op-line .score-pill { width: 30px; height: 30px; font-size: 12px; margin-top: 0; align-self: center; }
+
 /* ---------- Modale ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15, 27, 61, .55); z-index: 100;
