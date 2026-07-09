@@ -79,11 +79,11 @@ const CATEGORY_LABELS: Record<ReplyCategory, string> = {
 };
 
 /** Expéditeurs automatiques (même filtre que le nettoyage) : jamais « à répondre ». */
-const AUTO_SENDER_RE =
+export const AUTO_SENDER_RE =
   /(no-?reply|nepasrepondre|ne-pas-repondre|donotreply|do-not-reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
 
 /** Sujet qui réclame une réponse rapide. */
-const URGENT_SUBJECT_RE =
+export const URGENT_SUBJECT_RE =
   /(urgent|au plus vite|asap|dernier rappel|derni[èe]re relance|mise en demeure|imp[ée]ratif|avant le)/i;
 
 /**
@@ -91,16 +91,16 @@ const URGENT_SUBJECT_RE =
  * Attention aux faux positifs : pas de domaines grand public (orange.fr, sfr…)
  * et frontières de mots sur les tokens courts (caf ≠ café, msa ≠ thomsa).
  */
-const IMPORTANT_SENDER_RE =
+export const IMPORTANT_SENDER_RE =
   /(banque|bank|cr[ée]dit|boursorama|fortuneo|\bbnp\b|societe ?generale|banquepostale|impot|finances|dgfip|tresor|urssaf|ameli|cpam|\bmsa\b|\bcaf\b|assurance|mutuelle|notaire|avocat|huissier|comptab|prefecture|mairie|gouv\.fr|pole-?emploi|francetravail|syndic|foncia)/i;
 
-function chunk<T>(arr: T[], size: number): T[][] {
+export function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-function humanDelay(hours: number): string {
+export function humanDelay(hours: number): string {
   if (hours < 1) return "moins d'une heure";
   if (hours < 48) return `${Math.round(hours)} h`;
   return `${Math.round(hours / 24)} jours`;
@@ -358,9 +358,11 @@ export interface ReplyStateChange {
  * Reporte un fil : il disparaît de la liste jusqu'à la date donnée
  * (`days` jours, défaut 3, max 365), puis réapparaît tout seul.
  */
-export async function snoozeReply(
+async function snoozeItem(
   account: string,
   threadId: number,
+  kind: 'reply' | 'followup',
+  toolName: string,
   days = 3,
 ): Promise<ReplyStateChange> {
   await ensureDbReady();
@@ -368,12 +370,12 @@ export async function snoozeReply(
   const until = new Date(Date.now() + d * 86_400_000);
   const last = await lastThreadMessage(account, threadId);
   await db.attentionState.upsert({
-    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind: 'reply' } },
+    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind } },
     create: {
       accountSlug: account,
       threadId,
       messageId: last.id,
-      kind: 'reply',
+      kind,
       state: 'snoozed',
       snoozedUntil: until,
     },
@@ -381,7 +383,7 @@ export async function snoozeReply(
   });
   await recordOperation({
     account,
-    tool: 'snooze_reply',
+    tool: toolName,
     folder: last.folder.path,
     params: { threadId, days: d, until: until.toISOString() },
     affectedUids: [last.uid],
@@ -397,32 +399,51 @@ export async function snoozeReply(
   };
 }
 
+export function snoozeReply(account: string, threadId: number, days = 3): Promise<ReplyStateChange> {
+  return snoozeItem(account, threadId, 'reply', 'snooze_reply', days);
+}
+
+/** Reporte une relance : cachée jusqu'à la date donnée, puis elle revient. */
+export function snoozeFollowup(
+  account: string,
+  threadId: number,
+  days = 3,
+): Promise<ReplyStateChange> {
+  return snoozeItem(account, threadId, 'followup', 'snooze_followup', days);
+}
+
 /**
  * Ignore un fil : il ne sera plus proposé — sauf si un NOUVEAU mail arrive
  * dans le fil (l'état est lié au dernier message au moment du clic).
  */
-export async function dismissReply(account: string, threadId: number): Promise<ReplyStateChange> {
+async function dismissItem(
+  account: string,
+  threadId: number,
+  kind: 'reply' | 'followup',
+  toolName: string,
+  resultLabel: string,
+): Promise<ReplyStateChange> {
   await ensureDbReady();
   const last = await lastThreadMessage(account, threadId);
   await db.attentionState.upsert({
-    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind: 'reply' } },
+    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind } },
     create: {
       accountSlug: account,
       threadId,
       messageId: last.id,
-      kind: 'reply',
+      kind,
       state: 'dismissed',
     },
     update: { messageId: last.id, state: 'dismissed', snoozedUntil: null },
   });
   await recordOperation({
     account,
-    tool: 'dismiss_reply',
+    tool: toolName,
     folder: last.folder.path,
     params: { threadId },
     affectedUids: [last.uid],
     items: [{ subject: last.subject ?? '(sans sujet)', date: last.date?.toISOString() ?? null }],
-    result: 'ignoré',
+    result: resultLabel,
   });
   return {
     account,
@@ -433,16 +454,30 @@ export async function dismissReply(account: string, threadId: number): Promise<R
   };
 }
 
+export function dismissReply(account: string, threadId: number): Promise<ReplyStateChange> {
+  return dismissItem(account, threadId, 'reply', 'dismiss_reply', 'ignoré');
+}
+
+/** Marque une relance comme traitée (relance envoyée, ou plus nécessaire). */
+export function markFollowupDone(account: string, threadId: number): Promise<ReplyStateChange> {
+  return dismissItem(account, threadId, 'followup', 'mark_followup_done', 'traité');
+}
+
 /** Annule un report/ignore : le fil redevient visible immédiatement. */
-export async function restoreReply(account: string, threadId: number): Promise<ReplyStateChange> {
+async function restoreItem(
+  account: string,
+  threadId: number,
+  kind: 'reply' | 'followup',
+  toolName: string,
+): Promise<ReplyStateChange> {
   await ensureDbReady();
   const last = await lastThreadMessage(account, threadId);
   await db.attentionState.deleteMany({
-    where: { accountSlug: account, threadId, kind: 'reply' },
+    where: { accountSlug: account, threadId, kind },
   });
   await recordOperation({
     account,
-    tool: 'restore_reply',
+    tool: toolName,
     folder: last.folder.path,
     params: { threadId },
     affectedUids: [last.uid],
@@ -456,4 +491,13 @@ export async function restoreReply(account: string, threadId: number): Promise<R
     state: 'active',
     snoozedUntil: null,
   };
+}
+
+export function restoreReply(account: string, threadId: number): Promise<ReplyStateChange> {
+  return restoreItem(account, threadId, 'reply', 'restore_reply');
+}
+
+/** Annule le report/traité d'une relance : elle redevient visible. */
+export function restoreFollowup(account: string, threadId: number): Promise<ReplyStateChange> {
+  return restoreItem(account, threadId, 'followup', 'restore_followup');
 }

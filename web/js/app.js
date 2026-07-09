@@ -47,6 +47,20 @@ async function showApp() {
   route();
   startJobWatcher();
   refreshRepliesBadge();
+  refreshFollowupsBadge();
+}
+
+// Badge « en retard » sur le lien Relances à faire de la sidebar.
+async function refreshFollowupsBadge(data) {
+  try {
+    const d = data ?? (await api.followups());
+    const el = $('#followups-badge');
+    if (!el) return;
+    el.textContent = fmtNum(d.counts.overdue);
+    el.classList.toggle('hidden', d.counts.overdue === 0);
+  } catch {
+    /* index pas prêt : pas de badge */
+  }
 }
 
 // Badge « en retard » sur le lien Réponses en attente de la sidebar.
@@ -209,6 +223,8 @@ function highlightNav() {
     document.querySelector('[data-nav="operations"]')?.classList.add('active');
   } else if (hash.startsWith('#/replies')) {
     document.querySelector('[data-nav="replies"]')?.classList.add('active');
+  } else if (hash.startsWith('#/followups')) {
+    document.querySelector('[data-nav="followups"]')?.classList.add('active');
   } else {
     document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
   }
@@ -226,6 +242,8 @@ function route() {
     renderOperations();
   } else if (hash.startsWith('#/replies')) {
     renderReplies();
+  } else if (hash.startsWith('#/followups')) {
+    renderFollowups();
   } else {
     renderDashboard();
   }
@@ -348,8 +366,11 @@ async function renderDashboard() {
         <div class="panel-head"><h2>↩️ Réponses en attente</h2>
           <a class="btn btn-sm" href="#/replies">Voir tout</a></div>
         <div class="panel-body" id="dash-replies"><span class="spinner"></span></div>
+        <div class="panel-head"><h2>⏰ Relances à faire</h2>
+          <a class="btn btn-sm" href="#/followups">Voir tout</a></div>
+        <div class="panel-body" id="dash-followups"><span class="spinner"></span></div>
         <div class="panel-body muted" style="font-size:12px; padding-top:0">
-          ⭐ Mails importants, ⏰ relances et 📅 échéances arrivent dans les prochaines étapes.</div>
+          ⭐ Mails importants et 📅 échéances arrivent dans les prochaines étapes.</div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Activité récente</h2>
@@ -387,6 +408,29 @@ async function renderDashboard() {
   }).catch(() => {
     const el = $('#dash-replies');
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt — lance une synchronisation.</div>';
+  });
+
+  // Relances à faire (top 3, les plus en retard d'abord).
+  api.followups().then((d) => {
+    refreshFollowupsBadge(d);
+    const el = $('#dash-followups');
+    if (!el) return;
+    const top = d.items.filter((i) => i.state === 'active').slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((i) => `<div class="op-line">
+          <span class="op-time">${fmtDate(i.date)}</span>
+          <span style="flex:1"><strong>${esc(i.counterpartyName || i.counterpartyEmail)}</strong> —
+            ${esc(i.subject)}
+            <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
+          ${i.overdue ? `<span class="badge red">à relancer</span>` : `<span class="badge gray">${waitLabel(i.waitingHours)}</span>`}
+        </div>`).join('') +
+        (d.counts.active > 3
+          ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 3)} autre(s) — <a href="#/followups">voir tout</a>.</div>`
+          : '')
+      : '<div class="empty">👍 Personne à relancer sur les 60 derniers jours.</div>';
+  }).catch(() => {
+    const el = $('#dash-followups');
+    if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
   bindCleanupButtons(body);
@@ -503,6 +547,15 @@ function opLine(op) {
       break;
     case 'restore_reply':
       title = `↩️ Fil remis dans « Réponses en attente »`;
+      break;
+    case 'snooze_followup':
+      title = `⏰ Relance reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
+      break;
+    case 'mark_followup_done':
+      title = `✓ Relance marquée traitée`;
+      break;
+    case 'restore_followup':
+      title = `↩️ Fil remis dans « Relances à faire »`;
       break;
     case 'bulk_delete_by_sender':
       title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
@@ -1249,6 +1302,168 @@ function replyRow(i) {
     <div class="reply-side">
       <div class="reply-date">${fmtDate(i.date)}</div>
       ${replyCategoryBadge(i)}
+      ${stateInfo}
+      <div class="reply-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Relances
+const followupsState = { tab: 'active', sinceDays: 60, data: null };
+
+function followupCategoryBadge(i) {
+  if (i.category === 'urgent') return '<span class="badge red">🔥 Sujet pressant · délai 3 j</span>';
+  if (i.category === 'important') return '<span class="badge orange">🏛️ Banque / admin · délai 5 j</span>';
+  return '<span class="badge gray">Normal · délai 7 j</span>';
+}
+
+async function renderFollowups() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>⏰ Relances à faire</h1>
+      <div class="sub">Mails que TU as envoyés, restés sans réponse : le correspondant à relancer est
+      indiqué. Détecté depuis l'index local (destinataires no-reply exclus) — synchronise tes boîtes
+      pour des résultats à jour.</div></div>
+    <div class="head-actions">
+      <select id="followups-window" title="Fenêtre d'analyse">
+        ${[30, 60, 90, 180].map((d) => `<option value="${d}" ${d === followupsState.sinceDays ? 'selected' : ''}>Analyser ${d} jours</option>`).join('')}
+      </select>
+      <button class="btn" id="followups-refresh">↻ Actualiser</button>
+    </div></div>
+    <div id="followups-body"><div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div></div>`;
+  $('#followups-window').addEventListener('change', (e) => {
+    followupsState.sinceDays = Number(e.target.value);
+    loadFollowups();
+  });
+  $('#followups-refresh').addEventListener('click', loadFollowups);
+  await loadFollowups();
+}
+
+async function loadFollowups() {
+  const body = $('#followups-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div>';
+  try {
+    followupsState.data = await api.followups(followupsState.sinceDays);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+    return;
+  }
+  refreshFollowupsBadge(followupsState.data);
+  renderFollowupsBody();
+}
+
+function renderFollowupsBody() {
+  const body = $('#followups-body');
+  const d = followupsState.data;
+  if (!body || !d) return;
+  const tabs = [
+    { key: 'active', label: 'À relancer', n: d.counts.active },
+    { key: 'overdue', label: 'En retard', n: d.counts.overdue },
+    { key: 'snoozed', label: 'Reportées', n: d.counts.snoozed },
+    { key: 'dismissed', label: 'Traitées', n: d.counts.dismissed },
+  ];
+  const items = d.items.filter((i) =>
+    followupsState.tab === 'active' ? i.state === 'active'
+    : followupsState.tab === 'overdue' ? i.state === 'active' && i.overdue
+    : i.state === followupsState.tab,
+  );
+  const emptyMessages = {
+    active: '👍 Personne à relancer : tous tes mails envoyés ont eu leur réponse sur cette période.',
+    overdue: '🎉 Aucun délai de relance dépassé.',
+    snoozed: 'Aucune relance reportée. « Reporter » cache un fil quelques jours, puis il revient.',
+    dismissed: 'Aucune relance marquée traitée. « Traité » retire le fil (il revient si un nouveau message arrive).',
+  };
+
+  body.innerHTML = `
+    <div class="tabs">${tabs
+      .map(
+        (t) => `<button class="tab ${followupsState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
+        ${t.label} <span class="badge ${t.key === 'overdue' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+      )
+      .join('')}</div>
+    <div class="panel"><div class="panel-body tight">
+      ${items.length === 0
+        ? `<div class="empty">${emptyMessages[followupsState.tab]}</div>`
+        : items.map(followupRow).join('')}
+    </div></div>
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 « Reporter » et « Traité » ne touchent pas aux mails : simple marque-page local, journalisé,
+      annulable depuis les onglets Reportées / Traitées. Un fil marqué traité réapparaît si un
+      nouveau message y arrive.</div>`;
+
+  body.querySelectorAll('.tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      followupsState.tab = btn.dataset.tab;
+      renderFollowupsBody();
+    });
+  });
+
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadFollowups();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  };
+  body.querySelectorAll('.followup-snooze').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const days = Number(sel.value);
+      if (!days) return;
+      act(sel, () => api.followupSnooze(sel.dataset.account, Number(sel.dataset.thread), days));
+    });
+  });
+  body.querySelectorAll('.followup-dismiss').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.followupDismiss(btn.dataset.account, Number(btn.dataset.thread))),
+    );
+  });
+  body.querySelectorAll('.followup-restore').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.followupRestore(btn.dataset.account, Number(btn.dataset.thread))),
+    );
+  });
+}
+
+function followupRow(i) {
+  const ident = `data-account="${esc(i.account)}" data-thread="${i.threadId}"`;
+  const actions =
+    i.state === 'active'
+      ? `<select class="followup-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
+           <option value="">⏰ Reporter…</option>
+           <option value="1">1 jour</option><option value="3">3 jours</option>
+           <option value="7">7 jours</option><option value="30">30 jours</option>
+         </select>
+         <button class="btn btn-sm followup-dismiss" ${ident} title="Relance envoyée ou plus nécessaire">✓ Traité</button>`
+      : `<button class="btn btn-sm followup-restore" ${ident}>↩︎ Remettre en liste</button>`;
+  const stateInfo =
+    i.state === 'snoozed'
+      ? `<span class="badge blue">reportée jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
+      : i.state === 'dismissed'
+        ? '<span class="badge gray">traitée</span>'
+        : i.overdue
+          ? `<span class="badge red">⏰ à relancer — sans réponse depuis ${waitLabel(i.waitingHours)}</span>`
+          : `<span class="badge gray">sans réponse depuis ${waitLabel(i.waitingHours)}</span>`;
+  return `<div class="reply-row">
+    <div class="reply-main">
+      <div class="reply-top">
+        <span class="muted" style="font-size:12px">À relancer :</span>
+        <strong>${esc(i.counterpartyName || i.counterpartyEmail)}</strong>
+        <span class="muted" style="font-size:12px">${esc(i.counterpartyEmail)}</span>
+        <span class="badge blue">${esc(i.account)}</span>
+        ${i.hasInbound ? '' : '<span class="badge gray">premier contact</span>'}
+      </div>
+      <div class="reply-subject">${esc(i.subject)}
+        ${i.threadMessageCount > 1 ? `<span class="muted" style="font-size:12px">· fil de ${fmtNum(i.threadMessageCount)} messages</span>` : ''}</div>
+      <div class="reply-reason muted">${esc(i.reason)}</div>
+    </div>
+    <div class="reply-side">
+      <div class="reply-date">envoyé le ${fmtDate(i.date)}</div>
+      ${followupCategoryBadge(i)}
       ${stateInfo}
       <div class="reply-actions">${actions}</div>
     </div>

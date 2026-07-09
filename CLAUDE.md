@@ -94,7 +94,18 @@ Fait : serveur MCP complet, index SQLite + syncs (incrémentales, résilientes,
 fin auto/perso avec liste cochable, journal détaillé, enrôlement popup,
 mise à jour 1-clic, détection superviseur). ~18 000 mails indexés, 2 boîtes.
 
-**Phase 4 brique 1 livrée : Réponses oubliées.** `services/attention.ts`
+**Phase 4 briques 1 ET 2 livrées.** Brique 2 (Relances) :
+`services/followups.ts` (dernier message du fil SORTANT, dossier Envoyés,
+sans réponse externe ; correspondant = dernier entrant du fil sinon
+destinataire ; no-reply et mails à soi-même exclus ; seuils sujet pressant
+3 j / banque-admin-pro 5 j / normal 7 j), état AttentionState kind=followup
+(helpers génériques snooze/dismiss/restore mutualisés dans attention.ts),
+4 tools MCP (get_followups_due, snooze_followup, mark_followup_done,
+restore_followup — 24 tools au total), API `/api/attention/followups`,
+écran `#/followups` (onglets À relancer / En retard / Reportées / Traitées,
+badge sidebar, panneau dashboard).
+
+**Phase 4 brique 1 : Réponses oubliées.** `services/attention.ts`
 (détection index-only : dernier message entrant du fil, inbox, sans réponse
 sortante depuis ; newsletters/no-reply exclus ; catégories urgent 24 h /
 banque-admin 48 h — IMPORTANT_SENDER_RE prudente, pas de domaines grand
@@ -109,16 +120,10 @@ opération de nettoyage (plus une par lot — les lots de 200 restent un
 garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 (2 comptes factices + 13 mails couvrant tous les cas, accounts.json factice).
 
-## PROCHAINE ÉTAPE : Phase 4 — suite (décidée avec l'utilisateur)
+## PROCHAINE ÉTAPE
 
-Avant le déploiement Oracle/Cowork. Ordre :
-2. **Relances** (`get_followups_due` : sortant sans réponse externe ≥ N jours)
-   — réutiliser AttentionState (kind=followup déjà prévu) et le modèle de
-   l'écran Réponses en attente.
-3. **Score d'importance** /100 avec reasons (expéditeur type banque/admin,
-   non lu, question, montant, pièce jointe, ancienneté…) — enrichir Sender.kind.
-4. **Échéances** (`detect_deadlines` : dates dans sujets/corps à la demande).
-Chaque brique = service + tool MCP + écran interface (activer les liens grisés
-de la sidebar : Mails importants, Réponses en attente, Relances, Échéances).
-Ensuite : Phase 8 briefs, puis déploiement Oracle (deploy/, nginx, pm2,
-firewall) et connecteur Cowork (`https://mcp.lb2i.fr/mcp`).
+**Suivre `docs/ROADMAP.md`** : plans d'implémentation détaillés de toutes les
+livraisons restantes (L1 Mails importants → L2 Échéances → L3 Recherche →
+L4 Export contacts → L5 Briefs → L6 Déploiement Oracle/Cowork + backlog).
+Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
+à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.

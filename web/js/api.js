@@ -62,6 +62,17 @@ export const api = {
   syncAll: (mode = 'recent') => request('POST', '/sync-all', { mode }),
   operations: (limit = 30) => request('GET', `/operations?limit=${limit}`),
   replies: (sinceDays = 60) => request('GET', `/attention/replies?sinceDays=${sinceDays}`),
+  followups: (sinceDays = 60) => request('GET', `/attention/followups?sinceDays=${sinceDays}`),
+  followupSnooze: (slug, threadId, days) =>
+    request(
+      'POST',
+      `/accounts/${encodeURIComponent(slug)}/attention/followups/${threadId}/snooze`,
+      { days },
+    ),
+  followupDismiss: (slug, threadId) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/attention/followups/${threadId}/dismiss`),
+  followupRestore: (slug, threadId) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/attention/followups/${threadId}/restore`),
   replySnooze: (slug, threadId, days) =>
     request(
       'POST',

@@ -7,13 +7,17 @@ import {
   snoozeReply,
   dismissReply,
   restoreReply,
+  snoozeFollowup,
+  markFollowupDone,
+  restoreFollowup,
 } from '../../services/attention.js';
+import { getFollowupsDue } from '../../services/followups.js';
 import { accountParam, guard, jsonResult } from '../util.js';
 
 /**
- * Tools MCP « intelligence » — Phase 4, brique 1 : réponses oubliées.
- * Tout est calculé depuis l'index local (instantané, aucun accès IMAP) :
- * penser à synchroniser la boîte pour des résultats à jour.
+ * Tools MCP « intelligence » — Phase 4 : réponses oubliées (brique 1) et
+ * relances (brique 2). Tout est calculé depuis l'index local (instantané,
+ * aucun accès IMAP) : penser à synchroniser la boîte pour des résultats à jour.
  */
 
 const commonListParams = {
@@ -151,6 +155,105 @@ export function registerAttentionTools(server: McpServer): void {
     guard(async (args: { account?: string; threadId: number }) => {
       const rec = await resolveAccount(args.account);
       return jsonResult(await restoreReply(rec.account, args.threadId));
+    }),
+  );
+
+  // --- get_followups_due (brique 2 : relances) ---
+  server.registerTool(
+    'get_followups_due',
+    {
+      title: 'Relances à faire',
+      description:
+        "Fils où l'utilisateur a écrit en dernier et attend une réponse externe : dernier " +
+        'message du fil envoyé par lui, sans retour depuis. Les destinataires automatiques ' +
+        '(no-reply…) sont exclus. Chaque élément porte le correspondant à relancer, une ' +
+        '`reason` explicite, une catégorie (sujet pressant 3 j / banque-admin-pro 5 j / ' +
+        "normal 7 j) et un indicateur `overdue`. Calculé depuis l'index local (synchroniser " +
+        "d'abord, y compris le dossier Éléments envoyés — inclus dans toute sync). Les fils " +
+        'reportés (snooze) ou marqués traités sont exclus par défaut.',
+      inputSchema: {
+        ...commonListParams,
+        scope: z
+          .enum(['all', 'overdue'])
+          .default('all')
+          .describe('all = toutes les attentes ; overdue = délais de relance dépassés seulement.'),
+        includeHidden: z
+          .boolean()
+          .default(false)
+          .describe('true = inclure aussi les fils reportés/traités (champ state).'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(
+      async (args: {
+        account?: string;
+        scope: 'all' | 'overdue';
+        sinceDays: number;
+        limit: number;
+        includeHidden: boolean;
+      }) => {
+        const rec = await resolveAccount(args.account);
+        return jsonResult(
+          await getFollowupsDue(rec.account, {
+            scope: args.scope,
+            sinceDays: args.sinceDays,
+            limit: args.limit,
+            includeHidden: args.includeHidden,
+          }),
+        );
+      },
+    ),
+  );
+
+  // --- snooze_followup ---
+  server.registerTool(
+    'snooze_followup',
+    {
+      title: 'Reporter une relance',
+      description:
+        'Reporte une relance : le fil disparaît de la liste pendant N jours puis réapparaît. ' +
+        'Ne touche pas aux mails (état local uniquement, journalisé).',
+      inputSchema: {
+        ...threadParam,
+        days: z.number().int().min(1).max(365).default(3).describe('Durée du report en jours.'),
+      },
+    },
+    guard(async (args: { account?: string; threadId: number; days: number }) => {
+      const rec = await resolveAccount(args.account);
+      return jsonResult(await snoozeFollowup(rec.account, args.threadId, args.days));
+    }),
+  );
+
+  // --- mark_followup_done ---
+  server.registerTool(
+    'mark_followup_done',
+    {
+      title: 'Marquer une relance traitée',
+      description:
+        'Marque une relance comme traitée (relance envoyée par ailleurs, ou plus nécessaire) : ' +
+        'le fil ne sera plus proposé, sauf si un nouveau message y arrive. Ne touche pas aux ' +
+        'mails (état local, journalisé).',
+      inputSchema: threadParam,
+    },
+    guard(async (args: { account?: string; threadId: number }) => {
+      const rec = await resolveAccount(args.account);
+      return jsonResult(await markFollowupDone(rec.account, args.threadId));
+    }),
+  );
+
+  // --- restore_followup ---
+  server.registerTool(
+    'restore_followup',
+    {
+      title: 'Remettre une relance en liste',
+      description:
+        'Annule un report ou un « traité » : le fil redevient visible immédiatement dans les ' +
+        'relances à faire.',
+      inputSchema: threadParam,
+    },
+    guard(async (args: { account?: string; threadId: number }) => {
+      const rec = await resolveAccount(args.account);
+      return jsonResult(await restoreFollowup(rec.account, args.threadId));
     }),
   );
 }
