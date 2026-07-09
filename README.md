@@ -78,10 +78,13 @@ seul compte est enrôlé, il est utilisé par défaut.
 # 2. Enrôler un compte de test (device code flow)
 npm run enroll -- --account test
 
-# 3. Lister ses dossiers de bout en bout via l'Inspector (§7) OU via le serveur
-npm run build && npm start        # dans un terminal
-# puis appeler le tool list_folders (Inspector, §7)
+# 3. Diagnostic Phase 0 en une commande : connexion IMAP XOAUTH2 + LIST dossiers
+npm run check -- --account test
 ```
+
+La commande `check` affiche l'arborescence des dossiers et le nombre de messages
+de l'INBOX. Elle constitue le **test bloquant** : si elle réussit, IMAP+XOAUTH2
+est viable. (On peut aussi valider via l'Inspector, cf. §7.)
 
 - ✅ **`list_folders` renvoie l'arborescence** → IMAP+XOAUTH2 fonctionne, on
   continue avec ce backend.

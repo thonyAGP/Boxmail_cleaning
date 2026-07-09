@@ -147,6 +147,16 @@ class ImapService {
     }));
   }
 
+  /** Compteurs d'un dossier (messages / non lus) — utile pour le diagnostic. */
+  async getStatus(
+    rec: AccountRecord,
+    folder = 'INBOX',
+  ): Promise<{ path: string; messages: number; unseen: number }> {
+    const client = await this.getClient(rec);
+    const status = await client.status(folder, { messages: true, unseen: true });
+    return { path: folder, messages: status.messages ?? 0, unseen: status.unseen ?? 0 };
+  }
+
   async createFolder(rec: AccountRecord, path: string): Promise<{ created: boolean; path: string }> {
     const client = await this.getClient(rec);
     const res = await client.mailboxCreate(path);
