@@ -319,31 +319,39 @@ export async function executeSenderCleanup(
   let deleted = 0;
   let destination = '';
   const movedUids: number[] = [];
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
-    const res = await imapService.moveToTrash(rec, folder, batch);
-    destination = res.destination;
-    deleted += res.moved;
-    movedUids.push(...batch);
-    await recordOperation({
-      account: rec.account,
-      tool: 'ui_cleanup_sender',
-      folder,
-      dryRun: false,
-      params: {
-        sender,
-        senderName,
-        batch: `${i + 1}/${batches.length}`,
-        count: batch.length,
-        destination: res.destination,
-      },
-      affectedUids: batch,
-      items: batch.map(
-        (uid) => detailMap.get(uid) ?? { subject: '(hors index)', date: null },
-      ),
-      result: `soft-deleted ${res.moved} -> ${res.destination}`,
-    });
-    progress(`Lot ${i + 1}/${batches.length} : ${res.moved} mails → ${res.destination}`);
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const res = await imapService.moveToTrash(rec, folder, batch);
+      destination = res.destination;
+      deleted += res.moved;
+      movedUids.push(...batch);
+      progress(`Lot ${i + 1}/${batches.length} : ${res.moved} mails → ${res.destination}`);
+    }
+  } finally {
+    // UNE entrée de journal pour toute l'opération (les lots de 200 restent un
+    // garde-fou d'exécution IMAP, pas une unité d'historique) — avec la liste
+    // complète des mails réellement déplacés, même en cas d'échec en cours.
+    if (movedUids.length) {
+      await recordOperation({
+        account: rec.account,
+        tool: 'ui_cleanup_sender',
+        folder,
+        dryRun: false,
+        params: {
+          sender,
+          senderName,
+          count: movedUids.length,
+          batches: batches.length,
+          destination,
+        },
+        affectedUids: movedUids,
+        items: movedUids.map(
+          (uid) => detailMap.get(uid) ?? { subject: '(hors index)', date: null },
+        ),
+        result: `soft-deleted ${deleted} -> ${destination}`,
+      });
+    }
   }
 
   // Mise à jour de l'index (sans attendre la prochaine sync).

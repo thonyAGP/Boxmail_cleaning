@@ -22,10 +22,11 @@ model Account {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  folders  Folder[]
-  messages Message[]
-  threads  Thread[]
-  senders  Sender[]
+  folders         Folder[]
+  messages        Message[]
+  threads         Thread[]
+  senders         Sender[]
+  attentionStates AttentionState[]
 }
 
 model Folder {
@@ -103,6 +104,30 @@ model Thread {
 
   @@index([accountSlug, normalizedSubject])
   @@index([accountSlug, lastMessageAt])
+}
+
+// État utilisateur d'un élément « à traiter » (Phase 4) : réponse en attente
+// (kind=reply) ou relance (kind=followup). Permet de reporter (snooze) ou
+// d'ignorer (dismiss) un fil. L'état est lié au DERNIER message entrant du fil
+// au moment de l'action (messageId) : si un nouveau mail arrive ensuite dans le
+// même fil, l'état devient caduc et l'élément réapparaît.
+model AttentionState {
+  id           Int       @id @default(autoincrement())
+  accountSlug  String
+  threadId     Int
+  // id (colonne Message.id) du dernier message entrant au moment de l'action
+  messageId    Int
+  // reply | followup
+  kind         String    @default("reply")
+  // snoozed | dismissed
+  state        String
+  snoozedUntil DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([accountSlug, threadId, kind])
 }
 
 // Agrégat par expéditeur, recalculé à chaque sync. kind/category/notes seront

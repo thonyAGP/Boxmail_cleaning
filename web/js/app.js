@@ -46,6 +46,20 @@ async function showApp() {
   await refreshOverview();
   route();
   startJobWatcher();
+  refreshRepliesBadge();
+}
+
+// Badge « en retard » sur le lien Réponses en attente de la sidebar.
+async function refreshRepliesBadge(data) {
+  try {
+    const d = data ?? (await api.replies());
+    const el = $('#replies-badge');
+    if (!el) return;
+    el.textContent = fmtNum(d.counts.overdue);
+    el.classList.toggle('hidden', d.counts.overdue === 0);
+  } catch {
+    /* index pas prêt : pas de badge */
+  }
 }
 
 // ---------------------------------------------------------------- Suivi global
@@ -95,6 +109,7 @@ async function pollJobs() {
         if (!(location.hash || '#/dashboard').startsWith('#/account/')) route();
       })
       .catch(() => {});
+    refreshRepliesBadge();
   }
 
   // Chip d'activité en bas à droite (toutes pages).
@@ -192,6 +207,8 @@ function highlightNav() {
     document.querySelector(`[data-account="${CSS.escape(slug)}"]`)?.classList.add('active');
   } else if (hash.startsWith('#/operations')) {
     document.querySelector('[data-nav="operations"]')?.classList.add('active');
+  } else if (hash.startsWith('#/replies')) {
+    document.querySelector('[data-nav="replies"]')?.classList.add('active');
   } else {
     document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
   }
@@ -207,6 +224,8 @@ function route() {
     renderAccount(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/operations')) {
     renderOperations();
+  } else if (hash.startsWith('#/replies')) {
+    renderReplies();
   } else {
     renderDashboard();
   }
@@ -325,12 +344,12 @@ async function renderDashboard() {
     </div>
 
     <div class="grid-2">
-      <div class="panel placeholder-card">
-        <div class="panel-head"><h2>⭐ Mails importants &nbsp;·&nbsp; ↩️ Réponses en attente &nbsp;·&nbsp; 📅 Échéances</h2>
-        <span class="badge gray">Phase 4 — bientôt</span></div>
-        <div class="panel-body muted">La détection intelligente (importance, réponses oubliées,
-        relances, échéances) arrive dans la prochaine étape du projet, sur la base de l'index
-        déjà en place.</div>
+      <div class="panel">
+        <div class="panel-head"><h2>↩️ Réponses en attente</h2>
+          <a class="btn btn-sm" href="#/replies">Voir tout</a></div>
+        <div class="panel-body" id="dash-replies"><span class="spinner"></span></div>
+        <div class="panel-body muted" style="font-size:12px; padding-top:0">
+          ⭐ Mails importants, ⏰ relances et 📅 échéances arrivent dans les prochaines étapes.</div>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Activité récente</h2>
@@ -345,6 +364,29 @@ async function renderDashboard() {
     el.innerHTML = operations.length
       ? operations.map(opLine).join('')
       : '<div class="empty">Aucune opération pour l\'instant.</div>';
+  });
+
+  // Réponses en attente (top 5, les plus en retard d'abord).
+  api.replies().then((d) => {
+    refreshRepliesBadge(d);
+    const el = $('#dash-replies');
+    if (!el) return;
+    const top = d.items.filter((i) => i.state === 'active').slice(0, 5);
+    el.innerHTML = top.length
+      ? top.map((i) => `<div class="op-line">
+          <span class="op-time">${fmtDate(i.date)}</span>
+          <span style="flex:1"><strong>${esc(i.fromName || i.fromEmail)}</strong> —
+            ${esc(i.subject)}
+            <span class="muted" style="font-size:12px">· ${esc(i.account)}</span></span>
+          ${i.overdue ? `<span class="badge red">en retard</span>` : `<span class="badge gray">${waitLabel(i.waitingHours)}</span>`}
+        </div>`).join('') +
+        (d.counts.active > 5
+          ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 5)} autre(s) — <a href="#/replies">voir tout</a>.</div>`
+          : '')
+      : '<div class="empty">🎉 Rien en attente de réponse sur les 60 derniers jours.</div>';
+  }).catch(() => {
+    const el = $('#dash-replies');
+    if (el) el.innerHTML = '<div class="empty">Index pas encore prêt — lance une synchronisation.</div>';
   });
 
   bindCleanupButtons(body);
@@ -450,7 +492,17 @@ function opLine(op) {
   switch (op.tool) {
     case 'ui_cleanup_sender':
       title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille` +
-        (p.batch ? ` <span class="muted">(lot ${esc(p.batch)})</span>` : '');
+        (p.batch ? ` <span class="muted">(lot ${esc(p.batch)})</span>` : '') +
+        (p.batches > 1 ? ` <span class="muted">(en ${fmtNum(p.batches)} lots de 200)</span>` : '');
+      break;
+    case 'snooze_reply':
+      title = `⏰ Réponse reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
+      break;
+    case 'dismiss_reply':
+      title = `🔕 Fil ignoré <span class="muted">(pas de réponse nécessaire)</span>`;
+      break;
+    case 'restore_reply':
+      title = `↩️ Fil remis dans « Réponses en attente »`;
       break;
     case 'bulk_delete_by_sender':
       title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
@@ -1035,6 +1087,172 @@ function openEnrollModal() {
       }
     }, 1500);
   });
+}
+
+// ---------------------------------------------------------------- Réponses en attente
+const repliesState = { tab: 'active', sinceDays: 60, data: null };
+
+function waitLabel(hours) {
+  if (hours < 1) return "moins d'1 h";
+  if (hours < 48) return `${Math.round(hours)} h`;
+  return `${Math.round(hours / 24)} j`;
+}
+
+function replyCategoryBadge(i) {
+  if (i.category === 'urgent') return '<span class="badge red">🔥 Urgent · seuil 24 h</span>';
+  if (i.category === 'important') return '<span class="badge orange">🏛️ Banque / admin · seuil 48 h</span>';
+  return '<span class="badge gray">Normal · seuil 7 j</span>';
+}
+
+async function renderReplies() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>↩️ Réponses en attente</h1>
+      <div class="sub">Mails reçus qui attendent une réponse de ta part — détectés depuis l'index local
+      (newsletters, notifications et no-reply exclus). Synchronise tes boîtes pour des résultats à jour.</div></div>
+    <div class="head-actions">
+      <select id="replies-window" title="Fenêtre d'analyse">
+        ${[30, 60, 90, 180].map((d) => `<option value="${d}" ${d === repliesState.sinceDays ? 'selected' : ''}>Analyser ${d} jours</option>`).join('')}
+      </select>
+      <button class="btn" id="replies-refresh">↻ Actualiser</button>
+    </div></div>
+    <div id="replies-body"><div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div></div>`;
+  $('#replies-window').addEventListener('change', (e) => {
+    repliesState.sinceDays = Number(e.target.value);
+    loadReplies();
+  });
+  $('#replies-refresh').addEventListener('click', loadReplies);
+  await loadReplies();
+}
+
+async function loadReplies() {
+  const body = $('#replies-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div>';
+  try {
+    repliesState.data = await api.replies(repliesState.sinceDays);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+    return;
+  }
+  refreshRepliesBadge(repliesState.data);
+  renderRepliesBody();
+}
+
+function renderRepliesBody() {
+  const body = $('#replies-body');
+  const d = repliesState.data;
+  if (!body || !d) return;
+  const tabs = [
+    { key: 'active', label: 'À traiter', n: d.counts.active },
+    { key: 'overdue', label: 'En retard', n: d.counts.overdue },
+    { key: 'snoozed', label: 'Reportés', n: d.counts.snoozed },
+    { key: 'dismissed', label: 'Ignorés', n: d.counts.dismissed },
+  ];
+  const items = d.items.filter((i) =>
+    repliesState.tab === 'active' ? i.state === 'active'
+    : repliesState.tab === 'overdue' ? i.state === 'active' && i.overdue
+    : i.state === repliesState.tab,
+  );
+  const emptyMessages = {
+    active: '🎉 Rien à traiter : aucun mail en attente de réponse sur cette période.',
+    overdue: '👍 Aucun seuil dépassé : tu es à jour dans tes réponses.',
+    snoozed: 'Aucun fil reporté. « Reporter » cache un fil quelques jours, puis il revient tout seul.',
+    dismissed: 'Aucun fil ignoré. « Ignorer » retire un fil de la liste (il revient si un nouveau mail arrive).',
+  };
+
+  body.innerHTML = `
+    <div class="tabs">${tabs
+      .map(
+        (t) => `<button class="tab ${repliesState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
+        ${t.label} <span class="badge ${t.key === 'overdue' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+      )
+      .join('')}</div>
+    <div class="panel"><div class="panel-body tight">
+      ${items.length === 0
+        ? `<div class="empty">${emptyMessages[repliesState.tab]}</div>`
+        : items.map(replyRow).join('')}
+    </div></div>
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 « Reporter » et « Ignorer » ne touchent pas aux mails : c'est un simple marque-page local,
+      journalisé, et annulable à tout moment depuis les onglets Reportés / Ignorés.
+      Un fil ignoré réapparaît si un nouveau mail y arrive.</div>`;
+
+  body.querySelectorAll('.tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      repliesState.tab = btn.dataset.tab;
+      renderRepliesBody();
+    });
+  });
+
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadReplies();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  };
+  body.querySelectorAll('.reply-snooze').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const days = Number(sel.value);
+      if (!days) return;
+      act(sel, () => api.replySnooze(sel.dataset.account, Number(sel.dataset.thread), days));
+    });
+  });
+  body.querySelectorAll('.reply-dismiss').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.replyDismiss(btn.dataset.account, Number(btn.dataset.thread))),
+    );
+  });
+  body.querySelectorAll('.reply-restore').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.replyRestore(btn.dataset.account, Number(btn.dataset.thread))),
+    );
+  });
+}
+
+function replyRow(i) {
+  const ident = `data-account="${esc(i.account)}" data-thread="${i.threadId}"`;
+  const actions =
+    i.state === 'active'
+      ? `<select class="reply-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
+           <option value="">⏰ Reporter…</option>
+           <option value="1">1 jour</option><option value="3">3 jours</option>
+           <option value="7">7 jours</option><option value="30">30 jours</option>
+         </select>
+         <button class="btn btn-sm reply-dismiss" ${ident} title="Pas de réponse nécessaire">🔕 Ignorer</button>`
+      : `<button class="btn btn-sm reply-restore" ${ident}>↩︎ Remettre en liste</button>`;
+  const stateInfo =
+    i.state === 'snoozed'
+      ? `<span class="badge blue">reporté jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
+      : i.state === 'dismissed'
+        ? '<span class="badge gray">ignoré</span>'
+        : i.overdue
+          ? `<span class="badge red">⏰ en retard — attend depuis ${waitLabel(i.waitingHours)}</span>`
+          : `<span class="badge gray">attend depuis ${waitLabel(i.waitingHours)}</span>`;
+  return `<div class="reply-row">
+    <div class="reply-main">
+      <div class="reply-top">
+        <strong>${esc(i.fromName || i.fromEmail)}</strong>
+        <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
+        <span class="badge blue">${esc(i.account)}</span>
+        ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+      </div>
+      <div class="reply-subject">${esc(i.subject)}
+        ${i.threadMessageCount > 1 ? `<span class="muted" style="font-size:12px">· fil de ${fmtNum(i.threadMessageCount)} messages</span>` : ''}</div>
+      <div class="reply-reason muted">${esc(i.reason)}</div>
+    </div>
+    <div class="reply-side">
+      <div class="reply-date">${fmtDate(i.date)}</div>
+      ${replyCategoryBadge(i)}
+      ${stateInfo}
+      <div class="reply-actions">${actions}</div>
+    </div>
+  </div>`;
 }
 
 // ---------------------------------------------------------------- Journal

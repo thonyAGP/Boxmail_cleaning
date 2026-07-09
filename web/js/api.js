@@ -61,6 +61,17 @@ export const api = {
   jobs: () => request('GET', '/jobs'),
   syncAll: (mode = 'recent') => request('POST', '/sync-all', { mode }),
   operations: (limit = 30) => request('GET', `/operations?limit=${limit}`),
+  replies: (sinceDays = 60) => request('GET', `/attention/replies?sinceDays=${sinceDays}`),
+  replySnooze: (slug, threadId, days) =>
+    request(
+      'POST',
+      `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/snooze`,
+      { days },
+    ),
+  replyDismiss: (slug, threadId) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/dismiss`),
+  replyRestore: (slug, threadId) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
 };
 
 // ---- Helpers de formatage partagés ----

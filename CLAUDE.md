@@ -94,14 +94,27 @@ Fait : serveur MCP complet, index SQLite + syncs (incrémentales, résilientes,
 fin auto/perso avec liste cochable, journal détaillé, enrôlement popup,
 mise à jour 1-clic, détection superviseur). ~18 000 mails indexés, 2 boîtes.
 
-## PROCHAINE ÉTAPE : Phase 4 — intelligence (décidée avec l'utilisateur)
+**Phase 4 brique 1 livrée : Réponses oubliées.** `services/attention.ts`
+(détection index-only : dernier message entrant du fil, inbox, sans réponse
+sortante depuis ; newsletters/no-reply exclus ; catégories urgent 24 h /
+banque-admin 48 h — IMPORTANT_SENDER_RE prudente, pas de domaines grand
+public — / normal 7 j ; `reason` explicite en français), table
+`AttentionState` (snooze/dismiss par fil, lié au dernier message → caduc si
+un nouveau mail arrive), 5 tools MCP (get_unanswered_emails,
+get_overdue_replies, snooze_reply, dismiss_reply, restore_reply), API
+`/api/attention/replies` (+ snooze/dismiss/restore par compte), écran
+« Réponses en attente » (onglets À traiter / En retard / Reportés / Ignorés,
+badge sidebar, panneau dashboard). Journal : désormais UNE entrée par
+opération de nettoyage (plus une par lot — les lots de 200 restent un
+garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
+(2 comptes factices + 13 mails couvrant tous les cas, accounts.json factice).
+
+## PROCHAINE ÉTAPE : Phase 4 — suite (décidée avec l'utilisateur)
 
 Avant le déploiement Oracle/Cowork. Ordre :
-1. **Réponses oubliées** (`get_unanswered_emails` / `get_overdue_replies`) —
-   l'index a déjà threads + direction (isOutbound) + isAnswered. Seuils SPEC :
-   urgent 24 h, banque/comptable/admin/client 48 h, normal 7 j, newsletters
-   ignorées. Chaque item : `reason` explicite. Snooze/dismiss (table à créer).
-2. **Relances** (`get_followups_due` : sortant sans réponse externe ≥ N jours).
+2. **Relances** (`get_followups_due` : sortant sans réponse externe ≥ N jours)
+   — réutiliser AttentionState (kind=followup déjà prévu) et le modèle de
+   l'écran Réponses en attente.
 3. **Score d'importance** /100 avec reasons (expéditeur type banque/admin,
    non lu, question, montant, pièce jointe, ancienneté…) — enrichir Sender.kind.
 4. **Échéances** (`detect_deadlines` : dates dans sujets/corps à la demande).

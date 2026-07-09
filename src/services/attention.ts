@@ -1,0 +1,459 @@
+import { db, ensureDbReady } from '../db/client.js';
+import { recordOperation } from './oplog.js';
+
+/**
+ * Attention Engine — Phase 4, brique 1 : RÉPONSES OUBLIÉES (SPEC V2 §8.3).
+ *
+ * Détecte, depuis l'index local (aucun accès IMAP), les mails entrants qui
+ * attendent une réponse : dernier message de leur fil, reçus en boîte de
+ * réception, sans réponse sortante depuis, et qui ressemblent à un mail écrit
+ * par un humain (les newsletters/notifications sont ignorées).
+ *
+ * Seuils SPEC : urgent 24 h · banque/comptable/administration 48 h ·
+ * normal 7 jours. Chaque élément porte une `reason` explicite en français.
+ *
+ * L'utilisateur peut reporter (snooze) ou ignorer (dismiss) un fil : l'état
+ * est stocké dans AttentionState, lié au dernier message entrant du fil — si
+ * un nouveau mail arrive ensuite dans le fil, l'état devient caduc et
+ * l'élément réapparaît automatiquement.
+ */
+
+export type ReplyCategory = 'urgent' | 'important' | 'normal';
+export type ReplyState = 'active' | 'snoozed' | 'dismissed';
+
+export interface ReplyItem {
+  account: string;
+  threadId: number;
+  /** id interne (colonne Message.id) du mail en attente — sert au suivi d'état. */
+  messageId: number;
+  uid: number;
+  folder: string;
+  fromEmail: string;
+  fromName: string | null;
+  subject: string;
+  date: string;
+  isSeen: boolean;
+  /** Nombre de messages du fil (contexte). */
+  threadMessageCount: number;
+  category: ReplyCategory;
+  categoryLabel: string;
+  thresholdHours: number;
+  waitingHours: number;
+  /** true si le seuil de la catégorie est dépassé. */
+  overdue: boolean;
+  /** Justification explicite, affichée telle quelle. */
+  reason: string;
+  state: ReplyState;
+  snoozedUntil: string | null;
+}
+
+export interface UnansweredOptions {
+  /** overdue = seulement les seuils dépassés (défaut all). */
+  scope?: 'all' | 'overdue';
+  /** Fenêtre d'analyse en jours (défaut 60, max 365). */
+  sinceDays?: number;
+  /** Nombre max d'éléments retournés (défaut 200). */
+  limit?: number;
+  /** Inclure aussi les éléments reportés/ignorés (pour les onglets de l'interface). */
+  includeHidden?: boolean;
+}
+
+export interface UnansweredResult {
+  account: string;
+  sinceDays: number;
+  counts: { active: number; overdue: number; snoozed: number; dismissed: number };
+  items: ReplyItem[];
+  truncated: boolean;
+}
+
+const THRESHOLDS: Record<ReplyCategory, number> = {
+  urgent: 24,
+  important: 48,
+  normal: 7 * 24,
+};
+
+const CATEGORY_LABELS: Record<ReplyCategory, string> = {
+  urgent: 'Urgent',
+  important: 'Banque / admin / pro',
+  normal: 'Normal',
+};
+
+/** Expéditeurs automatiques (même filtre que le nettoyage) : jamais « à répondre ». */
+const AUTO_SENDER_RE =
+  /(no-?reply|nepasrepondre|ne-pas-repondre|donotreply|do-not-reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
+
+/** Sujet qui réclame une réponse rapide. */
+const URGENT_SUBJECT_RE =
+  /(urgent|au plus vite|asap|dernier rappel|derni[èe]re relance|mise en demeure|imp[ée]ratif|avant le)/i;
+
+/**
+ * Expéditeur type banque / administration / comptable / juridique (seuil 48 h).
+ * Attention aux faux positifs : pas de domaines grand public (orange.fr, sfr…)
+ * et frontières de mots sur les tokens courts (caf ≠ café, msa ≠ thomsa).
+ */
+const IMPORTANT_SENDER_RE =
+  /(banque|bank|cr[ée]dit|boursorama|fortuneo|\bbnp\b|societe ?generale|banquepostale|impot|finances|dgfip|tresor|urssaf|ameli|cpam|\bmsa\b|\bcaf\b|assurance|mutuelle|notaire|avocat|huissier|comptab|prefecture|mairie|gouv\.fr|pole-?emploi|francetravail|syndic|foncia)/i;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function humanDelay(hours: number): string {
+  if (hours < 1) return "moins d'une heure";
+  if (hours < 48) return `${Math.round(hours)} h`;
+  return `${Math.round(hours / 24)} jours`;
+}
+
+function categorize(c: {
+  subject: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+}): { category: ReplyCategory; why: string } {
+  const subject = c.subject ?? '';
+  const urgentMatch = URGENT_SUBJECT_RE.exec(subject);
+  if (urgentMatch) {
+    return { category: 'urgent', why: `sujet marqué urgent (« ${urgentMatch[0]} »)` };
+  }
+  const senderText = `${c.fromEmail ?? ''} ${c.fromName ?? ''}`;
+  const importantMatch = IMPORTANT_SENDER_RE.exec(senderText);
+  if (importantMatch) {
+    return {
+      category: 'important',
+      why: `expéditeur type banque/administration/pro (« ${importantMatch[0]} »)`,
+    };
+  }
+  return { category: 'normal', why: 'correspondant classique' };
+}
+
+/**
+ * Liste les mails en attente de réponse d'un compte, avec état (actif /
+ * reporté / ignoré), catégorie, seuil et justification.
+ */
+export async function getUnansweredEmails(
+  account: string,
+  opts: UnansweredOptions = {},
+): Promise<UnansweredResult> {
+  await ensureDbReady();
+  const sinceDays = Math.min(Math.max(opts.sinceDays ?? 60, 1), 365);
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1000);
+  const since = new Date(Date.now() - sinceDays * 86_400_000);
+  const now = Date.now();
+
+  // 1. Candidats : mails entrants « répondables » de la boîte de réception.
+  //    (newsletters exclues via List-Unsubscribe, expéditeurs no-reply via regex)
+  const raw = await db.message.findMany({
+    where: {
+      accountSlug: account,
+      isDeleted: false,
+      isOutbound: false,
+      isAnswered: false,
+      hasListUnsubscribe: false,
+      threadId: { not: null },
+      fromEmail: { not: null },
+      date: { gte: since },
+      folder: { is: { role: 'inbox' } },
+    },
+    orderBy: { date: 'desc' },
+    select: {
+      id: true,
+      threadId: true,
+      uid: true,
+      subject: true,
+      fromEmail: true,
+      fromName: true,
+      date: true,
+      isSeen: true,
+      folder: { select: { path: true } },
+    },
+  });
+
+  // Un candidat par fil : le plus récent (la liste est triée par date desc).
+  const byThread = new Map<number, (typeof raw)[number]>();
+  for (const m of raw) {
+    if (m.threadId === null || m.date === null || !m.fromEmail) continue;
+    if (AUTO_SENDER_RE.test(m.fromEmail)) continue;
+    if (!byThread.has(m.threadId)) byThread.set(m.threadId, m);
+  }
+  const threadIds = [...byThread.keys()];
+
+  // 2. Contexte des fils : dernier message toutes directions confondues et
+  //    dernière réponse sortante — pour ne garder que les fils qui se
+  //    terminent par ce mail entrant, sans réponse de l'utilisateur depuis.
+  const lastAny = new Map<number, { max: Date | null; count: number }>();
+  const lastOut = new Map<number, Date | null>();
+  for (const ids of chunk(threadIds, 500)) {
+    const aggs = await db.message.groupBy({
+      by: ['threadId'],
+      where: { threadId: { in: ids }, isDeleted: false },
+      _max: { date: true },
+      _count: { _all: true },
+    });
+    for (const a of aggs) {
+      if (a.threadId !== null) lastAny.set(a.threadId, { max: a._max.date, count: a._count._all });
+    }
+    const outs = await db.message.groupBy({
+      by: ['threadId'],
+      where: { threadId: { in: ids }, isDeleted: false, isOutbound: true },
+      _max: { date: true },
+    });
+    for (const o of outs) {
+      if (o.threadId !== null) lastOut.set(o.threadId, o._max.date);
+    }
+  }
+
+  // 3. États utilisateur (reporté / ignoré) sur ces fils.
+  const states = new Map<
+    number,
+    { messageId: number; state: string; snoozedUntil: Date | null }
+  >();
+  for (const ids of chunk(threadIds, 500)) {
+    const rows = await db.attentionState.findMany({
+      where: { accountSlug: account, kind: 'reply', threadId: { in: ids } },
+    });
+    for (const r of rows) {
+      states.set(r.threadId, {
+        messageId: r.messageId,
+        state: r.state,
+        snoozedUntil: r.snoozedUntil,
+      });
+    }
+  }
+
+  // 4. Construction des éléments.
+  const items: ReplyItem[] = [];
+  for (const [threadId, m] of byThread) {
+    const any = lastAny.get(threadId);
+    if (!any?.max || !m.date) continue;
+    // Un message plus récent existe dans le fil → ce mail n'est pas « le
+    // dernier mot » (déjà répondu, ou suivi d'un autre mail) : pas en attente.
+    if (any.max.getTime() > m.date.getTime()) continue;
+    const out = lastOut.get(threadId);
+    if (out && out.getTime() >= m.date.getTime()) continue;
+
+    const { category, why } = categorize(m);
+    const thresholdHours = THRESHOLDS[category];
+    const waitingHours = (now - m.date.getTime()) / 3_600_000;
+    const overdue = waitingHours > thresholdHours;
+
+    // État effectif : un état lié à un ancien message du fil est caduc.
+    let state: ReplyState = 'active';
+    let snoozedUntil: string | null = null;
+    const st = states.get(threadId);
+    if (st && st.messageId === m.id) {
+      if (st.state === 'dismissed') state = 'dismissed';
+      else if (st.state === 'snoozed' && st.snoozedUntil && st.snoozedUntil.getTime() > now) {
+        state = 'snoozed';
+        snoozedUntil = st.snoozedUntil.toISOString();
+      }
+    }
+
+    const reasons = [
+      `Dernier message du fil, reçu il y a ${humanDelay(waitingHours)}, aucune réponse envoyée depuis`,
+      why,
+    ];
+    if ((m.subject ?? '').includes('?')) reasons.push('le sujet pose une question');
+    if (!m.isSeen) reasons.push('jamais ouvert');
+    reasons.push(
+      overdue
+        ? `seuil ${CATEGORY_LABELS[category].toLowerCase()} de ${humanDelay(thresholdHours)} dépassé`
+        : `seuil de ${humanDelay(thresholdHours)} pas encore atteint`,
+    );
+
+    items.push({
+      account,
+      threadId,
+      messageId: m.id,
+      uid: m.uid,
+      folder: m.folder.path,
+      fromEmail: m.fromEmail as string,
+      fromName: m.fromName,
+      subject: m.subject ?? '(sans sujet)',
+      date: m.date.toISOString(),
+      isSeen: m.isSeen,
+      threadMessageCount: any.count,
+      category,
+      categoryLabel: CATEGORY_LABELS[category],
+      thresholdHours,
+      waitingHours: Math.round(waitingHours * 10) / 10,
+      overdue,
+      reason: reasons.join(' · '),
+      state,
+      snoozedUntil,
+    });
+  }
+
+  const counts = {
+    active: items.filter((i) => i.state === 'active').length,
+    overdue: items.filter((i) => i.state === 'active' && i.overdue).length,
+    snoozed: items.filter((i) => i.state === 'snoozed').length,
+    dismissed: items.filter((i) => i.state === 'dismissed').length,
+  };
+
+  let filtered = items;
+  if (!opts.includeHidden) filtered = filtered.filter((i) => i.state === 'active');
+  if (opts.scope === 'overdue') filtered = filtered.filter((i) => i.state !== 'active' || i.overdue);
+
+  // En retard d'abord (les plus anciens en tête), puis les autres.
+  filtered.sort((a, b) => {
+    const aActive = a.state === 'active' ? 0 : 1;
+    const bActive = b.state === 'active' ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+    return new Date(a.date).getTime() - new Date(b.date).getTime();
+  });
+
+  return {
+    account,
+    sinceDays,
+    counts,
+    items: filtered.slice(0, limit),
+    truncated: filtered.length > limit,
+  };
+}
+
+/** Réponses en retard uniquement (raccourci SPEC : get_overdue_replies). */
+export async function getOverdueReplies(
+  account: string,
+  opts: Omit<UnansweredOptions, 'scope'> = {},
+): Promise<UnansweredResult> {
+  return getUnansweredEmails(account, { ...opts, scope: 'overdue' });
+}
+
+// ---------------------------------------------------------------------------
+// Snooze / dismiss / restore — état utilisateur d'un fil.
+// ---------------------------------------------------------------------------
+
+async function lastThreadMessage(account: string, threadId: number) {
+  const thread = await db.thread.findFirst({
+    where: { id: threadId, accountSlug: account },
+    select: { id: true },
+  });
+  if (!thread) throw new Error(`Fil ${threadId} introuvable pour le compte « ${account} ».`);
+  const last = await db.message.findFirst({
+    where: { threadId, isDeleted: false },
+    orderBy: { date: 'desc' },
+    select: {
+      id: true,
+      uid: true,
+      subject: true,
+      date: true,
+      folder: { select: { path: true } },
+    },
+  });
+  if (!last) throw new Error(`Fil ${threadId} vide (aucun message indexé).`);
+  return last;
+}
+
+export interface ReplyStateChange {
+  account: string;
+  threadId: number;
+  subject: string;
+  state: ReplyState;
+  snoozedUntil: string | null;
+}
+
+/**
+ * Reporte un fil : il disparaît de la liste jusqu'à la date donnée
+ * (`days` jours, défaut 3, max 365), puis réapparaît tout seul.
+ */
+export async function snoozeReply(
+  account: string,
+  threadId: number,
+  days = 3,
+): Promise<ReplyStateChange> {
+  await ensureDbReady();
+  const d = Math.min(Math.max(Math.round(days), 1), 365);
+  const until = new Date(Date.now() + d * 86_400_000);
+  const last = await lastThreadMessage(account, threadId);
+  await db.attentionState.upsert({
+    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind: 'reply' } },
+    create: {
+      accountSlug: account,
+      threadId,
+      messageId: last.id,
+      kind: 'reply',
+      state: 'snoozed',
+      snoozedUntil: until,
+    },
+    update: { messageId: last.id, state: 'snoozed', snoozedUntil: until },
+  });
+  await recordOperation({
+    account,
+    tool: 'snooze_reply',
+    folder: last.folder.path,
+    params: { threadId, days: d, until: until.toISOString() },
+    affectedUids: [last.uid],
+    items: [{ subject: last.subject ?? '(sans sujet)', date: last.date?.toISOString() ?? null }],
+    result: `reporté ${d} jour(s)`,
+  });
+  return {
+    account,
+    threadId,
+    subject: last.subject ?? '(sans sujet)',
+    state: 'snoozed',
+    snoozedUntil: until.toISOString(),
+  };
+}
+
+/**
+ * Ignore un fil : il ne sera plus proposé — sauf si un NOUVEAU mail arrive
+ * dans le fil (l'état est lié au dernier message au moment du clic).
+ */
+export async function dismissReply(account: string, threadId: number): Promise<ReplyStateChange> {
+  await ensureDbReady();
+  const last = await lastThreadMessage(account, threadId);
+  await db.attentionState.upsert({
+    where: { accountSlug_threadId_kind: { accountSlug: account, threadId, kind: 'reply' } },
+    create: {
+      accountSlug: account,
+      threadId,
+      messageId: last.id,
+      kind: 'reply',
+      state: 'dismissed',
+    },
+    update: { messageId: last.id, state: 'dismissed', snoozedUntil: null },
+  });
+  await recordOperation({
+    account,
+    tool: 'dismiss_reply',
+    folder: last.folder.path,
+    params: { threadId },
+    affectedUids: [last.uid],
+    items: [{ subject: last.subject ?? '(sans sujet)', date: last.date?.toISOString() ?? null }],
+    result: 'ignoré',
+  });
+  return {
+    account,
+    threadId,
+    subject: last.subject ?? '(sans sujet)',
+    state: 'dismissed',
+    snoozedUntil: null,
+  };
+}
+
+/** Annule un report/ignore : le fil redevient visible immédiatement. */
+export async function restoreReply(account: string, threadId: number): Promise<ReplyStateChange> {
+  await ensureDbReady();
+  const last = await lastThreadMessage(account, threadId);
+  await db.attentionState.deleteMany({
+    where: { accountSlug: account, threadId, kind: 'reply' },
+  });
+  await recordOperation({
+    account,
+    tool: 'restore_reply',
+    folder: last.folder.path,
+    params: { threadId },
+    affectedUids: [last.uid],
+    items: [{ subject: last.subject ?? '(sans sujet)', date: last.date?.toISOString() ?? null }],
+    result: 'remis en liste',
+  });
+  return {
+    account,
+    threadId,
+    subject: last.subject ?? '(sans sujet)',
+    state: 'active',
+    snoozedUntil: null,
+  };
+}

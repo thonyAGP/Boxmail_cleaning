@@ -182,6 +182,34 @@ select, input[type="date"], input[type="number"] {
 .op-line:last-child { border-bottom: none; }
 .op-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
+/* ---------- Réponses en attente ---------- */
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.tab {
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  border-radius: 20px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-weight: 500;
+  display: flex; align-items: center; gap: 7px;
+}
+.tab:hover { border-color: #c9d1e0; }
+.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab.active .badge { background: rgba(255,255,255,.2); color: #fff; }
+.reply-row {
+  display: flex; gap: 16px; padding: 13px 18px; border-bottom: 1px solid #f0f2f7;
+  align-items: flex-start;
+}
+.reply-row:last-child { border-bottom: none; }
+.reply-row:hover { background: #fafbfe; }
+.reply-main { flex: 1; min-width: 0; }
+.reply-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.reply-subject { margin-top: 3px; font-size: 13.5px; }
+.reply-reason { margin-top: 4px; font-size: 12px; }
+.reply-side {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 5px;
+  flex-shrink: 0; max-width: 250px; text-align: right;
+}
+.reply-date { color: var(--muted); font-size: 12px; }
+.reply-actions { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.reply-actions select { padding: 5px 8px; font-size: 12px; }
+
 /* ---------- Modale ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15, 27, 61, .55); z-index: 100;

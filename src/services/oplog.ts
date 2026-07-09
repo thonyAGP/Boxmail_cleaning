@@ -59,7 +59,9 @@ export async function recordOperation(entry: OperationEntry): Promise<void> {
     folder: entry.folder,
     params: scrub(entry.params),
     affectedUids: entry.affectedUids,
-    items: entry.items?.slice(0, 500),
+    // Liste exacte des mails concernés (garde-fou) : une opération = une entrée,
+    // le plafond est aligné sur la limite de sélection de l'interface (20 000).
+    items: entry.items?.slice(0, 20_000),
     result: entry.result,
   });
   try {

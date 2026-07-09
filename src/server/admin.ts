@@ -21,6 +21,12 @@ import {
   listCleanupMessages,
 } from '../services/cleanup.js';
 import { syncAccount } from '../services/sync.js';
+import {
+  getUnansweredEmails,
+  snoozeReply,
+  dismissReply,
+  restoreReply,
+} from '../services/attention.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
@@ -263,6 +269,80 @@ export function buildAdminRouter(): Router {
     guard(async (req, res) => {
       res.json(await getCleanupCandidates(req.params.slug));
     }),
+  );
+
+  // --- Réponses en attente (Phase 4) --------------------------------------------
+  // Vue globale : agrège tous les comptes enrôlés (les comptes non indexés
+  // sont simplement vides). includeHidden=1 pour les onglets Reportés/Ignorés.
+  router.get(
+    '/attention/replies',
+    guard(async (req, res) => {
+      const sinceDays = Math.min(
+        Math.max(Number.parseInt(String(req.query.sinceDays ?? '60'), 10) || 60, 1),
+        365,
+      );
+      const results = [];
+      for (const name of await listAccountNames()) {
+        try {
+          results.push(
+            await getUnansweredEmails(name, { sinceDays, includeHidden: true, limit: 500 }),
+          );
+        } catch (err) {
+          logger.warn('réponses en attente : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      res.json({
+        sinceDays,
+        counts: results.reduce(
+          (acc, r) => ({
+            active: acc.active + r.counts.active,
+            overdue: acc.overdue + r.counts.overdue,
+            snoozed: acc.snoozed + r.counts.snoozed,
+            dismissed: acc.dismissed + r.counts.dismissed,
+          }),
+          { active: 0, overdue: 0, snoozed: 0, dismissed: 0 },
+        ),
+        items: results
+          .flatMap((r) => r.items)
+          .sort((a, b) => {
+            const aActive = a.state === 'active' ? 0 : 1;
+            const bActive = b.state === 'active' ? 0 : 1;
+            if (aActive !== bActive) return aActive - bActive;
+            if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+            return new Date(a.date).getTime() - new Date(b.date).getTime();
+          }),
+      });
+    }),
+  );
+
+  const threadAction =
+    (fn: (account: string, threadId: number, body: unknown) => Promise<unknown>) =>
+    guard(async (req: Request, res: Response) => {
+      const threadId = Number.parseInt(String(req.params.threadId), 10);
+      if (!Number.isInteger(threadId) || threadId <= 0) {
+        res.status(400).json({ error: 'threadId invalide.' });
+        return;
+      }
+      res.json(await fn(req.params.slug, threadId, req.body));
+    });
+
+  router.post(
+    '/accounts/:slug/attention/replies/:threadId/snooze',
+    threadAction((account, threadId, body) => {
+      const days = Number.parseInt(String((body as { days?: unknown })?.days ?? '3'), 10) || 3;
+      return snoozeReply(account, threadId, days);
+    }),
+  );
+  router.post(
+    '/accounts/:slug/attention/replies/:threadId/dismiss',
+    threadAction((account, threadId) => dismissReply(account, threadId)),
+  );
+  router.post(
+    '/accounts/:slug/attention/replies/:threadId/restore',
+    threadAction((account, threadId) => restoreReply(account, threadId)),
   );
 
   // --- Version & mise à jour -----------------------------------------------------
