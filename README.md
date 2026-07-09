@@ -370,8 +370,13 @@ temps constant limité à 10 tentatives/15 min/IP, mêmes services et mêmes
 garde-fous que les tools MCP, tout est journalisé dans `operations.jsonl`.
 Sans `ADMIN_PASSWORD`, l'interface est désactivée (le MCP fonctionne normalement).
 
-> Prochaines passes : suppression en masse guidée (aperçu → confirmation →
-> lots de 200 avec progression), enrôlement d'une boîte depuis le navigateur,
+L'interface inclut le **nettoyage guidé** : bouton « Nettoyer » sur chaque
+expéditeur candidat → aperçu détaillé (nombre, taille, dates, derniers sujets)
+→ confirmation explicite → déplacement vers la corbeille **par lots de 200**
+avec progression en direct. Soft delete uniquement (récupérable ~30 jours),
+chaque lot journalisé, index mis à jour immédiatement.
+
+> Prochaines passes : enrôlement d'une boîte depuis le navigateur,
 > recherche/lecture de mails, export contacts.
 
 ## Index local des mails (Phase 3 — SPEC V2)

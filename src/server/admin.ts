@@ -4,7 +4,11 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { listAccountNames, getAccountRecord, resolveAccount } from '../services/accounts.js';
 import { globalOverview, mailboxOverview, senderStatsFromIndex, isFolderIndexed } from '../services/index-stats.js';
-import { getCleanupCandidates } from '../services/cleanup.js';
+import {
+  getCleanupCandidates,
+  previewSenderCleanup,
+  executeSenderCleanup,
+} from '../services/cleanup.js';
 import { syncAccount } from '../services/sync.js';
 import { startJob, getJob, hasRunningJob } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
@@ -211,6 +215,43 @@ export function buildAdminRouter(): Router {
     '/accounts/:slug/cleanup',
     guard(async (req, res) => {
       res.json(await getCleanupCandidates(req.params.slug));
+    }),
+  );
+
+  // --- Nettoyage : aperçu puis exécution par lots ------------------------------
+  router.post(
+    '/accounts/:slug/cleanup/preview',
+    guard(async (req, res) => {
+      const sender = String(req.body?.sender ?? '').trim();
+      const folder = String(req.body?.folder ?? 'INBOX');
+      if (!sender) {
+        res.status(400).json({ error: 'Paramètre "sender" requis.' });
+        return;
+      }
+      res.json(await previewSenderCleanup(req.params.slug, folder, sender));
+    }),
+  );
+
+  router.post(
+    '/accounts/:slug/cleanup/execute',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const sender = String(req.body?.sender ?? '').trim();
+      const folder = String(req.body?.folder ?? 'INBOX');
+      if (!sender) {
+        res.status(400).json({ error: 'Paramètre "sender" requis.' });
+        return;
+      }
+      const kind = `cleanup:${slug}`;
+      if (hasRunningJob(kind) || hasRunningJob(`sync:${slug}`)) {
+        res.status(409).json({ error: 'Une opération est déjà en cours sur ce compte.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      const job = startJob(kind, (progress) =>
+        executeSenderCleanup(rec, folder, sender, progress),
+      );
+      res.json({ jobId: job.id });
     }),
   );
 

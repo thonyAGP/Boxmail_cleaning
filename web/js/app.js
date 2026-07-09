@@ -192,15 +192,17 @@ async function renderDashboard() {
           <span class="badge green">${fmtNum(deletable)} mails « sûrs »</span></div>
         <div class="panel-body tight">
           ${allCandidates.length === 0 ? '<div class="empty">Aucun candidat détecté (ou boîtes pas encore synchronisées).</div>' : `
-          <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th><th>Risque</th></tr></thead>
+          <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th><th>Risque</th><th></th></tr></thead>
           <tbody>${allCandidates.slice(0, 8).map((c) => `<tr>
             <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)} · ${esc(c.account)}</span></td>
             <td class="num">${fmtNum(c.messageCount)}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
+            <td><button class="btn btn-sm cleanup-btn" data-account="${esc(c.account)}"
+              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
           </tr>`).join('')}</tbody></table>
-          <div class="panel-body muted" style="font-size:12.5px">La suppression depuis l'interface arrive à la
-          prochaine passe — en attendant, passer par Claude Cowork (dry-run puis confirmation).</div>`}
+          <div class="panel-body muted" style="font-size:12.5px">« Nettoyer » = aperçu détaillé puis, après TA
+          confirmation, déplacement vers la corbeille (récupérable ~30 jours). Rien n'est supprimé définitivement.</div>`}
         </div>
       </div>
     </div>
@@ -226,6 +228,16 @@ async function renderDashboard() {
     el.innerHTML = operations.length
       ? operations.map(opLine).join('')
       : '<div class="empty">Aucune opération pour l\'instant.</div>';
+  });
+
+  bindCleanupButtons(body);
+}
+
+function bindCleanupButtons(root) {
+  root.querySelectorAll('.cleanup-btn').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      openCleanupModal(btn.dataset.account, btn.dataset.sender, btn.dataset.name),
+    );
   });
 }
 
@@ -298,10 +310,42 @@ async function renderAccount(slug) {
           <button class="btn btn-sm" id="f-apply">Appliquer</button>
         </div></div>
       <div class="panel-body tight" id="stats-table"><div class="empty"><span class="spinner"></span></div></div>
-    </div>`;
+    </div>
+    <div id="account-cleanup"></div>`;
 
   $('#f-apply').addEventListener('click', () => loadStats(slug));
   await loadStats(slug);
+  loadAccountCleanup(slug);
+}
+
+async function loadAccountCleanup(slug) {
+  const el = $('#account-cleanup');
+  if (!el) return;
+  let data;
+  try {
+    data = await api.cleanup(slug);
+  } catch {
+    return;
+  }
+  if (!data.candidates.length) return;
+  el.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>🧹 Nettoyage conseillé</h2>
+      <span class="badge green">${fmtNum(data.totalDeletableEstimate)} mails « sûrs »</span></div>
+    <div class="panel-body tight">
+      <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Non lus</th>
+        <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
+      <tbody>${data.candidates.map((c) => `<tr>
+        <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
+        <td class="num">${fmtNum(c.messageCount)}</td>
+        <td class="num">${fmtNum(c.unseenCount)}</td>
+        <td class="num">${fmtSize(c.totalSizeBytes)}</td>
+        <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
+        <td class="muted" style="font-size:12px; max-width:260px">${esc(c.reason)}</td>
+        <td><button class="btn btn-sm cleanup-btn" data-account="${esc(slug)}"
+          data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
+      </tr>`).join('')}</tbody></table>
+    </div></div>`;
+  bindCleanupButtons(el);
 }
 
 async function loadStats(slug) {
@@ -401,6 +445,99 @@ async function runSync(slug, mode) {
       clearInterval(timer);
     }
   }, 1200);
+}
+
+// ---------------------------------------------------------------- Modale nettoyage
+function closeModal() {
+  document.querySelector('.modal-overlay')?.remove();
+}
+
+async function openCleanupModal(account, sender, senderName) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>🧹 Nettoyer « ${esc(senderName)} »</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  // Étape 1 : aperçu (index local, ne touche à rien).
+  let preview;
+  try {
+    preview = await api.cleanupPreview(account, sender);
+  } catch (err) {
+    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#modal-foot').innerHTML = `<button class="btn" onclick="document.querySelector('.modal-overlay').remove()">Fermer</button>`;
+    return;
+  }
+
+  $('#modal-body').innerHTML = `
+    <p>Voici ce qui serait déplacé vers la <strong>corbeille</strong> pour
+      <strong>${esc(sender)}</strong> (dossier ${esc(preview.folder)}) :</p>
+    <div class="preview-grid">
+      <div class="preview-item"><div class="lbl">Mails concernés</div><div class="val">${fmtNum(preview.count)}</div></div>
+      <div class="preview-item"><div class="lbl">Taille libérée</div><div class="val">${fmtSize(preview.totalSizeBytes)}</div></div>
+      <div class="preview-item"><div class="lbl">Plus ancien</div><div class="val" style="font-size:13px">${fmtDate(preview.oldestMessageAt)}</div></div>
+      <div class="preview-item"><div class="lbl">Plus récent</div><div class="val" style="font-size:13px">${fmtDate(preview.newestMessageAt)}</div></div>
+    </div>
+    <div class="lbl muted" style="font-size:12px">Derniers sujets :</div>
+    <div class="subject-list">${preview.sampleSubjects.map((s) => `<div>${esc(s)}</div>`).join('')}</div>
+    <div class="trash-note">🛟 Soft delete uniquement : les mails vont dans la corbeille Outlook et restent
+      récupérables ~30 jours. L'opération se fait par lots de 200 et chaque lot est journalisé.</div>`;
+
+  $('#modal-foot').innerHTML = `
+    <button class="btn" id="modal-cancel">Annuler</button>
+    <button class="btn btn-green" id="modal-confirm">Déplacer ${fmtNum(preview.count)} mails vers la corbeille</button>`;
+  $('#modal-cancel').addEventListener('click', closeModal);
+
+  // Étape 2 : confirmation → exécution avec progression.
+  $('#modal-confirm').addEventListener('click', async () => {
+    $('#modal-foot').innerHTML = '';
+    $('#modal-body').innerHTML = `<p><span class="spinner"></span>Nettoyage en cours — ne pas fermer cette fenêtre.</p>
+      <div class="sync-log" id="cleanup-log"></div>`;
+    let jobId;
+    try {
+      ({ jobId } = await api.cleanupExecute(account, sender));
+    } catch (err) {
+      $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      $('#modal-foot').innerHTML = `<button class="btn" id="modal-cancel2">Fermer</button>`;
+      $('#modal-cancel2').addEventListener('click', closeModal);
+      return;
+    }
+    const log = $('#cleanup-log');
+    const timer = setInterval(async () => {
+      try {
+        const j = await api.job(jobId);
+        log.textContent = j.progress.join('\n');
+        log.scrollTop = log.scrollHeight;
+        if (j.status !== 'running') {
+          clearInterval(timer);
+          const r = j.result ?? {};
+          $('#modal-body').innerHTML =
+            j.status === 'done'
+              ? `<div class="notice">✅ <strong>${fmtNum(r.deleted ?? 0)}</strong> mails déplacés vers
+                 <strong>${esc(r.destination || 'la corbeille')}</strong> en ${fmtNum(r.batches ?? 0)} lot(s).
+                 Récupérables ~30 jours dans Outlook.</div>`
+              : `<div class="notice warn">❌ Échec : ${esc(j.error ?? '')}</div>`;
+          $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="modal-done">Fermer</button>`;
+          $('#modal-done').addEventListener('click', async () => {
+            closeModal();
+            await refreshOverview();
+            route();
+          });
+        }
+      } catch {
+        clearInterval(timer);
+      }
+    }, 1000);
+  });
 }
 
 // ---------------------------------------------------------------- Journal
