@@ -326,16 +326,25 @@ du mail source (openReaderFor). Lecture seule, AUCUN nouveau backend
 exclue) + ui-calendar.mjs (15 checks playwright : grille, événements,
 pointillé, détail du jour, lecture, navigation mois).
 
-### ⬜ L5.8 — Paramètres : comptes (renommer, supprimer, couleur)
+### ✅ L5.8 — Paramètres : comptes (renommer, supprimer, couleur)
 
-Écran `#/settings` (lien sidebar ⚙️ Paramètres) : liste des comptes avec
-adresse, état token, dernière sync ; actions par compte : ✏️ Renommer
-(migration douce : renameAccount existe, purge index + invite resync),
-🎨 Couleur (migration Prisma `Account.color String?` + PATCH
-`/api/accounts/:slug` ; accountColor() lit la couleur perso d'abord),
-🗑️ Supprimer (removeAccount + purge, double confirmation typée). Section
-serveur : version, superviseur, SMTP on/off (lecture seule), chemin base.
-Journalisation des 3 actions.
+**LIVRÉE.** Écran `#/settings` (sidebar ⚙️, section NAVIGATION) : tableau
+des boîtes (sélecteur de couleur natif + bouton « auto », nom, adresse,
+mails indexés + dernière sync, ✏️ Renommer, 🗑️ Supprimer) + panneau
+Serveur (version/commit, superviseur, SMTP, totaux index). Backend :
+migration `Account.color String?` ; PATCH `/api/accounts/:slug`
+({color: #rrggbb|null}, upsert DB, 400 si format invalide) ; POST
+`.../rename` ({to}, slug 2-30 [a-z0-9_-], renameAccount + purge index +
+recréation de la ligne Account avec la couleur conservée, needsSync) ;
+DELETE `/api/accounts/:slug` (removeAccount + purge). `/api/overview`
+expose `color` par compte enrôlé ; `rebuildAccountColors()` lit la couleur
+perso d'abord (palette en repli) → répercutée PARTOUT (sidebar, chips,
+liserés, calendrier). UI : renommage prompt+confirm avec invite resync ;
+suppression double confirmation dont nom TAPÉ exactement ; messages « tes
+mails chez Microsoft ne bougent pas ». Journal : ui_account_color/rename/
+remove. Tests : curl (400/404, couleur, overview) + ui-settings.mjs
+(13 checks playwright : couleur perso propagée au point sidebar, retour
+auto, renommage, suppression annulée si nom faux puis effective).
 
 ### ✅ L5.9 — Pièces jointes : indexation légère + téléchargement (passée avant L5.7/L5.8 — retour utilisateur 07/2026 : « pas de possibilité d'ouvrir les pièces jointes »)
 

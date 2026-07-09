@@ -99,6 +99,16 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 jointes) passe juste après L5.6 — retour utilisateur du 09/07 : « pas de
 possibilité d'ouvrir les pièces jointes ». Puis L5.7 → L5.8 → L5.10 → L5.11.
 
+**L5.8 livrée : Paramètres (couleur, renommage, suppression de compte).**
+Écran `#/settings` (sidebar ⚙️) : couleur par boîte (input color + « auto »,
+migration `Account.color`, PATCH `/api/accounts/:slug`, overview expose
+color, rebuildAccountColors lit la perso d'abord), ✏️ Renommer (POST
+`.../rename`, renameAccount + purge index — cache reconstructible — +
+Account recréé avec couleur conservée, invite resync), 🗑️ Supprimer
+(DELETE, double confirmation avec nom tapé, mails Microsoft intacts),
+panneau Serveur (version, superviseur, SMTP, totaux). Journal
+ui_account_color/rename/remove. Tests : curl + ui-settings.mjs (13 checks).
+
 **L5.7 livrée : Calendrier des échéances (vue mois).** Écran `#/calendar`
 (sidebar 🗓️), grille lun→dim 6 semaines, ‹ mois › + Aujourd'hui, week-ends
 grisés, aujourd'hui surligné. Échéances non ignorées (proposées en

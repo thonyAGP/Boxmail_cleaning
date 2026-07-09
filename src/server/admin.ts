@@ -7,6 +7,8 @@ import {
   getAccountRecord,
   resolveAccount,
   upsertAccount,
+  renameAccount,
+  removeAccount,
 } from '../services/accounts.js';
 import {
   enrollAccount,
@@ -231,20 +233,25 @@ export function buildAdminRouter(): Router {
     '/overview',
     guard(async (_req, res) => {
       const enrolled = await listAccountNames();
-      const enrolledInfo = [];
-      for (const name of enrolled) {
-        const rec = await getAccountRecord(name);
-        if (rec) enrolledInfo.push({ account: name, username: rec.username });
-      }
       let overview: Awaited<ReturnType<typeof globalOverview>> = {
         accounts: [],
         totals: { accounts: 0, indexedMessages: 0, unseenInbox: 0 },
       };
+      const colors = new Map<string, string | null>();
       try {
         await ensureDbReady();
         overview = await globalOverview();
+        for (const a of await db.account.findMany({ select: { slug: true, color: true } })) {
+          colors.set(a.slug, a.color);
+        }
       } catch {
         // Base non migrée : on renvoie une vue vide, le front l'explique.
+      }
+      const enrolledInfo = [];
+      for (const name of enrolled) {
+        const rec = await getAccountRecord(name);
+        if (rec)
+          enrolledInfo.push({ account: name, username: rec.username, color: colors.get(name) ?? null });
       }
       const indexed = new Set(overview.accounts.map((a) => a.account));
       res.json({
@@ -252,6 +259,111 @@ export function buildAdminRouter(): Router {
         enrolled: enrolledInfo,
         neverSynced: enrolled.filter((n) => !indexed.has(n)),
       });
+    }),
+  );
+
+  // --- Paramètres des comptes (L5.8) --------------------------------------------
+  // Couleur d'affichage : hex #rrggbb ou null (= couleur automatique).
+  router.patch(
+    '/accounts/:slug',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const rec = await getAccountRecord(slug);
+      if (!rec) {
+        res.status(404).json({ error: `Compte "${slug}" inconnu.` });
+        return;
+      }
+      const raw = req.body?.color;
+      const color = raw === null || raw === '' ? null : String(raw).trim().toLowerCase();
+      if (color !== null && !/^#[0-9a-f]{6}$/.test(color)) {
+        res.status(400).json({ error: 'Couleur invalide — format attendu : #rrggbb.' });
+        return;
+      }
+      await ensureDbReady();
+      await db.account.upsert({
+        where: { slug },
+        create: { slug, emailAddress: rec.username, color },
+        update: { color },
+      });
+      await recordOperation({
+        account: slug,
+        tool: 'ui_account_color',
+        params: { color },
+        result: color ? `couleur ${color}` : 'couleur automatique',
+      });
+      res.json({ ok: true, color });
+    }),
+  );
+
+  // Renommage : l'étiquette locale change, le token est conservé. L'index
+  // SQLite est un cache reconstructible : on purge l'ancien slug (renommer la
+  // clé primaire avec ses relations serait plus fragile que ça ne vaut) et la
+  // prochaine sync réindexe sous le nouveau nom. La couleur suit le compte.
+  router.post(
+    '/accounts/:slug/rename',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const to = String(req.body?.to ?? '').trim();
+      if (!/^[a-z0-9][a-z0-9_-]{1,29}$/i.test(to)) {
+        res.status(400).json({
+          error:
+            'Nouveau nom invalide : 2 à 30 caractères, lettres/chiffres/tirets/underscores uniquement.',
+        });
+        return;
+      }
+      const rec = await getAccountRecord(slug);
+      if (!rec) {
+        res.status(404).json({ error: `Compte "${slug}" inconnu.` });
+        return;
+      }
+      await renameAccount(slug, to);
+      let colorKept: string | null = null;
+      try {
+        await ensureDbReady();
+        const old = await db.account.findUnique({ where: { slug }, select: { color: true } });
+        colorKept = old?.color ?? null;
+        await db.account.deleteMany({ where: { slug } });
+        await db.account.create({
+          data: { slug: to, emailAddress: rec.username, color: colorKept },
+        });
+      } catch {
+        // Base absente / non migrée : rien à purger.
+      }
+      await recordOperation({
+        account: slug,
+        tool: 'ui_account_rename',
+        params: { to },
+        result: `renommé en "${to}" — index purgé, resynchronisation nécessaire`,
+      });
+      res.json({ ok: true, account: to, needsSync: true });
+    }),
+  );
+
+  // Suppression : token effacé d'accounts.json + index purgé. Rien n'est touché
+  // côté Microsoft — la boîte reste intacte, seul l'accès local est révoqué.
+  router.delete(
+    '/accounts/:slug',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const rec = await getAccountRecord(slug);
+      if (!rec) {
+        res.status(404).json({ error: `Compte "${slug}" inconnu.` });
+        return;
+      }
+      await removeAccount(slug);
+      try {
+        await ensureDbReady();
+        await db.account.deleteMany({ where: { slug } });
+      } catch {
+        // Base absente / non migrée : rien à purger.
+      }
+      await recordOperation({
+        account: slug,
+        tool: 'ui_account_remove',
+        params: { username: rec.username },
+        result: 'compte retiré de Mail Assistant (token effacé, index purgé) — la boîte Microsoft reste intacte',
+      });
+      res.json({ ok: true });
     }),
   );
 

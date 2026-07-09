@@ -451,3 +451,12 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .cal-more { font-size: 11px; }
 .cal-side-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
 .cal-side-row:last-child { border-bottom: none; }
+
+/* ---------- Paramètres (L5.8) ---------- */
+.set-line { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid #f0f2f7; font-size: 13.5px; }
+.set-line:last-child { border-bottom: none; }
+input[type="color"].set-color {
+  width: 34px; height: 26px; padding: 1px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--card); cursor: pointer; vertical-align: middle;
+}
+.set-color-reset { margin-left: 4px; }

@@ -56,6 +56,12 @@ export const api = {
         (unseen ? '&unseen=1' : '') +
         (attachments ? '&attachments=1' : ''),
     ),
+  accountSetColor: (slug, color) =>
+    request('PATCH', `/accounts/${encodeURIComponent(slug)}`, { color }),
+  accountRename: (slug, to) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/rename`, { to }),
+  accountRemove: (slug) =>
+    request('DELETE', `/accounts/${encodeURIComponent(slug)}`),
   startSync: (slug, mode) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),

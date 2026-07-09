@@ -20,8 +20,12 @@ const ACCOUNT_PALETTE = [
 let accountColorMap = new Map();
 
 function rebuildAccountColors() {
+  // La couleur choisie dans Paramètres (L5.8) prime sur la palette automatique.
   accountColorMap = new Map(
-    (overviewCache?.enrolled ?? []).map((e, i) => [e.account, ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]]),
+    (overviewCache?.enrolled ?? []).map((e, i) => [
+      e.account,
+      e.color || ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length],
+    ]),
   );
 }
 
@@ -318,6 +322,8 @@ function highlightNav() {
     document.querySelector('[data-nav="deadlines"]')?.classList.add('active');
   } else if (hash.startsWith('#/calendar')) {
     document.querySelector('[data-nav="calendar"]')?.classList.add('active');
+  } else if (hash.startsWith('#/settings')) {
+    document.querySelector('[data-nav="settings"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -349,6 +355,8 @@ function route() {
     renderDeadlines();
   } else if (hash.startsWith('#/calendar')) {
     renderCalendar();
+  } else if (hash.startsWith('#/settings')) {
+    renderSettings();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -2374,6 +2382,147 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ---------------------------------------------------------------- Paramètres (L5.8)
+async function renderSettings() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>⚙️ Paramètres</h1>
+      <div class="sub">Gère tes boîtes (nom, couleur, retrait) et consulte l'état du serveur.
+      Supprimer une boîte ici ne touche JAMAIS tes mails chez Microsoft : seul l'accès de
+      Mail Assistant est retiré.</div></div></div>
+    <div id="settings-notice"></div>
+    <div id="settings-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  await refreshOverview().catch(() => {});
+  renderSettingsBody();
+}
+
+function renderSettingsBody() {
+  const body = $('#settings-body');
+  if (!body) return;
+  const enrolled = overviewCache?.enrolled ?? [];
+  const byAccount = new Map((overviewCache?.accounts ?? []).map((a) => [a.account, a]));
+
+  const rows = enrolled.map((e) => {
+    const ov = byAccount.get(e.account);
+    return `<tr>
+      <td><input type="color" class="set-color" data-account="${esc(e.account)}"
+        value="${esc(accountColor(e.account))}" title="Choisir la couleur de cette boîte">
+        ${e.color ? `<button class="btn btn-sm set-color-reset" data-account="${esc(e.account)}" title="Revenir à la couleur automatique">auto</button>` : ''}</td>
+      <td><strong>${esc(e.account)}</strong></td>
+      <td class="muted">${esc(e.username)}</td>
+      <td class="muted" style="white-space:nowrap">${ov ? `${fmtNum(ov.indexedMessages)} mails · sync ${fmtDateTime(ov.lastSyncAt)}` : 'jamais synchronisée'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm set-rename" data-account="${esc(e.account)}">✏️ Renommer</button>
+        <button class="btn btn-sm set-remove" data-account="${esc(e.account)}" style="color:var(--red)">🗑️ Supprimer</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const v = serverVersion;
+  body.innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>📧 Boîtes enrôlées</h2></div>
+      <div class="panel-body tight">
+        ${enrolled.length === 0
+          ? '<div class="empty">Aucune boîte enrôlée.</div>'
+          : `<table><thead><tr><th style="width:90px">Couleur</th><th>Nom</th><th>Adresse</th><th>Index</th><th></th></tr></thead>
+             <tbody>${rows}</tbody></table>`}
+      </div>
+      <div class="panel-body muted" style="font-size:12.5px; padding-top:0">
+        ✏️ Renommer change uniquement le nom affiché ici (l'accès est conservé) ; l'index local
+        est reconstruit à la synchronisation suivante. 🗑️ Supprimer retire la boîte de Mail
+        Assistant — tes mails chez Microsoft ne bougent pas.</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>🖥️ Serveur</h2></div>
+      <div class="panel-body">
+        <div class="set-line"><span class="muted">Version</span><span>${v ? `${esc(v.commit)} · ${esc(v.date)}` : '—'}</span></div>
+        <div class="set-line"><span class="muted">Superviseur (relance auto)</span>
+          <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
+        <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>
+          <span>${smtpEnabled ? '✅ activé' : '✕ désactivé (ENABLE_SMTP_SEND=false)'}</span></div>
+        <div class="set-line"><span class="muted">Boîtes indexées</span>
+          <span>${fmtNum(overviewCache?.totals?.accounts ?? 0)} boîte(s) · ${fmtNum(overviewCache?.totals?.indexedMessages ?? 0)} mails</span></div>
+      </div>
+    </div>`;
+
+  const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  body.querySelectorAll('.set-color').forEach((input) => {
+    input.addEventListener('change', async () => {
+      try {
+        await api.accountSetColor(input.dataset.account, input.value);
+        await refreshOverview();
+        renderSettingsBody();
+        notice(`<div class="notice">🎨 Couleur de <strong>${esc(input.dataset.account)}</strong> mise à jour.</div>`);
+      } catch (err) {
+        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      }
+    });
+  });
+  body.querySelectorAll('.set-color-reset').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api.accountSetColor(btn.dataset.account, null);
+        await refreshOverview();
+        renderSettingsBody();
+        notice(`<div class="notice">🎨 <strong>${esc(btn.dataset.account)}</strong> repasse en couleur automatique.</div>`);
+      } catch (err) {
+        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      }
+    });
+  });
+
+  body.querySelectorAll('.set-rename').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const slug = btn.dataset.account;
+      const to = prompt(
+        `Nouveau nom pour « ${slug} » ?\n(2 à 30 caractères : lettres, chiffres, tirets, underscores)`,
+        slug,
+      );
+      if (!to || to.trim() === slug) return;
+      if (!confirm(
+        `Renommer « ${slug} » en « ${to.trim()} » ?\n\nL'accès à la boîte est conservé, mais l'index local sera vidé : il faudra relancer une synchronisation (bouton sur la vue de la boîte).`,
+      )) return;
+      btn.disabled = true;
+      try {
+        const r = await api.accountRename(slug, to.trim());
+        await refreshOverview();
+        renderSettingsBody();
+        notice(`<div class="notice">✏️ Boîte renommée en <strong>${esc(r.account)}</strong>.
+          Pense à relancer une synchronisation : <a href="#/account/${encodeURIComponent(r.account)}">ouvrir la boîte</a>.</div>`);
+      } catch (err) {
+        btn.disabled = false;
+        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      }
+    });
+  });
+
+  body.querySelectorAll('.set-remove').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const slug = btn.dataset.account;
+      if (!confirm(
+        `Retirer la boîte « ${slug} » de Mail Assistant ?\n\nTes mails chez Microsoft ne sont PAS touchés. Seuls l'accès local (token) et l'index sont effacés. Tu pourras la ré-enrôler plus tard.`,
+      )) return;
+      const typed = prompt(`Confirmation : tape exactement le nom de la boîte à retirer (« ${slug} »)`);
+      if (typed !== slug) {
+        if (typed !== null) notice('<div class="notice warn">Nom saisi différent — suppression annulée.</div>');
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await api.accountRemove(slug);
+        await refreshOverview();
+        renderSettingsBody();
+        notice(`<div class="notice">🗑️ Boîte <strong>${esc(slug)}</strong> retirée de Mail Assistant (mails intacts chez Microsoft).</div>`);
+      } catch (err) {
+        btn.disabled = false;
+        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      }
+    });
+  });
 }
 
 // ------------------------------------------------- Calendrier des échéances (L5.7)
