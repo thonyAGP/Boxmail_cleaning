@@ -188,6 +188,16 @@ Vérifier :
 npm run enroll -- --list
 ```
 
+Gestion des comptes :
+
+```bash
+npm run enroll -- --rename ancien --to nouveau   # renommer (token conservé)
+npm run enroll -- --remove nom                   # supprimer (token effacé)
+```
+
+> Après un renommage, l'index local de l'ancien nom est purgé : relancer
+> `npm run sync -- --account <nouveau> --full` pour réindexer.
+
 ---
 
 ## 6. Lancer le serveur

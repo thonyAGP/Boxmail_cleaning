@@ -71,6 +71,27 @@ export async function upsertAccount(name: string, enrolled: EnrolledAccount): Pr
   logger.info('compte enrôlé/mis à jour', { account: name, username: enrolled.username });
 }
 
+/** Renomme un compte (l'étiquette locale uniquement, le token est conservé). */
+export async function renameAccount(oldName: string, newName: string): Promise<void> {
+  const store = await load();
+  const rec = store.accounts[oldName];
+  if (!rec) throw new Error(`Compte "${oldName}" inconnu.`);
+  if (store.accounts[newName]) throw new Error(`Le nom "${newName}" est déjà utilisé.`);
+  delete store.accounts[oldName];
+  store.accounts[newName] = { ...rec, account: newName, updatedAt: new Date().toISOString() };
+  await save(store);
+  logger.info('compte renommé', { from: oldName, to: newName });
+}
+
+/** Supprime un compte enrôlé (révoque l'accès local ; le token est effacé). */
+export async function removeAccount(name: string): Promise<void> {
+  const store = await load();
+  if (!store.accounts[name]) throw new Error(`Compte "${name}" inconnu.`);
+  delete store.accounts[name];
+  await save(store);
+  logger.info('compte supprimé', { account: name });
+}
+
 export async function listAccountNames(): Promise<string[]> {
   const store = await load();
   return Object.keys(store.accounts).sort();
