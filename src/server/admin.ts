@@ -51,6 +51,7 @@ import {
 import { generateBrief, latestBrief } from '../services/brief.js';
 import { imapService } from '../services/imap.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
+import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
@@ -161,7 +162,7 @@ export function buildAdminRouter(): Router {
   });
 
   router.get('/me', (req, res) => {
-    res.json({ authenticated: sessionValid(req) });
+    res.json({ authenticated: sessionValid(req), smtpEnabled: config.smtp.enabled });
   });
 
   // Retour OAuth de l'enrôlement interactif. Arrive SANS cookie de session
@@ -798,6 +799,106 @@ export function buildAdminRouter(): Router {
       }
       await reflectActionInIndex(slug, folder, uid, action as 'delete' | 'move' | 'seen' | 'unseen');
       res.json({ ok: true, action, ...result });
+    }),
+  );
+
+  // --- Envoi de mails (L5.3) : répondre / transférer / nouveau ------------------
+  // Garde-fous : destinataires validés, confirmation côté interface, envoi
+  // journalisé (ui_send_mail) avec destinataires + objet, copie déposée dans
+  // « Éléments envoyés » (best effort), jamais d'envoi sans clic explicite.
+  router.post(
+    '/accounts/:slug/send',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      let to: string[];
+      let cc: string[];
+      try {
+        to = validateRecipients(req.body?.to, 'À');
+        cc = validateRecipients(req.body?.cc, 'Cc');
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+        return;
+      }
+      const subject = String(req.body?.subject ?? '').trim().slice(0, 500);
+      const text = String(req.body?.text ?? '').slice(0, 200_000);
+      if (to.length === 0) {
+        res.status(400).json({ error: 'Au moins un destinataire est requis.' });
+        return;
+      }
+      if (!subject) {
+        res.status(400).json({ error: 'L\'objet est requis.' });
+        return;
+      }
+      if (!text.trim()) {
+        res.status(400).json({ error: 'Le message est vide.' });
+        return;
+      }
+
+      // Réponse/transfert : on relie le fil via le Message-ID du mail d'origine.
+      const replyTo = req.body?.replyTo as
+        | { folder?: unknown; uid?: unknown; mode?: unknown }
+        | undefined;
+      let inReplyTo: string | undefined;
+      let references: string[] | undefined;
+      let original: { id: number; uid: number; folder: string } | null = null;
+      const mode = replyTo?.mode === 'forward' ? 'forward' : replyTo ? 'reply' : 'new';
+      if (replyTo && typeof replyTo.folder === 'string' && Number.isInteger(replyTo.uid)) {
+        const m = await db.message.findFirst({
+          where: {
+            accountSlug: slug,
+            uid: replyTo.uid as number,
+            isDeleted: false,
+            folder: { path: replyTo.folder },
+          },
+          select: { id: true, uid: true, internetMessageId: true, folder: { select: { path: true } } },
+        });
+        if (m) {
+          original = { id: m.id, uid: m.uid, folder: m.folder.path };
+          if (m.internetMessageId && mode === 'reply') {
+            inReplyTo = m.internetMessageId;
+            references = [m.internetMessageId];
+          }
+        }
+      }
+
+      const rec = await resolveAccount(slug);
+      const { raw, recipients, from } = await sendEmail(rec, {
+        to,
+        cc,
+        subject,
+        text,
+        inReplyTo,
+        references,
+      });
+
+      // Copie « Éléments envoyés » : best effort (l'envoi a déjà réussi).
+      let copiedTo: string | null = null;
+      try {
+        copiedTo = (await imapService.appendToSent(rec, raw)).folder;
+      } catch (err) {
+        logger.warn('copie Envoyés impossible', { account: slug, error: (err as Error).message });
+      }
+
+      // Réponse : marque le mail d'origine répondu (IMAP + index) — les
+      // écrans « Réponses en attente » se mettent à jour sans re-sync.
+      if (original && mode === 'reply') {
+        await imapService
+          .markEmails(rec, original.folder, [original.uid], ['\\Answered'], [])
+          .catch(() => {});
+        await db.message
+          .update({ where: { id: original.id }, data: { isAnswered: true } })
+          .catch(() => {});
+      }
+
+      await recordOperation({
+        account: rec.account,
+        tool: 'ui_send_mail',
+        folder: copiedTo ?? undefined,
+        params: { mode, to, cc, subject },
+        items: [{ subject, date: new Date().toISOString() }],
+        result: `envoyé à ${recipients.join(', ')}${copiedTo ? ` (copie dans ${copiedTo})` : ' (copie Envoyés impossible)'}`,
+      });
+      res.json({ ok: true, from, sentTo: recipients, copiedTo, mode });
     }),
   );
 

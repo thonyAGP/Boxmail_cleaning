@@ -442,6 +442,18 @@ class ImapService {
     return this.moveEmails(rec, folder, uids, trash);
   }
 
+  /**
+   * Dépose une copie d'un mail envoyé dans « Éléments envoyés » (APPEND).
+   * Outlook ne copie PAS automatiquement les envois SMTP : sans ça, le mail
+   * n'apparaîtrait nulle part dans la boîte.
+   */
+  async appendToSent(rec: AccountRecord, raw: Buffer): Promise<{ folder: string }> {
+    const client = await this.getClient(rec);
+    const sent = (await this.findSpecialFolder(client, '\\Sent')) ?? 'Sent';
+    await client.append(sent, raw, ['\\Seen']);
+    return { folder: sent };
+  }
+
   /** UIDs correspondant à une recherche (utilisé par bulk_delete_by_sender). */
   async searchUids(rec: AccountRecord, folder: string, query: SearchObject): Promise<number[]> {
     const client = await this.getClient(rec);

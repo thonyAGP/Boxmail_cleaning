@@ -9,6 +9,7 @@ import { api, fmtSize, fmtDate, fmtDateTime, fmtNum, esc } from './api.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 let overviewCache = null;
 let serverVersion = null;
+let smtpEnabled = false; // renseigné par /api/me au chargement
 
 // ---------------------------------------------------------------- Auth & boot
 async function boot() {
@@ -38,6 +39,7 @@ function showLogin(message) {
 async function showApp() {
   $('#login-view').classList.add('hidden');
   $('#app-view').classList.remove('hidden');
+  api.me().then((me) => { smtpEnabled = Boolean(me.smtpEnabled); }).catch(() => {});
   api.version().then((v) => {
     serverVersion = v;
     $('#version-line').textContent =
@@ -902,6 +904,19 @@ function opLine(op) {
       break;
     case 'ui_mark_message':
       title = `🏷️ <strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
+      break;
+    case 'ui_bulk_delete':
+      title = `🗑️ <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(sélection boîte de réception)</span>`;
+      break;
+    case 'ui_bulk_move':
+      title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(sélection)</span>`;
+      break;
+    case 'ui_bulk_mark':
+      title = `🏷️ <strong>${fmtNum(n)} mails</strong> marqués « ${p.action === 'seen' ? 'lus' : 'non lus'} »`;
+      break;
+    case 'ui_send_mail':
+      title = `✉️ Mail envoyé — <strong>${esc(p.subject ?? '')}</strong> à ${esc(((p.to ?? [])).join(', '))}` +
+        (p.mode === 'reply' ? ' <span class="muted">(réponse)</span>' : p.mode === 'forward' ? ' <span class="muted">(transfert)</span>' : '');
       break;
     case 'move_emails':
       title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
@@ -2295,6 +2310,7 @@ async function renderInbox(slugFromHash) {
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
         <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
       <button class="btn" id="inbox-refresh">↻ Actualiser</button>
+      <button class="btn btn-primary" id="inbox-compose">✉️ Nouveau mail</button>
     </div></div>
     <div id="inbox-notice"></div>
     <div id="inbox-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -2320,6 +2336,13 @@ async function renderInbox(slugFromHash) {
     loadInbox();
   });
   $('#inbox-refresh').addEventListener('click', loadInbox);
+  $('#inbox-compose').addEventListener('click', () => {
+    if (!smtpEnabled) {
+      alert("Envoi désactivé sur ce serveur (ENABLE_SMTP_SEND=false dans le .env).");
+      return;
+    }
+    openComposeModal({ account: inboxState.account });
+  });
 
   await loadInboxFolders();
   await loadInbox();
@@ -2697,6 +2720,8 @@ async function openReader(item, row, opts = {}) {
       Téléchargement du mail depuis la boîte…</div></div>
     <div class="reader-attachments hidden" id="reader-attachments"></div>
     <div class="reader-actions" id="reader-actions">
+      ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
+      <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-toggle-seen">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
       <select id="reader-move"><option value="">📦 Déplacer vers…</option></select>
       <button class="btn btn-sm" id="reader-delete" style="color:var(--red)">🗑️ Corbeille</button>
@@ -2715,9 +2740,11 @@ async function openReader(item, row, opts = {}) {
 
   // Corps du mail : lecture IMAP live. En cas d'échec (boîte injoignable),
   // on l'explique proprement — les actions restent disponibles.
+  let loadedText = ''; // corps téléchargé, pour la citation dans une réponse
   api.readMessage(item.account, item.folder, item.uid).then((body) => {
     const el = $('#reader-body');
     if (!el) return;
+    loadedText = body.text || '';
     el.textContent = body.text || '(mail sans contenu texte)';
     if (body.truncated) {
       const note = document.createElement('div');
@@ -2810,6 +2837,109 @@ async function openReader(item, row, opts = {}) {
     if (await doAction(e.target, 'delete')) {
       onRemoved(item);
       closeReader();
+    }
+  });
+
+  // Répondre / transférer (L5.3) — pré-remplit la modale de composition.
+  const quoted = () =>
+    loadedText
+      ? loadedText.split('\n').map((l) => `> ${l}`).join('\n')
+      : '> (contenu non téléchargé)';
+  $('#reader-reply')?.addEventListener('click', () => {
+    openComposeModal({
+      account: item.account,
+      to: item.fromEmail,
+      subject: /^re\s*:/i.test(item.subject) ? item.subject : `Re: ${item.subject}`,
+      text: `\n\nLe ${fmtDateTime(item.date)}, ${item.fromName || item.fromEmail} a écrit :\n${quoted()}`,
+      replyRef: { folder: item.folder, uid: item.uid, mode: 'reply' },
+    });
+  });
+  $('#reader-forward')?.addEventListener('click', () => {
+    openComposeModal({
+      account: item.account,
+      to: '',
+      subject: /^(fwd?|tr)\s*:/i.test(item.subject) ? item.subject : `Fwd: ${item.subject}`,
+      text: `\n\n---------- Mail transféré ----------\nDe : ${item.fromName || ''} <${item.fromEmail}>\nDate : ${fmtDateTime(item.date)}\nObjet : ${item.subject}\n\n${loadedText || '(contenu non téléchargé)'}`,
+      replyRef: { folder: item.folder, uid: item.uid, mode: 'forward' },
+    });
+  });
+}
+
+// ------------------------------------------------ Composer un mail (L5.3)
+function openComposeModal({ account, to = '', cc = '', subject = '', text = '', replyRef = null }) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="width:640px">
+    <div class="modal-head"><h2>✉️ ${replyRef?.mode === 'reply' ? 'Répondre' : replyRef?.mode === 'forward' ? 'Transférer' : 'Nouveau mail'}
+      <span class="muted" style="font-size:12.5px; font-weight:400">depuis ${esc(account)}</span></h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="compose-grid">
+        <label>À</label><input type="text" id="c-to" placeholder="adresse@exemple.fr (plusieurs : séparer par des virgules)" value="${esc(to)}">
+        <label>Cc</label><input type="text" id="c-cc" placeholder="optionnel" value="${esc(cc)}">
+        <label>Objet</label><input type="text" id="c-subject" value="${esc(subject)}">
+      </div>
+      <textarea id="c-text" rows="12" style="width:100%; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font:inherit; resize:vertical"></textarea>
+      <div id="c-error"></div>
+      <div class="trash-note" style="margin-top:10px">🛟 Rien ne part sans ton clic : l'envoi demande une
+        confirmation, est journalisé (destinataires + objet), et une copie est déposée dans
+        « Éléments envoyés ».</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="c-cancel">Annuler</button>
+      <button class="btn btn-primary" id="c-send">✉️ Envoyer</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  $('#c-cancel').addEventListener('click', closeModal);
+  const ta = $('#c-text');
+  ta.value = text;
+  // Réponse : curseur en haut, au-dessus de la citation.
+  ta.focus();
+  ta.setSelectionRange(0, 0);
+
+  $('#c-send').addEventListener('click', async () => {
+    const toVal = $('#c-to').value.trim();
+    const ccVal = $('#c-cc').value.trim();
+    const subjectVal = $('#c-subject').value.trim();
+    const textVal = ta.value;
+    const errEl = $('#c-error');
+    errEl.innerHTML = '';
+    if (!toVal || !subjectVal || !textVal.trim()) {
+      errEl.innerHTML = '<div class="notice warn" style="margin-top:10px">Destinataire, objet et message sont requis.</div>';
+      return;
+    }
+    const nbDest = toVal.split(/[,;]/).filter((s) => s.trim()).length +
+      ccVal.split(/[,;]/).filter((s) => s.trim()).length;
+    if (!confirm(`Envoyer ce mail à ${nbDest} destinataire(s) depuis ${account} ?`)) return;
+
+    const btn = $('#c-send');
+    btn.disabled = true;
+    btn.textContent = 'Envoi en cours…';
+    try {
+      const r = await api.sendMail(account, {
+        to: toVal,
+        cc: ccVal,
+        subject: subjectVal,
+        text: textVal,
+        replyTo: replyRef ?? undefined,
+      });
+      $('.modal-body').innerHTML = `<div class="notice">✅ Mail envoyé à
+        <strong>${r.sentTo.map(esc).join(', ')}</strong>.<br>
+        ${r.copiedTo ? `Copie déposée dans « ${esc(r.copiedTo)} ».`
+          : '⚠️ La copie dans « Éléments envoyés » n\'a pas pu être déposée (le mail est bien parti).'}</div>`;
+      $('.modal-foot').innerHTML = '<button class="btn btn-primary" id="c-done">Fermer</button>';
+      $('#c-done').addEventListener('click', () => {
+        closeModal();
+        closeReader(); // le mail est traité : on referme aussi le panneau de lecture
+        route(); // rafraîchit l'écran (réponses en attente, etc.)
+      });
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '✉️ Envoyer';
+      errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
     }
   });
 }

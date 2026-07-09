@@ -65,6 +65,8 @@ export const api = {
     }
     return request('GET', `/search?${q}`);
   },
+  sendMail: (slug, payload) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),
   listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false } = {}) => {
     const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit) });
     if (unseen) q.set('unseen', '1');

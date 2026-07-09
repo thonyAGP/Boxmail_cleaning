@@ -255,6 +255,13 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
   padding: 10px 14px; font-size: 13px;
 }
 
+/* ---------- Composer un mail (L5.3) ---------- */
+.compose-grid {
+  display: grid; grid-template-columns: 52px 1fr; gap: 8px 10px; align-items: center;
+}
+.compose-grid label { color: var(--muted); font-size: 12.5px; text-align: right; }
+.compose-grid input { width: 100%; }
+
 /* ---------- Modale ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(15, 27, 61, .55); z-index: 100;

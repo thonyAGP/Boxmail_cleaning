@@ -59,7 +59,9 @@ export const config = {
     ],
   },
   smtp: {
-    enabled: bool('ENABLE_SMTP_SEND', false),
+    // Activé par défaut depuis le rattrapage maquette (L5.3, 07/2026) : la
+    // composition passe par l'interface avec confirmation + journal.
+    enabled: bool('ENABLE_SMTP_SEND', true),
     host: optional('SMTP_HOST', 'smtp-mail.outlook.com'),
     port: int('SMTP_PORT', 587),
   },
