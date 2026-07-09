@@ -273,7 +273,7 @@ l'index, original marqué \Answered IMAP+index en cas de réponse, journal
 (citation, Re:/Fwd:), modale À/Cc/Objet/texte, ✉️ Nouveau mail (inbox),
 `/api/me` expose `smtpEnabled`.
 
-### ⬜ L5.4 — Analyse du mail dans le panneau de lecture
+### ✅ L5.4 — Analyse du mail dans le panneau de lecture — LIVRÉ
 
 La colonne « Analyse Mail Assistant » de la maquette, pour LE mail ouvert :
 score d'importance + raisons (`explainImportance` existe déjà), réponse
@@ -294,10 +294,73 @@ modale ＋ Nouvelle tâche), badge sidebar (rouge si retard), panneau
 dashboard, bouton ☑️ Tâche dans le panneau de lecture, « ☑️ → tâche » sur
 les échéances confirmées, rubrique tasks du brief (chip cliquable).
 
-### Ensuite (déjà au backlog, ordre à décider avec l'utilisateur)
+### ⬜ L5.6 — Boîte unifiée + code couleur par boîte (retour utilisateur 07/2026)
 
-Calendrier des échéances (vue mois), règles de classement (L7 — gros morceau),
-renommer/supprimer un compte depuis Paramètres, page Aide.
+**Objectif.** « Pas pratique d'avoir tous les mails sans différencier les
+boîtes » : vue « Toutes les boîtes » dans la boîte de réception, et une
+COULEUR stable par compte, visible partout.
+
+- Helper `accountColor(slug)` (web) : palette de 10 teintes distinctes,
+  attribution déterministe par hash du slug (candidate à la personnalisation
+  en L5.8). Helper `accountChip(slug)` : pastille colorée réutilisable.
+- Sidebar : point coloré devant chaque compte.
+- Inbox : option « 🌐 Toutes les boîtes » (DÉFAUT, mémorisé localStorage) ;
+  backend GET `/api/messages?offset&limit&unseen` (service
+  `listUnifiedInbox` : Message role=inbox tous comptes, tri date desc,
+  total) ; colonne Boîte (chip colorée) + liseré gauche coloré par ligne ;
+  actions en masse multi-comptes (groupage par compte → endpoints bulk
+  existants, séquentiel) ; lecture OK (item porte account/folder/uid).
+- Chips compte colorées sur TOUS les écrans qui affichent `badge blue`
+  account (réponses, relances, importants, échéances, tâches, recherche,
+  dashboard).
+
+### ⬜ L5.7 — Calendrier des échéances (vue mois)
+
+Écran `#/calendar` (lien sidebar 🗓️ ou onglet dans Échéances) : grille
+mensuelle (lun→dim, navigation ‹ mois ›), échéances confirmées+proposées
+posées sur leurs jours (pastille type + couleur du compte), clic jour →
+liste latérale des échéances + tâches à échéance du jour, clic échéance →
+panneau de lecture du mail source. Données : `/api/attention/deadlines` +
+`/api/tasks` (dueDate) existants — AUCUN nouveau backend. Aujourd'hui
+surligné, week-ends grisés.
+
+### ⬜ L5.8 — Paramètres : comptes (renommer, supprimer, couleur)
+
+Écran `#/settings` (lien sidebar ⚙️ Paramètres) : liste des comptes avec
+adresse, état token, dernière sync ; actions par compte : ✏️ Renommer
+(migration douce : renameAccount existe, purge index + invite resync),
+🎨 Couleur (migration Prisma `Account.color String?` + PATCH
+`/api/accounts/:slug` ; accountColor() lit la couleur perso d'abord),
+🗑️ Supprimer (removeAccount + purge, double confirmation typée). Section
+serveur : version, superviseur, SMTP on/off (lecture seule), chemin base.
+Journalisation des 3 actions.
+
+### ⬜ L5.9 — Pièces jointes : indexation légère + téléchargement
+
+Sync : fetch `bodyStructure` → colonnes `hasAttachments Boolean` +
+`attachmentCount Int` (migration) sur les NOUVEAUX mails (backfill = resync
+complète, le signaler dans l'UI). Inbox/recherche : badge 📎 + filtre
+« avec pièces jointes ». Panneau de lecture : téléchargement d'une pièce
+jointe — GET `/api/accounts/:slug/messages/:folder/:uid/attachments/:index`
+(imapflow download de la partie, Content-Disposition, cap 25 Mo, journal
+non requis — lecture). Workflow SPEC « retrouve le dernier contrat ».
+
+### ⬜ L5.10 — Aide & finitions UX
+
+Page `#/help` (lien sidebar ❓ Aide) : FAQ des pièges connus (navigation
+privée/enrôlement, superviseur/MàJ, AADSTS50011, corbeille 30 j, sync),
+raccourcis de l'interface, « en cas de pépin » (journal, relancer le .bat).
+Finitions : tri par colonnes dans l'inbox (date/expéditeur/sujet), Échap
+ferme panneau/modales partout, focus auto des champs, bouton ⬆ haut de page
+sur les longues listes.
+
+### ⬜ L5.11 — Auto-sync locale (pré-requis L6)
+
+Env `SYNC_INTERVAL_MINUTES` (défaut 0=off en local, 30 recommandé serveur) :
+planificateur dans index.ts (setInterval) qui lance le job sync-all `recent`
+si aucun job en cours ; visible dans le chip d'activité ; ligne « prochaine
+sync auto dans X min » dans Paramètres ; log discret. Transforme l'assistant
+en outil « toujours à jour » et déverrouille la L6.
 
 ---
 
