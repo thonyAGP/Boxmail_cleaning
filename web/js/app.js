@@ -42,6 +42,98 @@ async function showApp() {
   }).catch(() => {});
   await refreshOverview();
   route();
+  startJobWatcher();
+}
+
+// ---------------------------------------------------------------- Suivi global
+// Les tâches (syncs, nettoyages…) tournent côté serveur : changer de page ne
+// les interrompt pas. Ce watcher les rend visibles partout et rafraîchit les
+// vues quand elles se terminent.
+const watchedRunning = new Set();
+let jobWatcherTimer = null;
+
+function startJobWatcher() {
+  if (jobWatcherTimer) return;
+  jobWatcherTimer = setInterval(pollJobs, 2500);
+  pollJobs();
+}
+
+function jobLabel(kind) {
+  if (kind.startsWith('sync:')) return `🔄 Sync ${kind.slice(5)}`;
+  if (kind.startsWith('cleanup:')) return `🧹 Nettoyage ${kind.slice(8)}`;
+  if (kind.startsWith('enroll:')) return `＋ Ajout ${kind.slice(7)}`;
+  if (kind === 'sync-all') return '🔄 Sync de toutes les boîtes';
+  if (kind === 'update') return '⬆️ Mise à jour';
+  return `⚙️ ${kind}`;
+}
+
+async function pollJobs() {
+  if ($('#app-view').classList.contains('hidden')) return;
+  let jobs;
+  try {
+    ({ jobs } = await api.jobs());
+  } catch {
+    return;
+  }
+  const running = jobs.filter((j) => j.status === 'running');
+
+  // Une tâche vient de se terminer → rafraîchir sidebar (+ dashboard si affiché).
+  let finished = false;
+  for (const id of [...watchedRunning]) {
+    if (!running.some((j) => j.id === id)) {
+      watchedRunning.delete(id);
+      finished = true;
+    }
+  }
+  for (const j of running) watchedRunning.add(j.id);
+  if (finished) {
+    refreshOverview()
+      .then(() => {
+        if (!(location.hash || '#/dashboard').startsWith('#/account/')) route();
+      })
+      .catch(() => {});
+  }
+
+  // Chip d'activité en bas à droite (toutes pages).
+  const chip = $('#activity-chip');
+  if (running.length === 0) {
+    chip.classList.add('hidden');
+  } else {
+    chip.classList.remove('hidden');
+    chip.innerHTML = running
+      .map(
+        (j) => `<div class="chip-line" data-kind="${esc(j.kind)}">
+        <span class="spinner"></span><strong>${jobLabel(j.kind)}</strong>
+        <span style="opacity:.7; font-size:11px">${esc((j.lastProgress ?? '').slice(0, 44))}</span></div>`,
+      )
+      .join('');
+    chip.querySelectorAll('.chip-line').forEach((el) => {
+      el.addEventListener('click', () => {
+        const kind = el.dataset.kind;
+        if (kind.startsWith('sync:') || kind.startsWith('cleanup:')) {
+          location.hash = `#/account/${encodeURIComponent(kind.split(':')[1])}`;
+        }
+      });
+    });
+  }
+
+  // Badge ⏳ sur les comptes occupés dans la sidebar.
+  document.querySelectorAll('#accounts-nav [data-account]').forEach((a) => {
+    const slug = a.dataset.account;
+    const busy = running.some(
+      (j) =>
+        j.kind === `sync:${slug}` ||
+        j.kind === `cleanup:${slug}` ||
+        (j.kind === 'sync-all' && (j.lastProgress ?? '').startsWith(`[${slug}]`)),
+    );
+    a.querySelector('.sync-badge')?.remove();
+    if (busy) {
+      const s = document.createElement('span');
+      s.className = 'badge orange sync-badge';
+      s.textContent = '⏳';
+      a.appendChild(s);
+    }
+  });
 }
 
 $('#login-form').addEventListener('submit', async (e) => {
@@ -122,11 +214,24 @@ async function renderDashboard() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head"><div><h1>Bonjour 👋</h1>
     <div class="sub">Voici ce qui se passe dans vos boîtes.</div></div>
-    <div class="head-actions"><button class="btn" id="refresh-btn">🔄 Actualiser</button></div></div>
+    <div class="head-actions">
+      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">🔄 Tout synchroniser</button>
+      <button class="btn" id="refresh-btn">↻ Actualiser</button>
+    </div></div>
     <div id="dash-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
   $('#refresh-btn').addEventListener('click', async () => {
     await refreshOverview();
     renderDashboard();
+  });
+  $('#syncall-btn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.syncAll('recent');
+      pollJobs();
+    } catch (err) {
+      e.target.disabled = false;
+      alert(err.message);
+    }
   });
 
   const ov = overviewCache ?? (await api.overview());
@@ -369,6 +474,17 @@ async function renderAccount(slug) {
   if (pendingAutoSync === slug) {
     pendingAutoSync = null;
     runSync(slug, 'full');
+  } else {
+    // Résultat de la dernière sync de cette boîte, s'il vient de tomber.
+    if (lastSyncResult?.slug === slug) {
+      $('#sync-zone').innerHTML = lastSyncResult.html;
+      lastSyncResult = null;
+    }
+    // Une sync tourne déjà pour cette boîte ? On raccroche l'affichage.
+    api.jobs().then(({ jobs }) => {
+      const j = jobs.find((x) => x.status === 'running' && x.kind === `sync:${slug}`);
+      if (j) attachSyncJob(slug, j.id);
+    }).catch(() => {});
   }
 
   const body = $('#account-body');
@@ -508,39 +624,65 @@ function renderStatsTable() {
 }
 
 // ---------------------------------------------------------------- Sync + jobs
+// Résultat de la dernière sync, affiché au prochain rendu de la vue du compte.
+let lastSyncResult = null; // { slug, html }
+
 async function runSync(slug, mode) {
-  const zone = $('#sync-zone');
-  zone.innerHTML = `<div class="notice"><span class="spinner"></span>
-    Synchronisation <strong>${mode === 'full' ? 'complète' : 'rapide'}</strong> de ${esc(slug)} en cours…
-    <div class="sync-log" id="sync-log"></div></div>`;
-  let job;
+  let jobId;
   try {
-    ({ jobId: job } = await api.startSync(slug, mode));
+    ({ jobId } = await api.startSync(slug, mode));
   } catch (err) {
-    zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    const zone = $('#sync-zone');
+    if (zone) zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     return;
   }
-  const log = $('#sync-log');
+  attachSyncJob(slug, jobId);
+  pollJobs();
+}
+
+/**
+ * Affiche/raccroche la progression d'une sync. La tâche vit côté serveur :
+ * changer de page ne l'interrompt pas, et revenir sur la boîte raccroche
+ * automatiquement l'affichage (via renderAccount).
+ */
+function attachSyncJob(slug, jobId) {
+  const zone = $('#sync-zone');
+  if (zone) {
+    zone.innerHTML = `<div class="notice"><span class="spinner"></span>
+      Synchronisation de <strong>${esc(slug)}</strong> en cours — tu peux changer de page,
+      elle continue en arrière-plan (voir l'indicateur en bas à droite).
+      <div class="sync-log" id="sync-log"></div></div>`;
+  }
   const timer = setInterval(async () => {
+    let j;
     try {
-      const j = await api.job(job);
-      log.textContent = j.progress.slice(-30).join('\n');
-      log.scrollTop = log.scrollHeight;
-      if (j.status !== 'running') {
-        clearInterval(timer);
-        if (j.status === 'done') {
-          const r = j.result ?? {};
-          zone.innerHTML = `<div class="notice">✅ Sync terminée en ${((r.durationMs ?? 0) / 1000).toFixed(1)}s —
-            ${fmtNum(r.newMessages ?? 0)} nouveaux, ${fmtNum(r.deletedMessages ?? 0)} disparus,
-            ${fmtNum(r.foldersSynced?.length ?? 0)} dossiers.</div>`;
-          await refreshOverview();
-          renderAccount(slug);
-        } else {
-          zone.innerHTML = `<div class="notice warn">❌ Échec de la sync : ${esc(j.error ?? '')}</div>`;
-        }
-      }
+      j = await api.job(jobId);
     } catch {
       clearInterval(timer);
+      return;
+    }
+    const log = $('#sync-log');
+    if (log) {
+      log.textContent = j.progress.slice(-30).join('\n');
+      log.scrollTop = log.scrollHeight;
+    }
+    if (j.status !== 'running') {
+      clearInterval(timer);
+      const r = j.result ?? {};
+      lastSyncResult = {
+        slug,
+        html:
+          j.status === 'done'
+            ? `<div class="notice">✅ Sync terminée en ${((r.durationMs ?? 0) / 1000).toFixed(1)}s —
+               ${fmtNum(r.newMessages ?? 0)} nouveaux, ${fmtNum(r.deletedMessages ?? 0)} disparus,
+               ${fmtNum(r.foldersSynced?.length ?? 0)} dossiers.${
+                 r.errors?.length ? ` ⚠️ ${r.errors.length} dossier(s) en échec.` : ''
+               }</div>`
+            : `<div class="notice warn">❌ Échec de la sync : ${esc(j.error ?? '')}</div>`,
+      };
+      await refreshOverview();
+      // Ne re-rend la vue que si l'utilisateur regarde encore cette boîte.
+      if (location.hash === `#/account/${encodeURIComponent(slug)}`) renderAccount(slug);
     }
   }, 1200);
 }

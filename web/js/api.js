@@ -58,6 +58,8 @@ export const api = {
   updateApply: () => request('POST', '/update/apply'),
   health: () => fetch('/health').then((r) => r.ok),
   job: (id) => request('GET', `/jobs/${encodeURIComponent(id)}`),
+  jobs: () => request('GET', '/jobs'),
+  syncAll: (mode = 'recent') => request('POST', '/sync-all', { mode }),
   operations: (limit = 30) => request('GET', `/operations?limit=${limit}`),
 };
 

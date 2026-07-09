@@ -247,6 +247,18 @@ select, input[type="date"], input[type="number"] {
 .op-items div { padding: 3px 0; border-bottom: 1px solid #f0f2f7; }
 .op-items div:last-child { border-bottom: none; }
 
+/* ---------- Indicateur global d'activité ---------- */
+.activity-chip {
+  position: fixed; bottom: 18px; right: 18px; z-index: 90;
+  background: var(--navy); color: #dbe3f5; border-radius: 12px;
+  padding: 10px 16px; font-size: 12.5px; box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  display: flex; flex-direction: column; gap: 5px; max-width: 340px;
+}
+.activity-chip .chip-line { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.activity-chip .chip-line:hover { color: #fff; }
+.activity-chip .spinner { border-color: rgba(255,255,255,.3); border-top-color: #7ea6ff; margin: 0; }
+.sync-badge { margin-left: auto; }
+
 /* ---------- Enrôlement (device code) ---------- */
 .device-box {
   background: var(--bg); border: 1px solid var(--border); border-radius: 10px;

@@ -80,6 +80,13 @@ export function getJob(id: string): Job | null {
   return jobs.get(id) ?? null;
 }
 
+/** Tous les jobs récents (les plus récents d'abord), pour le suivi global. */
+export function listJobs(limit = 20): Job[] {
+  return [...jobs.values()]
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .slice(0, limit);
+}
+
 /** Un job de ce type est-il déjà en cours ? (évite les syncs concurrentes) */
 export function hasRunningJob(kind: string): boolean {
   return [...jobs.values()].some((j) => j.kind === kind && j.status === 'running');

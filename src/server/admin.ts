@@ -21,7 +21,7 @@ import {
   listCleanupMessages,
 } from '../services/cleanup.js';
 import { syncAccount } from '../services/sync.js';
-import { startJob, getJob, hasRunningJob } from '../services/jobs.js';
+import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { readOperations } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -440,6 +440,64 @@ export function buildAdminRouter(): Router {
       }
       const rec = await resolveAccount(slug);
       const job = startJob(kind, (progress) => syncAccount(rec, { mode, onProgress: progress }));
+      res.json({ jobId: job.id });
+    }),
+  );
+
+  // Liste globale des tâches (suivi multi-pages) — version allégée.
+  router.get(
+    '/jobs',
+    guard(async (_req, res) => {
+      res.json({
+        jobs: listJobs().map((j) => ({
+          id: j.id,
+          kind: j.kind,
+          status: j.status,
+          startedAt: j.startedAt,
+          finishedAt: j.finishedAt,
+          error: j.error,
+          lastProgress: j.progress[j.progress.length - 1] ?? null,
+        })),
+      });
+    }),
+  );
+
+  // Synchronise toutes les boîtes, l'une après l'autre (file séquentielle).
+  router.post(
+    '/sync-all',
+    guard(async (req, res) => {
+      const mode = req.body?.mode === 'full' ? 'full' : 'recent';
+      if (hasRunningJob('sync-all')) {
+        res.status(409).json({ error: 'Une synchronisation globale est déjà en cours.' });
+        return;
+      }
+      const names = await listAccountNames();
+      if (names.length === 0) {
+        res.status(400).json({ error: 'Aucun compte enrôlé.' });
+        return;
+      }
+      const job = startJob('sync-all', async (progress) => {
+        const results: Record<string, unknown>[] = [];
+        for (const name of names) {
+          if (hasRunningJob(`sync:${name}`)) {
+            progress(`[${name}] une sync est déjà en cours — sauté.`);
+            continue;
+          }
+          try {
+            const rec = await resolveAccount(name);
+            const r = await syncAccount(rec, {
+              mode,
+              onProgress: (m) => progress(`[${name}] ${m}`),
+            });
+            progress(`[${name}] ✅ +${r.newMessages} nouveaux, ${r.foldersSynced.length} dossiers.`);
+            results.push({ account: name, newMessages: r.newMessages, errors: r.errors });
+          } catch (err) {
+            progress(`[${name}] ❌ ${(err as Error).message}`);
+            results.push({ account: name, error: (err as Error).message });
+          }
+        }
+        return { results };
+      });
       res.json({ jobId: job.id });
     }),
   );

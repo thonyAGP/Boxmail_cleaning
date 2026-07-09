@@ -15,6 +15,14 @@ if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === '') {
   process.env.DATABASE_URL = 'file:../data/boxmail.db';
 }
 
+// Une seule connexion SQLite : toutes les écritures se sérialisent proprement,
+// même quand plusieurs jobs (syncs de comptes différents) tournent en parallèle
+// — sinon risque de SQLITE_BUSY sous contention.
+if (!/connection_limit=/.test(process.env.DATABASE_URL)) {
+  process.env.DATABASE_URL +=
+    (process.env.DATABASE_URL.includes('?') ? '&' : '?') + 'connection_limit=1';
+}
+
 // S'assure que le dossier data/ existe (SQLite ne crée pas les dossiers).
 try {
   mkdirSync(resolve(process.cwd(), 'data'), { recursive: true });
