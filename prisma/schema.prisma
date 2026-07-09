@@ -1,0 +1,132 @@
+// Boxmail MCP — index persistant des boîtes mail (Phase 3, SPEC V2 §7)
+// SQLite via Prisma. Les chemins SQLite relatifs sont résolus par rapport à CE
+// fichier : "file:../data/boxmail.db" = <racine du projet>/data/boxmail.db.
+// Les tokens OAuth restent dans accounts.json (chiffrés AES-256-GCM) — la base
+// ne contient AUCUN secret.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Miroir métier d'un compte enrôlé (les tokens restent dans accounts.json).
+model Account {
+  slug         String    @id
+  emailAddress String
+  displayName  String?
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  folders  Folder[]
+  messages Message[]
+  threads  Thread[]
+  senders  Sender[]
+}
+
+model Folder {
+  id          Int       @id @default(autoincrement())
+  accountSlug String
+  path        String
+  name        String
+  delimiter   String?
+  // inbox | sent | trash | archive | spam | drafts | custom
+  role        String    @default("custom")
+  uidValidity BigInt?
+  lastUidSeen Int       @default(0)
+  messageCount Int      @default(0)
+  unseenCount  Int      @default(0)
+  lastSyncedAt DateTime?
+
+  account  Account   @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([accountSlug, path])
+}
+
+model Message {
+  id                 Int       @id @default(autoincrement())
+  accountSlug        String
+  folderId           Int
+  uid                Int
+  internetMessageId  String?
+  inReplyTo          String?
+  threadId           Int?
+  subject            String?
+  normalizedSubject  String?
+  fromName           String?
+  fromEmail          String? // minuscules
+  toEmails           String? // JSON string (SQLite n'a pas de type Json natif)
+  date               DateTime?
+  isSeen             Boolean   @default(false)
+  isAnswered         Boolean   @default(false)
+  isFlagged          Boolean   @default(false)
+  // true si envoyé par le compte lui-même (fromEmail == adresse du compte)
+  isOutbound         Boolean   @default(false)
+  sizeBytes          Int       @default(0)
+  hasListUnsubscribe Boolean   @default(false)
+  // true si le mail a disparu du serveur (supprimé/déplacé) depuis la sync
+  isDeleted          Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+  folder  Folder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  thread  Thread? @relation(fields: [threadId], references: [id])
+
+  @@unique([folderId, uid])
+  @@index([accountSlug, fromEmail])
+  @@index([accountSlug, internetMessageId])
+  @@index([accountSlug, normalizedSubject])
+  @@index([threadId])
+  @@index([accountSlug, isDeleted, date])
+}
+
+model Thread {
+  id                Int       @id @default(autoincrement())
+  accountSlug       String
+  normalizedSubject String?
+  firstMessageAt    DateTime?
+  lastMessageAt     DateTime?
+  // inbound | outbound — direction du dernier message du fil
+  lastDirection     String?
+  messageCount      Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  account  Account   @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+  messages Message[]
+
+  @@index([accountSlug, normalizedSubject])
+  @@index([accountSlug, lastMessageAt])
+}
+
+// Agrégat par expéditeur, recalculé à chaque sync. kind/category/notes seront
+// enrichis en Phase 4 (profils de correspondants).
+model Sender {
+  id               Int       @id @default(autoincrement())
+  accountSlug      String
+  email            String // minuscules
+  displayName      String?
+  domain           String?
+  messageCount     Int       @default(0)
+  unseenCount      Int       @default(0)
+  unsubscribeCount Int       @default(0)
+  totalSizeBytes   BigInt    @default(0)
+  firstMessageAt   DateTime?
+  lastMessageAt    DateTime?
+  // person | company | newsletter | notification | platform | unknown (Phase 4)
+  kind             String    @default("unknown")
+  category         String?
+  notes            String?
+  updatedAt        DateTime  @updatedAt
+
+  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([accountSlug, email])
+  @@index([accountSlug, messageCount])
+}

@@ -2,6 +2,11 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { resolveAccount } from '../../services/accounts.js';
 import { imapService } from '../../services/imap.js';
+import {
+  isFolderIndexed,
+  senderStatsFromIndex,
+  lastSyncAt,
+} from '../../services/index-stats.js';
 import { accountParam, guard, jsonResult } from '../util.js';
 
 const isoDate = z
@@ -18,7 +23,9 @@ export function registerReadTools(server: McpServer): void {
       description:
         "Agrège les mails d'un dossier par expéditeur : nombre, date du plus récent, " +
         'taille totale, et % de mails portant un header List-Unsubscribe (indice ' +
-        'newsletter/notification). Trié par volume décroissant. Idéal pour repérer le spam.',
+        'newsletter/notification). Trié par volume décroissant. Idéal pour repérer le spam. ' +
+        "Utilise l'index local (instantané) si le dossier est synchronisé, sinon scan IMAP " +
+        'live (lent sur les grosses boîtes) — voir les champs source/lastSyncAt.',
       inputSchema: {
         ...accountParam,
         folder: z.string().default('INBOX').describe('Dossier à analyser (défaut INBOX).'),
@@ -46,8 +53,19 @@ export function registerReadTools(server: McpServer): void {
         since?: string;
       }) => {
         const rec = await resolveAccount(account);
+        // Chemin rapide : index local si le dossier est synchronisé.
+        if (await isFolderIndexed(rec.account, folder)) {
+          const stats = await senderStatsFromIndex(rec.account, folder, limit, since);
+          return jsonResult({
+            account: rec.account,
+            folder,
+            source: 'index',
+            lastSyncAt: await lastSyncAt(rec.account),
+            ...stats,
+          });
+        }
         const stats = await imapService.getSenderStats(rec, folder, limit, since);
-        return jsonResult({ account: rec.account, folder, ...stats });
+        return jsonResult({ account: rec.account, folder, source: 'imap-live', ...stats });
       },
     ),
   );

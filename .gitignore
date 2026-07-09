@@ -4,6 +4,11 @@ accounts.json
 logs/
 *.log
 
+# Base de données locale (index des mails) — jamais commitée
+data/
+*.db
+*.db-journal
+
 # Node
 node_modules/
 dist/

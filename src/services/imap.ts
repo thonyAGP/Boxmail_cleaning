@@ -64,7 +64,7 @@ export interface DeletePreview {
   dateRange: { from: string | null; to: string | null };
 }
 
-function normalizeSubject(subject: string | undefined): string {
+export function normalizeSubject(subject: string | undefined): string {
   if (!subject) return '';
   // Retire les préfixes de réponse/transfert répétés (multi-langue).
   return subject
@@ -118,6 +118,15 @@ class ImapService {
     });
     logger.debug('connexion IMAP établie', { account: rec.account });
     return client;
+  }
+
+  /**
+   * Prête la connexion du pool à un appelant (ex. le moteur de sync) le temps
+   * d'un traitement. La connexion reste gérée par le pool.
+   */
+  async withClient<T>(rec: AccountRecord, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+    const client = await this.getClient(rec);
+    return fn(client);
   }
 
   /** Ferme toutes les connexions (arrêt propre). */

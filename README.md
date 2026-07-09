@@ -58,6 +58,17 @@ seul compte est enrôlé, il est utilisé par défaut.
 | `delete_emails` | Supprimer des UIDs — **dry-run par défaut**, soft delete (corbeille) |
 | `bulk_delete_by_sender` | Supprimer tous les mails d'un expéditeur — **dry-run par défaut**, soft delete |
 
+### Index & vues d'ensemble (Phase 3 — SPEC V2)
+| Tool | Rôle |
+|---|---|
+| `sync_account` | Synchronise l'index local SQLite (métadonnées uniquement, jamais les corps). Mode `recent` (INBOX + Envoyés) ou `full` (tous dossiers + flags) |
+| `get_mailbox_overview` | Vue d'ensemble d'un compte depuis l'index : INBOX (total, non lus, newsletters, taille), dossiers, top expéditeurs — instantané |
+| `get_global_overview` | Vue consolidée de toutes les boîtes indexées + totaux |
+
+> `get_sender_stats` utilise automatiquement l'index quand le dossier est
+> synchronisé (résultat instantané, champ `source: "index"`), sinon il retombe
+> sur un scan IMAP live (`source: "imap-live"`, lent sur les grosses boîtes).
+
 ### Export
 | Tool | Rôle |
 |---|---|
@@ -103,6 +114,7 @@ Prérequis : **Node.js 20+** (testé sur Node 22).
 ```bash
 git clone <repo> boxmail-mcp && cd boxmail-mcp
 npm install
+npm run db:setup          # crée data/boxmail.db (index local) + client Prisma
 cp .env.example .env
 ```
 
@@ -330,6 +342,28 @@ L'architecture (AccountManager, tools MCP, garde-fous) est backend-agnostique :
 le pivot vers Graph ne touche ni la couche MCP ni les garde-fous.
 
 ---
+
+## Index local des mails (Phase 3 — SPEC V2)
+
+Le serveur maintient un **index SQLite** (`data/boxmail.db`) des métadonnées de
+mails : expéditeur, sujet, dates, flags, taille, header List-Unsubscribe, fils
+de discussion, agrégats par expéditeur. **Jamais les corps de mails, jamais de
+secrets** — les tokens restent dans `accounts.json` chiffré.
+
+```bash
+npm run db:setup                       # une fois : crée la base + migrations
+npm run sync -- --account brimmo       # sync rapide (INBOX + Envoyés)
+npm run sync -- --account brimmo --full  # tous les dossiers + flags lu/non lu
+```
+
+Bénéfices :
+- `get_sender_stats` passe de ~2 min (scan IMAP) à **instantané** ;
+- `get_mailbox_overview` / `get_global_overview` : vision multi-boîtes immédiate ;
+- fondation des fonctions V2 (réponses oubliées, relances, échéances, briefs).
+
+La sync est **incrémentale** (seuls les nouveaux mails sont lus, via UID) et
+**réconcilie les suppressions** (mails disparus marqués `isDeleted`). Un
+changement d'`UIDVALIDITY` déclenche la réindexation propre du dossier.
 
 ## Structure du repo
 
