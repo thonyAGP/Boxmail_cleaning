@@ -22,6 +22,9 @@ module.exports = {
       max_memory_restart: '300M',
       env: {
         NODE_ENV: 'production',
+        // pm2 relance automatiquement le process : la mise à jour depuis
+        // l'interface peut redémarrer le serveur en toute sécurité.
+        BOXMAIL_SUPERVISED: '1',
       },
       // Les logs applicatifs (JSON) partent sur stderr ; pm2 les capture.
       error_file: 'logs/pm2-error.log',

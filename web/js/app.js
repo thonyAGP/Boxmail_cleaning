@@ -8,6 +8,7 @@ import { api, fmtSize, fmtDate, fmtDateTime, fmtNum, esc } from './api.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 let overviewCache = null;
+let serverVersion = null;
 
 // ---------------------------------------------------------------- Auth & boot
 async function boot() {
@@ -38,7 +39,9 @@ async function showApp() {
   $('#login-view').classList.add('hidden');
   $('#app-view').classList.remove('hidden');
   api.version().then((v) => {
-    $('#version-line').textContent = `version ${v.commit} · ${v.date}`;
+    serverVersion = v;
+    $('#version-line').textContent =
+      `version ${v.commit} · ${v.date}` + (v.supervised ? '' : ' · ⚠️ non supervisé');
   }).catch(() => {});
   await refreshOverview();
   route();
@@ -359,18 +362,33 @@ async function renderDashboard() {
   }).catch(() => {});
 }
 
-async function applyUpdateFlow(container) {
-  container.innerHTML = `<span class="spinner"></span><strong>Mise à jour en cours…</strong>
-    le serveur va redémarrer tout seul, la page reviendra automatiquement.
+async function applyUpdateFlow(container, confirmed = false) {
+  // Sans superviseur (start-boxmail.bat / pm2), le serveur ne PEUT PAS se
+  // relancer tout seul apres l'arret : on previent avant, pas apres.
+  if (serverVersion && !serverVersion.supervised && !confirmed) {
+    container.innerHTML = `<div class="notice warn">\u26a0\ufe0f Ton serveur n'a pas \u00e9t\u00e9 lanc\u00e9 via
+      <strong>start-boxmail.bat</strong> : apr\u00e8s la mise \u00e0 jour il s'arr\u00eatera et
+      <strong>ne red\u00e9marrera pas tout seul</strong>. Le mieux : ferme le serveur, relance-le en
+      double-cliquant <strong>start-boxmail.bat</strong> (il se mettra \u00e0 jour au passage), et
+      utilise ce bouton les prochaines fois.<br><br>
+      <button class="btn" id="update-anyway">Mettre \u00e0 jour quand m\u00eame (je relancerai \u00e0 la main)</button></div>`;
+    $('#update-anyway').addEventListener('click', () => applyUpdateFlow(container, true));
+    return;
+  }
+
+  container.innerHTML = `<span class="spinner"></span><strong>Mise \u00e0 jour en cours\u2026</strong>
+    le serveur va red\u00e9marrer, la page reviendra automatiquement.
     <div class="sync-log" id="update-log"></div>`;
   let jobId;
   try {
     ({ jobId } = await api.updateApply());
   } catch (err) {
-    container.innerHTML = `⚠️ ${esc(err.message)}`;
+    container.innerHTML = `\u26a0\ufe0f ${esc(err.message)}`;
     return;
   }
   const log = $('#update-log');
+  const supervised = !serverVersion || serverVersion.supervised;
+  let waiting = false;
   const poll = setInterval(async () => {
     try {
       const j = await api.job(jobId);
@@ -378,22 +396,37 @@ async function applyUpdateFlow(container) {
       log.scrollTop = log.scrollHeight;
       if (j.status === 'error') {
         clearInterval(poll);
-        container.innerHTML = `<div class="notice warn">❌ Échec de la mise à jour : ${esc(j.error ?? '')}</div>`;
+        container.innerHTML = `<div class="notice warn">\u274c \u00c9chec de la mise \u00e0 jour : ${esc(j.error ?? '')}</div>`;
       }
-      // status 'done' n'arrive jamais : le serveur redémarre avant.
+      // status 'done' n'arrive jamais : le serveur red\u00e9marre avant.
     } catch {
-      // Le serveur est en train de redémarrer → on attend son retour.
+      // Le serveur vient de s'arr\u00eater.
+      if (waiting) return;
+      waiting = true;
       clearInterval(poll);
-      log.textContent += '\nRedémarrage du serveur…';
+      if (!supervised) {
+        container.innerHTML = `<div class="notice warn">\ud83d\udca4 Le serveur s'est arr\u00eat\u00e9 pour appliquer
+          la mise \u00e0 jour. <strong>Relance start-boxmail.bat</strong> (ou <code>npm start</code>),
+          puis recharge cette page.</div>`;
+        return;
+      }
+      log.textContent += '\nRed\u00e9marrage du serveur\u2026 (installation + compilation, ~1 minute)';
+      const startedWait = Date.now();
       const waitUp = setInterval(async () => {
         try {
           if (await api.health()) {
             clearInterval(waitUp);
             location.reload();
+            return;
           }
-        } catch { /* pas encore prêt */ }
+        } catch { /* pas encore pr\u00eat */ }
+        if (Date.now() - startedWait > 180_000) {
+          clearInterval(waitUp);
+          container.innerHTML = `<div class="notice warn">\u23f1\ufe0f Le serveur n'est pas revenu apr\u00e8s 3 minutes.
+            V\u00e9rifie la fen\u00eatre noire <strong>start-boxmail.bat</strong> (elle affiche peut-\u00eatre une
+            erreur), relance-la si besoin, puis recharge cette page.</div>`;
+        }
       }, 2000);
-      setTimeout(() => clearInterval(waitUp), 180_000);
     }
   }, 1200);
 }

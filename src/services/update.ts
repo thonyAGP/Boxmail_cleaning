@@ -24,22 +24,26 @@ export interface VersionInfo {
   commit: string;
   date: string;
   branch: string;
+  /** true si un superviseur (start-boxmail.bat, pm2, systemd) relance le
+   *  processus après un arrêt — condition du redémarrage automatique. */
+  supervised: boolean;
 }
 
 let cachedVersion: VersionInfo | null = null;
 
 export async function version(): Promise<VersionInfo> {
   if (cachedVersion) return cachedVersion;
+  const supervised = process.env.BOXMAIL_SUPERVISED === '1';
   try {
     const [commit, date, branch] = await Promise.all([
       git('log', '-1', '--format=%h'),
       git('log', '-1', '--format=%cd', '--date=format:%d/%m/%Y %H:%M'),
       git('rev-parse', '--abbrev-ref', 'HEAD'),
     ]);
-    cachedVersion = { commit, date, branch };
+    cachedVersion = { commit, date, branch, supervised };
   } catch (err) {
     logger.warn('version git indisponible', { error: (err as Error).message });
-    cachedVersion = { commit: 'inconnu', date: '', branch: '' };
+    cachedVersion = { commit: 'inconnu', date: '', branch: '', supervised };
   }
   return cachedVersion;
 }

@@ -7,6 +7,7 @@ rem  il est relance automatiquement sur le nouveau code.
 rem =====================================================================
 cd /d %~dp0
 title Mail Assistant - serveur
+set BOXMAIL_SUPERVISED=1
 
 echo.
 echo [Mail Assistant] Mise a jour du code...
