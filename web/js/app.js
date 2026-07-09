@@ -684,6 +684,10 @@ async function openCleanupModal(account, sender, senderName) {
         if (j.status !== 'running') {
           clearInterval(timer);
           const r = j.result ?? {};
+          if (j.status === 'done') {
+            // Met à jour la page derrière la modale sans attendre le clic.
+            refreshOverview().then(() => route()).catch(() => {});
+          }
           $('#modal-body').innerHTML =
             j.status === 'done'
               ? `<div class="notice">✅ <strong>${fmtNum(r.deleted ?? 0)}</strong> mails déplacés vers
@@ -691,11 +695,7 @@ async function openCleanupModal(account, sender, senderName) {
                  Récupérables ~30 jours dans Outlook.</div>`
               : `<div class="notice warn">❌ Échec : ${esc(j.error ?? '')}</div>`;
           $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="modal-done">Fermer</button>`;
-          $('#modal-done').addEventListener('click', async () => {
-            closeModal();
-            await refreshOverview();
-            route();
-          });
+          $('#modal-done').addEventListener('click', closeModal);
         }
       } catch {
         clearInterval(timer);
@@ -743,6 +743,10 @@ function openEnrollModal() {
 
   // Succès commun aux deux méthodes (popup et code).
   const showEnrollSuccess = (r, name) => {
+    // Rafraîchit tout de suite la page derrière la modale (sidebar + vue) :
+    // quelle que soit la façon de fermer ensuite, tout est déjà à jour.
+    refreshOverview().then(() => route()).catch(() => {});
+
     const zone = $('#enroll-zone');
     zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
       <strong>${esc(r.account ?? name)}</strong>.<br>
@@ -751,20 +755,23 @@ function openEnrollModal() {
       ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà enrôlée</strong>
         sous le nom « ${esc(r.duplicateOf)} » ! Tu as probablement choisi le mauvais compte.
         Refais « Ajouter un compte » avec le même nom <strong>${esc(r.account ?? name)}</strong>
-        et choisis « Utiliser un autre compte » dans la fenêtre Microsoft.</div>` : ''}`;
+        et choisis « Utiliser un autre compte » dans la fenêtre Microsoft.</div>` : ''}
+      <p class="muted" style="margin-top:10px; font-size:12.5px">💡 La synchronisation peut aussi se
+      lancer plus tard depuis la page de la boîte — tu peux enchaîner l'ajout de tes autres comptes.</p>`;
     $('.modal-foot').innerHTML = `
+      <button class="btn" id="enroll-another">＋ Ajouter une autre boîte</button>
       <button class="btn" id="enroll-close">Fermer</button>
-      <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser cette boîte maintenant</button>`;
-    $('#enroll-close').addEventListener('click', async () => {
-      closeModal();
-      await refreshOverview();
+      <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser maintenant</button>`;
+    $('#enroll-another').addEventListener('click', () => {
+      openEnrollModal(); // repart sur une modale propre (ferme l'actuelle)
     });
-    $('#enroll-sync').addEventListener('click', async () => {
+    $('#enroll-close').addEventListener('click', closeModal);
+    $('#enroll-sync').addEventListener('click', () => {
       closeModal();
-      await refreshOverview();
       pendingAutoSync = r.account ?? name;
-      location.hash = `#/account/${encodeURIComponent(r.account ?? name)}`;
-      if (location.hash === `#/account/${encodeURIComponent(r.account ?? name)}`) route();
+      const target = `#/account/${encodeURIComponent(r.account ?? name)}`;
+      if (location.hash === target) route();
+      else location.hash = target; // hashchange déclenche route()
     });
   };
 
