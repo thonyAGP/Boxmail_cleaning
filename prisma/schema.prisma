@@ -84,6 +84,10 @@ model Message {
   // resynchronisés à neuf (l'info n'est pas rejouée sur l'existant).
   hasAttachments     Boolean   @default(false)
   attachmentCount    Int       @default(0)
+  // Intention détectée (A1 — pourquoi ce mail ? otp/invoice/shipping/…),
+  // calculée à la sync sur les entrants, backfill via le job « categorize ».
+  intent             String?
+  intentReason       String?
   // true si le mail a disparu du serveur (supprimé/déplacé) depuis la sync
   isDeleted          Boolean   @default(false)
   createdAt          DateTime  @default(now())
@@ -265,7 +269,11 @@ model Sender {
   lastMessageAt    DateTime?
   // person | company | newsletter | notification | platform | unknown (Phase 4)
   kind             String    @default("unknown")
+  // Catégorie fine (A1 — qui écrit ? bank/admin/marketplace/…). null = jamais
+  // calculée. categorySource=manual ⇒ la sync ne l'écrase JAMAIS.
   category         String?
+  categorySource   String    @default("auto")
+  categoryReason   String?
   notes            String?
   updatedAt        DateTime  @updatedAt
 

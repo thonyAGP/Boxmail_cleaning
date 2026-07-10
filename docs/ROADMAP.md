@@ -651,7 +651,35 @@ réponse » = `attention.ts` ; suivi des conversations sans réponse =
 rangements manuels) ; rapport de boîte v1 = stats senders + nettoyage
 auto/perso ; brief = `brief.ts`. Les livraisons A1-A6 étendent ces organes.
 
-### ⬜ A1 — Moteur de catégorisation (LA fondation : qui écrit, pourquoi)
+### ✅ A1 — Moteur de catégorisation (LA fondation : qui écrit, pourquoi) — LIVRÉE
+
+**Livré.** Migration `categorize` : `Sender.category/categorySource/
+categoryReason` + `Message.intent/intentReason`. `services/categorize.ts` :
+`categorizeSender` (10 catégories — admin/bank/insurance/social/marketplace
+d'abord (regex tokens à frontières de mots), puis person (conversation OU
+domaine grand public), newsletter (ratio unsub ≥ 0.8), notification
+(AUTO_SENDER_RE), ad, company par défaut — chaque décision avec sa raison
+FR) ; `detectIntent` (10 intentions par motifs sujet FR/EN — les motifs
+FORTS otp/invoice/shipping/appointment/reminder priment sur une question,
+les FAIBLES confirmation/document/promo cèdent devant « le sujet pose une
+question » → reply_expected ; listes de diffusion et robots exclus de
+reply_expected) ; `categorizeAccount` (backfill index-only par lots de
+1000, écritures groupées par (intent, raison), idempotent) ;
+`setSenderCategory` (correction manuelle, `manual` JAMAIS écrasé par la
+sync ; null → retour auto recalculé immédiatement). Sync : intent calculé
+à l'indexation des nouveaux entrants ; `rebuildSenders` pose
+category/categoryReason en respectant `manual`. API : `intent` exposé sur
+les 3 listings (recherche, dossier, unifié) ; stats expéditeurs enrichies
+(category/Source/Reason) ; PATCH `/accounts/:slug/senders`
+({email, category|null}, 400 catégorie inconnue, 404 expéditeur inconnu,
+journal `ui_sender_category`) ; POST `/api/categorize` (job global toutes
+boîtes, 409 si déjà en cours). UI : colonne « Catégorie » dans le tableau
+des expéditeurs (sélecteur 10 catégories + « ↺ automatique », tooltip =
+raison, ✍️ si manuel) ; Paramètres → « 🏷️ Recalculer les catégories ».
+Tests : seed-categorize.mts (36 asserts) + ui-categorize.mjs (9 checks
+navigateur, PATCH réel). NB : le backfill sur les vraies boîtes se lance
+depuis ⚙️ Paramètres (ou attendre les prochaines syncs pour les nouveaux
+mails).
 
 Tout le cap V3 s'appuie dessus. Deux axes calculés par heuristiques
 index-only, stockés et EXPLIQUÉS :

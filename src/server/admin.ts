@@ -81,6 +81,12 @@ import {
   createRule,
   deleteRule,
 } from '../services/rules.js';
+import {
+  categorizeAccount,
+  setSenderCategory,
+  SENDER_CATEGORIES,
+  type SenderCategory,
+} from '../services/categorize.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -495,6 +501,63 @@ export function buildAdminRouter(): Router {
       }
       const stats = await senderStatsFromIndex(slug, folder, limit, since);
       res.json({ account: slug, folder, ...stats });
+    }),
+  );
+
+  // --- Catégorisation (A1 — Cap V3) ---------------------------------------------
+  // Corriger à la main la catégorie d'un expéditeur (category=null → retour auto).
+  router.patch(
+    '/accounts/:slug/senders',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+      const rawCategory = req.body?.category ?? null;
+      if (!email) {
+        res.status(400).json({ error: 'email requis.' });
+        return;
+      }
+      if (rawCategory !== null && !SENDER_CATEGORIES.includes(rawCategory as SenderCategory)) {
+        res.status(400).json({
+          error: `Catégorie inconnue. Valeurs possibles : ${SENDER_CATEGORIES.join(', ')} (ou null pour revenir en automatique).`,
+        });
+        return;
+      }
+      try {
+        const result = await setSenderCategory(slug, email, rawCategory as SenderCategory | null);
+        await recordOperation({
+          account: slug,
+          tool: 'ui_sender_category',
+          params: { email: result.email, category: result.category, source: result.source },
+          result: `catégorie ${result.category} (${result.source})`,
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(404).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // Backfill : recalcule intentions + catégories de TOUTES les boîtes (job).
+  router.post(
+    '/categorize',
+    guard(async (_req, res) => {
+      if (hasRunningJob('categorize')) {
+        res.status(409).json({ error: 'Un recalcul des catégories est déjà en cours.' });
+        return;
+      }
+      const job = startJob('categorize', async (progress) => {
+        const results: Record<string, unknown> = {};
+        for (const name of await listAccountNames()) {
+          try {
+            results[name] = await categorizeAccount(name, progress);
+          } catch (err) {
+            results[name] = { error: (err as Error).message };
+            progress(`⚠️ ${name} en échec (${(err as Error).message}) — on continue.`);
+          }
+        }
+        return results;
+      });
+      res.status(202).json({ jobId: job.id });
     }),
   );
 

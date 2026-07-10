@@ -43,6 +43,8 @@ export interface SearchResultItem {
   isSeen: boolean;
   isFlagged: boolean;
   isOutbound: boolean;
+  /** Intention détectée (A1) : otp/invoice/shipping/… ; null = non calculée. */
+  intent: string | null;
   hasListUnsubscribe: boolean;
   hasAttachments: boolean;
   attachmentCount: number;
@@ -115,6 +117,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         isSeen: true,
         isFlagged: true,
         isOutbound: true,
+        intent: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
         attachmentCount: true,
@@ -141,6 +144,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
       isSeen: m.isSeen,
       isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
+      intent: m.intent,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
@@ -240,6 +244,7 @@ export async function listUnifiedInbox(
         isSeen: true,
         isFlagged: true,
         isOutbound: true,
+        intent: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
         attachmentCount: true,
@@ -267,6 +272,7 @@ export async function listUnifiedInbox(
       isSeen: m.isSeen,
       isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
+      intent: m.intent,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
@@ -319,6 +325,7 @@ export async function listFolderMessages(
         isSeen: true,
         isFlagged: true,
         isOutbound: true,
+        intent: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
         attachmentCount: true,
@@ -346,6 +353,7 @@ export async function listFolderMessages(
       isSeen: m.isSeen,
       isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
+      intent: m.intent,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,

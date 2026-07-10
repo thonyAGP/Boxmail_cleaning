@@ -1314,6 +1314,20 @@ function opLine(op) {
 // ---------------------------------------------------------------- Vue compte
 const statsState = { sortKey: 'count', sortDir: -1, data: null, selected: new Map() };
 
+// Catégories d'expéditeur (A1 — mêmes valeurs que le serveur, libellés FR).
+const SENDER_CATEGORY_LABELS = {
+  person: '👤 Personne',
+  company: '🏢 Entreprise',
+  bank: '🏦 Banque / argent',
+  insurance: '🛡️ Assurance',
+  admin: '🏛️ Administration',
+  marketplace: '🛒 Boutique en ligne',
+  social: '💬 Réseau social',
+  newsletter: '📰 Newsletter',
+  notification: '🤖 Notification',
+  ad: '📢 Publicité',
+};
+
 const FOLDER_ROLE_EMOJI = {
   inbox: '📥', sent: '📤', drafts: '📝', trash: '🗑️', archive: '📦', spam: '⚠️', custom: '📂',
 };
@@ -1495,6 +1509,7 @@ function renderStatsTable() {
     <table><thead><tr>
       <th style="width:30px"><input type="checkbox" id="stats-check-all" title="Tout cocher / décocher"></th>
       <th data-sort="address">Expéditeur</th>
+      <th ${sortKey === 'category' ? 'class="sorted"' : ''} data-sort="category">Catégorie ${sortKey === 'category' ? (sortDir < 0 ? '↓' : '↑') : ''}</th>
       ${th('count', 'Mails')}${th('totalSizeBytes', 'Taille')}${th('unsubscribePct', 'Newsletter')}${th('latestDate', 'Dernier mail')}
     </tr></thead>
     <tbody>${senders
@@ -1503,6 +1518,14 @@ function renderStatsTable() {
         <td><input type="checkbox" class="stats-check" data-address="${esc(s.address)}"
           data-name="${esc(s.name || '')}" ${sel.has(s.address) ? 'checked' : ''}></td>
         <td>${esc(s.name || s.address)}<br><span class="muted" style="font-size:12px">${esc(s.address)}</span></td>
+        <td style="white-space:nowrap">
+          <select class="stats-cat" data-address="${esc(s.address)}"
+            title="${esc(s.categoryReason || 'Catégorie non calculée — lance « Recalculer les catégories » dans ⚙️ Paramètres')}">
+            <option value="" ${s.category ? '' : 'selected'}>${s.category ? '↺ automatique' : '—'}</option>
+            ${Object.entries(SENDER_CATEGORY_LABELS)
+              .map(([v, l]) => `<option value="${v}" ${s.category === v ? 'selected' : ''}>${l}</option>`)
+              .join('')}
+          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas">✍️</span>' : ''}</td>
         <td class="num"><strong>${fmtNum(s.count)}</strong></td>
         <td class="num">${fmtSize(s.totalSizeBytes)}</td>
         <td class="num">${s.unsubscribePct > 0 ? `<span class="badge ${s.unsubscribePct >= 80 ? 'orange' : 'gray'}">${s.unsubscribePct}%</span>` : '—'}</td>
@@ -1512,7 +1535,8 @@ function renderStatsTable() {
       .join('')}</tbody></table>
     <div class="panel-body muted" style="font-size:12.5px">
       ${fmtNum(data.totalMessages)} messages analysés (index local — instantané).
-      Coche des expéditeurs pour les exporter en contacts (.vcf/.csv).</div>`;
+      Coche des expéditeurs pour les exporter en contacts (.vcf/.csv). La catégorie sert à
+      l'assistant (accueil, nettoyage) : corrige-la si elle est fausse — ton choix est conservé.</div>`;
 
   el.querySelectorAll('th[data-sort]').forEach((thEl) => {
     thEl.addEventListener('click', () => {
@@ -1541,6 +1565,27 @@ function renderStatsTable() {
       if (box.checked) sel.set(box.dataset.address, box.dataset.name);
       else sel.delete(box.dataset.address);
       renderExportBar();
+    });
+  });
+
+  // Correction manuelle de la catégorie (A1) — « ↺ automatique » = recalcul.
+  el.querySelectorAll('.stats-cat').forEach((select) => {
+    select.addEventListener('change', async () => {
+      const slug = decodeURIComponent(location.hash.split('/')[2] ?? '');
+      select.disabled = true;
+      try {
+        const r = await api.senderSetCategory(slug, select.dataset.address, select.value || null);
+        const row = statsState.data.senders.find((s) => s.address === select.dataset.address);
+        if (row) {
+          row.category = r.category;
+          row.categorySource = r.source;
+          row.categoryReason = r.reason;
+        }
+        renderStatsTable();
+      } catch (err) {
+        alert(err.message);
+        select.disabled = false;
+      }
     });
   });
 }
@@ -3321,10 +3366,26 @@ function renderSettingsBody() {
           <span>${autoSyncLabel(v?.autoSync)}</span></div>
         <div class="set-line"><span class="muted">Boîtes indexées</span>
           <span>${fmtNum(overviewCache?.totals?.accounts ?? 0)} boîte(s) · ${fmtNum(overviewCache?.totals?.indexedMessages ?? 0)} mails</span></div>
+        <div class="set-line"><span class="muted">Catégories de l'assistant</span>
+          <span><button class="btn btn-sm" id="set-categorize" title="Recalcule « qui écrit » et « pourquoi » pour tous les mails déjà indexés (index local, rapide)">🏷️ Recalculer les catégories</button></span></div>
       </div>
     </div>`;
 
   const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  $('#set-categorize')?.addEventListener('click', async () => {
+    const btn = $('#set-categorize');
+    btn.disabled = true;
+    try {
+      await api.categorizeAll();
+      notice(`<div class="notice">🏷️ Recalcul des catégories lancé sur toutes les boîtes —
+        suis l'avancement via la pastille d'activité en bas de la barre latérale.
+        Les catégories apparaissent dans le tableau des expéditeurs de chaque boîte.</div>`);
+    } catch (err) {
+      btn.disabled = false;
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+  });
 
   body.querySelectorAll('.set-color').forEach((input) => {
     input.addEventListener('change', async () => {

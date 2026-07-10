@@ -3,6 +3,7 @@ import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService, normalizeSubject } from './imap.js';
 import { AUTO_SENDER_RE } from './attention.js';
+import { categorizeSender, detectIntent } from './categorize.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -238,6 +239,8 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             hasListUnsubscribe: boolean;
             hasAttachments: boolean;
             attachmentCount: number;
+            intent: string | null;
+            intentReason: string | null;
           }[] = [];
           // Plage compacte plutôt que liste d'UIDs (limite de longueur de
           // commande Outlook). Les UIDs du trou éventuel n'existent pas côté
@@ -259,6 +262,13 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const fromEmail = from?.address?.toLowerCase() ?? null;
             const flags = msg.flags ?? new Set<string>();
             const attachmentCount = countAttachments(msg.bodyStructure as BodyStructNode);
+            const hasListUnsubscribe =
+              !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8'));
+            // Intention (A1) : sur les entrants uniquement, depuis le sujet indexé.
+            const intentInfo =
+              fromEmail === selfEmail
+                ? null
+                : detectIntent({ subject: msg.envelope?.subject, hasListUnsubscribe, fromEmail });
             rows.push({
               accountSlug: rec.account,
               folderId: folder.id,
@@ -280,10 +290,11 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               isFlagged: flags.has('\\Flagged'),
               isOutbound: fromEmail === selfEmail,
               sizeBytes: msg.size ?? 0,
-              hasListUnsubscribe:
-                !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8')),
+              hasListUnsubscribe,
               hasAttachments: attachmentCount > 0,
               attachmentCount,
+              intent: intentInfo?.intent ?? null,
+              intentReason: intentInfo?.reason ?? null,
             });
           }
           if (rows.length) {
@@ -594,11 +605,31 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
   `;
   const conversational = new Set(conversationalRows.map((r) => r.fromEmail));
 
+  // Catégories corrigées à la main (A1) : jamais écrasées par le recalcul.
+  const manual = new Set(
+    (
+      await db.sender.findMany({
+        where: { accountSlug, categorySource: 'manual' },
+        select: { email: true },
+      })
+    ).map((s) => s.email),
+  );
+
   const present = new Set<string>();
   for (const r of rows) {
     present.add(r.fromEmail);
     const domain = r.fromEmail.includes('@') ? r.fromEmail.split('@')[1] : null;
     const kind = classifySenderKind(r.fromEmail, Number(r.cnt), Number(r.unsub), conversational);
+    const cat = categorizeSender({
+      email: r.fromEmail,
+      displayName: r.fromName,
+      messageCount: Number(r.cnt),
+      unsubscribeCount: Number(r.unsub),
+      conversational: conversational.has(r.fromEmail),
+    });
+    const autoCategory = manual.has(r.fromEmail)
+      ? {}
+      : { category: cat.category, categoryReason: cat.reason };
     await db.sender.upsert({
       where: { accountSlug_email: { accountSlug, email: r.fromEmail } },
       create: {
@@ -613,6 +644,8 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
         firstMessageAt: rawToDate(r.first),
         lastMessageAt: rawToDate(r.last),
         kind,
+        category: cat.category,
+        categoryReason: cat.reason,
       },
       update: {
         displayName: r.fromName ?? undefined,
@@ -624,6 +657,7 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
         firstMessageAt: rawToDate(r.first),
         lastMessageAt: rawToDate(r.last),
         kind,
+        ...autoCategory,
       },
     });
   }

@@ -34,6 +34,9 @@ export const api = {
     if (since) q.set('since', since);
     return request('GET', `/accounts/${encodeURIComponent(slug)}/stats?${q}`);
   },
+  senderSetCategory: (slug, email, category) =>
+    request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, category }),
+  categorizeAll: () => request('POST', '/categorize'),
   cleanup: (slug) => request('GET', `/accounts/${encodeURIComponent(slug)}/cleanup`),
   cleanupPreview: (slug, sender, folder = 'INBOX') =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/cleanup/preview`, { sender, folder }),

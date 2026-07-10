@@ -97,6 +97,20 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A1 livrée : moteur de catégorisation (fondation Cap V3).** Migration
+Sender.category/Source/Reason + Message.intent/intentReason.
+services/categorize.ts : categorizeSender (10 catégories explicables,
+marques d'abord puis person/newsletter/notification/ad/company),
+detectIntent (10 intentions par motifs sujet, forts > question > faibles),
+categorizeAccount (backfill index-only idempotent), setSenderCategory
+(manual jamais écrasé, null → auto). Sync : intent posé sur les nouveaux
+entrants, rebuildSenders pose category. API : intent sur les 3 listings,
+stats enrichies, PATCH /accounts/:slug/senders, POST /api/categorize
+(job global). UI : colonne Catégorie (sélecteur + ✍️ + tooltip raison)
+dans les stats, bouton 🏷️ Recalculer dans Paramètres. Tests : 36 asserts
++ 9 checks navigateur. L'utilisateur doit lancer le backfill depuis
+⚙️ Paramètres après mise à jour.
+
 **Cap V3 acté (10/07/2026) : « Mon assistant personnel de messagerie ».**
 L'utilisateur a validé un changement de philosophie : l'objectif n'est plus
 de gérer des mails mais de transformer la boîte en ACTIONS (« tu dois
@@ -441,9 +455,10 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : prochaine livraison = A1 (moteur de catégorisation), sauf si
-l'utilisateur demande d'abord L6 — voir ROADMAP.md section « Cap V3 »
-(plan A1→A6 complet).** L6-prep faite : le déploiement Oracle reste prêt à
+**Cap V3 : A1 FAITE. Prochaine livraison = A2 (accueil « Aujourd'hui »
+orienté actions) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
+complet). L'utilisateur a demandé « Lance la série A » (10/07) :
+enchaîner les livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),

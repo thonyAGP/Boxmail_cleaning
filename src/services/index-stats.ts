@@ -33,13 +33,20 @@ export async function lastSyncAt(account: string): Promise<string | null> {
   return acc?.lastSyncAt?.toISOString() ?? null;
 }
 
+/** SenderStat enrichi des catégories A1 (depuis la table Sender). */
+export type SenderStatWithCategory = SenderStat & {
+  category: string | null;
+  categorySource: string;
+  categoryReason: string | null;
+};
+
 /** Équivalent index de getSenderStats — groupBy SQL sur le dossier. */
 export async function senderStatsFromIndex(
   account: string,
   folder: string,
   limit: number,
   since?: string,
-): Promise<{ totalMessages: number; senders: SenderStat[] }> {
+): Promise<{ totalMessages: number; senders: SenderStatWithCategory[] }> {
   await ensureDbReady();
   const f = await db.folder.findUnique({
     where: { accountSlug_path: { accountSlug: account, path: folder } },
@@ -72,25 +79,35 @@ export async function senderStatsFromIndex(
     }),
     db.sender.findMany({
       where: { accountSlug: account },
-      select: { email: true, displayName: true },
+      select: {
+        email: true,
+        displayName: true,
+        category: true,
+        categorySource: true,
+        categoryReason: true,
+      },
     }),
   ]);
 
   const unsubByEmail = new Map(unsubGroups.map((g) => [g.fromEmail, g._count._all]));
-  const nameByEmail = new Map(names.map((n) => [n.email, n.displayName ?? '']));
+  const senderByEmail = new Map(names.map((n) => [n.email, n]));
 
-  const senders: SenderStat[] = groups.map((g) => {
+  const senders: SenderStatWithCategory[] = groups.map((g) => {
     const email = g.fromEmail as string;
     const count = g._count._all;
     const unsub = unsubByEmail.get(email) ?? 0;
+    const s = senderByEmail.get(email);
     return {
       address: email,
-      name: nameByEmail.get(email) ?? '',
+      name: s?.displayName ?? '',
       count,
       latestDate: g._max.date?.toISOString() ?? null,
       totalSizeBytes: g._sum.sizeBytes ?? 0,
       unsubscribeCount: unsub,
       unsubscribePct: count ? Math.round((unsub / count) * 100) : 0,
+      category: s?.category ?? null,
+      categorySource: s?.categorySource ?? 'auto',
+      categoryReason: s?.categoryReason ?? null,
     };
   });
 
