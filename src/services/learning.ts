@@ -99,8 +99,10 @@ export async function listSuggestions(): Promise<Suggestions> {
     });
   }
 
-  // 3. Priorités par relation, déduites du COMPORTEMENT DE LECTURE :
-  //    ⭐ tu ouvres tout ce qu'il envoie ; 🔕 tu ne l'ouvres presque jamais.
+  // 3. Priorités par relation. B5 : DEUX signaux concordants exigés — le
+  //    comportement de lecture (lu/non-lu) ne suffit plus seul, il faut
+  //    aussi l'interaction (réponses envoyées, étoiles, tâches) pour ⭐,
+  //    ou son ABSENCE totale pour 🔕.
   const priorities: PrioritySuggestion[] = [];
   const senders = await db.sender.findMany({
     where: { priority: 'normal', messageCount: { gte: 10 } },
@@ -113,11 +115,63 @@ export async function listSuggestions(): Promise<Suggestions> {
       unseenCount: true,
     },
   });
+
+  // Signaux d'interaction par expéditeur (une requête par lot de candidats) :
+  // conversation (fil avec un sortant), engagement (étoile/répondu), tâche.
+  const interactions = new Map<string, { conv: boolean; engaged: boolean; tasked: boolean }>();
+  const byAccount = new Map<string, string[]>();
+  for (const s of senders) {
+    const arr = byAccount.get(s.accountSlug) ?? [];
+    arr.push(s.email);
+    byAccount.set(s.accountSlug, arr);
+  }
+  for (const [account, emails] of byAccount) {
+    for (let i = 0; i < emails.length; i += 500) {
+      const batch = emails.slice(i, i + 500);
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = await db.$queryRawUnsafe<
+        { email: string; conv: number; engaged: number; tasked: number }[]
+      >(
+        `SELECT ms.fromEmail AS email,
+                MAX(CASE WHEN mo.id IS NOT NULL THEN 1 ELSE 0 END) AS conv,
+                MAX(CASE WHEN ms.isFlagged = 1 OR ms.isAnswered = 1 THEN 1 ELSE 0 END) AS engaged,
+                MAX(CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END) AS tasked
+         FROM Message ms
+         LEFT JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
+         LEFT JOIN Task t ON t.messageId = ms.id
+         WHERE ms.accountSlug = ? AND ms.isDeleted = 0 AND ms.isOutbound = 0
+           AND ms.fromEmail IN (${placeholders})
+         GROUP BY ms.fromEmail`,
+        account,
+        ...batch,
+      );
+      for (const r of rows) {
+        interactions.set(`${account}|${r.email}`, {
+          conv: Number(r.conv) === 1,
+          engaged: Number(r.engaged) === 1,
+          tasked: Number(r.tasked) === 1,
+        });
+      }
+    }
+  }
+
   for (const s of senders) {
     const ratio = s.unseenCount / s.messageCount;
+    const inter = interactions.get(`${s.accountSlug}|${s.email}`) ?? {
+      conv: false,
+      engaged: false,
+      tasked: false,
+    };
+    const hasInteraction = inter.conv || inter.engaged || inter.tasked;
+    const interactionLabel = inter.conv
+      ? 'tu lui as déjà répondu'
+      : inter.engaged
+        ? 'tu as suivi ⭐ ou marqué répondu un de ses mails'
+        : 'tu as créé une tâche depuis un de ses mails';
     let suggestion: PrioritySuggestion | null = null;
     if (
       ratio === 0 &&
+      hasInteraction &&
       (s.category === 'person' || s.category === 'company' || s.category === null)
     ) {
       suggestion = {
@@ -125,15 +179,15 @@ export async function listSuggestions(): Promise<Suggestions> {
         email: s.email,
         name: s.displayName ?? s.email,
         priority: 'always_important',
-        evidence: `Tu as ouvert TOUS ses mails (${s.messageCount}) — marquer ⭐ toujours important ?`,
+        evidence: `Deux signaux concordants : tu as ouvert TOUS ses mails (${s.messageCount}) ET ${interactionLabel} — marquer ⭐ toujours important ?`,
       };
-    } else if (s.messageCount >= 20 && ratio >= 0.9 && s.category !== 'person') {
+    } else if (s.messageCount >= 20 && ratio >= 0.9 && s.category !== 'person' && !hasInteraction) {
       suggestion = {
         account: s.accountSlug,
         email: s.email,
         name: s.displayName ?? s.email,
         priority: 'never_urgent',
-        evidence: `Tu n'ouvres presque jamais ses mails (${s.unseenCount}/${s.messageCount} non lus) — marquer 🔕 jamais urgent ?`,
+        evidence: `Deux signaux concordants : tu n'ouvres presque jamais ses mails (${s.unseenCount}/${s.messageCount} non lus) et tu n'as JAMAIS interagi (ni réponse, ni ⭐, ni tâche) — marquer 🔕 jamais urgent ?`,
       };
     }
     if (!suggestion) continue;

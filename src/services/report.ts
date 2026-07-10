@@ -1,5 +1,11 @@
 import { db, ensureDbReady } from '../db/client.js';
-import { listPolicies, applyPolicy, updatePolicy, type PolicyWithCount } from './retention.js';
+import {
+  listPolicies,
+  applyPolicy,
+  updatePolicy,
+  deletableUnion,
+  type PolicyWithCount,
+} from './retention.js';
 import { SENDER_CATEGORY_LABELS } from './categorize.js';
 
 /**
@@ -161,33 +167,6 @@ export async function generateMailboxReport(): Promise<MailboxReport> {
     topSendersBySize: mapTop(topBySize),
     deletable: { ...deletable, policies },
   };
-}
-
-/** Union distincte des mails visés par AU MOINS une stratégie (presets A3). */
-async function deletableUnion(): Promise<{ count: number; sizeBytes: number }> {
-  const now = Date.now();
-  const d = (days: number) => now - days * 86_400_000;
-  // Miroir des presets A3 (mêmes cibles, mêmes âges) en une seule clause OR.
-  // policyWhere garantit déjà l'exclusion « person » à l'application ; on la
-  // reproduit ici pour que le rapport promette exactement ce qui sera fait.
-  const rows = await db.$queryRawUnsafe<{ cnt: bigint; size: bigint | null }[]>(
-    `SELECT COUNT(*) AS cnt, SUM(m.sizeBytes) AS size
-     FROM Message m
-     JOIN Folder f ON f.id = m.folderId
-     LEFT JOIN Sender s ON s.accountSlug = m.accountSlug AND s.email = m.fromEmail
-     WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
-       AND (s.category IS NULL OR s.category != 'person')
-       AND (
-            (m.intent = 'otp'          AND m.date < ${d(7)})
-         OR (m.intent = 'shipping'     AND m.date < ${d(30)})
-         OR (s.category = 'notification' AND m.date < ${d(90)})
-         OR (s.category = 'social'     AND m.date < ${d(90)})
-         OR (m.intent = 'confirmation' AND m.date < ${d(180)})
-         OR (s.category = 'newsletter' AND m.isSeen = 0 AND m.date < ${d(90)})
-         OR (m.intent = 'promo'        AND m.isSeen = 0 AND m.date < ${d(30)})
-       )`,
-  );
-  return { count: Number(rows[0]?.cnt ?? 0), sizeBytes: Number(rows[0]?.size ?? 0) };
 }
 
 export interface GrandMenageReport {

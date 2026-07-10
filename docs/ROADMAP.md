@@ -984,15 +984,28 @@ forte/moyenne/faible — raison » (+ mention « protégé des nettoyages
 automatiques » si faible). Tests : seed 20 asserts + ui-b4.mjs 4 checks
 + régression B2.
 
-### ⬜ B5 — Stratégies à risque moyen affinées
+### ✅ B5 — Stratégies à risque moyen affinées — LIVRÉE. **SÉRIE B COMPLÈTE.**
 
-Confirmations : limiter à des sous-types sûrs (commande, inscription) —
-exclure résiliation/assurance/contrat (mots-clés) ; notifications :
-exclure alertes de sécurité/connexion/mot de passe/banque ; livraisons :
-exclure litige/remboursement/colis non reçu/garantie ; newsletters/promos :
-exclure les expéditeurs ayant déjà produit un mail important ou une
-conversation. Apprentissage (A6) : exiger 2 signaux concordants pour les
-suggestions de priorité (lu/non-lu + réponses envoyées/étoiles/tâches).
+retention.ts : affinage attaché à la CIBLE (intention/catégorie, pas à la
+clé — une stratégie personnalisée sur la même cible hérite des
+garde-fous). Sujets sensibles exclus (variantes accentuées ET non
+accentuées, LIKE) : confirmations — résiliation/assurance/mutuelle/
+contrat/préavis ; notifications — sécurité/connexion/mot de passe/
+password/alerte/fraude/banque/bancaire/virement ; livraisons — litige/
+remboursement/garantie/réclamation/« non reçu »/« pas reçu ».
+Newsletters/promos : expéditeur écarté s'il a DÉJÀ compté
+(ENGAGED_SENDER_CLAUSES : conversation avec lui, mail étoilé/répondu,
+tâche créée depuis un de ses mails — complète B1 qui ne protégeait que le
+mail concerné). Le tout compté comme protection → badge 🛡️ ; libellés des
+presets mis à jour (« hors résiliation… »). `deletableUnion` déplacé dans
+retention.ts et recalculé par UNION des policyWhere : le « récupérable »
+du rapport A4 promet désormais EXACTEMENT ce que l'application ferait
+(B1+B4+B5 inclus — l'ancien miroir manuel divergeait depuis B1).
+Apprentissage (A6, learning.ts) : suggestions de priorité à DEUX signaux
+concordants — ⭐ exige tout-lu ET une interaction (réponse envoyée, ⭐/
+répondu, tâche) ; 🔕 exige jamais-lu ET zéro interaction ; preuves
+reformulées (« Deux signaux concordants : … »). Tests : seed 15 asserts +
+ui-b5.mjs 6 checks + régressions B2/B4.
 
 ---
 

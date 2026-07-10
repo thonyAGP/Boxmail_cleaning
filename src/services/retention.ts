@@ -29,13 +29,76 @@ const PRESETS: {
   ageDays: number;
 }[] = [
   { key: 'otp7', label: 'Codes de connexion (OTP) de plus de 7 jours', matchIntent: 'otp', ageDays: 7 },
-  { key: 'shipping30', label: 'Suivis de livraison de plus de 30 jours', matchIntent: 'shipping', ageDays: 30 },
-  { key: 'notif90', label: 'Notifications automatiques de plus de 90 jours', matchCategory: 'notification', ageDays: 90 },
+  { key: 'shipping30', label: 'Suivis de livraison de plus de 30 jours (hors litige/remboursement/garantie)', matchIntent: 'shipping', ageDays: 30 },
+  { key: 'notif90', label: 'Notifications automatiques de plus de 90 jours (hors sécurité/banque)', matchCategory: 'notification', ageDays: 90 },
   { key: 'social90', label: 'Mails de réseaux sociaux de plus de 90 jours', matchCategory: 'social', ageDays: 90 },
-  { key: 'confirm180', label: 'Confirmations (commandes, inscriptions…) de plus de 6 mois', matchIntent: 'confirmation', ageDays: 180 },
-  { key: 'newsletter90', label: 'Newsletters JAMAIS ouvertes de plus de 90 jours', matchCategory: 'newsletter', unseenOnly: true, ageDays: 90 },
-  { key: 'promo30', label: 'Promotions JAMAIS ouvertes de plus de 30 jours', matchIntent: 'promo', unseenOnly: true, ageDays: 30 },
+  { key: 'confirm180', label: 'Confirmations (commandes, inscriptions…) de plus de 6 mois (hors résiliation/assurance/contrat)', matchIntent: 'confirmation', ageDays: 180 },
+  { key: 'newsletter90', label: 'Newsletters JAMAIS ouvertes de plus de 90 jours (jamais si tu as déjà échangé)', matchCategory: 'newsletter', unseenOnly: true, ageDays: 90 },
+  { key: 'promo30', label: 'Promotions JAMAIS ouvertes de plus de 30 jours (jamais si tu as déjà échangé)', matchIntent: 'promo', unseenOnly: true, ageDays: 30 },
 ];
+
+// ---------------------------------------------------------------------------
+// Affinage des stratégies à risque moyen (B5). Attachés à la CIBLE (intention
+// ou catégorie), pas à la clé du preset : une stratégie personnalisée sur la
+// même cible hérite des mêmes garde-fous. Exclure = GARDER le mail.
+// ---------------------------------------------------------------------------
+
+// Sujets sensibles par cible. LIKE SQLite = insensible à la casse ASCII ;
+// variantes accentuées ET non accentuées listées pour couvrir les deux.
+const SENSITIVE_SUBJECTS: { matchIntent?: string; matchCategory?: string; words: string[] }[] = [
+  {
+    // Confirmations : on ne garde que les sous-types sûrs (commande,
+    // inscription…) — jamais une résiliation, une assurance, un contrat.
+    matchIntent: 'confirmation',
+    words: ['résiliation', 'resiliation', 'assurance', 'mutuelle', 'contrat', 'préavis', 'preavis'],
+  },
+  {
+    // Notifications : jamais les alertes de sécurité / connexion / mot de
+    // passe / banque — ce sont des traces utiles en cas de fraude.
+    matchCategory: 'notification',
+    words: ['sécurité', 'securite', 'connexion', 'mot de passe', 'password', 'alerte', 'fraude', 'banque', 'bancaire', 'virement'],
+  },
+  {
+    // Livraisons : jamais un litige, un remboursement, un colis non reçu,
+    // une garantie — dossiers potentiellement encore ouverts.
+    matchIntent: 'shipping',
+    words: ['litige', 'remboursement', 'rembours', 'garantie', 'réclamation', 'reclamation', 'non reçu', 'non recu', 'pas reçu', 'pas recu'],
+  },
+];
+
+// Newsletters/promos : expéditeur écarté s'il a DÉJÀ compté pour toi —
+// conversation engagée, mail étoilé ou répondu, tâche créée depuis un de
+// ses mails. (Complète B1, qui ne protège que le mail concerné.)
+const ENGAGED_SENDER_CLAUSES = [
+  `NOT EXISTS (SELECT 1 FROM Message ms JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
+     WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0)`,
+  `NOT EXISTS (SELECT 1 FROM Message ms WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail
+     AND ms.isDeleted = 0 AND (ms.isFlagged = 1 OR ms.isAnswered = 1))`,
+  `NOT EXISTS (SELECT 1 FROM Message ms JOIN Task t ON t.messageId = ms.id
+     WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0)`,
+] as const;
+
+function refinementClauses(p: { matchIntent: string | null; matchCategory: string | null }): {
+  clauses: string[];
+  params: unknown[];
+} {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  for (const rule of SENSITIVE_SUBJECTS) {
+    const applies =
+      (rule.matchIntent && p.matchIntent === rule.matchIntent) ||
+      (rule.matchCategory && p.matchCategory === rule.matchCategory);
+    if (!applies) continue;
+    for (const w of rule.words) {
+      clauses.push(`COALESCE(m.subject, '') NOT LIKE ?`);
+      params.push(`%${w}%`);
+    }
+  }
+  if (p.matchCategory === 'newsletter' || p.matchIntent === 'promo') {
+    clauses.push(...ENGAGED_SENDER_CLAUSES);
+  }
+  return { clauses, params };
+}
 
 async function ensurePresets(): Promise<void> {
   for (const p of PRESETS) {
@@ -101,6 +164,13 @@ function policyWhere(
     ...(opts.withProtection === false ? [] : PROTECTION_CLAUSES),
   ];
   const params: unknown[] = [Date.now() - p.ageDays * 86_400_000];
+  // Affinage B5 (sujets sensibles, expéditeurs déjà « engagés ») : compté
+  // comme protection — le badge 🛡️ inclut ces mails écartés.
+  if (opts.withProtection !== false) {
+    const refinement = refinementClauses(p);
+    clauses.push(...refinement.clauses);
+    params.push(...refinement.params);
+  }
   if (p.unseenOnly) clauses.push(`m.isSeen = 0`);
   const targets: string[] = [];
   if (p.matchIntent) {
@@ -236,6 +306,31 @@ export async function previewPolicy(
       date: rawDate(r.date),
     })),
   };
+}
+
+/**
+ * Union DISTINCTE des mails visés par AU MOINS une stratégie — le
+ * « récupérable sans risque » du rapport A4. Passe par policyWhere :
+ * garanties person + protections B1/B4/B5 incluses, le rapport promet
+ * EXACTEMENT ce que l'application ferait.
+ */
+export async function deletableUnion(): Promise<{ count: number; sizeBytes: number }> {
+  await ensureDbReady();
+  await ensurePresets();
+  const policies = await db.retentionPolicy.findMany({ orderBy: { id: 'asc' } });
+  if (policies.length === 0) return { count: 0, sizeBytes: 0 };
+  const selects: string[] = [];
+  const params: unknown[] = [];
+  for (const p of policies) {
+    const w = policyWhere(p);
+    selects.push(`SELECT m.id AS id, m.sizeBytes AS size ${FROM} WHERE ${w.sql}`);
+    params.push(...w.params);
+  }
+  const rows = await db.$queryRawUnsafe<{ cnt: bigint; size: bigint | null }[]>(
+    `SELECT COUNT(*) AS cnt, SUM(size) AS size FROM (${selects.join(' UNION ')})`,
+    ...params,
+  );
+  return { count: Number(rows[0]?.cnt ?? 0), sizeBytes: Number(rows[0]?.size ?? 0) };
 }
 
 export interface RetentionTargetSample {

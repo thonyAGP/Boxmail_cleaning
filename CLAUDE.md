@@ -97,6 +97,21 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**B5 livrée : stratégies affinées — LA SÉRIE B (FIABILISATION) EST
+COMPLÈTE (B1→B5, livrées le 10/07).** retention.ts : exclusions par
+sujets sensibles attachées à la CIBLE (confirmations hors résiliation/
+assurance/contrat ; notifications hors sécurité/connexion/mot de passe/
+banque ; livraisons hors litige/remboursement/garantie) ; newsletters/
+promos jamais si l'expéditeur a déjà compté (conversation, ⭐/répondu,
+tâche) ; tout compté en protection 🛡️, libellés presets mis à jour.
+deletableUnion recalculé par UNION des policyWhere (rapport A4 exact,
+B1+B4+B5 inclus). learning.ts : suggestions de priorité à 2 signaux
+concordants (⭐ = tout lu ET interaction ; 🔕 = jamais lu ET zéro
+interaction). Tests : 15 asserts + 6 checks + régressions B2/B4.
+**VALIDATION RÉELLE à faire par l'utilisateur après mise à jour :
+relancer le backfill 🏷️ (Paramètres) pour poser la confiance B4, puis
+examiner ~50 détections dans 🔬 Vérifier l'analyse.**
+
 **B4 livrée : confiance de l'analyse (forte/moyenne/faible).**
 Migration Message.analysisConfidence(+Reason). computeConfidence
 (categorize.ts) : forte = verdict B2 correct / catégorie manuelle /
@@ -559,12 +574,14 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : SÉRIE A COMPLÈTE (A1 → A6, livrées le 10/07).** Prochaines
-étapes possibles : L6 déploiement Oracle (~45 min avec l'utilisateur,
-tout est prêt — docs/DEPLOY-ORACLE.md), validations EN RÉEL listées dans
-l'« État » ci-dessous, ou backlog (dossiers intelligents, désinscription
+**Séries A (Cap V3) ET B (fiabilisation) COMPLÈTES (livrées le 10/07).**
+Prochaines étapes possibles : VALIDATION RÉELLE de la série B par
+l'utilisateur (backfill 🏷️ pour poser la confiance B4, examen de
+détections dans 🔬 Vérifier l'analyse, verdicts → % de précision),
+L6 déploiement Oracle (~45 min avec l'utilisateur, tout est prêt —
+docs/DEPLOY-ORACLE.md), ou backlog (dossiers intelligents, désinscription
 newsletters, brouillons IMAP, extraction PDF factures, analyse LLM
-Sonnet dédiée, tools MCP pour today/retention/report/suggestions —
+Sonnet dédiée, tools MCP pour today/retention/report/suggestions/review —
 l'interface web les a, la façade MCP pas encore). L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
