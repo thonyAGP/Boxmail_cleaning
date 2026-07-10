@@ -481,3 +481,6 @@ input[type="color"].set-color {
 }
 .scroll-top:hover { background: var(--accent-soft); }
 th.sortable:hover { color: var(--accent); }
+
+/* Sous-liens de dossiers dans la sidebar (L5.12) */
+.side-sub { padding-left: 28px; font-size: 12.5px; }

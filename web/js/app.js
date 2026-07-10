@@ -1094,6 +1094,10 @@ function opLine(op) {
 // ---------------------------------------------------------------- Vue compte
 const statsState = { sortKey: 'count', sortDir: -1, data: null, selected: new Map() };
 
+const FOLDER_ROLE_EMOJI = {
+  inbox: '📥', sent: '📤', drafts: '📝', trash: '🗑️', archive: '📦', spam: '⚠️', custom: '📂',
+};
+
 async function renderAccount(slug) {
   const main = $('#main');
   const enrolled = overviewCache?.enrolled.find((e) => e.account === slug);
@@ -1153,6 +1157,23 @@ async function renderAccount(slug) {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>📂 Dossiers</h2>
+        <span class="muted" style="font-size:12.5px">clique un dossier pour lire ses mails</span></div>
+      <div class="panel-body tight">
+        <table><thead><tr><th>Dossier</th><th class="num">Mails</th><th class="num">Non lus</th><th></th></tr></thead>
+        <tbody>${ov.folders
+          .filter((f) => f.messageCount > 0 || ['inbox', 'sent', 'trash', 'drafts'].includes(f.role))
+          .map((f) => `<tr>
+            <td><span class="openable" data-folder="${esc(f.path)}" title="Lire les mails de ce dossier">
+              ${FOLDER_ROLE_EMOJI[f.role] ?? '📂'} ${esc(f.path)}</span></td>
+            <td class="num">${fmtNum(f.messageCount)}</td>
+            <td class="num">${f.unseenCount ? `<span class="badge orange">${fmtNum(f.unseenCount)}</span>` : '—'}</td>
+            <td style="text-align:right"><button class="btn btn-sm" data-folder="${esc(f.path)}">📖 Lire</button></td>
+          </tr>`).join('')}</tbody></table>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Statistiques par expéditeur</h2>
         <div class="filters">
           <select id="f-folder">${ov.folders
@@ -1166,6 +1187,18 @@ async function renderAccount(slug) {
       <div class="panel-body tight" id="stats-table"><div class="empty"><span class="spinner"></span></div></div>
     </div>
     <div id="account-cleanup"></div>`;
+
+  body.querySelectorAll('[data-folder]').forEach((el) => {
+    el.addEventListener('click', () => {
+      inboxState.account = slug;
+      localStorage.setItem('bm.inboxAccount', slug);
+      inboxState.role = 'inbox';
+      inboxState.folder = el.dataset.folder;
+      inboxState.offset = 0;
+      inboxState.selected.clear();
+      location.hash = `#/inbox/${encodeURIComponent(slug)}`;
+    });
+  });
 
   $('#f-apply').addEventListener('click', () => loadStats(slug));
   await loadStats(slug);
@@ -3076,6 +3109,8 @@ function openTaskModal({ title = '', dueDate = '', account = null, messageRef = 
 const inboxState = {
   // '' = 🌐 toutes les boîtes (défaut) ; mémorisé entre les visites.
   account: localStorage.getItem('bm.inboxAccount') ?? '',
+  // Rôle de dossier en vue unifiée : inbox | sent | drafts | trash | archive | spam
+  role: 'inbox',
   folder: '',
   offset: 0,
   pageSize: 50,
@@ -3099,7 +3134,15 @@ async function renderInbox(slugFromHash) {
       <div class="notice warn">Aucun compte enrôlé.</div>`;
     return;
   }
-  if (slugFromHash && accounts.includes(slugFromHash)) inboxState.account = slugFromHash;
+  if (slugFromHash?.startsWith('@')) {
+    // Lien direct « toutes les boîtes » sur un rôle : #/inbox/@sent, @drafts, @trash…
+    inboxState.account = '';
+    inboxState.role = slugFromHash.slice(1) || 'inbox';
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+  } else if (slugFromHash && accounts.includes(slugFromHash)) {
+    inboxState.account = slugFromHash;
+  }
   if (inboxState.account && !accounts.includes(inboxState.account)) {
     inboxState.account = ''; // compte disparu → retour à la vue unifiée
   }
@@ -3130,13 +3173,19 @@ async function renderInbox(slugFromHash) {
     inboxState.account = e.target.value;
     localStorage.setItem('bm.inboxAccount', inboxState.account);
     inboxState.folder = '';
+    if (!isUnifiedInbox()) inboxState.role = 'inbox';
     inboxState.offset = 0;
     inboxState.selected.clear();
     await loadInboxFolders();
     loadInbox();
   });
   $('#inbox-folder').addEventListener('change', (e) => {
-    inboxState.folder = e.target.value;
+    if (e.target.value.startsWith('@')) {
+      inboxState.role = e.target.value.slice(1);
+      inboxState.folder = '';
+    } else {
+      inboxState.folder = e.target.value;
+    }
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
@@ -3171,19 +3220,31 @@ async function loadInboxFolders() {
   const sel = $('#inbox-folder');
   if (!sel) return;
   if (isUnifiedInbox()) {
-    sel.innerHTML = '<option value="">📥 INBOX de toutes les boîtes</option>';
-    sel.disabled = true;
+    // Vue unifiée : le sélecteur choisit le TYPE de dossier, toutes boîtes.
+    const roles = [
+      ['inbox', '📥 Boîte de réception'],
+      ['sent', '📤 Envoyés'],
+      ['drafts', '📝 Brouillons'],
+      ['trash', '🗑️ Corbeille'],
+      ['archive', '📦 Archive'],
+      ['spam', '⚠️ Spam'],
+    ];
+    sel.innerHTML = roles
+      .map(([r, label]) => `<option value="@${r}" ${inboxState.role === r ? 'selected' : ''}>${label} (toutes les boîtes)</option>`)
+      .join('');
+    sel.disabled = false;
     inboxState.folder = '';
     inboxState.folders = [];
     return;
   }
+  inboxState.role = 'inbox';
   sel.disabled = false;
   sel.innerHTML = '<option>…</option>';
   try {
     const { folders } = await api.folders(inboxState.account);
     inboxState.folders = folders;
     const usable = folders.filter((f) => f.messageCount > 0 || f.role === 'inbox');
-    if (!inboxState.folder) {
+    if (!inboxState.folder || !usable.some((f) => f.path === inboxState.folder)) {
       inboxState.folder = usable.find((f) => f.role === 'inbox')?.path ?? usable[0]?.path ?? 'INBOX';
     }
     sel.innerHTML = usable
@@ -3211,6 +3272,7 @@ async function loadInbox() {
           attachments: inboxState.attachments,
           sort: inboxState.sort,
           dir: inboxState.dir,
+          role: inboxState.role,
         })
       : await api.listMessages(inboxState.account, {
           folder: inboxState.folder,

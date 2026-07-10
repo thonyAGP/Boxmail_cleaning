@@ -49,10 +49,10 @@ export const api = {
       folder,
       uids,
     }),
-  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc' } = {}) =>
+  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc', role = 'inbox' } = {}) =>
     request(
       'GET',
-      `/messages?offset=${offset}&limit=${limit}&sort=${sort}&dir=${dir}` +
+      `/messages?offset=${offset}&limit=${limit}&sort=${sort}&dir=${dir}&role=${role}` +
         (unseen ? '&unseen=1' : '') +
         (attachments ? '&attachments=1' : ''),
     ),

@@ -396,6 +396,75 @@ déclenché au tick, statut visible via /api/version et /api/jobs.
 
 ---
 
+## Rattrapage maquette 2 (analyse d'écarts 10/07/2026 — maquette + SPEC V2)
+
+> Retour utilisateur : « Je ne vois toujours pas la possibilité de lire mes
+> emails dans les dossiers des boîtes » + « ChatGPT (SPEC V2) t'a donné des
+> choses à revoir dont tu n'as pas tenu compte ». Analyse complète faite :
+> écarts listés ci-dessous, dans l'ordre de valeur pour l'utilisateur.
+
+### ✅ L5.12 — Lire les mails dans TOUS les dossiers — LIVRÉE
+
+Réponse au blocage n°1. Sidebar : sous-liens 📤 Envoyés / 📝 Brouillons /
+🗑️ Corbeille (`#/inbox/@sent|@drafts|@trash` — vue UNIFIÉE par rôle de
+dossier, toutes boîtes). Backend : `listUnifiedInbox({role})` (inbox/sent/
+drafts/trash/archive/spam) + param `role` sur GET /api/messages. Écran
+inbox : en vue unifiée le sélecteur de dossier devient un sélecteur de
+TYPE (activé, plus grisé) ; sur une boîte précise, comportement inchangé +
+garde-fou dossier inexistant → retour INBOX. Vue compte : nouveau panneau
+« 📂 Dossiers » cliquable (emoji par rôle, compteurs mails/non lus, 📖
+Lire → ouvre l'inbox sur CE dossier de CETTE boîte). Tests : seed étendu
+(sent/trash par boîte, asserts par rôle — 22 au total) + ui-folders.mjs
+(10 checks playwright, lecture depuis Archive incluse).
+
+### ⬜ L5.13 — Mails suivis (drapeaux ⭐)
+
+Maquette : entrée sidebar « Mails suivis (12) ». `isFlagged` est DÉJÀ
+indexé. Backend : filtre `flagged=1` sur les deux listings + action
+flag/unflag (imapService.markEmails \\Flagged + reflet index). UI :
+sous-lien sidebar 📌 Mails suivis (vue unifiée `flagged`), étoile
+cliquable dans les lignes inbox + panneau de lecture.
+
+### ⬜ L5.14 — Écran Pièces jointes
+
+Maquette : entrée sidebar « Pièces jointes ». Écran `#/attachments` :
+recherche multi-boîtes filtrée `hasAttachments` (searchIndex existant),
+tri date, badge compteur, téléchargement direct (endpoint L5.9). SPEC V2
+« recherche documentaire » : v1 = par métadonnées du MAIL porteur (nom de
+fichier indexé = plus tard, nécessite stocker les noms à la sync).
+
+### ⬜ L5.15 — Nettoyage conseillé global (sidebar + dashboard)
+
+Maquette : entrée sidebar « Nettoyage conseillé » + panneau dashboard
+agrégé multi-boîtes avec total « N mails peuvent être supprimés » et
+bouton « Voir et nettoyer ». Backend : GET /api/cleanup agrégé (boucle
+getCleanupCandidates par compte). Écran `#/cleanup` groupé par boîte,
+réutilise la modale existante.
+
+### ⬜ L5.16 — Dashboard conforme maquette
+
+« Bonjour Anthony 👋 » + date ; carte « Nouveaux mails +N depuis hier »
+(nouvelle table de snapshots quotidiens OU approx createdAt) ; panneau
+« Activité récente » (3 dernières opérations du journal) ; panneau
+« Actions rapides » (Rechercher, Nouveau mail, Analyser cette boîte,
+Générer le brief) ; « Aperçu par compte » avec barres (existe en partie).
+
+### SPEC V2 — points non couverts restants (hors multi-utilisateur)
+
+- **Règles de classement + dossiers intelligents** (mail_rules,
+  suggest/preview/apply, JAMAIS d'application sans validation) → **L7**,
+  gros morceau déjà planifié.
+- **Brouillons** (préparer une réponse déposée dans le dossier Brouillons
+  via IMAP APPEND, sans envoi) → petit, à caser après L5.16.
+- **Mémoire métier (entities/projects)** + **recherche documentaire dans
+  le CONTENU des PJ** → nécessite l'analyse LLM (Sonnet dédié) — décision
+  utilisateur 07/2026 : 2e temps, après déploiement.
+- Décisions ASSUMÉES vs SPEC (actées avec l'utilisateur) : SQLite/Prisma au
+  lieu de PostgreSQL+Redis+BullMQ ; interface web en plus du MCP ; pas de
+  pgvector en v1.
+
+---
+
 ## ⬜ L6 — Déploiement Oracle Cloud + connecteur Cowork
 
 **Objectif.** Serveur accessible en HTTPS pour Claude Cowork ET pour

@@ -94,6 +94,22 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Rattrapage maquette 2 EN COURS (retour utilisateur 10/07 : lire les
+mails dans les dossiers + écarts SPEC V2/maquette non traités).** Analyse
+d'écarts complète consignée dans ROADMAP.md (« Rattrapage maquette 2 ») :
+L5.12 dossiers ✅ LIVRÉE → L5.13 mails suivis → L5.14 écran pièces jointes
+→ L5.15 nettoyage global → L5.16 dashboard maquette → puis L7 règles,
+brouillons IMAP, mémoire métier/LLM en 2e temps.
+
+**L5.12 livrée : lire les mails dans TOUS les dossiers.** Sidebar :
+sous-liens 📤 Envoyés / 📝 Brouillons / 🗑️ Corbeille (#/inbox/@role, vue
+unifiée par rôle — `listUnifiedInbox({role})`, param `role` sur GET
+/api/messages) ; en vue unifiée le sélecteur de dossier choisit le TYPE
+(inbox/sent/drafts/trash/archive/spam, plus jamais grisé) ; vue compte :
+panneau « 📂 Dossiers » cliquable (compteurs, 📖 Lire → inbox sur ce
+dossier) ; garde-fou dossier mémorisé inexistant → INBOX. Tests : seed
+étendu (22 asserts) + ui-folders.mjs (10 checks).
+
 **L6-prep TERMINÉE (même session) : tout le déploiement Oracle préparable
 sans l'utilisateur est prêt.** `TRUST_PROXY` (trust proxy 'loopback' —
 rate limits par IP réelle derrière nginx, testé XFF) + cookie session

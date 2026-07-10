@@ -173,6 +173,9 @@ function folderOrderBy(sort: FolderSort | undefined, dir: 'asc' | 'desc') {
   return [{ date: dir }, { id: dir }] as const;
 }
 
+export const UNIFIED_ROLES = ['inbox', 'sent', 'drafts', 'trash', 'archive', 'spam'] as const;
+export type UnifiedRole = (typeof UNIFIED_ROLES)[number];
+
 export async function listUnifiedInbox(
   opts: {
     offset?: number;
@@ -181,14 +184,17 @@ export async function listUnifiedInbox(
     withAttachments?: boolean;
     sort?: FolderSort;
     dir?: 'asc' | 'desc';
+    /** Rôle de dossier agrégé sur toutes les boîtes (défaut : inbox). */
+    role?: UnifiedRole;
   } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
+  const role = opts.role ?? 'inbox';
   const where = {
     isDeleted: false,
-    folder: { is: { role: 'inbox' } },
+    folder: { is: { role } },
     ...(opts.unseen ? { isSeen: false } : {}),
     ...(opts.withAttachments ? { hasAttachments: true } : {}),
   };
@@ -220,7 +226,7 @@ export async function listUnifiedInbox(
   ]);
   return {
     account: '',
-    folder: '(toutes les boîtes)',
+    folder: `(toutes les boîtes · ${role})`,
     total,
     offset,
     items: rows.map((m) => ({
