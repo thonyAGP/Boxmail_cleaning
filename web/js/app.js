@@ -2500,6 +2500,10 @@ function replyRow(i, idx) {
         <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
         ${accountChip(i.account)}
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+        ${i.requestKind === 'action' ? '<span class="badge orange">🗣️ action demandée</span>'
+          : i.requestKind === 'reply_expected' ? '<span class="badge orange">🗣️ réponse attendue</span>'
+          : i.requestKind === 'question' ? '<span class="badge blue">❓ question</span>' : ''}
+        ${i.inCopy ? '<span class="badge gray" title="Tu n\'es pas dans les destinataires principaux">cc — en copie</span>' : ''}
       </div>
       <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}
         ${i.threadMessageCount > 1 ? `<span class="muted" style="font-size:12px">· fil de ${fmtNum(i.threadMessageCount)} messages</span>` : ''}</div>
@@ -2716,7 +2720,8 @@ function followupRow(i, idx) {
 }
 
 // ---------------------------------------------------------------- Mails importants
-const importantState = { sinceDays: 30, minScore: 40, includeRead: false, data: null };
+// B3 : lus INCLUS par défaut — les « non traités » sont souvent déjà lus.
+const importantState = { sinceDays: 30, minScore: 40, includeRead: true, data: null, expanded: {} };
 
 // Pastille de score colorée : rouge ≥ 70, orange 40-69, gris < 40.
 function scoreBadge(score) {
@@ -2778,14 +2783,39 @@ async function loadImportant() {
       Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
     return;
   }
+  importantState.expanded = {};
   refreshImportantBadge(importantState.data);
   renderImportantBody();
 }
+
+// B3 : trois groupes remplacent la liste unique — nouveaux / non traités /
+// probablement traités. Cap d'affichage par groupe + « +N autres ».
+const IMPORTANT_GROUPS = [
+  { key: 'new', icon: '🆕', label: 'Nouveaux (7 derniers jours)', hint: 'reçus récemment — à regarder' },
+  { key: 'untreated', icon: '⏳', label: 'Non traités', hint: 'plus anciens, AUCUNE réponse ni tâche — même si tu les as lus' },
+  { key: 'treated', icon: '✅', label: 'Probablement traités', hint: 'réponse envoyée ou tâche liée — pour vérification' },
+];
+const IMPORTANT_GROUP_CAP = 10;
 
 function renderImportantBody() {
   const body = $('#important-body');
   const d = importantState.data;
   if (!body || !d) return;
+
+  const groupPanel = (g) => {
+    const items = d.items.filter((i) => (i.treatState ?? 'new') === g.key);
+    if (items.length === 0) return '';
+    const expanded = importantState.expanded[g.key];
+    const shown = expanded ? items : items.slice(0, IMPORTANT_GROUP_CAP);
+    const hidden = items.length - shown.length;
+    return `<div class="panel">
+      <div class="panel-head"><h2>${g.icon} ${g.label} <span class="badge ${g.key === 'untreated' ? 'red' : 'gray'}">${fmtNum(items.length)}</span></h2>
+        <span class="muted" style="font-size:12px">${g.hint}</span></div>
+      <div class="panel-body tight">
+        ${shown.map((i) => importantRow(i, d.items.indexOf(i))).join('')}
+        ${hidden > 0 ? `<div style="padding:8px 4px"><button class="btn btn-sm important-more" data-group="${g.key}">＋ ${fmtNum(hidden)} autres</button></div>` : ''}
+      </div></div>`;
+  };
 
   body.innerHTML = `
     <div class="cards">
@@ -2797,15 +2827,19 @@ function renderImportantBody() {
         <div class="kpi-value">${fmtNum(d.counts.low)}</div>
         <div class="kpi-sub">masqués par le filtre de score</div></div>
     </div>
-    <div class="panel"><div class="panel-body tight">
-      ${d.items.length === 0
-        ? `<div class="empty">Aucun mail à score ≥ ${d.minScore} sur cette période${d.includeRead ? '' : ' (parmi les non-lus)'}. 👍</div>`
-        : d.items.map(importantRow).join('')}
-    </div></div>
+    ${d.items.length === 0
+      ? `<div class="panel"><div class="panel-body"><div class="empty">Aucun mail à score ≥ ${d.minScore} sur cette période${d.includeRead ? '' : ' (parmi les non-lus)'}. 👍</div></div></div>`
+      : IMPORTANT_GROUPS.map(groupPanel).join('')}
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
       📖 Clique un sujet pour lire le mail ici (et agir : corbeille, déplacer, lu/non lu).
-      Le score est indicatif — les raisons listées sous chaque mail expliquent pourquoi il est là.</div>`;
+      « Non traités » = importants restés sans réponse ni tâche : c'est là que se cachent les oublis.</div>`;
 
+  body.querySelectorAll('.important-more').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      importantState.expanded[btn.dataset.group] = true;
+      renderImportantBody();
+    });
+  });
   body.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => {
       const i = d.items[Number(el.dataset.open)];
@@ -2838,6 +2872,7 @@ function importantRow(i, idx) {
         : i.level === 'medium'
           ? '<span class="badge orange">importance moyenne</span>'
           : '<span class="badge gray">importance faible</span>'}
+      ${i.treatState === 'untreated' ? `<span class="badge orange">⏳ ${fmtNum(i.daysSinceReceived)} j sans traitement</span>` : ''}
       <div class="reply-actions"><button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button></div>
     </div>
   </div>`;
@@ -5729,10 +5764,18 @@ function renderReaderAnalysis(a, item) {
     )
     .join(' ');
 
+  // Type de demande (B3) : question / action / réponse attendue — détecté
+  // aussi sans « ? » (le texte cité du mail est ignoré).
+  const requestLine = a.request && a.request.kind !== 'information'
+    ? `<div class="ra-line"><span class="badge ${a.request.kind === 'question' ? 'blue' : 'orange'}">🗣️</span>
+        <span>${esc(a.request.label)} <span class="muted" style="font-size:11.5px">— ${esc(a.request.why)}</span></span></div>`
+    : '';
+
   el.innerHTML = `
     <div class="ra-title">🤖 Analyse Mail Assistant <span class="muted" style="font-size:11px">(règles locales — rien n'est envoyé à un service externe)</span></div>
     ${impLine}
     <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
+    ${requestLine}
     ${existing || detected
       ? `<div class="ra-line"><span>Échéances :</span> ${existing} ${detected}</div>`
       : ''}`;

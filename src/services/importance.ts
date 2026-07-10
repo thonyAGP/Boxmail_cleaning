@@ -38,6 +38,14 @@ export interface ImportantItem {
   level: ImportanceLevel;
   /** Justifications explicites, une par règle appliquée (avec ses points). */
   reasons: string[];
+  /**
+   * État de traitement (B3) : new = reçu il y a moins de 7 jours ;
+   * untreated = plus ancien, SANS réponse / tâche / suivi (même s'il est lu) ;
+   * treated = probablement traité (réponse envoyée, tâche liée, ⭐ suivi).
+   */
+  treatState: 'new' | 'untreated' | 'treated';
+  /** Ancienneté en jours (arrondie). */
+  daysSinceReceived: number;
 }
 
 export interface ImportantOptions {
@@ -89,6 +97,10 @@ interface ScoreContext {
   threadHasOutbound: boolean;
   /** true si ce mail est le dernier du fil, sans réponse sortante depuis. */
   awaitingReply: boolean;
+  /** true si une échéance (proposée/confirmée) est liée à ce mail (B3). */
+  deadlineLinked?: boolean;
+  /** true si l'expéditeur a relancé : ≥ 2 mails entrants sans réponse (B3). */
+  senderReminded?: boolean;
   now: number;
 }
 
@@ -136,6 +148,16 @@ export function scoreMessage(
   }
   if (ctx.awaitingReply) {
     add(10, 'attend une réponse (dernier message du fil, rien envoyé depuis)');
+    // B3 : plus un mail attend, plus il compte — « jours sans traitement ».
+    const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
+    if (waitingDays >= 14) add(10, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+    else if (waitingDays >= 7) add(5, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+  }
+  if (ctx.deadlineLinked) {
+    add(10, 'une échéance est liée à ce mail');
+  }
+  if (ctx.senderReminded) {
+    add(10, "l'expéditeur a relancé (plusieurs mails sans réponse de ta part)");
   }
   if (m.hasListUnsubscribe || ctx.senderKind === 'newsletter' || ctx.senderKind === 'notification') {
     add(-40, 'newsletter ou notification automatique (rarement important)');
@@ -199,6 +221,7 @@ type CandidateRow = {
   fromName: string | null;
   date: Date | null;
   isSeen: boolean;
+  isAnswered: boolean;
   hasListUnsubscribe: boolean;
   folder: { path: string };
 };
@@ -207,6 +230,7 @@ function buildItem(
   account: string,
   m: CandidateRow,
   ctx: ScoreContext,
+  treat: { treatState: ImportantItem['treatState']; daysSinceReceived: number },
 ): ImportantItem {
   const { score, level, reasons } = scoreMessage(
     {
@@ -234,7 +258,29 @@ function buildItem(
     score,
     level,
     reasons,
+    treatState: treat.treatState,
+    daysSinceReceived: treat.daysSinceReceived,
   };
+}
+
+/**
+ * État de traitement d'un mail (B3) : « nouveaux » (moins de 7 jours),
+ * « probablement traités » (réponse envoyée, marqué répondu ou tâche liée),
+ * « non traités » (anciens, rien fait — même s'ils ont été lus).
+ */
+export function treatStateOf(m: {
+  date: Date | null;
+  isAnswered: boolean;
+  outboundAfter: boolean;
+  hasTask: boolean;
+  now: number;
+}): { treatState: ImportantItem['treatState']; daysSinceReceived: number } {
+  const days = m.date ? Math.max(0, Math.round((m.now - m.date.getTime()) / 86_400_000)) : 9999;
+  if (days < 7) return { treatState: 'new', daysSinceReceived: days };
+  if (m.outboundAfter || m.isAnswered || m.hasTask) {
+    return { treatState: 'treated', daysSinceReceived: days };
+  }
+  return { treatState: 'untreated', daysSinceReceived: days };
 }
 
 /**
@@ -274,6 +320,7 @@ export async function getImportantEmails(
       fromName: true,
       date: true,
       isSeen: true,
+      isAnswered: true,
       hasListUnsubscribe: true,
       folder: { select: { path: true } },
     },
@@ -285,6 +332,34 @@ export async function getImportantEmails(
   );
   const threadIds = [...new Set(raw.map((m) => m.threadId).filter((t): t is number => t !== null))];
   const { lastAny, lastOut } = await loadThreadContext(threadIds);
+
+  // B3 : tâches et échéances liées aux candidats (requêtes par lots).
+  const candidateIds = raw.map((m) => m.id);
+  const taskedIds = new Set<number>();
+  const deadlineIds = new Set<number>();
+  for (const ids of chunk(candidateIds, 500)) {
+    const tasks = await db.task.findMany({
+      where: { accountSlug: account, messageId: { in: ids } },
+      select: { messageId: true },
+    });
+    for (const t of tasks) if (t.messageId !== null) taskedIds.add(t.messageId);
+    const deadlines = await db.deadline.findMany({
+      where: { accountSlug: account, messageId: { in: ids }, status: { in: ['proposed', 'confirmed'] } },
+      select: { messageId: true },
+    });
+    for (const d of deadlines) deadlineIds.add(d.messageId);
+  }
+
+  // B3 : « l'expéditeur a relancé » — plusieurs mails ENTRANTS du même
+  // expéditeur dans le fil, plus récents que ta dernière réponse. Calculé
+  // depuis la liste candidate elle-même (même fenêtre, même périmètre).
+  const inboundByThread = new Map<number, { date: Date; fromEmail: string }[]>();
+  for (const m of raw) {
+    if (m.threadId === null || !m.date || !m.fromEmail) continue;
+    const arr = inboundByThread.get(m.threadId) ?? [];
+    arr.push({ date: m.date, fromEmail: m.fromEmail });
+    inboundByThread.set(m.threadId, arr);
+  }
 
   const items: ImportantItem[] = [];
   const counts = { high: 0, medium: 0, low: 0 };
@@ -299,13 +374,32 @@ export async function getImportantEmails(
       isLastOfThread &&
       (!out || out.getTime() < m.date.getTime()) &&
       !AUTO_SENDER_RE.test(m.fromEmail);
-    const item = buildItem(account, m, {
-      senderKind,
-      senderPriority: meta?.priority ?? 'normal',
-      threadHasOutbound: Boolean(out),
-      awaitingReply,
-      now,
-    });
+    const outTime = out?.getTime() ?? 0;
+    const senderReminded =
+      awaitingReply &&
+      (inboundByThread.get(m.threadId ?? -1) ?? []).filter(
+        (x) => x.fromEmail === m.fromEmail && x.date.getTime() > outTime,
+      ).length >= 2;
+    const item = buildItem(
+      account,
+      m,
+      {
+        senderKind,
+        senderPriority: meta?.priority ?? 'normal',
+        threadHasOutbound: Boolean(out),
+        awaitingReply,
+        deadlineLinked: deadlineIds.has(m.id),
+        senderReminded,
+        now,
+      },
+      treatStateOf({
+        date: m.date,
+        isAnswered: m.isAnswered,
+        outboundAfter: Boolean(out && out.getTime() >= m.date.getTime()),
+        hasTask: taskedIds.has(m.id),
+        now,
+      }),
+    );
     counts[item.level]++;
     if (item.score >= minScore) items.push(item);
   }
@@ -347,6 +441,7 @@ export async function explainImportance(
     fromName: true,
     date: true,
     isSeen: true,
+    isAnswered: true,
     hasListUnsubscribe: true,
     folder: { select: { path: true } },
   } as const;
@@ -390,11 +485,48 @@ export async function explainImportance(
     (!out || out.getTime() < (m.date as Date).getTime()) &&
     !AUTO_SENDER_RE.test(m.fromEmail);
 
-  return buildItem(account, m, {
-    senderKind: kinds.get(m.fromEmail)?.kind ?? 'unknown',
-    senderPriority: kinds.get(m.fromEmail)?.priority ?? 'normal',
-    threadHasOutbound: Boolean(out),
-    awaitingReply,
-    now: Date.now(),
-  });
+  // Signaux B3 pour CE mail : échéance liée, tâche liée, relance reçue.
+  const [deadline, task, inboundSinceOut] = await Promise.all([
+    db.deadline.findFirst({
+      where: { accountSlug: account, messageId: m.id, status: { in: ['proposed', 'confirmed'] } },
+      select: { id: true },
+    }),
+    db.task.findFirst({
+      where: { accountSlug: account, messageId: m.id },
+      select: { id: true },
+    }),
+    m.threadId !== null
+      ? db.message.count({
+          where: {
+            threadId: m.threadId,
+            isDeleted: false,
+            isOutbound: false,
+            fromEmail: m.fromEmail,
+            ...(out ? { date: { gt: out } } : {}),
+          },
+        })
+      : Promise.resolve(0),
+  ]);
+  const now = Date.now();
+
+  return buildItem(
+    account,
+    m,
+    {
+      senderKind: kinds.get(m.fromEmail)?.kind ?? 'unknown',
+      senderPriority: kinds.get(m.fromEmail)?.priority ?? 'normal',
+      threadHasOutbound: Boolean(out),
+      awaitingReply,
+      deadlineLinked: Boolean(deadline),
+      senderReminded: awaitingReply && inboundSinceOut >= 2,
+      now,
+    },
+    treatStateOf({
+      date: m.date,
+      isAnswered: m.isAnswered,
+      outboundAfter: Boolean(out && m.date && out.getTime() >= m.date.getTime()),
+      hasTask: Boolean(task),
+      now,
+    }),
+  );
 }

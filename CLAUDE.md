@@ -97,6 +97,17 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**B3 livrée : réponse attendue v2 + importants « non traités ».**
+attention.ts : detectRequestKind (réponse attendue/action/question/info,
+motifs FR sans « ? »), stripQuotedText (texte cité ignoré), destinataire
+principal vs copie (toEmails ; en copie ⇒ seuil normal + trié après) —
+ReplyItem.requestKind/inCopy, badges 🗣️/❓/cc écran Réponses, ligne 🗣️
+dans l'analyse du mail ouvert (corps déquoté). importance.ts :
+treatState new/untreated/treated (non traité = ancien sans réponse/tâche
+même lu), score enrichi (+5/10 sans traitement N j, +10 échéance liée,
++10 expéditeur a relancé) ; écran ⭐ en 3 groupes cap 10 + « ＋N autres »,
+lus inclus par défaut. Tests : 20 asserts + 10 checks navigateur.
+
 **B2 livrée : écran « Vérifier l'analyse » (contrôle qualité).**
 Modèle AnalysisFeedback + services/quality.ts : échantillon aléatoire des
 5 moteurs (réponses, importants, newsletters/notifications AUTO

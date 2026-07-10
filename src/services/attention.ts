@@ -41,6 +41,11 @@ export interface ReplyItem {
   waitingHours: number;
   /** true si le seuil de la catégorie est dépassé. */
   overdue: boolean;
+  /** Type de demande détecté (B3) : réponse attendue / action / question / info. */
+  requestKind: RequestKind;
+  requestKindLabel: string;
+  /** true si tu n'es pas dans les destinataires principaux (probablement en copie). */
+  inCopy: boolean;
   /** Justification explicite, affichée telle quelle. */
   reason: string;
   state: ReplyState;
@@ -94,6 +99,72 @@ export const URGENT_SUBJECT_RE =
 export const IMPORTANT_SENDER_RE =
   /(banque|bank|cr[ée]dit|boursorama|fortuneo|\bbnp\b|societe ?generale|banquepostale|impot|finances|dgfip|tresor|urssaf|ameli|cpam|\bmsa\b|\bcaf\b|assurance|mutuelle|notaire|avocat|huissier|comptab|prefecture|mairie|gouv\.fr|pole-?emploi|francetravail|syndic|foncia)/i;
 
+// ---------------------------------------------------------------------------
+// Réponse attendue v2 (B3) : TYPE DE DEMANDE. Beaucoup de mails réclament une
+// réponse SANS poser de question (« merci de me transmettre », « dans
+// l'attente de votre retour ») — motifs français explicites, appliqués au
+// sujet (index-only) et, quand il est disponible, au corps SANS le texte cité.
+// ---------------------------------------------------------------------------
+
+export type RequestKind = 'reply_expected' | 'action' | 'question' | 'information';
+
+export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
+  reply_expected: 'Réponse explicitement attendue',
+  action: 'Action demandée',
+  question: 'Question posée',
+  information: 'Information',
+};
+
+/** Réponse explicitement attendue, sans « ? » (tournures françaises). */
+export const REPLY_EXPECTED_RE =
+  /(dans l'attente de (votre|ta|ton) (r[ée]ponse|retour|confirmation|accord)|en attente de (votre|ta|ton) (r[ée]ponse|retour)|j'attends (votre|ta|ton) (r[ée]ponse|retour|accord|confirmation)|merci de (me |nous )?(r[ée]pondre|confirmer|tenir inform[ée])|r[ée]ponse (souhait[ée]e|attendue|rapide)|qu'en (penses?[- ]tu|pensez[- ]vous)|(tiens|tenez)[- ](moi|nous) (au courant|inform[ée]e?s?)|dis[- ]moi (ce que|si|quand|ce qu')|confirmez?[- ](moi|nous)|merci de (nous |me )?faire (un )?retour)/i;
+
+/** Action demandée, sans « ? » (transmettre, signer, valider, régler…). */
+export const ACTION_REQUEST_RE =
+  /(merci de (me |nous |bien vouloir )?(transmettre|envoyer|renvoyer|retourner|fournir|valider|signer|compl[ée]ter|remplir|v[ée]rifier|payer|r[ée]gler|d[ée]poser)|veuillez (me |nous |bien vouloir )?(transmettre|envoyer|renvoyer|retourner|fournir|valider|signer|compl[ée]ter|remplir|proc[ée]der)|(pouvez|pourriez)[- ]vous|(peux|pourrais)[- ]tu|[àa] (me |nous )?retourner (sign[ée]|compl[ée]t[ée]|avant)|[àa] (compl[ée]ter|signer|valider|r[ée]gler) (avant|pour|imp[ée]rativement)|action requise|signature (requise|attendue)|piece[s]? [àa] fournir|document[s]? [àa] (fournir|signer|retourner))/i;
+
+/**
+ * Retire le texte CITÉ d'un corps de mail (lignes « > », blocs « Le … a
+ * écrit : », séparateurs Outlook) : on n'analyse que ce que l'expéditeur a
+ * réellement écrit, pas la conversation recopiée dessous.
+ */
+export function stripQuotedText(text: string): string {
+  const kept: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*(>|\|)/.test(line)) continue; // ligne citée
+    if (/^\s*Le .{4,100} a [ée]crit\s*:/.test(line)) break;
+    if (/^\s*On .{4,100} wrote\s*:/i.test(line)) break;
+    if (/^-{2,}\s*(Message d'origine|Message transf[ée]r[ée]|Original Message|Forwarded message)/i.test(line)) break;
+    if (/^\s*_{6,}\s*$/.test(line)) break; // séparateur de citation Outlook
+    if (/^\s*De\s?:\s.+/.test(line) || /^\s*From\s?:\s.+@/.test(line)) break;
+    kept.push(line);
+  }
+  return kept.join('\n');
+}
+
+/**
+ * Détecte le TYPE de demande d'un mail entrant : réponse explicitement
+ * attendue > action demandée > question > information. Le sujet suffit
+ * (index-only) ; le corps — déjà débarrassé du texte cité — affine quand
+ * l'interface le fournit (analyse du mail ouvert).
+ */
+export function detectRequestKind(
+  subject: string | null | undefined,
+  body?: string | null,
+): { kind: RequestKind; why: string } {
+  const s = (subject ?? '').replace(/’/g, "'");
+  const b = (body ?? '').replace(/’/g, "'").slice(0, 20_000);
+  let m = REPLY_EXPECTED_RE.exec(s) ?? (b ? REPLY_EXPECTED_RE.exec(b) : null);
+  if (m) return { kind: 'reply_expected', why: `réponse explicitement attendue (« ${m[0].trim()} »)` };
+  m = ACTION_REQUEST_RE.exec(s) ?? (b ? ACTION_REQUEST_RE.exec(b) : null);
+  if (m) return { kind: 'action', why: `action demandée (« ${m[0].trim()} »)` };
+  if (s.includes('?')) return { kind: 'question', why: 'le sujet pose une question' };
+  if (b && /^[^>\n]*\S.*\?\s*$/m.test(b)) {
+    return { kind: 'question', why: 'le mail pose une question' };
+  }
+  return { kind: 'information', why: 'aucune demande explicite détectée' };
+}
+
 export function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -141,6 +212,13 @@ export async function getUnansweredEmails(
   const since = new Date(Date.now() - sinceDays * 86_400_000);
   const now = Date.now();
 
+  // Adresse du compte : sert à distinguer destinataire principal / copie (B3).
+  const accountRow = await db.account.findUnique({
+    where: { slug: account },
+    select: { emailAddress: true },
+  });
+  const accountEmail = accountRow?.emailAddress?.toLowerCase() ?? null;
+
   // 1. Candidats : mails entrants « répondables » de la boîte de réception.
   //    (newsletters exclues via List-Unsubscribe, expéditeurs no-reply via regex)
   const raw = await db.message.findMany({
@@ -163,6 +241,7 @@ export async function getUnansweredEmails(
       subject: true,
       fromEmail: true,
       fromName: true,
+      toEmails: true,
       date: true,
       isSeen: true,
       folder: { select: { path: true } },
@@ -232,7 +311,28 @@ export async function getUnansweredEmails(
     const out = lastOut.get(threadId);
     if (out && out.getTime() >= m.date.getTime()) continue;
 
-    const { category, why } = categorize(m);
+    let { category, why } = categorize(m);
+
+    // B3 : destinataire principal ou simple copie ? Si le compte n'apparaît
+    // pas dans les destinataires principaux (To), la réponse n'est
+    // probablement pas attendue de TOI → seuil normal, raison explicite.
+    let inCopy = false;
+    if (m.toEmails && accountEmail) {
+      try {
+        const to = JSON.parse(m.toEmails) as unknown;
+        inCopy = Array.isArray(to) && to.length > 0 && !to.includes(accountEmail);
+      } catch {
+        /* toEmails illisible : on considère destinataire principal */
+      }
+    }
+    if (inCopy && category !== 'normal') {
+      category = 'normal';
+      why = `${why} — mais tu es en copie, seuil ramené à normal`;
+    }
+
+    // B3 : type de demande (motifs FR sans « ? » inclus) depuis le sujet.
+    const request = detectRequestKind(m.subject);
+
     const thresholdHours = THRESHOLDS[category];
     const waitingHours = (now - m.date.getTime()) / 3_600_000;
     const overdue = waitingHours > thresholdHours;
@@ -253,7 +353,8 @@ export async function getUnansweredEmails(
       `Dernier message du fil, reçu il y a ${humanDelay(waitingHours)}, aucune réponse envoyée depuis`,
       why,
     ];
-    if ((m.subject ?? '').includes('?')) reasons.push('le sujet pose une question');
+    if (request.kind !== 'information') reasons.push(request.why);
+    if (inCopy) reasons.push('tu es en copie (pas le destinataire principal)');
     if (!m.isSeen) reasons.push('jamais ouvert');
     reasons.push(
       overdue
@@ -278,6 +379,9 @@ export async function getUnansweredEmails(
       thresholdHours,
       waitingHours: Math.round(waitingHours * 10) / 10,
       overdue,
+      requestKind: request.kind,
+      requestKindLabel: REQUEST_KIND_LABELS[request.kind],
+      inCopy,
       reason: reasons.join(' · '),
       state,
       snoozedUntil,
@@ -295,12 +399,14 @@ export async function getUnansweredEmails(
   if (!opts.includeHidden) filtered = filtered.filter((i) => i.state === 'active');
   if (opts.scope === 'overdue') filtered = filtered.filter((i) => i.state !== 'active' || i.overdue);
 
-  // En retard d'abord (les plus anciens en tête), puis les autres.
+  // En retard d'abord (les plus anciens en tête), puis les autres ; à état
+  // égal, les mails où tu es en copie passent APRÈS (B3).
   filtered.sort((a, b) => {
     const aActive = a.state === 'active' ? 0 : 1;
     const bActive = b.state === 'active' ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+    if (a.inCopy !== b.inCopy) return a.inCopy ? 1 : -1;
     return new Date(a.date).getTime() - new Date(b.date).getTime();
   });
 

@@ -942,18 +942,26 @@ confirmée (catégorie manuelle, priorité ⭐/🔕, retrait de la liste des
 réponses) via les endpoints EXISTANTS ; 📖 ouvre le mail ; 🎲 nouvel
 échantillon. Tests : seed 16 asserts + ui-verify.mjs 13 checks.
 
-### ⬜ B3 — Réponse attendue v2 + importants « non traités »
+### ✅ B3 — Réponse attendue v2 + importants « non traités » — LIVRÉE
 
-Réponses : distinguer question / action demandée / réponse explicitement
-attendue / information / automatique ; motifs FR sans « ? » (« merci de me
-transmettre », « dans l'attente de votre retour », « pouvez-vous
-valider ») ; ignorer le texte CITÉ (déjà : détection sujet ; corps fourni
-par le client dans l'analyse du mail ouvert) ; vérifier dernier message du
-fil + destinataire principal vs copie (toEmails). Importants : remplacer
-la fenêtre 7 j / top 5 par 3 groupes — « nouveaux », « non traités »
-(anciens sans réponse/tâche/action, même lus), « probablement traités » ;
-afficher « +N autres » au-delà de la sélection ; score enrichi (priorité
-manuelle, échéance liée, relance reçue, jours sans traitement).
+Réponses (attention.ts) : `detectRequestKind` — réponse explicitement
+attendue > action demandée > question > information, motifs FRANÇAIS sans
+« ? » (REPLY_EXPECTED_RE « dans l'attente de votre retour »…,
+ACTION_REQUEST_RE « merci de me transmettre », « pouvez-vous »…), appliqué
+au sujet (index-only) et au corps SANS texte cité (`stripQuotedText` :
+lignes « > », blocs « Le … a écrit : », séparateurs Outlook) ;
+destinataire principal vs copie via toEmails (en copie ⇒ seuil ramené à
+normal, raison explicite, trié après) ; ReplyItem porte
+requestKind/requestKindLabel/inCopy. L'analyse du mail ouvert (L5.4)
+expose `request` (corps déquoté) → ligne 🗣️ dans le panneau de lecture ;
+badges 🗣️/❓/cc dans l'écran Réponses. Importants (importance.ts) :
+`treatState` — new (< 7 j) / untreated (ancien SANS réponse ni marque
+répondu ni tâche, même lu) / treated ; score enrichi : +5/+10 « sans
+traitement depuis N jours », +10 « échéance liée », +10 « l'expéditeur a
+relancé » (≥ 2 entrants du même expéditeur depuis ta dernière réponse) ;
+écran ⭐ en 3 groupes (cap 10 + « ＋N autres », lus inclus par défaut,
+badge « ⏳ N j sans traitement »). Tests : seed 20 asserts + ui-b3.mjs
+10 checks.
 
 ### ⬜ B4 — Confiance de l'analyse (forte/moyenne/faible)
 

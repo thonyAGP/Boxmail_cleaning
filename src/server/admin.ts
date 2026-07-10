@@ -46,7 +46,12 @@ import {
   type DeadlineType,
 } from '../services/deadlines.js';
 import { explainImportance } from '../services/importance.js';
-import { AUTO_SENDER_RE } from '../services/attention.js';
+import {
+  AUTO_SENDER_RE,
+  detectRequestKind,
+  stripQuotedText,
+  REQUEST_KIND_LABELS,
+} from '../services/attention.js';
 import {
   searchIndex,
   indexedMessage,
@@ -1552,6 +1557,16 @@ export function buildAdminRouter(): Router {
         }
       }
 
+      // Type de demande (B3) : sujet + corps affiché SANS le texte cité —
+      // détecte aussi les demandes sans « ? » (« merci de me transmettre »).
+      const isAuto = m.hasListUnsubscribe || (m.fromEmail && AUTO_SENDER_RE.test(m.fromEmail));
+      const request = !m.isOutbound && !isAuto
+        ? (() => {
+            const r = detectRequestKind(m.subject, stripQuotedText(text));
+            return { kind: r.kind, label: REQUEST_KIND_LABELS[r.kind], why: r.why };
+          })()
+        : null;
+
       // Échéances : déjà connues sur ce mail + nouvelles dates trouvées dans le
       // sujet + corps affiché. Dédup par date (à la minute près).
       const existingRows = await db.deadline.findMany({
@@ -1573,6 +1588,7 @@ export function buildAdminRouter(): Router {
         messageId: m.id,
         importance,
         reply,
+        request,
         deadlines: {
           existing: existingRows.map((d) => ({
             id: d.id,
