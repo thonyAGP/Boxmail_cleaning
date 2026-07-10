@@ -97,6 +97,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**B2 livrée : écran « Vérifier l'analyse » (contrôle qualité).**
+Modèle AnalysisFeedback + services/quality.ts : échantillon aléatoire des
+5 moteurs (réponses, importants, newsletters/notifications AUTO
+uniquement, candidats nettoyage via sampleRetentionTargets — protection
+B1 incluse), verdict ✓/✗/? avec raison, % de précision par moteur
+(corrects/(corrects+incorrects)). Les corrections sur ✗ passent par les
+mécanismes EXISTANTS (catégorie manuelle, priorité ⭐/🔕, dismiss réponse)
+après confirmation. API /api/review/* (journal ui_analysis_feedback),
+écran #/verify (sidebar 🔬). Tests : 16 asserts + 13 checks navigateur.
+L'utilisateur doit VALIDER EN RÉEL : donner quelques verdicts sur ses
+vraies boîtes et vérifier que les % de précision s'affichent.
+
 **SÉRIE B lancée (audit externe accepté : fiabilisation > nouvelles
 fonctions). B1 LIVRÉE : protection centrale.** `PROTECTION_CLAUSES`
 (retention.ts) injecté dans policyWhere → hérité par stratégies, Grand

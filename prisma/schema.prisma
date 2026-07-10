@@ -277,6 +277,35 @@ model SuggestionDismissal {
   @@unique([kind, refKey])
 }
 
+// Verdict de contrôle qualité (B2 — Série B) : l'utilisateur juge une analyse
+// de l'assistant (réponse attendue, importance, newsletter, notification,
+// candidat nettoyage). Une ligne par (moteur, mail) — revoter écrase l'avis
+// précédent. Contexte dénormalisé pour survivre aux resync ; les CORRECTIONS
+// passent par les mécanismes existants (catégorie manuelle, priorité,
+// dismissals) — ici on ne stocke que le verdict et sa raison.
+model AnalysisFeedback {
+  id          Int      @id @default(autoincrement())
+  // reply | important | newsletter | notification | cleanup
+  engine      String
+  accountSlug String
+  // id interne (colonne Message.id) du mail jugé
+  messageId   Int
+  // correct | incorrect | unsure
+  verdict     String
+  // Raison choisie par l'utilisateur (facultative, en français)
+  reason      String?
+  subject     String?
+  fromEmail   String?
+  fromName    String?
+  // Ce que le moteur affirmait au moment du verdict (justification affichée)
+  claim       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([engine, messageId])
+  @@index([engine, verdict])
+}
+
 // Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké
 // tel quel : il sert d'historique et de référence « nouveaux mails depuis le
 // dernier brief ». Global (tous comptes), pas de relation Account.

@@ -99,6 +99,13 @@ import {
 } from '../services/retention.js';
 import { generateMailboxReport, runGrandMenage } from '../services/report.js';
 import { listSuggestions, dismissSuggestion, type DismissalKind } from '../services/learning.js';
+import {
+  getReviewSample,
+  recordFeedback,
+  feedbackStats,
+  type ReviewEngine,
+  type ReviewVerdict,
+} from '../services/quality.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -561,6 +568,54 @@ export function buildAdminRouter(): Router {
           result: 'suggestion ignorée définitivement',
         });
         res.json({ ok: true });
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // --- Contrôle qualité « Vérifier l'analyse » (B2 — Série B) ---------------------
+  // Échantillon réel des détections de chaque moteur, à juger par l'utilisateur.
+  router.get(
+    '/review/sample',
+    guard(async (req, res) => {
+      const perEngine = Math.min(
+        Math.max(Number.parseInt(String(req.query.n ?? '10'), 10) || 10, 1),
+        50,
+      );
+      res.json(await getReviewSample(perEngine));
+    }),
+  );
+
+  router.get(
+    '/review/stats',
+    guard(async (_req, res) => {
+      res.json({ stats: await feedbackStats() });
+    }),
+  );
+
+  // Verdict Correct / Incorrect / Ne sais pas (+ raison). Les CORRECTIONS
+  // (catégorie, priorité, dismiss) passent par les endpoints existants.
+  router.post(
+    '/review/feedback',
+    guard(async (req, res) => {
+      try {
+        const r = await recordFeedback({
+          engine: String(req.body?.engine ?? '') as ReviewEngine,
+          account: String(req.body?.account ?? ''),
+          messageId: Number(req.body?.messageId),
+          verdict: String(req.body?.verdict ?? '') as ReviewVerdict,
+          reason: req.body?.reason ? String(req.body.reason) : null,
+          claim: req.body?.claim ? String(req.body.claim) : null,
+        });
+        await recordOperation({
+          account: String(req.body?.account ?? '(global)'),
+          tool: 'ui_analysis_feedback',
+          params: { engine: r.engine, messageId: r.messageId, verdict: r.verdict },
+          items: [{ subject: r.subject, date: null }],
+          result: `analyse jugée « ${r.verdict} »`,
+        });
+        res.json({ ok: true, stats: await feedbackStats() });
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }

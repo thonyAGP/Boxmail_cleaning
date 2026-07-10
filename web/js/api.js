@@ -37,6 +37,8 @@ export const api = {
   today: () => request('GET', '/today'),
   suggestions: () => request('GET', '/suggestions'),
   suggestionDismiss: (kind, refKey) => request('POST', '/suggestions/dismiss', { kind, refKey }),
+  reviewSample: (n = 10) => request('GET', `/review/sample?n=${n}`),
+  reviewFeedback: (payload) => request('POST', '/review/feedback', payload),
   report: () => request('GET', '/report'),
   grandMenage: (policyIds) => request('POST', '/grand-menage', { policyIds }),
   retention: () => request('GET', '/retention'),

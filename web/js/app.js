@@ -506,6 +506,8 @@ function highlightNav() {
     document.querySelector('[data-nav="rules"]')?.classList.add('active');
   } else if (hash.startsWith('#/suggestions')) {
     document.querySelector('[data-nav="suggestions"]')?.classList.add('active');
+  } else if (hash.startsWith('#/verify')) {
+    document.querySelector('[data-nav="verify"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -553,6 +555,8 @@ function route() {
     renderRules();
   } else if (hash.startsWith('#/suggestions')) {
     renderSuggestions();
+  } else if (hash.startsWith('#/verify')) {
+    renderVerify();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -3585,6 +3589,213 @@ async function loadSuggestions() {
     const p = s.priorities[Number(btn.dataset.i)];
     act(btn, () => api.suggestionDismiss('priority', `priority:${p.account}|${p.email}|${p.priority}`));
   }));
+}
+
+// ---------------------- Vérifier l'analyse (B2 — Série B) : #/verify
+// Contrôle qualité : échantillon réel de chaque moteur, jugé par l'utilisateur.
+// Correct / Incorrect / Ne sais pas — les corrections passent par les
+// mécanismes EXISTANTS (catégorie manuelle, priorité, dismiss), le verdict
+// est mémorisé et restitué en % de précision par moteur.
+let verifySample = null;
+
+// Raisons proposées quand c'est « Incorrect » — certaines déclenchent une
+// CORRECTION réelle (toujours confirmée avant).
+const VERIFY_REASONS = {
+  reply: [
+    { label: 'Pas de réponse attendue', action: 'dismissReply', confirm: 'Retirer ce fil des « Réponses en attente » ?' },
+    { label: "C'est un robot / une notification", action: 'catNotification', confirm: 'Classer cet expéditeur en « Notification / robot » (choix mémorisé) ?' },
+    { label: 'Autre raison' },
+  ],
+  important: [
+    { label: 'Pas important du tout' },
+    { label: 'Expéditeur jamais urgent', action: 'prioNever', confirm: 'Marquer cet expéditeur 🔕 jamais urgent (score plafonné) ?' },
+    { label: "C'est une newsletter / une pub", action: 'catNewsletter', confirm: 'Classer cet expéditeur en « Newsletter » (choix mémorisé) ?' },
+    { label: 'Autre raison' },
+  ],
+  newsletter: [
+    { label: "C'est une personne", action: 'catPerson', confirm: 'Classer cet expéditeur en « Personne » ? Il sera protégé de tous les nettoyages.' },
+    { label: "C'est une notification", action: 'catNotification', confirm: 'Classer cet expéditeur en « Notification / robot » ?' },
+    { label: 'Autre catégorie' },
+  ],
+  notification: [
+    { label: "C'est une personne", action: 'catPerson', confirm: 'Classer cet expéditeur en « Personne » ? Il sera protégé de tous les nettoyages.' },
+    { label: "C'est une newsletter", action: 'catNewsletter', confirm: 'Classer cet expéditeur en « Newsletter » ?' },
+    { label: 'Autre catégorie' },
+  ],
+  cleanup: [
+    { label: 'Ne JAMAIS supprimer cet expéditeur', action: 'prioAlways', confirm: 'Marquer cet expéditeur ⭐ toujours important ? Ses mails ne seront plus jamais visés par un nettoyage.' },
+    { label: "C'est une personne", action: 'catPerson', confirm: 'Classer cet expéditeur en « Personne » ? Il sera protégé de tous les nettoyages.' },
+    { label: 'Autre raison' },
+  ],
+};
+
+function applyVerifyCorrection(item, action) {
+  if (action === 'dismissReply') return api.replyDismiss(item.account, item.threadId);
+  if (action === 'catPerson') return api.senderSetCategory(item.account, item.fromEmail, 'person');
+  if (action === 'catNotification') return api.senderSetCategory(item.account, item.fromEmail, 'notification');
+  if (action === 'catNewsletter') return api.senderSetCategory(item.account, item.fromEmail, 'newsletter');
+  if (action === 'prioNever') return api.senderSetPriority(item.account, item.fromEmail, 'never_urgent');
+  if (action === 'prioAlways') return api.senderSetPriority(item.account, item.fromEmail, 'always_important');
+  return Promise.resolve();
+}
+
+const VERIFY_VERDICT_BADGES = {
+  correct: '<span class="badge green">✓ Correct</span>',
+  incorrect: '<span class="badge red">✗ Incorrect</span>',
+  unsure: '<span class="badge">? Ne sais pas</span>',
+};
+
+async function renderVerify() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🔬 Vérifier l'analyse</h1>
+      <div class="sub">Contrôle qualité : quelques mails tirés AU HASARD dans chaque moteur d'analyse.
+      Dis si l'assistant a bon — tes corrections améliorent les catégories, les priorités et les listes.
+      Rien n'est supprimé ici.</div></div>
+    <div class="head-actions"><button class="btn" id="verify-refresh">🎲 Nouvel échantillon</button></div></div>
+    <div id="verify-stats"></div>
+    <div id="verify-body"><div class="empty"><span class="spinner"></span>Tirage d'un échantillon…</div></div>`;
+  $('#verify-refresh').addEventListener('click', loadVerify);
+  await loadVerify();
+}
+
+function renderVerifyStats(stats) {
+  const el = $('#verify-stats');
+  if (!el) return;
+  const rated = stats.filter((s) => s.total > 0);
+  if (!rated.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const chip = (s) => {
+    const pct = s.precisionPct;
+    const color = pct === null ? 'var(--muted)' : pct >= 90 ? 'var(--green, #16a34a)' : pct >= 70 ? 'var(--orange)' : 'var(--red)';
+    return `<div class="kpi" style="min-width:150px">
+      <div class="kpi-label">${esc(s.label)}</div>
+      <div class="kpi-value" style="color:${color}">${pct === null ? '—' : pct + ' %'}</div>
+      <div class="kpi-sub">${fmtNum(s.correct)} ✓ · ${fmtNum(s.incorrect)} ✗ · ${fmtNum(s.unsure)} ? (${fmtNum(s.total)} avis)</div>
+    </div>`;
+  };
+  el.innerHTML = `<div class="panel"><div class="panel-head"><h2>🎯 Précision mesurée</h2>
+    <span class="muted" style="font-size:12px">% = corrects / (corrects + incorrects), sur tous tes avis</span></div>
+    <div class="panel-body" style="display:flex; gap:10px; flex-wrap:wrap">${rated.map(chip).join('')}</div></div>`;
+}
+
+async function loadVerify() {
+  const body = $('#verify-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Tirage d\'un échantillon…</div>';
+  try {
+    verifySample = await api.reviewSample(10);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+  renderVerifyStats(verifySample.stats);
+
+  const engineHints = {
+    reply: 'Mails où l\'assistant pense que quelqu\'un attend TA réponse.',
+    important: 'Mails jugés importants (score ≥ 40) — lus ou non.',
+    newsletter: 'Expéditeurs classés « newsletter » par la machine.',
+    notification: 'Expéditeurs classés « notification / robot » par la machine.',
+    cleanup: 'Mails que les stratégies de nettoyage viseraient aujourd\'hui.',
+  };
+  const icons = { reply: '↩️', important: '⭐', newsletter: '📰', notification: '🤖', cleanup: '🧹' };
+
+  body.innerHTML = verifySample.engines.map((e, ei) => `<div class="panel">
+    <div class="panel-head"><h2>${icons[e.engine] ?? ''} ${esc(e.label)}</h2>
+      <span class="muted" style="font-size:12px">${esc(engineHints[e.engine] ?? '')}</span></div>
+    <div class="panel-body">
+      ${e.items.length === 0 ? '<div class="empty">Rien à vérifier — ce moteur ne détecte rien en ce moment.</div>' : ''}
+      ${e.items.map((it, i) => `<div class="today-row" style="display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid var(--border)">
+        <div style="flex:1; min-width:0">
+          <div><strong>${esc(it.subject)}</strong> ${it.isSeen ? '' : '<span class="badge blue">non lu</span>'}</div>
+          <div class="muted" style="font-size:12px">${esc(it.fromName || it.fromEmail)} · ${fmtDate(it.date)} ${accountChip(it.account)}</div>
+          <div class="muted" style="font-size:12px; font-style:italic">🤖 ${esc(it.claim)}</div>
+        </div>
+        <button class="btn btn-sm verify-read" data-e="${ei}" data-i="${i}">📖</button>
+        <div class="verify-zone" id="v-zone-${ei}-${i}" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end; max-width:340px"></div>
+      </div>`).join('')}
+    </div></div>`).join('');
+
+  verifySample.engines.forEach((e, ei) => e.items.forEach((it, i) => renderVerifyZone(ei, i)));
+  body.querySelectorAll('.verify-read').forEach((btn) => btn.addEventListener('click', () => {
+    const it = verifySample.engines[Number(btn.dataset.e)]?.items[Number(btn.dataset.i)];
+    if (it) openReaderFor(it, {});
+  }));
+}
+
+// Zone de verdict d'une ligne : boutons → verdict enregistré → badge + Modifier.
+function renderVerifyZone(ei, i) {
+  const zone = $(`#v-zone-${ei}-${i}`);
+  const item = verifySample?.engines[ei]?.items[i];
+  if (!zone || !item) return;
+
+  if (item.verdict) {
+    zone.innerHTML = `${VERIFY_VERDICT_BADGES[item.verdict] ?? esc(item.verdict)}
+      ${item.verdictReason ? `<span class="muted" style="font-size:11.5px">${esc(item.verdictReason)}</span>` : ''}
+      <button class="btn btn-sm v-change">Modifier</button>`;
+    zone.querySelector('.v-change').addEventListener('click', () => {
+      item.verdict = null;
+      item.verdictReason = null;
+      renderVerifyZone(ei, i);
+    });
+    return;
+  }
+
+  zone.innerHTML = `<button class="btn btn-sm v-ok" title="L'analyse est juste">✓ Correct</button>
+    <button class="btn btn-sm v-ko" title="L'analyse est fausse">✗ Incorrect</button>
+    <button class="btn btn-sm v-idk" title="Impossible à dire">?</button>`;
+
+  const record = async (verdict, reason) => {
+    const r = await api.reviewFeedback({
+      engine: item.engine,
+      account: item.account,
+      messageId: item.messageId,
+      verdict,
+      reason: reason ?? null,
+      claim: item.claim,
+    });
+    item.verdict = verdict;
+    item.verdictReason = reason ?? null;
+    renderVerifyZone(ei, i);
+    if (r?.stats) renderVerifyStats(r.stats);
+  };
+  const guard = (fn) => async () => {
+    zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await fn();
+    } catch (err) {
+      alert(err.message);
+      renderVerifyZone(ei, i);
+    }
+  };
+  zone.querySelector('.v-ok').addEventListener('click', guard(() => record('correct')));
+  zone.querySelector('.v-idk').addEventListener('click', guard(() => record('unsure')));
+  zone.querySelector('.v-ko').addEventListener('click', () => {
+    const reasons = VERIFY_REASONS[item.engine] ?? [{ label: 'Autre raison' }];
+    zone.innerHTML = `<span class="muted" style="font-size:12px">Pourquoi ?</span>
+      ${reasons.map((r, ri) => `<button class="btn btn-sm v-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
+      <button class="btn btn-sm v-cancel" title="Annuler">↩</button>`;
+    zone.querySelector('.v-cancel').addEventListener('click', () => renderVerifyZone(ei, i));
+    zone.querySelectorAll('.v-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
+      const r = reasons[Number(btn.dataset.ri)];
+      // La correction réelle (catégorie / priorité / retirer de la liste)
+      // n'est appliquée que si l'utilisateur confirme — le verdict, lui,
+      // est enregistré dans tous les cas.
+      const doAction = r.action && (!r.confirm || confirm(r.confirm)) &&
+        !(r.action === 'dismissReply' && !item.threadId);
+      await record('incorrect', r.label);
+      if (doAction) {
+        try {
+          await applyVerifyCorrection(item, r.action);
+        } catch (err) {
+          alert(`Verdict enregistré, mais la correction a échoué : ${err.message}`);
+        }
+      }
+    })));
+  });
 }
 
 // -------------------------------- Grand ménage (A4 — Cap V3) : #/bigclean

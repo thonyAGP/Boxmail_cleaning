@@ -235,6 +235,77 @@ export async function previewPolicy(
   };
 }
 
+export interface RetentionTargetSample {
+  messageId: number;
+  threadId: number | null;
+  account: string;
+  folder: string;
+  uid: number;
+  subject: string;
+  fromEmail: string;
+  fromName: string | null;
+  date: string | null;
+  isSeen: boolean;
+  policyKey: string;
+  policyLabel: string;
+}
+
+/**
+ * Échantillon ALÉATOIRE des mails visés par les stratégies (B2 — contrôle
+ * qualité). Passe par policyWhere : protection centrale B1 et garantie
+ * « personne » incluses — on juge exactement ce qui serait supprimé.
+ */
+export async function sampleRetentionTargets(limit = 10): Promise<RetentionTargetSample[]> {
+  await ensureDbReady();
+  await ensurePresets();
+  const policies = await db.retentionPolicy.findMany({ orderBy: { id: 'asc' } });
+  type Row = {
+    id: number;
+    threadId: number | null;
+    account: string;
+    folder: string;
+    uid: number;
+    subject: string | null;
+    fromEmail: string | null;
+    fromName: string | null;
+    date: string | number | bigint | null;
+    isSeen: number | boolean;
+  };
+  const byMessage = new Map<number, RetentionTargetSample>();
+  for (const p of policies) {
+    const { sql, params } = policyWhere(p);
+    const rows = await db.$queryRawUnsafe<Row[]>(
+      `SELECT m.id, m.threadId, m.accountSlug AS account, f.path AS folder, m.uid,
+              m.subject, m.fromEmail, m.fromName, m.date, m.isSeen
+       ${FROM} WHERE ${sql} ORDER BY RANDOM() LIMIT ${limit}`,
+      ...params,
+    );
+    for (const r of rows) {
+      if (byMessage.has(r.id)) continue;
+      byMessage.set(r.id, {
+        messageId: r.id,
+        threadId: r.threadId,
+        account: r.account,
+        folder: r.folder,
+        uid: r.uid,
+        subject: r.subject ?? '(sans sujet)',
+        fromEmail: r.fromEmail ?? '',
+        fromName: r.fromName,
+        date: rawDate(r.date),
+        isSeen: Boolean(r.isSeen),
+        policyKey: p.key,
+        policyLabel: p.label,
+      });
+    }
+  }
+  const all = [...byMessage.values()];
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+  return all.slice(0, limit);
+}
+
 export interface ApplyReport {
   policy: string;
   dryRun: boolean;

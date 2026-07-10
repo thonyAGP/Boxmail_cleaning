@@ -922,15 +922,25 @@ expose `protectedCount` (visés sans protection − visés avec) → badge
 seed étendu — 6 signaux posés sur 6 mails distincts, aperçu 12→7 scopé
 boîte, protectedCount=5, expéditeur prioritaire → 0 visé (42 asserts).
 
-### ⬜ B2 — Écran « Vérifier l'analyse » (contrôle qualité)
+### ✅ B2 — Écran « Vérifier l'analyse » (contrôle qualité) — LIVRÉE
 
-Page qui tire un ÉCHANTILLON réel : 10 réponses attendues, 10 importants,
-10 newsletters, 10 notifications, 10 candidats nettoyage. Pour chaque
-mail : Correct / Incorrect / Ne sais pas + raison (mauvaise catégorie,
-pas de réponse attendue, important raté, ne jamais supprimer cet
-expéditeur…). Stockage AnalysisFeedback (verdict + raison + contexte
-dénormalisé). Restitution : % de précision par moteur. Les corrections
-alimentent : catégorie manuelle, priorité expéditeur, dismissals.
+Modèle `AnalysisFeedback` (verdict + raison + contexte dénormalisé, une
+ligne par moteur×mail, revoter écrase). `services/quality.ts` :
+getReviewSample(10) tire AU HASARD dans les 5 moteurs — réponses
+attendues (attention.ts), importants (importance.ts, lus inclus),
+newsletters/notifications (catégories AUTO uniquement — on ne juge que la
+machine), candidats nettoyage via `sampleRetentionTargets` (retention.ts,
+passe par policyWhere → protection B1 incluse) ; chaque item porte la
+justification du moteur (`claim`) et le verdict déjà donné. recordFeedback
+(upsert, contexte relu depuis l'index) + feedbackStats (% précision =
+corrects / (corrects+incorrects) par moteur). API : GET /api/review/sample,
+GET /api/review/stats, POST /api/review/feedback (journal
+`ui_analysis_feedback`). UI : écran `#/verify` (sidebar 🔬) — panneau
+« 🎯 Précision mesurée », 5 panneaux moteurs, ✓/✗/? par mail, sur ✗ des
+raisons proposées dont certaines déclenchent la CORRECTION réelle
+confirmée (catégorie manuelle, priorité ⭐/🔕, retrait de la liste des
+réponses) via les endpoints EXISTANTS ; 📖 ouvre le mail ; 🎲 nouvel
+échantillon. Tests : seed 16 asserts + ui-verify.mjs 13 checks.
 
 ### ⬜ B3 — Réponse attendue v2 + importants « non traités »
 
