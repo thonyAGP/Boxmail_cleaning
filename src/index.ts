@@ -65,6 +65,9 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 async function main() {
   const app = express();
   app.disable('x-powered-by');
+  // 'loopback' : ne croire X-Forwarded-For que si la connexion vient de
+  // 127.0.0.1 (nginx local) — une requête directe ne peut pas usurper une IP.
+  if (config.http.trustProxy) app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '4mb' }));
 
   // Health check public (utile pour le reverse proxy / monitoring). Pas de secret.

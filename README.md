@@ -282,22 +282,29 @@ Vérifier ensuite `logs/operations.jsonl` : chaque écriture y est journalisée.
 
 ## 8. Déploiement Oracle Cloud
 
-Sur l'instance Always Free (celle de `hub.lb2i.fr`) :
+**Guide complet pas-à-pas (recommandé) :
+[`docs/DEPLOY-ORACLE.md`](docs/DEPLOY-ORACLE.md)** — instance, DNS,
+installation en une commande, Entra, enrôlement, connecteur Claude.
 
-1. **DNS** : créer `mcp.lb2i.fr` → IP publique de l'instance.
-2. **App** : `git clone` + `npm install` + `npm run build` + remplir `.env`.
-3. **Enrôler** les comptes (`npm run enroll -- --account brimmo`).
-4. **pm2** :
+En résumé, sur une instance Ubuntu Always Free :
+
+1. **OCI** : ouvrir 80/443 dans la Security List ; **DNS** :
+   `mcp.lb2i.fr` → IP publique.
+2. **Installation en une commande** (fait tout : Node 20, `.env` prod avec
+   secrets générés, build, pm2, nginx, certificat TLS, HSTS) :
    ```bash
-   npm i -g pm2
-   pm2 start deploy/ecosystem.config.js
-   pm2 save && pm2 startup      # démarrage auto au boot
+   git clone https://github.com/thonyAGP/Boxmail_cleaning.git boxmail
+   cd boxmail && bash deploy/setup-oracle.sh
    ```
-5. **TLS + reverse proxy** : adapter [`deploy/nginx.conf.example`](deploy/nginx.conf.example),
-   obtenir le certificat (certbot), recharger nginx.
-6. **Firewall** : suivre [`deploy/oci-firewall.md`](deploy/oci-firewall.md) pour
-   n'ouvrir 443 qu'aux **IP Anthropic** (Security List OCI **et** iptables/firewalld).
-7. Vérifier : `curl https://mcp.lb2i.fr/health` depuis une IP autorisée.
+   Modèle de `.env` prod commenté : [`deploy/env.production.example`](deploy/env.production.example)
+   (`TRUST_PROXY=1` derrière nginx, `SYNC_INTERVAL_MINUTES=30`,
+   `PUBLIC_BASE_URL` en https → cookie de session `Secure`).
+3. **Entra** : ajouter la redirect URI `https://mcp.lb2i.fr/api/enroll/callback`.
+4. **Enrôler** les boîtes depuis `https://mcp.lb2i.fr/admin/` (ou CLI).
+5. **Firewall strict (optionnel)** : [`deploy/oci-firewall.md`](deploy/oci-firewall.md)
+   pour n'ouvrir 443 qu'aux IP Anthropic — au prix de l'accès interface
+   depuis une IP résidentielle variable.
+6. Vérifier : `curl https://mcp.lb2i.fr/health`.
 
 L'app écoute sur `127.0.0.1:8787` uniquement ; seul nginx est exposé.
 

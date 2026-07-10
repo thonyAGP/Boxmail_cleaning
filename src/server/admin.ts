@@ -85,6 +85,9 @@ import { version, checkUpdates, applyUpdate } from '../services/update.js';
  */
 
 const SESSION_COOKIE = 'bm_session';
+// En prod (PUBLIC_BASE_URL en https), le cookie de session ne circule qu'en
+// TLS ; en local (http://localhost) le flag Secure le rendrait inutilisable.
+const COOKIE_SECURE = config.admin.publicBaseUrl.startsWith('https') ? '; Secure' : '';
 const sessions = new Map<string, number>(); // token -> expiresAt
 
 // Rate limit dédié au login : 10 tentatives / 15 min / IP.
@@ -163,7 +166,7 @@ export function buildAdminRouter(): Router {
     sessions.set(token, Date.now() + config.admin.sessionTtlMs);
     res.setHeader(
       'Set-Cookie',
-      `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(
+      `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/${COOKIE_SECURE}; Max-Age=${Math.floor(
         config.admin.sessionTtlMs / 1000,
       )}`,
     );
@@ -174,7 +177,7 @@ export function buildAdminRouter(): Router {
   router.post('/logout', (req, res) => {
     const token = parseCookies(req)[SESSION_COOKIE];
     if (token) sessions.delete(token);
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; Max-Age=0`);
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/${COOKIE_SECURE}; Max-Age=0`);
     res.json({ ok: true });
   });
 

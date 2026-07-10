@@ -37,6 +37,10 @@ export const config = {
   http: {
     port: int('PORT', 8787),
     host: optional('HOST', '127.0.0.1'),
+    // Derrière un reverse proxy local (nginx en prod) : req.ip lit
+    // X-Forwarded-For — sans ça, tous les clients partagent l'IP du proxy
+    // et les rate limits deviennent globaux. 0 en local (défaut).
+    trustProxy: bool('TRUST_PROXY', false),
   },
   auth: {
     // Le bearer token est requis pour DÉMARRER le serveur : on refuse

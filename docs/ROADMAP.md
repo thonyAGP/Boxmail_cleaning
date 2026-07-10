@@ -401,33 +401,43 @@ déclenché au tick, statut visible via /api/version et /api/jobs.
 **Objectif.** Serveur accessible en HTTPS pour Claude Cowork ET pour
 l'utilisateur (interface), 24/7.
 
-1. **Auto-sync serveur** (pré-requis 24/7) : env `SYNC_INTERVAL_MINUTES`
-   (0=off, défaut 30 en prod) — setInterval dans index.ts qui lance un job
-   sync-all `recent` si aucun job en cours ; log discret.
-2. **Instance** (utilisateur en SSH guidé, ou session Claude sur le serveur) :
-   cloner le repo, Node 20+, `.env` prod : PORT=8787, HOST=127.0.0.1,
-   PUBLIC_BASE_URL=https://mcp.lb2i.fr, ADMIN_PASSWORD fort, MCP_BEARER_TOKEN
-   fort, TOKEN_ENCRYPTION_KEY (NOUVELLE clé), MS_CLIENT_ID identique,
-   SYNC_INTERVAL_MINUTES=30. `npm install && npm run db:setup && npm run build`.
-3. **pm2** : `pm2 start deploy/ecosystem.config.js && pm2 save && pm2 startup`
-   (BOXMAIL_SUPERVISED déjà dans ecosystem) — la mise à jour 1-clic marche
-   (branche Linux d'update.ts : install+build in-process puis exit → pm2).
-4. **nginx + TLS** : deploy/nginx.conf.example (SSE : proxy_buffering off).
-   DNS mcp.lb2i.fr → IP. certbot.
-5. **Firewall — DÉCISION ACTÉE À CONFIRMER avec l'utilisateur** : 443 ouvert
-   au monde (interface utilisateur nécessite son IP résidentielle variable) ;
-   protections : bearer fort sur /mcp, ADMIN_PASSWORD fort + rate limit sur
-   /api, HSTS. Alternative stricte : allowlist IP Anthropic + IP box de
-   l'utilisateur sur /admin+/api au niveau nginx.
-6. **Entra** : ajouter redirect URI `https://mcp.lb2i.fr/api/enroll/callback`
-   (plateforme Mobile & desktop).
-7. **Comptes** : ré-enrôler les boîtes depuis l'interface distante (2 min/boîte)
-   — OU copier accounts.json + réutiliser la même TOKEN_ENCRYPTION_KEY
-   (documenter les deux, recommander le ré-enrôlement).
-8. **Connecteur Claude** : Settings → Connectors → Add custom connector →
-   `https://mcp.lb2i.fr/mcp` + header Authorization Bearer. Tester depuis
-   Cowork : list_accounts, get_global_overview, generate_daily_brief.
-9. **README** : section déploiement mise à jour pas-à-pas.
+**✅ L6-PREP TERMINÉE (07/2026) — tout ce qui ne nécessite pas l'utilisateur
+est prêt :**
+- **Auto-sync serveur** : L5.11 livrée (`SYNC_INTERVAL_MINUTES`).
+- **Durcissement prod** : `TRUST_PROXY=1` (config.http) → `app.set('trust
+  proxy', 'loopback')` — rate limits /api et /mcp par IP réelle
+  (X-Forwarded-For) derrière nginx, usurpation impossible en direct ;
+  cookie de session `Secure` automatique quand PUBLIC_BASE_URL est en
+  https. Testé : XFF honoré derrière proxy (login rate-limit par IP),
+  ignoré en local.
+- **`deploy/env.production.example`** : .env prod commenté (secrets à
+  générer, TRUST_PROXY=1, SYNC_INTERVAL_MINUTES=30, PUBLIC_BASE_URL).
+- **`deploy/setup-oracle.sh`** : installation EN UNE COMMANDE, idempotente
+  (Node 20, .env généré avec secrets openssl, npm install/db:setup/build,
+  pm2 startOrReload + startup systemd, nginx proxy complet SSE-ready,
+  certbot --redirect + HSTS, vérifications /health, récap final avec le
+  bearer à coller dans Claude). `bash -n` OK.
+- **`docs/DEPLOY-ORACLE.md`** : guide pas-à-pas NON TECHNIQUE en français
+  (instance OCI, Security List 80/443, DNS, le copier-coller, Entra,
+  ré-enrôlement recommandé, connecteur Cowork, tableau de dépannage).
+- **README §8** réécrit (pointe vers le guide + le script).
+
+**Reste à faire AVEC l'utilisateur (le jour J, ~45 min) :**
+1. **Instance OCI** : créer la VM Ubuntu (Always Free), ouvrir 80/443 dans
+   la Security List, récupérer l'IP publique. — console web, guidé.
+2. **DNS** : A `mcp.lb2i.fr` → IP. — registrar, guidé.
+3. **SSH + `bash deploy/setup-oracle.sh`** (3 questions : domaine, email
+   certbot, mot de passe admin).
+4. **Firewall — DÉCISION À CONFIRMER** : option retenue par défaut = 443
+   ouvert au monde (IP résidentielle variable) avec bearer fort + mot de
+   passe fort + rate limit + HSTS ; alternative stricte allowlist
+   (deploy/oci-firewall.md).
+5. **Entra** : redirect URI `https://mcp.lb2i.fr/api/enroll/callback`.
+6. **Comptes** : ré-enrôler les boîtes depuis l'interface distante
+   (recommandé) — alternative accounts.json+même clé documentée.
+7. **Connecteur Claude** : Settings → Connectors → Add custom →
+   `https://mcp.lb2i.fr/mcp` + header Bearer. Tester depuis Cowork :
+   list_accounts, get_global_overview, generate_daily_brief.
 
 ---
 

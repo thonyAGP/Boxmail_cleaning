@@ -94,6 +94,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L6-prep TERMINÉE (même session) : tout le déploiement Oracle préparable
+sans l'utilisateur est prêt.** `TRUST_PROXY` (trust proxy 'loopback' —
+rate limits par IP réelle derrière nginx, testé XFF) + cookie session
+`Secure` auto si PUBLIC_BASE_URL https ; `deploy/env.production.example` ;
+`deploy/setup-oracle.sh` (installation 1-commande idempotente : Node 20,
+.env secrets générés, build, pm2+systemd, nginx SSE, certbot+HSTS, récap
+bearer) ; `docs/DEPLOY-ORACLE.md` (guide pas-à-pas non technique FR) ;
+README §8 réécrit. Le jour J (~45 min, utilisateur requis) : VM OCI +
+Security List 80/443, DNS, le copier-coller SSH, décision firewall (défaut
+443 monde), URI Entra, ré-enrôlement, connecteur Cowork — détail dans la
+section L6 de ROADMAP.md.
+
 **Batch L5.6 → L5.11 TERMINÉ (demande utilisateur : « Lance L5.6 à L5.11
 à suivre », un commit/push par livraison — 6 livraisons poussées dans cette
 session).** Ordre suivi : L5.6 → L5.9 (priorisée sur retour utilisateur
@@ -327,12 +339,12 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Le rattrapage maquette est terminé (L5.1 → L5.5). Prochaine grande étape :
-L6 — déploiement Oracle Cloud + connecteur Cowork** (voir ROADMAP ; nécessite
-l'utilisateur pour SSH/DNS/Entra). Reste aussi au backlog : calendrier des
-échéances (vue mois), règles de classement (L7), renommer/supprimer un compte
-depuis l'interface, page Aide. IMPORTANT avant L6 : l'utilisateur doit valider
-en réel (sur son PC) la lecture des mails, les actions en masse et l'ENVOI
+**L6-prep faite : le déploiement Oracle est prêt à exécuter — suivre
+docs/DEPLOY-ORACLE.md AVEC l'utilisateur (~45 min : VM OCI, DNS, script
+1-commande, Entra, connecteur Cowork).** Backlog ensuite : règles de
+classement (L7), désinscription newsletters, analyse LLM Sonnet dédiée.
+IMPORTANT avant/pendant L6 : l'utilisateur doit valider en réel (sur son
+PC) les pièces jointes, les actions en masse multi-boîtes et l'ENVOI
 (testé uniquement mocké — pas d'IMAP/SMTP dans l'environnement de dev).
 Une livraison par session ; lire CLAUDE.md + la livraison visée uniquement ;
 à la fin, cocher dans ROADMAP.md et mettre à jour l'« État » ci-dessus.
