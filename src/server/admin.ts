@@ -87,6 +87,7 @@ import {
   SENDER_CATEGORIES,
   type SenderCategory,
 } from '../services/categorize.js';
+import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -501,6 +502,27 @@ export function buildAdminRouter(): Router {
       }
       const stats = await senderStatsFromIndex(slug, folder, limit, since);
       res.json({ account: slug, folder, ...stats });
+    }),
+  );
+
+  // --- Accueil « Aujourd'hui » (A2 — Cap V3) --------------------------------------
+  router.get(
+    '/today',
+    guard(async (_req, res) => {
+      res.json(await generateToday());
+    }),
+  );
+
+  // Aperçu EXACT des mails d'un « bruit » (garde-fou : liste avant action —
+  // la suppression passe ensuite par les endpoints bulk existants, journalisés).
+  router.get(
+    '/today/noise/:bucket',
+    guard(async (req, res) => {
+      try {
+        res.json(await listNoiseMessages(req.params.bucket as NoiseBucket));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
     }),
   );
 

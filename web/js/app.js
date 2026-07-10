@@ -331,7 +331,7 @@ $('#login-form').addEventListener('submit', async (e) => {
 
 $('#logout-btn').addEventListener('click', async () => {
   await api.logout().catch(() => {});
-  location.hash = '#/dashboard';
+  location.hash = '#/today';
   showLogin();
 });
 
@@ -450,7 +450,7 @@ async function refreshOverview() {
 }
 
 function highlightNav() {
-  const hash = location.hash || '#/dashboard';
+  const hash = location.hash || '#/today';
   document.querySelectorAll('.side-link').forEach((el) => el.classList.remove('active'));
   if (hash.startsWith('#/account/')) {
     const slug = decodeURIComponent(hash.split('/')[2] ?? '');
@@ -495,8 +495,10 @@ function highlightNav() {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
     document.querySelector('[data-nav="tasks"]')?.classList.add('active');
-  } else {
+  } else if (hash.startsWith('#/dashboard')) {
     document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
+  } else {
+    document.querySelector('[data-nav="today"]')?.classList.add('active');
   }
 }
 
@@ -505,7 +507,7 @@ window.addEventListener('hashchange', route);
 
 function route() {
   highlightNav();
-  const hash = location.hash || '#/dashboard';
+  const hash = location.hash || '#/today';
   if (hash.startsWith('#/account/')) {
     renderAccount(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/operations')) {
@@ -536,8 +538,10 @@ function route() {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
     renderTasks();
-  } else {
+  } else if (hash.startsWith('#/dashboard')) {
     renderDashboard();
+  } else {
+    renderToday();
   }
 }
 
@@ -567,6 +571,267 @@ function newMailsDelta(nm) {
   if (diff > 0) return `+${fmtNum(diff)} par rapport à hier`;
   if (diff < 0) return `${fmtNum(diff)} par rapport à hier`;
   return 'comme hier';
+}
+
+// ------------------------------------------------- Aujourd'hui (A2 — Cap V3)
+// L'accueil orienté ACTIONS : on ne montre pas des mails, on dit quoi faire.
+const NOISE_LABELS = {
+  newsletter: ['📰', 'Newsletters'],
+  notification: ['🤖', 'Notifications'],
+  social: ['💬', 'Réseaux sociaux'],
+  promo: ['📢', 'Publicités & promos'],
+};
+
+function daysAgo(hours) {
+  const d = Math.round(hours / 24);
+  return d <= 0 ? "aujourd'hui" : d === 1 ? 'depuis 1 jour' : `depuis ${d} jours`;
+}
+
+// Une ligne d'action : phrase + chip de la boîte + 📖 si un mail est lisible.
+// Les items lisibles sont gardés en mémoire (pas dans le HTML : les sujets
+// contiennent des apostrophes/guillemets qui casseraient les attributs).
+let todayReaderRefs = [];
+
+function todayRow(html, readerItem, badge = '') {
+  const readable = readerItem && readerItem.folder && readerItem.uid;
+  let readBtn = '';
+  if (readable) {
+    todayReaderRefs.push(readerItem);
+    readBtn = `<button class="btn btn-sm today-read" data-idx="${todayReaderRefs.length - 1}">📖 Lire</button>`;
+  }
+  return `<div class="today-row" style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border)">
+    <div style="flex:1; min-width:0">${html}</div>
+    ${badge}
+    ${readerItem?.account ? accountChip(readerItem.account) : ''}
+    ${readBtn}
+  </div>`;
+}
+
+function bindTodayRows(root) {
+  root.querySelectorAll('.today-read').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = todayReaderRefs[Number(btn.dataset.idx)];
+      if (item) openReaderFor(item, { onRemoved: () => renderToday() });
+    });
+  });
+}
+
+async function renderToday() {
+  const main = $('#main');
+  const todayDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  main.innerHTML = `<div class="page-head"><div><h1>Bonjour Anthony 👋</h1>
+    <div class="sub">Voici ce qui mérite ton attention — tout le reste peut attendre.</div></div>
+    <div class="head-actions">
+      <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(todayDate)}</span>
+      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">🔄 Tout synchroniser</button>
+      <button class="btn" id="refresh-btn">↻ Actualiser</button>
+    </div></div>
+    <div id="today-body"><div class="empty"><span class="spinner"></span>Analyse de tes boîtes…</div></div>`;
+  $('#refresh-btn').addEventListener('click', () => renderToday());
+  $('#syncall-btn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.syncAll('recent');
+      pollJobs();
+    } catch (err) {
+      e.target.disabled = false;
+      alert(err.message);
+    }
+  });
+
+  let t;
+  try {
+    t = await api.today();
+  } catch (err) {
+    $('#today-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (location.hash && !(location.hash === '#/today' || location.hash === '' || location.hash === '#/')) return;
+  todayReaderRefs = [];
+
+  // Badge sidebar : nombre d'actions à faire.
+  const badge = $('#today-badge');
+  if (badge) {
+    badge.textContent = fmtNum(t.todo.total);
+    badge.classList.toggle('hidden', t.todo.total === 0);
+  }
+
+  const rows = [];
+  for (const r of t.todo.replies) {
+    rows.push(todayRow(
+      `↩️ <strong>Répondre à ${esc(r.fromName || r.fromEmail)}</strong> — « ${esc(r.subject)} »
+       <span class="muted" style="font-size:12px">· ${daysAgo(r.waitingHours)} · ${esc(r.reason)}</span>`,
+      r,
+      r.overdue ? '<span class="badge red">en retard</span>' : '',
+    ));
+  }
+  for (const i of t.todo.invoices) {
+    rows.push(todayRow(
+      `💶 <strong>Facture à traiter</strong> — « ${esc(i.subject)} »
+       <span class="muted" style="font-size:12px">· ${esc(i.fromName || i.fromEmail)} · ${esc(i.reason)}</span>`,
+      i,
+    ));
+  }
+  for (const d of t.todo.deadlines) {
+    const when = d.inDays < 0
+      ? `<span class="badge red">dépassée de ${fmtNum(-d.inDays)} j</span>`
+      : d.inDays === 0 ? '<span class="badge red">aujourd’hui</span>' : '';
+    rows.push(todayRow(
+      `📅 <strong>Échéance : ${esc(d.title)}</strong>
+       <span class="muted" style="font-size:12px">· ${fmtDate(d.date)}${d.status === 'proposed' ? ' · à confirmer dans 📅 Échéances' : ''}</span>`,
+      d.folder && d.uid
+        ? { account: d.account, folder: d.folder, uid: d.uid, subject: d.subject, fromName: d.fromName, fromEmail: d.fromEmail, date: d.msgDate, isSeen: d.isSeen }
+        : { account: d.account },
+      when,
+    ));
+  }
+  for (const f of t.todo.followups) {
+    rows.push(todayRow(
+      `⏰ <strong>Relancer ${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — « ${esc(f.subject)} »
+       <span class="muted" style="font-size:12px">· sans réponse ${daysAgo(f.waitingHours)}</span>`,
+      { account: f.account, folder: f.folder, uid: f.uid, subject: f.subject, fromName: 'Toi (mail envoyé)', fromEmail: '', date: f.date, isSeen: true },
+      f.overdue ? '<span class="badge red">en retard</span>' : '',
+    ));
+  }
+
+  const importantRows = t.important.map((m) => todayRow(
+    `<span class="score-pill ${m.level === 'high' ? 'high' : 'medium'}">${m.score}</span>
+     <strong>${esc(m.fromName || m.fromEmail)}</strong> — « ${esc(m.subject)} »
+     <span class="muted" style="font-size:12px">· ${m.reasons.slice(0, 2).map(esc).join(' · ')}</span>`,
+    m,
+  ));
+
+  const noiseRows = t.noise.buckets.map((b) => {
+    const [emoji, label] = NOISE_LABELS[b.bucket] ?? ['⚪', b.bucket];
+    return `<div class="today-row" style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border)">
+      <div style="flex:1">${emoji} <strong>${esc(label)}</strong>
+        <span class="muted" style="font-size:12px">· ${fmtNum(b.count)} mails (${fmtNum(b.unseen)} non lus) · ${fmtSize(b.sizeBytes)}</span></div>
+      ${b.count > 0 ? `<button class="btn btn-sm noise-btn" data-bucket="${b.bucket}">👀 Voir et nettoyer</button>` : '<span class="muted" style="font-size:12px">rien 👌</span>'}
+    </div>`;
+  }).join('');
+
+  $('#today-body').innerHTML = `
+    ${t.skippedAccounts.length ? `<div class="notice warn">⚠️ Boîte(s) ignorée(s) : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
+    ${!t.categorized ? `<div class="notice warn">🏷️ Les catégories n'ont pas encore été calculées : la section « Bruit » sera vide.
+      Va dans <a href="#/settings">⚙️ Paramètres</a> → « Recalculer les catégories » (une fois, quelques secondes).</div>` : ''}
+
+    <div class="panel">
+      <div class="panel-head"><h2>🔥 À faire</h2>
+        <span class="badge ${t.todo.total ? 'red' : 'green'}">${fmtNum(t.todo.total)} action(s)</span></div>
+      <div class="panel-body">
+        ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
+        <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
+          <a href="#/replies">↩️ Réponses</a> · <a href="#/followups">⏰ Relances</a> ·
+          <a href="#/deadlines">📅 Échéances</a> · <a href="#/tasks">☑️ Tâches</a></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>🟠 Important</h2>
+        <span class="badge orange">${fmtNum(t.important.length)}</span></div>
+      <div class="panel-body">
+        ${importantRows.length ? importantRows.join('') : '<div class="empty">Rien d’important non traité cette semaine.</div>'}
+        <div class="muted" style="font-size:12.5px; padding-top:8px"><a href="#/important">⭐ Voir tous les mails importants</a></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>🟢 Peut attendre</h2></div>
+      <div class="panel-body">
+        ${t.canWait.unseen > 0
+          ? `${fmtNum(t.canWait.unseen)} mail(s) non lu(s) sans signal d'urgence — ils t'attendent tranquillement
+             dans la <a href="#/inbox/@inbox">📥 boîte de réception</a>.`
+          : 'Aucun mail non lu en attente. 👌'}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>⚪ Bruit</h2>
+        <span class="badge gray">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span></div>
+      <div class="panel-body">
+        ${noiseRows}
+        <div class="muted" style="font-size:12.5px; padding-top:8px">
+          « Voir et nettoyer » montre la liste EXACTE avant toute action ; la suppression va à la corbeille
+          (récupérable ~30 jours). Nettoyage fin par expéditeur : <a href="#/cleanup">🧹 Nettoyage conseillé</a>.</div>
+      </div>
+    </div>`;
+
+  bindTodayRows($('#today-body'));
+  $('#today-body').querySelectorAll('.noise-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
+  });
+}
+
+// Modale « bruit » : liste exacte (cap 500) → corbeille par lots via les
+// endpoints bulk existants (journalisés), groupés par boîte + dossier.
+async function openNoiseModal(bucket) {
+  closeModal();
+  const [emoji, label] = NOISE_LABELS[bucket] ?? ['⚪', bucket];
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>${emoji} ${esc(label)}</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement de la liste…</div></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  let data;
+  try {
+    data = await api.todayNoise(bucket);
+  } catch (err) {
+    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+
+  $('#modal-body').innerHTML = `
+    <p><strong>${fmtNum(data.total)}</strong> mail(s) classé(s) « ${esc(label)} » dans tes boîtes de réception.
+    ${data.truncated ? `<br><span class="muted">Par prudence, on traite <strong>${fmtNum(data.items.length)}</strong> mails à la fois — relance l'opération pour continuer.</span>` : ''}</p>
+    <div style="max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:8px">
+      <table><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
+      <tbody>${data.items.map((m) => `<tr>
+        <td>${accountChip(m.account)}</td>
+        <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(m.subject)}</td>
+        <td class="muted" style="font-size:12px">${esc(m.fromName || m.fromEmail)}</td>
+        <td class="num" style="font-size:12px">${fmtDate(m.date)}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>`;
+  $('#modal-foot').innerHTML = `
+    <span class="muted" style="font-size:12px; margin-right:auto">Corbeille = récupérable ~30 jours, rien n'est effacé définitivement.</span>
+    <button class="btn" id="noise-cancel">Annuler</button>
+    <button class="btn btn-primary" id="noise-delete" ${data.items.length ? '' : 'disabled'}>🗑️ Mettre ${fmtNum(data.items.length)} mail(s) à la corbeille</button>`;
+  $('#noise-cancel').addEventListener('click', closeModal);
+  $('#noise-delete').addEventListener('click', async () => {
+    if (!confirm(`Mettre ${data.items.length} mail(s) « ${label} » à la corbeille ?\n\nIls restent récupérables ~30 jours dans la corbeille de chaque boîte, et l'opération est journalisée.`)) return;
+    const btn = $('#noise-delete');
+    btn.disabled = true;
+    // Groupe par boîte + dossier → endpoints bulk existants (lots de 200 côté serveur).
+    const groups = new Map();
+    for (const m of data.items) {
+      const key = `${m.account}|${m.folder}`;
+      if (!groups.has(key)) groups.set(key, { account: m.account, folder: m.folder, uids: [] });
+      groups.get(key).uids.push(m.uid);
+    }
+    let done = 0;
+    let failed = 0;
+    let i = 0;
+    for (const g of groups.values()) {
+      i += 1;
+      btn.textContent = `Suppression… (boîte ${i}/${groups.size})`;
+      try {
+        const r = await api.bulkAction(g.account, { folder: g.folder, uids: g.uids, action: 'delete' });
+        done += r.moved ?? r.affected ?? g.uids.length;
+      } catch {
+        failed += g.uids.length;
+      }
+    }
+    closeModal();
+    alert(`🗑️ ${done} mail(s) mis à la corbeille${failed ? ` — ⚠️ ${failed} en échec (boîte injoignable ?)` : ''}.`);
+    renderToday();
+  });
 }
 
 // ---------------------------------------------------------------- Dashboard

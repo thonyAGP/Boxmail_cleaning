@@ -34,6 +34,8 @@ export const api = {
     if (since) q.set('since', since);
     return request('GET', `/accounts/${encodeURIComponent(slug)}/stats?${q}`);
   },
+  today: () => request('GET', '/today'),
+  todayNoise: (bucket) => request('GET', `/today/noise/${encodeURIComponent(bucket)}`),
   senderSetCategory: (slug, email, category) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, category }),
   categorizeAll: () => request('POST', '/categorize'),

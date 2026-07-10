@@ -704,7 +704,31 @@ index-only, stockés et EXPLIQUÉS :
   d'apprentissage (A6).
 - Tests : jeu de ~30 mails synthétiques couvrant chaque catégorie/intention.
 
-### ⬜ A2 — Accueil « Aujourd'hui » orienté actions
+### ✅ A2 — Accueil « Aujourd'hui » orienté actions — LIVRÉE
+
+**Livré.** `services/today.ts` : `generateToday()` (agrégat index-only
+multi-comptes, comptes en erreur → skippedAccounts sans casser l'écran) —
+🔥 À FAIRE = réponses attendues actives (les intentions A1
+promo/otp/shipping/confirmation n'y entrent JAMAIS — filtre par messageId),
+factures non lues (intent invoice, 30 j), échéances dues (proposed+
+confirmed ≤ fin de journée, dépassées 90 j max), relances actives — tri
+retard d'abord ; 🟠 IMPORTANT = top 5 minScore 70 non lus 7 j ;
+🟢 PEUT ATTENDRE = non-lus inbox hors bruit/factures ; ⚪ BRUIT = 4 buckets
+disjoints par CASE SQL (newsletter > notification > social > pub/intent
+promo) avec compte/non-lus/octets ; flag `categorized` si aucune catégorie
+calculée. `listNoiseMessages(bucket)` = liste EXACTE cap 500 (garde-fou
+aperçu avant action). API : GET `/api/today`, GET `/api/today/noise/:bucket`
+(400 bucket inconnu). UI : écran `#/today` = PAGE D'ACCUEIL PAR DÉFAUT
+(sidebar « ☀️ Aujourd'hui » + badge nb actions ; le Tableau de bord reste
+accessible en 2e position) — phrases d'action (« Répondre à X — attend
+depuis N j », 💶 facture, 📅 échéance avec badge rouge dépassée/aujourd'hui,
+⏰ relancer), chip boîte + 📖 Lire (items gardés en mémoire, pas en
+attribut — apostrophes), modale bruit (liste exacte, note cap 500, double
+confirmation, suppression par les endpoints bulk EXISTANTS groupés
+compte+dossier — journal ui_bulk_delete conservé, récap, re-render).
+Notice si catégories jamais calculées → lien Paramètres. Tests :
+seed-today.mts (14 asserts, rejoue seed-categorize) + ui-today.mjs
+(19 checks, bulk + corps mockés) + régression ui-categorize.
 
 Remplace le dashboard comme page d'accueil (le dashboard actuel reste en
 sous-page « Statistiques »). Quatre blocs, AUCUNE liste de mails :

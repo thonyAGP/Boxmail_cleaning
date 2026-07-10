@@ -97,6 +97,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A2 livrée : accueil « Aujourd'hui » orienté actions.** `#/today` est la
+PAGE D'ACCUEIL par défaut (le Tableau de bord reste en 2e position).
+services/today.ts : generateToday() index-only — À FAIRE (réponses
+attendues filtrées par intention A1 : jamais promo/otp/livraison/
+confirmation ; factures non lues ; échéances dues ; relances), IMPORTANT
+(top 5 ≥ 70 non lus), PEUT ATTENDRE (non-lus hors bruit), BRUIT (4 buckets
+SQL disjoints : newsletters/notifications/réseaux sociaux/pubs) ;
+listNoiseMessages = aperçu exact cap 500. GET /api/today +
+/api/today/noise/:bucket. Modale bruit → suppression via les endpoints
+bulk existants (journalisée). Badge sidebar = nb actions. Tests :
+14 asserts + 19 checks navigateur + régressions.
+
 **A1 livrée : moteur de catégorisation (fondation Cap V3).** Migration
 Sender.category/Source/Reason + Message.intent/intentReason.
 services/categorize.ts : categorizeSender (10 catégories explicables,
@@ -455,10 +467,10 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : A1 FAITE. Prochaine livraison = A2 (accueil « Aujourd'hui »
-orienté actions) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
-complet). L'utilisateur a demandé « Lance la série A » (10/07) :
-enchaîner les livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
+**Cap V3 : A1 et A2 FAITES. Prochaine livraison = A3 (stratégies de
+rétention) — voir ROADMAP.md section « Cap V3 » (plan A1→A6 complet).
+L'utilisateur a demandé « Lance la série A » (10/07) : enchaîner les
+livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),
