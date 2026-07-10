@@ -352,6 +352,24 @@ export async function recordFeedback(input: FeedbackInput): Promise<{
     },
     update: { verdict: input.verdict, reason, claim },
   });
+
+  // B4 : le verdict alimente la CONFIANCE de l'analyse pour les moteurs qui
+  // nourrissent le nettoyage — « incorrect » ⇒ confiance faible ⇒ le mail est
+  // protégé de toute suppression automatique ; « correct » ⇒ confiance forte.
+  if (['newsletter', 'notification', 'cleanup'].includes(input.engine)) {
+    const conf =
+      input.verdict === 'incorrect'
+        ? { level: 'low', reason: 'tu as jugé cette analyse incorrecte (Vérifier l’analyse)' }
+        : input.verdict === 'correct'
+          ? { level: 'high', reason: 'tu as jugé cette analyse correcte (Vérifier l’analyse)' }
+          : null;
+    if (conf) {
+      await db.message.update({
+        where: { id: input.messageId },
+        data: { analysisConfidence: conf.level, analysisConfidenceReason: conf.reason },
+      });
+    }
+  }
   return {
     engine: input.engine,
     messageId: input.messageId,

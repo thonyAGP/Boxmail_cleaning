@@ -217,6 +217,174 @@ export function detectIntent(s: IntentSignals): IntentResult {
   return { intent: 'info', reason: 'aucun motif particulier — mail d’information' };
 }
 
+// ------------------------------------------------- Confiance de l'analyse (B4)
+
+export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const;
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
+
+export const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {
+  high: 'forte',
+  medium: 'moyenne',
+  low: 'faible',
+};
+
+// Intentions détectées par un motif FORT (peu ambigu) vs mot générique seul.
+const STRONG_INTENT_SET = new Set(['otp', 'invoice', 'shipping', 'appointment', 'reminder']);
+const WEAK_INTENT_SET = new Set(['confirmation', 'document', 'promo']);
+
+// Concordance expéditeur ↔ intention : « ma banque m'envoie une facture »
+// est cohérent ; « une entreprise inconnue m'envoie une confirmation » non.
+const CONCORDANT_INTENTS: Record<string, string[]> = {
+  bank: ['invoice', 'document', 'reminder', 'appointment', 'otp', 'confirmation', 'info'],
+  insurance: ['invoice', 'document', 'reminder', 'appointment', 'otp', 'confirmation', 'info'],
+  admin: ['invoice', 'document', 'reminder', 'appointment', 'otp', 'confirmation', 'info'],
+  marketplace: ['shipping', 'confirmation', 'invoice', 'promo', 'otp', 'reminder'],
+  social: ['info', 'confirmation', 'otp', 'reminder'],
+  newsletter: ['promo', 'info'],
+  notification: ['otp', 'confirmation', 'shipping', 'reminder', 'info', 'document'],
+  ad: ['promo', 'info'],
+  person: ['reply_expected', 'info', 'appointment', 'document', 'question'],
+};
+
+export interface ConfidenceSignals {
+  senderCategory: string | null;
+  senderCategorySource: string; // auto | manual
+  intent: string | null;
+  /** Verdict B2 le plus récent sur ce mail (moteurs de catégorisation/nettoyage). */
+  feedback?: 'correct' | 'incorrect' | 'unsure' | null;
+}
+
+export interface ConfidenceResult {
+  level: ConfidenceLevel;
+  reason: string;
+}
+
+/**
+ * Confiance de l'analyse d'un mail (B4) :
+ *  - forte : verdict « correct » (B2), catégorie corrigée à la main, ou
+ *    expéditeur identifié ET intention concordante ;
+ *  - moyenne : UN signal fort (expéditeur identifié OU motif d'intention fort) ;
+ *  - faible : mot générique seul, ou verdict « incorrect » (B2).
+ * FAIBLE ⇒ le mail est protégé de toute suppression automatique.
+ */
+export function computeConfidence(s: ConfidenceSignals): ConfidenceResult {
+  if (s.feedback === 'incorrect') {
+    return { level: 'low', reason: 'tu as jugé cette analyse incorrecte (Vérifier l’analyse)' };
+  }
+  if (s.feedback === 'correct') {
+    return { level: 'high', reason: 'tu as jugé cette analyse correcte (Vérifier l’analyse)' };
+  }
+  if (s.senderCategorySource === 'manual' && s.senderCategory) {
+    return { level: 'high', reason: 'catégorie de l’expéditeur choisie par toi' };
+  }
+  // « company » est la catégorie PAR DÉFAUT (aucune marque reconnue) : ce
+  // n'est pas un signal. Toute autre catégorie posée l'est par un motif réel.
+  const senderStrong = Boolean(s.senderCategory && s.senderCategory !== 'company');
+  const intentStrong = Boolean(s.intent && STRONG_INTENT_SET.has(s.intent));
+  if (senderStrong && s.intent && (CONCORDANT_INTENTS[s.senderCategory as string] ?? []).includes(s.intent)) {
+    return {
+      level: 'high',
+      reason: `expéditeur (${SENDER_CATEGORY_LABELS[s.senderCategory as SenderCategory] ?? s.senderCategory}) et intention (${MESSAGE_INTENT_LABELS[s.intent as MessageIntent] ?? s.intent}) concordent`,
+    };
+  }
+  if (senderStrong) {
+    return {
+      level: 'medium',
+      reason: `un seul signal fort : expéditeur identifié (${SENDER_CATEGORY_LABELS[s.senderCategory as SenderCategory] ?? s.senderCategory})`,
+    };
+  }
+  if (intentStrong) {
+    return {
+      level: 'medium',
+      reason: `un seul signal fort : motif d’intention net (${MESSAGE_INTENT_LABELS[s.intent as MessageIntent] ?? s.intent})`,
+    };
+  }
+  if (s.intent && WEAK_INTENT_SET.has(s.intent)) {
+    return { level: 'low', reason: 'mot générique seul (« confirmation », « document », « promo »…)' };
+  }
+  return { level: 'low', reason: 'aucun signal fort (expéditeur non identifié, pas de motif net)' };
+}
+
+/**
+ * Pose la confiance sur les mails ENTRANTS d'un compte (index-only,
+ * idempotent). `onlyMissing` = passe incrémentale post-sync (mails jamais
+ * évalués) ; le backfill 🏷️ recalcule tout. Les verdicts B2 des moteurs de
+ * catégorisation/nettoyage (newsletter, notification, cleanup) priment.
+ */
+export async function computeConfidenceForAccount(
+  accountSlug: string,
+  opts: { onlyMissing?: boolean } = {},
+  progress: (message: string) => void = () => {},
+): Promise<number> {
+  await ensureDbReady();
+  const senders = new Map(
+    (
+      await db.sender.findMany({
+        where: { accountSlug },
+        select: { email: true, category: true, categorySource: true },
+      })
+    ).map((s) => [s.email, s]),
+  );
+  const feedback = new Map<number, string>();
+  for (const f of await db.analysisFeedback.findMany({
+    where: { accountSlug, engine: { in: ['newsletter', 'notification', 'cleanup'] } },
+    orderBy: { updatedAt: 'asc' },
+    select: { messageId: true, verdict: true },
+  })) {
+    feedback.set(f.messageId, f.verdict); // le plus récent gagne (tri asc)
+  }
+
+  let cursor = 0;
+  let updated = 0;
+  for (;;) {
+    const batch = await db.message.findMany({
+      where: {
+        accountSlug,
+        isDeleted: false,
+        isOutbound: false,
+        id: { gt: cursor },
+        ...(opts.onlyMissing ? { analysisConfidence: null } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: BATCH,
+      select: {
+        id: true,
+        fromEmail: true,
+        intent: true,
+        analysisConfidence: true,
+        analysisConfidenceReason: true,
+      },
+    });
+    if (batch.length === 0) break;
+    cursor = batch[batch.length - 1].id;
+
+    const groups = new Map<string, { level: string; reason: string; ids: number[] }>();
+    for (const msg of batch) {
+      const sender = msg.fromEmail ? senders.get(msg.fromEmail) : undefined;
+      const r = computeConfidence({
+        senderCategory: sender?.category ?? null,
+        senderCategorySource: sender?.categorySource ?? 'auto',
+        intent: msg.intent,
+        feedback: (feedback.get(msg.id) as 'correct' | 'incorrect' | 'unsure' | undefined) ?? null,
+      });
+      if (msg.analysisConfidence === r.level && msg.analysisConfidenceReason === r.reason) continue;
+      const key = `${r.level} ${r.reason}`;
+      const g = groups.get(key) ?? { level: r.level, reason: r.reason, ids: [] };
+      g.ids.push(msg.id);
+      groups.set(key, g);
+    }
+    for (const g of groups.values()) {
+      await db.message.updateMany({
+        where: { id: { in: g.ids } },
+        data: { analysisConfidence: g.level, analysisConfidenceReason: g.reason },
+      });
+      updated += g.ids.length;
+    }
+    if (updated) progress(`${accountSlug} : confiance posée sur ${updated} mails…`);
+  }
+  return updated;
+}
+
 // ------------------------------------------------------------------- Backfill
 
 const BATCH = 1000;
@@ -230,7 +398,12 @@ const BATCH = 1000;
 export async function categorizeAccount(
   accountSlug: string,
   progress: (message: string) => void = () => {},
-): Promise<{ messagesScanned: number; messagesUpdated: number; sendersUpdated: number }> {
+): Promise<{
+  messagesScanned: number;
+  messagesUpdated: number;
+  sendersUpdated: number;
+  confidenceUpdated: number;
+}> {
   await ensureDbReady();
   let cursor = 0;
   let scanned = 0;
@@ -276,7 +449,11 @@ export async function categorizeAccount(
   const { rebuildSenders } = await import('./sync.js');
   const sendersUpdated = await rebuildSenders(accountSlug);
   progress(`${accountSlug} : catégories recalculées pour ${sendersUpdated} expéditeurs.`);
-  return { messagesScanned: scanned, messagesUpdated: updated, sendersUpdated };
+
+  // Confiance (B4) : recalcul COMPLET — les catégories viennent de changer.
+  const confidenceUpdated = await computeConfidenceForAccount(accountSlug, {}, progress);
+  progress(`${accountSlug} : confiance de l'analyse posée (${confidenceUpdated} mails mis à jour).`);
+  return { messagesScanned: scanned, messagesUpdated: updated, sendersUpdated, confidenceUpdated };
 }
 
 // -------------------------------------------------- Priorité par relation (A5)

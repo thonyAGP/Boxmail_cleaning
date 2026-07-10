@@ -88,6 +88,12 @@ model Message {
   // calculée à la sync sur les entrants, backfill via le job « categorize ».
   intent             String?
   intentReason       String?
+  // Confiance de l'analyse (B4) : high | medium | low. Posée après chaque
+  // sync (mails sans confiance) et par le backfill 🏷️. FAIBLE ⇒ le mail est
+  // protégé de toute suppression automatique (PROTECTION_CLAUSES). Les
+  // verdicts de l'écran « Vérifier l'analyse » (B2) priment sur le calcul.
+  analysisConfidence       String?
+  analysisConfidenceReason String?
   // true si le mail a disparu du serveur (supprimé/déplacé) depuis la sync
   isDeleted          Boolean   @default(false)
   createdAt          DateTime  @default(now())

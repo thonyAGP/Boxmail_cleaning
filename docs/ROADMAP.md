@@ -963,14 +963,26 @@ relancé » (≥ 2 entrants du même expéditeur depuis ta dernière réponse) ;
 badge « ⏳ N j sans traitement »). Tests : seed 20 asserts + ui-b3.mjs
 10 checks.
 
-### ⬜ B4 — Confiance de l'analyse (forte/moyenne/faible)
+### ✅ B4 — Confiance de l'analyse (forte/moyenne/faible) — LIVRÉE
 
-Migration `Message.analysisConfidence` (high|medium|low) + signaux posés
-à la catégorisation/intention : forte = expéditeur ET intention
-concordent, ou règle corrigée/validée ; moyenne = un signal fort ;
-faible = mot générique seul (« confirmation »…). Confiance FAIBLE ⇒
-ajoutée à PROTECTION_CLAUSES (jamais de suppression auto) + affichée
-(tooltip raison). Boutons correct/incorrect (B2) alimentent la confiance.
+Migration `Message.analysisConfidence`/`analysisConfidenceReason`.
+categorize.ts : `computeConfidence` — forte = verdict B2 « correct »,
+catégorie manuelle, ou expéditeur identifié ET intention CONCORDANTE
+(table CONCORDANT_INTENTS : banque+facture oui, banque+promo non) ;
+moyenne = UN signal fort (catégorie ≠ company par défaut, OU motif
+d'intention net otp/facture/livraison/rdv/rappel) ; faible = mot
+générique seul (« confirmation », « document », « promo ») ou aucun
+signal — et verdict B2 « incorrect » ⇒ faible (prime sur tout, y compris
+au recalcul). `computeConfidenceForAccount` : passe incrémentale
+post-sync (onlyMissing, AVANT les automatismes) + recalcul complet dans
+le backfill 🏷️ (categorizeAccount). PROTECTION_CLAUSES (B1) gagne une
+7e clause : confiance FAIBLE ⇒ jamais visé par un nettoyage
+(protectedCount la compte). recordFeedback (B2) pose la confiance pour
+les moteurs newsletter/notification/cleanup. L'analyse du mail ouvert
+expose `confidence` → ligne 🎚️ « Confiance de l'analyse :
+forte/moyenne/faible — raison » (+ mention « protégé des nettoyages
+automatiques » si faible). Tests : seed 20 asserts + ui-b4.mjs 4 checks
++ régression B2.
 
 ### ⬜ B5 — Stratégies à risque moyen affinées
 

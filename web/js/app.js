@@ -5771,11 +5771,20 @@ function renderReaderAnalysis(a, item) {
         <span>${esc(a.request.label)} <span class="muted" style="font-size:11.5px">— ${esc(a.request.why)}</span></span></div>`
     : '';
 
+  // Confiance de l'analyse (B4) : faible ⇒ le mail est protégé de toute
+  // suppression automatique — la raison est dans l'infobulle.
+  const confidenceLine = a.confidence
+    ? `<div class="ra-line"><span class="badge ${a.confidence.level === 'high' ? 'green' : a.confidence.level === 'medium' ? 'orange' : 'gray'}">🎚️</span>
+        <span title="${esc(a.confidence.reason)}">Confiance de l'analyse : <strong>${esc(a.confidence.label)}</strong>
+        <span class="muted" style="font-size:11.5px">— ${esc(a.confidence.reason)}${a.confidence.level === 'low' ? ' · protégé des nettoyages automatiques' : ''}</span></span></div>`
+    : '';
+
   el.innerHTML = `
     <div class="ra-title">🤖 Analyse Mail Assistant <span class="muted" style="font-size:11px">(règles locales — rien n'est envoyé à un service externe)</span></div>
     ${impLine}
     <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
     ${requestLine}
+    ${confidenceLine}
     ${existing || detected
       ? `<div class="ra-line"><span>Échéances :</span> ${existing} ${detected}</div>`
       : ''}`;

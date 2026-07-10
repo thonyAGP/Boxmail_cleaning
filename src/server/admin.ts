@@ -1513,6 +1513,8 @@ export function buildAdminRouter(): Router {
           date: true,
           fromEmail: true,
           hasListUnsubscribe: true,
+          analysisConfidence: true,
+          analysisConfidenceReason: true,
         },
       });
       if (!m) {
@@ -1584,11 +1586,25 @@ export function buildAdminRouter(): Router {
           sourceText: ex.sourceText,
         }));
 
+      // Confiance de l'analyse (B4) — calculée à la sync / au backfill 🏷️.
+      const confidence =
+        !m.isOutbound && m.analysisConfidence
+          ? {
+              level: m.analysisConfidence,
+              label:
+                m.analysisConfidence === 'high' ? 'forte'
+                : m.analysisConfidence === 'medium' ? 'moyenne'
+                : 'faible',
+              reason: m.analysisConfidenceReason ?? '',
+            }
+          : null;
+
       res.json({
         messageId: m.id,
         importance,
         reply,
         request,
+        confidence,
         deadlines: {
           existing: existingRows.map((d) => ({
             id: d.id,

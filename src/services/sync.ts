@@ -407,6 +407,18 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   progress('Calcul des statistiques expéditeurs…');
   report.sendersUpdated = await rebuildSenders(rec.account);
 
+  // Confiance de l'analyse (B4) : posée sur les mails qui n'en ont pas encore
+  // — AVANT les automatismes, pour que « confiance faible ⇒ protégé » tienne.
+  try {
+    const { computeConfidenceForAccount } = await import('./categorize.js');
+    await computeConfidenceForAccount(rec.account, { onlyMissing: true });
+  } catch (err) {
+    logger.warn('confiance post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Règles de classement automatiques (L7) : UNIQUEMENT celles validées
   // avec l'option auto — non bloquant, chaque application est journalisée.
   try {

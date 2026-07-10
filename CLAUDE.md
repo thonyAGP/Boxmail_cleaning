@@ -97,6 +97,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**B4 livrée : confiance de l'analyse (forte/moyenne/faible).**
+Migration Message.analysisConfidence(+Reason). computeConfidence
+(categorize.ts) : forte = verdict B2 correct / catégorie manuelle /
+expéditeur ET intention concordants ; moyenne = un signal fort ; faible =
+mot générique seul — verdict B2 « incorrect » ⇒ faible et PRIME au
+recalcul. Posée post-sync (onlyMissing, avant les automatismes) + backfill
+🏷️ complet. PROTECTION_CLAUSES + clause « confiance faible ⇒ jamais
+supprimé ». Ligne 🎚️ dans l'analyse du mail ouvert (raison en infobulle).
+Tests : 20 asserts + 4 checks + régression B2. L'utilisateur doit
+relancer le backfill 🏷️ (Paramètres) pour poser la confiance sur
+l'existant.
+
 **B3 livrée : réponse attendue v2 + importants « non traités ».**
 attention.ts : detectRequestKind (réponse attendue/action/question/info,
 motifs FR sans « ? »), stripQuotedText (texte cité ignoré), destinataire

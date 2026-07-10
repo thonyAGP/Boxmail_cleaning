@@ -69,7 +69,9 @@ type PolicyRow = NonNullable<Awaited<ReturnType<typeof db.retentionPolicy.findUn
  *  - fil de discussion contenant un mail SORTANT (conversation engagée) ;
  *  - tâche « à faire » liée au mail ;
  *  - échéance proposée ou confirmée liée au mail ;
- *  - expéditeur marqué ⭐ toujours important (priorité manuelle A5).
+ *  - expéditeur marqué ⭐ toujours important (priorité manuelle A5) ;
+ *  - confiance de l'analyse FAIBLE (B4 — analyse incertaine ou jugée
+ *    incorrecte : on ne supprime jamais sur un doute).
  * S'ajoute à la garantie « 0 mail personnel » (catégorie person exclue).
  */
 export const PROTECTION_CLAUSES = [
@@ -79,6 +81,7 @@ export const PROTECTION_CLAUSES = [
   `NOT EXISTS (SELECT 1 FROM Task t WHERE t.messageId = m.id AND t.status = 'todo')`,
   `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
   `(s.priority IS NULL OR s.priority != 'always_important')`,
+  `(m.analysisConfidence IS NULL OR m.analysisConfidence != 'low')`,
 ] as const;
 
 function policyWhere(
