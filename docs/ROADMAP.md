@@ -417,13 +417,23 @@ Lire → ouvre l'inbox sur CE dossier de CETTE boîte). Tests : seed étendu
 (sent/trash par boîte, asserts par rôle — 22 au total) + ui-folders.mjs
 (10 checks playwright, lecture depuis Archive incluse).
 
-### ⬜ L5.13 — Mails suivis (drapeaux ⭐)
+### ✅ L5.13 — Mails suivis (drapeaux ⭐) — LIVRÉE
 
-Maquette : entrée sidebar « Mails suivis (12) ». `isFlagged` est DÉJÀ
-indexé. Backend : filtre `flagged=1` sur les deux listings + action
-flag/unflag (imapService.markEmails \\Flagged + reflet index). UI :
-sous-lien sidebar 📌 Mails suivis (vue unifiée `flagged`), étoile
-cliquable dans les lignes inbox + panneau de lecture.
+Pseudo-rôle `flagged` dans UNIFIED_ROLES (`listUnifiedInbox({role:
+'flagged'})` : isFlagged=true TOUS dossiers hors corbeille/spam) ;
+`isFlagged` exposé sur tous les items des listings/recherche. Actions
+`flag`/`unflag` sur POST `.../messages/actions` (imapService.markEmails
+\\Flagged, journal ui_mark_message, reflet index étendu). UI : entrée
+sidebar « ⭐ Mails suivis » + badge compteur (refreshFlaggedBadge) ;
+étoile ☆/⭐ cliquable sur chaque ligne de l'inbox (toutes vues) ; bouton
+« ☆ Suivre / ⭐ Suivi » dans le panneau de lecture ; option « ⭐ Mails
+suivis » dans le sélecteur unifié (badge dossier affiché par ligne).
+Sidebar remise à plat (retour utilisateur : « tu ne peux pas mettre sous
+boîte de réception les mails envoyés ») : Boîte de réception (@inbox
+explicite), Mails suivis, Envoyés, Brouillons, Recherche, Corbeille au
+MÊME niveau, ordre maquette. Tests : seed (3 suivis dont 1 supprimé
+exclu, asserts multi-dossiers) + ui-flagged.mjs (11 checks, actions
+mockées page.route).
 
 ### ⬜ L5.14 — Écran Pièces jointes
 

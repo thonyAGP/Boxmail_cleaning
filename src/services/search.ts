@@ -41,6 +41,7 @@ export interface SearchResultItem {
   fromEmail: string;
   date: string | null;
   isSeen: boolean;
+  isFlagged: boolean;
   isOutbound: boolean;
   hasListUnsubscribe: boolean;
   hasAttachments: boolean;
@@ -112,6 +113,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         fromEmail: true,
         date: true,
         isSeen: true,
+        isFlagged: true,
         isOutbound: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
@@ -137,6 +139,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
       fromEmail: m.fromEmail ?? '',
       date: m.date?.toISOString() ?? null,
       isSeen: m.isSeen,
+      isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
@@ -173,7 +176,9 @@ function folderOrderBy(sort: FolderSort | undefined, dir: 'asc' | 'desc') {
   return [{ date: dir }, { id: dir }] as const;
 }
 
-export const UNIFIED_ROLES = ['inbox', 'sent', 'drafts', 'trash', 'archive', 'spam'] as const;
+// 'flagged' = pseudo-rôle : tous les mails suivis (⭐), quel que soit le dossier
+// (corbeille et spam exclus).
+export const UNIFIED_ROLES = ['inbox', 'sent', 'drafts', 'trash', 'archive', 'spam', 'flagged'] as const;
 export type UnifiedRole = (typeof UNIFIED_ROLES)[number];
 
 export async function listUnifiedInbox(
@@ -194,7 +199,9 @@ export async function listUnifiedInbox(
   const role = opts.role ?? 'inbox';
   const where = {
     isDeleted: false,
-    folder: { is: { role } },
+    ...(role === 'flagged'
+      ? { isFlagged: true, folder: { is: { role: { notIn: ['trash', 'spam'] } } } }
+      : { folder: { is: { role } } }),
     ...(opts.unseen ? { isSeen: false } : {}),
     ...(opts.withAttachments ? { hasAttachments: true } : {}),
   };
@@ -215,6 +222,7 @@ export async function listUnifiedInbox(
         fromEmail: true,
         date: true,
         isSeen: true,
+        isFlagged: true,
         isOutbound: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
@@ -241,6 +249,7 @@ export async function listUnifiedInbox(
       fromEmail: m.fromEmail ?? '',
       date: m.date?.toISOString() ?? null,
       isSeen: m.isSeen,
+      isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
@@ -289,6 +298,7 @@ export async function listFolderMessages(
         fromEmail: true,
         date: true,
         isSeen: true,
+        isFlagged: true,
         isOutbound: true,
         hasListUnsubscribe: true,
         hasAttachments: true,
@@ -315,6 +325,7 @@ export async function listFolderMessages(
       fromEmail: m.fromEmail ?? '',
       date: m.date?.toISOString() ?? null,
       isSeen: m.isSeen,
+      isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
@@ -414,13 +425,13 @@ export async function reflectActionInIndex(
   account: string,
   folder: string,
   uid: number,
-  action: 'delete' | 'move' | 'seen' | 'unseen',
+  action: 'delete' | 'move' | 'seen' | 'unseen' | 'flag' | 'unflag',
 ): Promise<void> {
   await ensureDbReady();
   const data =
-    action === 'delete' || action === 'move'
-      ? { isDeleted: true }
-      : { isSeen: action === 'seen' };
+    action === 'delete' || action === 'move' ? { isDeleted: true }
+    : action === 'flag' || action === 'unflag' ? { isFlagged: action === 'flag' }
+    : { isSeen: action === 'seen' };
   await db.message.updateMany({
     where: { accountSlug: account, uid, folder: { path: folder } },
     data,

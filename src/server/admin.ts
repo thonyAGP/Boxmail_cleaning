@@ -1021,7 +1021,7 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'Paramètres "folder" et "uid" requis.' });
         return;
       }
-      if (!['delete', 'move', 'seen', 'unseen'].includes(action)) {
+      if (!['delete', 'move', 'seen', 'unseen', 'flag', 'unflag'].includes(action)) {
         res.status(400).json({ error: `Action inconnue : "${action}".` });
         return;
       }
@@ -1063,8 +1063,9 @@ export function buildAdminRouter(): Router {
         });
         result = { moved: r.moved, destination };
       } else {
-        const add = action === 'seen' ? ['\\Seen'] : [];
-        const remove = action === 'unseen' ? ['\\Seen'] : [];
+        const add = action === 'seen' ? ['\\Seen'] : action === 'flag' ? ['\\Flagged'] : [];
+        const remove =
+          action === 'unseen' ? ['\\Seen'] : action === 'unflag' ? ['\\Flagged'] : [];
         const r = await imapService.markEmails(rec, folder, [uid], add, remove);
         await recordOperation({
           account: rec.account,
@@ -1077,7 +1078,12 @@ export function buildAdminRouter(): Router {
         });
         result = { affected: r.affected, flag: action };
       }
-      await reflectActionInIndex(slug, folder, uid, action as 'delete' | 'move' | 'seen' | 'unseen');
+      await reflectActionInIndex(
+        slug,
+        folder,
+        uid,
+        action as 'delete' | 'move' | 'seen' | 'unseen' | 'flag' | 'unflag',
+      );
       res.json({ ok: true, action, ...result });
     }),
   );

@@ -101,6 +101,13 @@ L5.12 dossiers ✅ LIVRÉE → L5.13 mails suivis → L5.14 écran pièces joint
 → L5.15 nettoyage global → L5.16 dashboard maquette → puis L7 règles,
 brouillons IMAP, mémoire métier/LLM en 2e temps.
 
+**L5.13 livrée : Mails suivis (⭐).** Pseudo-rôle `flagged` (tous dossiers
+hors corbeille/spam), isFlagged exposé partout, actions flag/unflag
+(\\Flagged IMAP + reflet index), étoile cliquable par ligne, bouton dans
+le panneau, entrée sidebar + badge. Sidebar remise à plat ordre maquette
+(retour utilisateur — plus de sous-liens sous Boîte de réception ; lien
+Boîte de réception = #/inbox/@inbox explicite pour réinitialiser le rôle).
+
 **L5.12 livrée : lire les mails dans TOUS les dossiers.** Sidebar :
 sous-liens 📤 Envoyés / 📝 Brouillons / 🗑️ Corbeille (#/inbox/@role, vue
 unifiée par rôle — `listUnifiedInbox({role})`, param `role` sur GET

@@ -45,6 +45,16 @@ function accountChip(slug) {
 }
 let smtpEnabled = false; // renseigné par /api/me au chargement
 
+// Badge « ⭐ Mails suivis » de la sidebar (L5.13).
+function refreshFlaggedBadge() {
+  api.messagesUnified({ role: 'flagged', limit: 1 }).then((d) => {
+    const b = $('#flagged-badge');
+    if (!b) return;
+    b.textContent = fmtNum(d.total);
+    b.classList.toggle('hidden', d.total === 0);
+  }).catch(() => {});
+}
+
 // ---------------------------------------------------------------- UX globale (L5.10)
 let globalUxInstalled = false;
 function installGlobalUx() {
@@ -120,6 +130,7 @@ async function showApp() {
   refreshRepliesBadge();
   refreshFollowupsBadge();
   refreshImportantBadge();
+  refreshFlaggedBadge();
   refreshDeadlinesBadge();
   refreshTasksBadge();
 }
@@ -3223,6 +3234,7 @@ async function loadInboxFolders() {
     // Vue unifiée : le sélecteur choisit le TYPE de dossier, toutes boîtes.
     const roles = [
       ['inbox', '📥 Boîte de réception'],
+      ['flagged', '⭐ Mails suivis'],
       ['sent', '📤 Envoyés'],
       ['drafts', '📝 Brouillons'],
       ['trash', '🗑️ Corbeille'],
@@ -3330,7 +3342,10 @@ function renderInboxBody() {
               <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px"
                 title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</td>
               <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span></td>
-              <td style="white-space:nowrap">${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>` : ''}
+              <td style="white-space:nowrap"><span class="star" data-star="${k}"
+                  title="${i.isFlagged ? 'Ne plus suivre ce mail' : 'Suivre ce mail (⭐)'}">${i.isFlagged ? '⭐' : '☆'}</span>
+                ${isUnifiedInbox() && inboxState.role === 'flagged' ? folderBadge(i) : ''}
+                ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>` : ''}
                 ${i.hasListUnsubscribe ? '<span class="badge gray">📰</span>' : ''}
                 ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}</td>
             </tr>`,
@@ -3376,6 +3391,23 @@ function renderInboxBody() {
       renderInboxBody();
     });
   }
+  body.querySelectorAll('[data-star]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const i = d.items[Number(el.dataset.star)];
+      if (!i) return;
+      const action = i.isFlagged ? 'unflag' : 'flag';
+      el.style.opacity = '0.4';
+      try {
+        await api.messageAction(i.account, { folder: i.folder, uid: i.uid, action });
+        i.isFlagged = !i.isFlagged;
+        renderInboxBody();
+        refreshFlaggedBadge();
+      } catch (err) {
+        el.style.opacity = '';
+        alert(err.message);
+      }
+    });
+  });
   body.querySelectorAll('th.sortable').forEach((th) => {
     th.addEventListener('click', () => {
       const key = th.dataset.sort;
@@ -3680,6 +3712,7 @@ async function openReader(item, row, opts = {}) {
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
+      <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « ⭐ Mails suivis »">${item.isFlagged ? '⭐ Suivi' : '☆ Suivre'}</button>
       <button class="btn btn-sm" id="reader-toggle-seen">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
       <select id="reader-move"><option value="">📦 Déplacer vers…</option></select>
       <button class="btn btn-sm" id="reader-delete" style="color:var(--red)">🗑️ Corbeille</button>
@@ -3688,6 +3721,23 @@ async function openReader(item, row, opts = {}) {
   document.body.appendChild(overlay);
   document.body.appendChild(panel);
   panel.querySelector('.modal-close').addEventListener('click', closeReader);
+  $('#reader-flag')?.addEventListener('click', async () => {
+    const btn = $('#reader-flag');
+    btn.disabled = true;
+    try {
+      await api.messageAction(item.account, {
+        folder: item.folder,
+        uid: item.uid,
+        action: item.isFlagged ? 'unflag' : 'flag',
+      });
+      item.isFlagged = !item.isFlagged;
+      btn.textContent = item.isFlagged ? '⭐ Suivi' : '☆ Suivre';
+      refreshFlaggedBadge();
+    } catch (err) {
+      alert(err.message);
+    }
+    btn.disabled = false;
+  });
   const onKey = (e) => {
     if (e.key === 'Escape') {
       closeReader();

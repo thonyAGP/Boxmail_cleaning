@@ -484,3 +484,7 @@ th.sortable:hover { color: var(--accent); }
 
 /* Sous-liens de dossiers dans la sidebar (L5.12) */
 .side-sub { padding-left: 28px; font-size: 12.5px; }
+
+/* Étoile de suivi (L5.13) */
+.star { cursor: pointer; font-size: 15px; vertical-align: middle; user-select: none; }
+.star:hover { transform: scale(1.2); display: inline-block; }
