@@ -10,6 +10,7 @@ import { registerAttentionTools } from './tools/attention.js';
 import { registerBriefTools } from './tools/brief.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerRuleTools } from './tools/rules.js';
+import { registerAssistTools } from './tools/assist.js';
 
 /**
  * Construit une instance McpServer avec tous les tools enregistrés.
@@ -30,7 +31,12 @@ export function buildMcpServer(): McpServer {
         'get_unanswered_emails / get_overdue_replies listent les mails en attente de ' +
         'réponse (avec reason) ; snooze_reply / dismiss_reply pour les reporter/ignorer. ' +
         '« Fais-moi mon brief » → generate_daily_brief (ou generate_weekly_review) puis ' +
-        'raconter le résultat en français.',
+        'raconter le résultat en français. « Qu’est-ce que j’ai à faire ? » → get_today. ' +
+        '« Pourquoi ma boîte est pleine ? » → get_mailbox_report. ANALYSE FINE (sur le ' +
+        'forfait de l’utilisateur) : list_uncertain_messages liste les mails que les ' +
+        'heuristiques classent avec doute — les relire avec ton propre jugement, proposer ' +
+        'les corrections à l’utilisateur, puis les poser via set_sender_category / ' +
+        'set_sender_priority (journalisé, réversible). Toujours parler français et tutoyer.',
     },
   );
 
@@ -45,6 +51,7 @@ export function buildMcpServer(): McpServer {
   registerBriefTools(server);
   registerTaskTools(server);
   registerRuleTools(server);
+  registerAssistTools(server);
 
   return server;
 }

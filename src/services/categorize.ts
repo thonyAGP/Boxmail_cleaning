@@ -385,6 +385,118 @@ export async function computeConfidenceForAccount(
   return updated;
 }
 
+// --------------------------------------------- Cas ambigus (analyse fine MCP)
+
+export interface UncertainMessage {
+  account: string;
+  folder: string;
+  uid: number;
+  subject: string;
+  fromEmail: string;
+  fromName: string | null;
+  date: string | null;
+  isSeen: boolean;
+  intent: string | null;
+  intentReason: string | null;
+  senderCategory: string | null;
+  senderCategorySource: string | null;
+  senderCategoryReason: string | null;
+  senderPriority: string | null;
+  senderMessageCount: number | null;
+  confidence: string;
+  confidenceReason: string | null;
+}
+
+/**
+ * Mails dont l'analyse heuristique est INCERTAINE (confiance faible/moyenne,
+ * B4) — la matière première de l'analyse fine par Claude via MCP : Claude
+ * (sur le forfait de l'utilisateur, côté Cowork) relit ces cas, juge avec
+ * son propre discernement, et corrige via set_sender_category /
+ * set_sender_priority (mécanismes existants, journalisés, réversibles).
+ * Index-only, hors corbeille/spam, entrants uniquement.
+ */
+export async function listUncertainMessages(
+  opts: { account?: string; confidence?: ConfidenceLevel[]; limit?: number } = {},
+): Promise<{ total: number; items: UncertainMessage[] }> {
+  await ensureDbReady();
+  const levels = (opts.confidence?.length ? opts.confidence : ['low', 'medium']).filter(
+    (l): l is ConfidenceLevel => (CONFIDENCE_LEVELS as readonly string[]).includes(l),
+  );
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const where = {
+    isDeleted: false,
+    isOutbound: false,
+    analysisConfidence: { in: levels },
+    folder: { is: { role: { notIn: ['trash', 'spam'] } } },
+    ...(opts.account ? { accountSlug: opts.account } : {}),
+  };
+  const [total, rows] = await Promise.all([
+    db.message.count({ where }),
+    db.message.findMany({
+      where,
+      orderBy: { date: 'desc' },
+      take: limit,
+      select: {
+        accountSlug: true,
+        uid: true,
+        subject: true,
+        fromEmail: true,
+        fromName: true,
+        date: true,
+        isSeen: true,
+        intent: true,
+        intentReason: true,
+        analysisConfidence: true,
+        analysisConfidenceReason: true,
+        folder: { select: { path: true } },
+      },
+    }),
+  ]);
+  // Contexte expéditeur (catégorie/priorité/volume) joint en un seul passage.
+  const emails = [...new Set(rows.map((r) => r.fromEmail).filter((e): e is string => !!e))];
+  const senders = new Map(
+    (
+      await db.sender.findMany({
+        where: { email: { in: emails } },
+        select: {
+          accountSlug: true,
+          email: true,
+          category: true,
+          categorySource: true,
+          categoryReason: true,
+          priority: true,
+          messageCount: true,
+        },
+      })
+    ).map((s) => [`${s.accountSlug}|${s.email}`, s]),
+  );
+  return {
+    total,
+    items: rows.map((r) => {
+      const s = r.fromEmail ? senders.get(`${r.accountSlug}|${r.fromEmail}`) : undefined;
+      return {
+        account: r.accountSlug,
+        folder: r.folder.path,
+        uid: r.uid,
+        subject: r.subject ?? '(sans sujet)',
+        fromEmail: r.fromEmail ?? '',
+        fromName: r.fromName,
+        date: r.date?.toISOString() ?? null,
+        isSeen: r.isSeen,
+        intent: r.intent,
+        intentReason: r.intentReason,
+        senderCategory: s?.category ?? null,
+        senderCategorySource: s?.categorySource ?? null,
+        senderCategoryReason: s?.categoryReason ?? null,
+        senderPriority: s?.priority ?? null,
+        senderMessageCount: s?.messageCount ?? null,
+        confidence: r.analysisConfidence ?? 'low',
+        confidenceReason: r.analysisConfidenceReason,
+      };
+    }),
+  };
+}
+
 // ------------------------------------------------------------------- Backfill
 
 const BATCH = 1000;

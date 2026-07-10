@@ -1020,8 +1020,55 @@ ui-b5.mjs 6 checks + régressions B2/B4.
   SPEC : suggest_mail_rules/preview/apply — gros morceau, planifier comme L7).
 - Analyse fine du CONTENU des mails par LLM (résumés, tri intelligent…) :
   décision utilisateur (07/2026) — pas de lecture de mails par le LLM de la
-  session de dev (trop cher) ; à faire dans un 2e temps via un modèle Sonnet
-  dédié, appelé par le serveur.
+  session de dev (trop cher). ~~2e temps via un modèle appelé par le serveur~~
+  → **DÉCISION RÉVISÉE (10/07/2026) : l'analyse IA passe par le FORFAIT
+  Claude de l'utilisateur (sessions Cowork connectées au serveur MCP), pas
+  par une clé API facturée à part.** Voir « BL1 » ci-dessous.
+
+---
+
+## BL1 — Analyse fine via Cowork (sur le forfait) ✅ (livrée 10/07/2026)
+
+**Contexte.** L'utilisateur est « perplexe » sur l'analyse heuristique et
+veut de la vraie IA — mais décomptée de son forfait Claude (Pro/Max), pas
+d'une clé API. C'est la décision d'ORIGINE du projet (« intelligence =
+heuristiques serveur + analyse fine par Claude via MCP ») : le forfait se
+consomme quand une session Claude (Cowork/claude.ai) parle au serveur MCP.
+Il fallait donc que la façade MCP expose TOUT ce que l'interface web sait
+faire, plus un point d'entrée « cas ambigus » pour que Claude corrige ce
+que les heuristiques classent mal.
+
+**Livré — 9 nouveaux tools MCP (52 au total)** dans `src/mcp/tools/assist.ts` :
+- `get_today` — l'accueil « Aujourd'hui » (A2) : à faire / important /
+  peut attendre / bruit supprimable ;
+- `get_mailbox_report` — « Pourquoi ma boîte est pleine ? » (A4) ;
+- `list_retention_policies` / `preview_retention_policy` — stratégies A3
+  avec simulation live + protectedCount ; aperçu exact cap 500 (lecture
+  seule : l'activation/application restent dans l'interface) ;
+- `get_learning_suggestions` — suggestions A6 avec preuves ;
+- `get_analysis_quality` — % de précision par moteur (verdicts B2) ;
+- `list_uncertain_messages` — LE point d'entrée de l'analyse fine : les
+  mails à confiance faible/moyenne (B4) avec tout le contexte (intention +
+  raison, catégorie/priorité/volume expéditeur, raison de la confiance) —
+  nouveau service `listUncertainMessages` dans categorize.ts (index-only,
+  entrants, hors corbeille/spam, cap 200) ;
+- `set_sender_category` / `set_sender_priority` — les corrections, via les
+  mécanismes EXISTANTS (manual jamais écrasé, null → retour auto ;
+  priorité ⭐/🔕), journalisées dans operations.jsonl, réversibles.
+  Les descriptions imposent : proposer d'abord, corriger après accord.
+
+Instructions serveur MCP enrichies (« analyse fine sur le forfait » :
+relire les cas incertains avec ton propre jugement → proposer → corriger).
+Tests : seed recalé (B5 : expéditeur engagé ⇒ 0 newsletter visée, échéance
+seule ⇒ B1 par mail — 44 asserts) + test-assist.mts (19 asserts service)
++ mcp-smoke.mjs (18 checks JSON-RPC réels sur /mcp : 52 tools, appels
+get_today/list_uncertain_messages/set_sender_category aller-retour).
+
+**Usage type dans Cowork (après L6)** : « Analyse mes mails ambigus » →
+Claude appelle list_uncertain_messages, lit au besoin des mails précis
+(read_email), explique ses corrections, et les pose après accord. Le tri
+de masse reste gratuit (heuristiques serveur) ; l'intelligence est payée
+par le forfait, seulement quand on la sollicite.
 
 ---
 

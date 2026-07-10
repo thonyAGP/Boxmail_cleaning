@@ -5,8 +5,9 @@
 Assistant email personnel multi-boîtes pour comptes **Outlook.com/Hotmail
 personnels** (refusés par le connecteur M365 officiel de Claude). Deux façades
 sur les mêmes services :
-1. **Serveur MCP distant** (Streamable HTTP, 32 tools) — destiné à Claude
-   Cowork après déploiement ;
+1. **Serveur MCP distant** (Streamable HTTP, 52 tools) — destiné à Claude
+   Cowork après déploiement ; l'analyse IA se fait LÀ, sur le forfait
+   Claude de l'utilisateur (décision 10/07 : pas de clé API côté serveur) ;
 2. **Interface web** « Mail Assistant » sur `/admin` — utilisée quotidiennement
    par l'utilisateur dès maintenant, en local sur son PC Windows.
 
@@ -38,9 +39,10 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 43 tools MCP (accounts, folders, read, write, sync, export,
+- `mcp/tools/*` — 52 tools MCP (accounts, folders, read, write, sync, export,
   attention : réponses/relances/importance, échéances, briefs, tâches,
-  règles de classement)
+  règles de classement, assist : today/rapport/rétention/suggestions/
+  qualité + analyse fine des cas incertains sur le forfait — BL1)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -96,6 +98,26 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**BL1 livrée : analyse fine via Cowork — SUR LE FORFAIT, pas de clé API.**
+DÉCISION UTILISATEUR (10/07) : « je veux que ça décompte de mon forfait,
+pas en mode clef api » — retour à la décision d'origine (« analyse fine
+par Claude via MCP »). PAS de panneau clé API/modèle/tokens dans
+Paramètres : l'IA, c'est la session Cowork connectée au serveur MCP.
+Livré : 9 nouveaux tools MCP (52 au total) dans `mcp/tools/assist.ts` —
+get_today, get_mailbox_report, list/preview_retention_policy (lecture
+seule), get_learning_suggestions, get_analysis_quality (verdicts B2), et
+l'analyse fine : list_uncertain_messages (confiance faible/moyenne B4
+avec contexte complet ; service `listUncertainMessages` dans
+categorize.ts) + set_sender_category / set_sender_priority (mécanismes
+existants, journalisés, réversibles — descriptions : proposer d'abord,
+corriger après accord). Instructions serveur MCP enrichies. Tests : seed
+RECALÉ sur B5 (expéditeur engagé ⇒ 0 newsletter visée ; échéance seule ⇒
+protection B1 par mail — les anciennes attentes 30/5 dataient d'avant
+B5), 19 asserts service, 18 checks JSON-RPC réels sur /mcp (52 tools,
+appels get_today / list_uncertain_messages / set_sender_category
+aller-retour manuel→auto). Tout passe par le forfait UNIQUEMENT quand
+une session Cowork est ouverte — le serveur seul reste 100 % gratuit.
 
 **B5 livrée : stratégies affinées — LA SÉRIE B (FIABILISATION) EST
 COMPLÈTE (B1→B5, livrées le 10/07).** retention.ts : exclusions par
@@ -574,19 +596,18 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Séries A (Cap V3) ET B (fiabilisation) COMPLÈTES (livrées le 10/07).**
-Prochaines étapes possibles : VALIDATION RÉELLE de la série B par
-l'utilisateur (backfill 🏷️ pour poser la confiance B4, examen de
-détections dans 🔬 Vérifier l'analyse, verdicts → % de précision),
-L6 déploiement Oracle (~45 min avec l'utilisateur, tout est prêt —
-docs/DEPLOY-ORACLE.md), ou backlog (dossiers intelligents, désinscription
-newsletters, brouillons IMAP, extraction PDF factures, analyse LLM
-Sonnet dédiée, tools MCP pour today/retention/report/suggestions/review —
-l'interface web les a, la façade MCP pas encore). L6-prep faite : le déploiement Oracle reste prêt à
-exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
-(~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
-Backlog ensuite : dossiers intelligents (vues enregistrées),
-désinscription newsletters, brouillons IMAP, analyse LLM Sonnet dédiée.
+**Séries A (Cap V3), B (fiabilisation) et BL1 (analyse fine MCP sur le
+forfait) COMPLÈTES (livrées le 10/07).** La façade MCP est prête pour
+Cowork : le sens de L6 est décuplé (c'est le déploiement qui « allume »
+l'IA sur forfait). Prochaine étape logique : **L6 déploiement Oracle**
+(~45 min avec l'utilisateur, tout est prêt — docs/DEPLOY-ORACLE.md :
+VM OCI, DNS, script 1-commande, Entra, connecteur Cowork). Restent
+aussi : VALIDATION RÉELLE de la série B par l'utilisateur (backfill 🏷️
+pour poser la confiance B4, examen de détections dans 🔬 Vérifier
+l'analyse, verdicts → % de précision), et le backlog (dossiers
+intelligents, désinscription newsletters, brouillons IMAP, extraction
+PDF factures ; « analyse LLM Sonnet dédiée » ABANDONNÉE au profit du
+forfait via Cowork — décision utilisateur 10/07).
 IMPORTANT avant/pendant L6 : l'utilisateur doit valider en réel (sur son
 PC) les pièces jointes, les actions en masse multi-boîtes et l'ENVOI
 (testé uniquement mocké — pas d'IMAP/SMTP dans l'environnement de dev).
