@@ -778,6 +778,7 @@ async function renderToday() {
       <div class="panel-body">
         ${noiseRows}
         <div class="muted" style="font-size:12.5px; padding-top:8px">
+          Les mails reçus ces <strong>7 derniers jours</strong> ne sont jamais proposés — le bruit, c'est ce qui s'accumule.
           « Voir et nettoyer » montre la liste EXACTE avant toute action ; la suppression va à la corbeille
           (récupérable ~30 jours). Nettoyage fin par expéditeur : <a href="#/cleanup">🧹 Nettoyage conseillé</a>.</div>
       </div>
@@ -795,8 +796,10 @@ async function openNoiseModal(bucket) {
   closeModal();
   const [emoji, label] = NOISE_LABELS[bucket] ?? ['⚪', bucket];
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
+  // under-reader : le panneau de lecture s'ouvre AU-DESSUS de cette modale
+  // (on vérifie un mail avant de valider le nettoyage).
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
     <div class="modal-head"><h2>${emoji} ${esc(label)}</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement de la liste…</div></div>
@@ -815,17 +818,28 @@ async function openNoiseModal(bucket) {
   }
 
   $('#modal-body').innerHTML = `
-    <p><strong>${fmtNum(data.total)}</strong> mail(s) classé(s) « ${esc(label)} » dans tes boîtes de réception.
-    ${data.truncated ? `<br><span class="muted">Par prudence, on traite <strong>${fmtNum(data.items.length)}</strong> mails à la fois — relance l'opération pour continuer.</span>` : ''}</p>
-    <div style="max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:8px">
-      <table><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
-      <tbody>${data.items.map((m) => `<tr>
-        <td>${accountChip(m.account)}</td>
-        <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(m.subject)}</td>
-        <td class="muted" style="font-size:12px">${esc(m.fromName || m.fromEmail)}</td>
-        <td class="num" style="font-size:12px">${fmtDate(m.date)}</td>
+    <p><strong>${fmtNum(data.total)}</strong> mail(s) classé(s) « ${esc(label)} » reçus il y a <strong>plus de 7 jours</strong>
+    (les mails récents ne sont jamais proposés), <strong>du plus ancien au plus récent</strong>.
+    ${data.truncated ? `<br><span class="muted">Par prudence, on traite <strong>${fmtNum(data.items.length)}</strong> mails à la fois (les plus anciens d'abord) — relance l'opération pour continuer.</span>` : ''}
+    <span class="muted" style="font-size:12px">Clique un sujet pour lire le mail avant de décider.</span></p>
+    <div style="max-height:55vh; overflow:auto; border:1px solid var(--border); border-radius:8px">
+      <table class="table-compact"><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
+      <tbody>${data.items.map((m, i) => `<tr>
+        <td style="white-space:nowrap">${accountChip(m.account)}</td>
+        <td style="max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
+          <span class="openable" data-noise-open="${i}" title="Lire le mail">${esc(m.subject)}</span></td>
+        <td class="muted" style="font-size:12px; white-space:nowrap">${esc(m.fromName || m.fromEmail)}</td>
+        <td class="num" style="font-size:12px; white-space:nowrap">${fmtDate(m.date)}</td>
       </tr>`).join('')}</tbody></table>
     </div>`;
+  // Lecture avant décision : le panneau s'ouvre au-dessus de la modale ;
+  // un mail supprimé depuis le panneau recharge la liste.
+  $('#modal-body').querySelectorAll('[data-noise-open]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const m = data.items[Number(el.dataset.noiseOpen)];
+      if (m) openReaderFor(m, { onRemoved: () => openNoiseModal(bucket) });
+    });
+  });
   $('#modal-foot').innerHTML = `
     <span class="muted" style="font-size:12px; margin-right:auto">Corbeille = récupérable ~30 jours, rien n'est effacé définitivement.</span>
     <button class="btn" id="noise-cancel">Annuler</button>

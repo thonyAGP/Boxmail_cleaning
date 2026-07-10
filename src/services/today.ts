@@ -18,6 +18,11 @@ export type NoiseBucket = 'newsletter' | 'notification' | 'social' | 'promo';
 
 export const NOISE_BUCKETS: NoiseBucket[] = ['newsletter', 'notification', 'social', 'promo'];
 
+// GARDE-FOU (retour utilisateur 10/07) : un mail reçu ces N derniers jours
+// n'est JAMAIS du « bruit » supprimable — une newsletter d'aujourd'hui peut
+// encore être lue. Appliqué aux compteurs ET à l'aperçu/suppression.
+export const NOISE_MIN_AGE_DAYS = 7;
+
 // Affectation d'un mail de la boîte de réception à un « bruit » (disjoint —
 // l'ordre du CASE fait foi) : expéditeur newsletter > notification > réseau
 // social > pub (expéditeur publicitaire OU intention promo détectée).
@@ -162,9 +167,13 @@ export async function generateToday(): Promise<TodaySummary> {
   }));
 
   // Bruit : compteurs par catégorie sur toutes les boîtes de réception.
+  // Un mail récent (< NOISE_MIN_AGE_DAYS) n'est PAS du bruit : il bascule
+  // dans « peut attendre » (bucket NULL) au lieu d'être supprimable.
+  const noiseCutoff = Date.now() - NOISE_MIN_AGE_DAYS * 86_400_000;
   type NoiseRow = { bucket: string | null; cnt: bigint; unseen: bigint; size: bigint | null };
   const noiseRows = await db.$queryRawUnsafe<NoiseRow[]>(
-    `SELECT ${NOISE_BUCKET_CASE} AS bucket, COUNT(*) AS cnt,
+    `SELECT CASE WHEN m.date >= ? THEN NULL ELSE (${NOISE_BUCKET_CASE}) END AS bucket,
+            COUNT(*) AS cnt,
             SUM(CASE WHEN m.isSeen = 0 THEN 1 ELSE 0 END) AS unseen,
             SUM(m.sizeBytes) AS size
      FROM Message m
@@ -172,6 +181,7 @@ export async function generateToday(): Promise<TodaySummary> {
      LEFT JOIN Sender s ON s.accountSlug = m.accountSlug AND s.email = m.fromEmail
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
      GROUP BY bucket`,
+    noiseCutoff,
   );
   const buckets: NoiseBucketStat[] = NOISE_BUCKETS.map((b) => {
     const row = noiseRows.find((r) => r.bucket === b);
@@ -195,8 +205,9 @@ export async function generateToday(): Promise<TodaySummary> {
      LEFT JOIN Sender s ON s.accountSlug = m.accountSlug AND s.email = m.fromEmail
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
        AND m.isSeen = 0
-       AND (${NOISE_BUCKET_CASE}) IS NULL
+       AND ((${NOISE_BUCKET_CASE}) IS NULL OR m.date >= ?)
        AND (m.intent IS NULL OR m.intent != 'invoice')`,
+    noiseCutoff,
   );
 
   const categorizedCount = await db.sender.count({ where: { category: { not: null } } });
@@ -262,17 +273,23 @@ export async function listNoiseMessages(bucket: NoiseBucket): Promise<NoisePrevi
     date: string | number | bigint | null;
     isSeen: number;
   };
+  // Même garde-fou que les compteurs : jamais un mail des NOISE_MIN_AGE_DAYS
+  // derniers jours. Tri ASC : le lot (cap 500) traite les PLUS ANCIENS
+  // d'abord — on ne supprime pas la newsletter reçue ce matin.
+  const noiseCutoff = Date.now() - NOISE_MIN_AGE_DAYS * 86_400_000;
   const base = `FROM Message m
      JOIN Folder f ON f.id = m.folderId
      LEFT JOIN Sender s ON s.accountSlug = m.accountSlug AND s.email = m.fromEmail
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
+       AND m.date < ?
        AND (${NOISE_BUCKET_CASE}) = ?`;
   const [countRows, rows] = await Promise.all([
-    db.$queryRawUnsafe<{ cnt: bigint }[]>(`SELECT COUNT(*) AS cnt ${base}`, bucket),
+    db.$queryRawUnsafe<{ cnt: bigint }[]>(`SELECT COUNT(*) AS cnt ${base}`, noiseCutoff, bucket),
     db.$queryRawUnsafe<Row[]>(
       `SELECT m.accountSlug AS account, f.path AS folder, m.uid, m.subject,
               m.fromEmail, m.fromName, m.date, m.isSeen
-       ${base} ORDER BY m.date DESC LIMIT ${PREVIEW_CAP}`,
+       ${base} ORDER BY m.date ASC LIMIT ${PREVIEW_CAP}`,
+      noiseCutoff,
       bucket,
     ),
   ]);

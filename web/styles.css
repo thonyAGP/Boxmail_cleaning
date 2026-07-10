@@ -276,6 +276,14 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
   background: var(--card); border-radius: 14px; width: 560px; max-width: 100%;
   max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 70px rgba(0,0,0,.35);
 }
+/* Modale « liste de mails » : large pour lire chaque ligne d'un coup. */
+.modal.modal-wide { width: 1100px; }
+/* La modale passe SOUS le panneau de lecture (z 95/96) : on peut ouvrir
+   un mail depuis la liste sans la fermer. */
+.modal-overlay.under-reader { z-index: 94; }
+/* Table dense pour les longues listes en modale. */
+.table-compact th { padding: 6px 10px; }
+.table-compact td { padding: 4px 10px; font-size: 12.5px; }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border);

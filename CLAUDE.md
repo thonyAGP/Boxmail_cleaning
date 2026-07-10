@@ -99,6 +99,20 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Correctif bruit « Aujourd'hui » (retour utilisateur 10/07, capture à
+l'appui : « supprimer des newsletters reçues aujourd'hui, stupidité
+incommensurable »).** today.ts : `NOISE_MIN_AGE_DAYS = 7` — un mail des
+7 derniers jours n'est JAMAIS du bruit supprimable (compteurs ET aperçu ;
+il bascule dans « peut attendre ») ; aperçu trié ASC — le lot de 500
+traite les PLUS ANCIENS d'abord (avant : DESC ⇒ les mails du jour
+partaient en premier !). Modale bruit refaite : `.modal-wide` (1100 px),
+table compacte (lignes 27 px), sujets cliquables → panneau de lecture
+AU-DESSUS de la modale (`.modal-overlay.under-reader` z 94 < reader 96 ;
+Échap ferme le panneau puis la modale ; suppression depuis le panneau ⇒
+liste rechargée). Tests : test-noise.mts (7 asserts) + ui-noise.mjs
+(16 checks). NB : les modales de compose depuis le panneau restent à
+z 100 (au-dessus) — ne pas toucher au z-index global du reader.
+
 **BL1 livrée : analyse fine via Cowork — SUR LE FORFAIT, pas de clé API.**
 DÉCISION UTILISATEUR (10/07) : « je veux que ça décompte de mon forfait,
 pas en mode clef api » — retour à la décision d'origine (« analyse fine
