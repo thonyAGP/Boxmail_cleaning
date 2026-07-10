@@ -73,6 +73,7 @@ import {
   taskFromDeadline,
 } from '../services/tasks.js';
 import { imapService } from '../services/imap.js';
+import { buildZip } from '../services/zip.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
@@ -1389,11 +1390,14 @@ export function buildAdminRouter(): Router {
         // Le download du mail pose \Seen côté serveur : l'index suit.
         await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
         const safeName = att.filename.replace(/[\r\n"\\]/g, '_');
+        // inline=1 → « Voir » : le navigateur affiche (PDF/image) au lieu de
+        // forcer le téléchargement, et met en cache. Sinon : téléchargement.
+        const disposition = req.query.inline ? 'inline' : 'attachment';
         res
           .type(att.contentType)
           .setHeader(
             'Content-Disposition',
-            `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(att.filename)}`,
+            `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(att.filename)}`,
           )
           .send(att.content);
       } catch (err) {
@@ -1401,6 +1405,52 @@ export function buildAdminRouter(): Router {
           error:
             `Téléchargement impossible depuis la boîte : ${(err as Error).message}. ` +
             'Réessaie, ou ouvre la pièce jointe dans Outlook.',
+        });
+      }
+    }),
+  );
+
+  // « Tout télécharger » : toutes les pièces jointes d'un mail dans un .zip.
+  // Une seule descente IMAP (on veut toutes les parties), puis assemblage en
+  // mémoire. Même cap 25 Mo que le téléchargement unitaire.
+  router.get(
+    '/accounts/:slug/messages/:folder/:uid/attachments.zip',
+    guard(async (req, res) => {
+      const uid = Number.parseInt(String(req.params.uid), 10);
+      if (!Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'UID invalide.' });
+        return;
+      }
+      const folder = String(req.params.folder);
+      const slug = req.params.slug;
+      const meta = await indexedMessage(slug, folder, uid);
+      if (!meta) {
+        res.status(404).json({ error: "Mail introuvable dans l'index — resynchronise la boîte." });
+        return;
+      }
+      if (meta.sizeBytes > 25 * 1024 * 1024) {
+        res.status(413).json({ error: 'Mail trop volumineux (> 25 Mo) — ouvre-le dans Outlook.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      try {
+        const atts = await imapService.downloadAllAttachments(rec, folder, uid);
+        if (atts.length === 0) {
+          res.status(404).json({ error: 'Ce mail ne contient aucune pièce jointe.' });
+          return;
+        }
+        await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
+        const zip = buildZip(atts.map((a) => ({ name: a.filename, data: a.content })));
+        const zipName = `pieces-jointes-${slug}-${uid}.zip`;
+        res
+          .type('application/zip')
+          .setHeader('Content-Disposition', `attachment; filename="${zipName}"`)
+          .send(zip);
+      } catch (err) {
+        res.status(502).json({
+          error:
+            `Téléchargement impossible depuis la boîte : ${(err as Error).message}. ` +
+            'Réessaie, ou ouvre le mail dans Outlook.',
         });
       }
     }),

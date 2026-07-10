@@ -1009,6 +1009,32 @@ ui-b5.mjs 6 checks + régressions B2/B4.
 
 ---
 
+## Perf & confort lecture/PJ ✅ (livrée 10/07/2026)
+
+Retours utilisateur : ouvrir un mail = 20 s, téléchargement des PJ pareil
+et sans retour visuel, année manquante, envie de « tout télécharger » et
+de « juste consulter ».
+
+- **Lecture rapide** : `readEmail` ne télécharge plus que la partie TEXTE
+  (via bodyStructure), plus le mail entier avec ses pièces jointes. Repli
+  automatique (`readEmailFull`) si la structure est atypique → jamais plus
+  lent qu'avant.
+- **PJ rapide** : `downloadAttachment` ne télécharge que la partie demandée.
+- **👀 Voir** : `?inline=1` (Content-Disposition inline) → PDF/image
+  s'ouvrent dans un onglet, mis en cache par le navigateur, sans encombrer
+  les Téléchargements.
+- **Retour visuel** : téléchargement en fetch/blob avec état « ⏳
+  Préparation… » → « ✅ Téléchargé » / « ⚠️ Réessayer ».
+- **⬇️ Tout télécharger (.zip)** : nouvel endpoint `.../attachments.zip`,
+  générateur ZIP maison (`services/zip.ts`, deflate+CRC32, zéro dépendance,
+  testé au vrai `unzip`).
+- **Année** : `fmtDateTime` corrigé (en-tête du mail ouvert).
+
+Tests : zip (unzip système) + ui-attach-perf.mjs (10 checks). La VITESSE
+réelle IMAP est à valider par l'utilisateur (pas d'IMAP en dev).
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).

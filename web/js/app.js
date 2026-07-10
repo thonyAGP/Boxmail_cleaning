@@ -5443,6 +5443,95 @@ function renderSearchResults() {
   });
 }
 
+// ------------------------------------------------ Pièces jointes (lecture)
+// Trois gestes : 👁️ Voir (ouvre PDF/image dans un onglet, sans télécharger),
+// ⬇️ télécharger une pièce (avec retour visuel), ⬇️ Tout en .zip.
+const VIEWABLE_RE = /\.(pdf|png|jpe?g|gif|webp|svg|bmp|txt|csv)$/i;
+
+function renderReaderAttachments(az, item, attachments) {
+  const many = attachments.length > 1;
+  az.innerHTML = `<div class="att-head">
+      <strong>📎 ${fmtNum(attachments.length)} pièce(s) jointe(s)</strong>
+      ${many ? `<button class="btn btn-sm" data-att-zip title="Télécharger toutes les pièces dans un .zip">⬇️ Tout télécharger (.zip)</button>` : ''}
+    </div>
+    ${attachments.map((a, ai) => {
+      const name = a.filename || `piece-jointe-${ai + 1}`;
+      const canView = VIEWABLE_RE.test(name);
+      return `<div class="att">
+        <span class="att-name" title="${esc(name)}">📄 ${esc(name)}</span>
+        <span class="muted att-size">${fmtSize(a.sizeBytes)}</span>
+        ${canView ? `<button class="btn btn-sm att-view" data-att-view="${ai}" title="Ouvrir dans un onglet (sans télécharger)">👁️ Voir</button>` : ''}
+        <button class="btn btn-sm att-dl" data-att-dl="${ai}" data-att-name="${esc(name)}" title="Télécharger ${esc(name)}">⬇️ Télécharger</button>
+      </div>`;
+    }).join('')}`;
+
+  // 👁️ Voir : ouvre l'URL inline dans un nouvel onglet (le navigateur affiche
+  // et met en cache). L'onglet est ouvert AVANT (évite le blocage popup).
+  az.querySelectorAll('[data-att-view]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ai = Number(btn.dataset.attView);
+      window.open(api.attachmentInlineUrl(item.account, item.folder, item.uid, ai), '_blank', 'noopener');
+    });
+  });
+  // ⬇️ Télécharger une pièce, avec retour visuel.
+  az.querySelectorAll('[data-att-dl]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ai = Number(btn.dataset.attDl);
+      downloadWithFeedback(
+        btn,
+        api.attachmentUrl(item.account, item.folder, item.uid, ai),
+        btn.dataset.attName,
+      );
+    });
+  });
+  // ⬇️ Tout en .zip.
+  const zipBtn = az.querySelector('[data-att-zip]');
+  if (zipBtn) {
+    zipBtn.addEventListener('click', () => {
+      downloadWithFeedback(
+        zipBtn,
+        api.attachmentsZipUrl(item.account, item.folder, item.uid),
+        `pieces-jointes-${item.account}-${item.uid}.zip`,
+        '⬇️ Tout télécharger (.zip)',
+      );
+    });
+  }
+}
+
+// Télécharge via fetch (blob) avec un état visible sur le bouton : le
+// navigateur ne montre rien pendant que le serveur prépare le fichier (le
+// mail peut mettre plusieurs secondes) — ici, l'utilisateur voit « en cours »
+// puis le succès, ou un message d'erreur clair.
+async function downloadWithFeedback(btn, url, filename, restoreLabel) {
+  const original = restoreLabel ?? btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Préparation…';
+  try {
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let msg = `Erreur ${res.status}`;
+      try { msg = (await res.json()).error || msg; } catch (_) { /* pas de JSON */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = filename || 'piece-jointe';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
+    btn.textContent = '✅ Téléchargé';
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+  } catch (err) {
+    btn.textContent = '⚠️ Réessayer';
+    btn.disabled = false;
+    alert(`Téléchargement impossible : ${err.message}`);
+    setTimeout(() => { btn.textContent = original; }, 3000);
+  }
+}
+
 // --------------------------------------------------- Panneau de lecture (L3)
 // Réutilisé par TOUS les écrans (recherche, importants, réponses, relances,
 // échéances, dashboard, brief) : il suffit d'un item {account, folder, uid,
@@ -5550,15 +5639,7 @@ async function openReader(item, row, opts = {}) {
       const az = $('#reader-attachments');
       if (az) {
         az.classList.remove('hidden');
-        // Lien direct même origine : le cookie de session part avec la requête,
-        // le serveur renvoie Content-Disposition → le navigateur télécharge.
-        az.innerHTML = `<strong>📎 ${fmtNum(body.attachments.length)} pièce(s) jointe(s)</strong>
-          <span class="muted">(clique pour télécharger)</span>
-          ${body.attachments.map((a, ai) => `<div class="att">
-            <a class="att-dl" href="${api.attachmentUrl(item.account, item.folder, item.uid, ai)}"
-              download="${esc(a.filename || `piece-jointe-${ai + 1}`)}"
-              title="Télécharger ${esc(a.filename || 'la pièce jointe')}">⬇️ ${esc(a.filename || 'sans nom')}</a>
-            <span class="muted">${fmtSize(a.sizeBytes)}</span></div>`).join('')}`;
+        renderReaderAttachments(az, item, body.attachments);
       }
     }
     // Ouvrir un mail non lu le marque lu côté serveur (comportement IMAP

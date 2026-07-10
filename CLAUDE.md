@@ -99,6 +99,36 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Perf & confort lecture/PJ (retours utilisateur 10/07 : « 20 s pour
+ouvrir un mail », « le téléchargement des PJ pareil, on ne sait pas si
+c'est en cours ou en échec », « il manque l'année », « télécharger tout
+d'un coup », « juste les consulter »).** CAUSE RACINE : `readEmail` et
+`downloadAttachment` faisaient `client.download(uid)` = téléchargement du
+MAIL ENTIER (PJ comprises) pour afficher le texte / extraire une pièce.
+Corrigé dans imap.ts : helpers bodyStructure (`listAttachmentParts`,
+`findTextNode`, `decodeText` via TextDecoder+charset, `streamToBuffer`,
+`formatEnvelopeAddr`) ; `readEmail` = fetchOne(envelope+bodyStructure)
+puis download de la SEULE partie texte (repli `readEmailFull` sur le mail
+complet si structure atypique) ; `downloadAttachment` = download de la
+SEULE partie demandée (même repli) ; `downloadAllAttachments` (mail
+complet, une descente) pour le zip. Vérifié : imapflow met `type` en
+`text/plain`, `part`, `parameters.charset`, `disposition` — l'optim
+s'active vraiment. `fmtDateTime` (api.js) : année ajoutée (bug en-tête
+lecteur). Nouveau `services/zip.ts` : générateur ZIP maison (deflate +
+CRC32 + EOCD, dédup des noms) — ZÉRO dépendance (archiver essayé puis
+abandonné : interop ESM capricieuse + alerte sécurité), testé au vrai
+`unzip`. Routes admin.ts : `?inline=1` sur la PJ (Content-Disposition
+inline → « 👀 Voir » dans un onglet, PDF/image, mise en cache navigateur) ;
+`GET .../attachments.zip` (cap 25 Mo). Panneau lecteur (app.js) :
+`renderReaderAttachments` (👁️ Voir si type voyable, ⬇️ Télécharger,
+⬇️ Tout .zip si > 1) + `downloadWithFeedback` (fetch blob : « ⏳
+Préparation… » → « ✅ Téléchargé » ou « ⚠️ Réessayer » + alerte). Tests :
+zip au vrai unzip (intégrité/dédup/accents) + ui-attach-perf.mjs
+(10 checks : année, Voir PDF-only, retour visuel, zip). NB : la VITESSE
+réelle (IMAP) reste à valider par l'utilisateur sur son PC — pas d'IMAP
+en dev. NB test : `npm remove`/`install` a purgé playwright-core (non
+suivi par package.json) → le réinstaller `--no-save` avant les captures.
+
 **Correctif bruit « Aujourd'hui » (retour utilisateur 10/07, capture à
 l'appui : « supprimer des newsletters reçues aujourd'hui, stupidité
 incommensurable »).** today.ts : `NOISE_MIN_AGE_DAYS = 7` — un mail des

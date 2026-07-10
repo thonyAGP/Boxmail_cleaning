@@ -125,9 +125,15 @@ export const api = {
       action,
       destination,
     }),
-  // URL directe (même origine, cookie de session) : le navigateur télécharge.
+  // URL directe (même origine, cookie de session).
   attachmentUrl: (slug, folder, uid, index) =>
     `/api/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}/attachments/${index}`,
+  // inline=1 → « Voir » : le navigateur affiche (PDF/image) au lieu de télécharger.
+  attachmentInlineUrl: (slug, folder, uid, index) =>
+    `/api/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}/attachments/${index}?inline=1`,
+  // Toutes les pièces jointes en un .zip.
+  attachmentsZipUrl: (slug, folder, uid) =>
+    `/api/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}/attachments.zip`,
   readMessage: (slug, folder, uid) =>
     request(
       'GET',
@@ -205,7 +211,7 @@ export function fmtDate(iso) {
 export function fmtDateTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) +
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) +
     ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 

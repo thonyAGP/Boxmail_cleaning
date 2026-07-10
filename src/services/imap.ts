@@ -325,45 +325,86 @@ class ImapService {
     const client = await this.getClient(rec);
     const lock = await client.getMailboxLock(folder);
     try {
-      const dl = await client.download(String(uid), undefined, { uid: true });
-      const parsed = await simpleParser(dl.content);
+      // 1. Métadonnées + structure du mail SANS télécharger le corps (rapide).
+      const info = await client.fetchOne(
+        String(uid),
+        { uid: true, envelope: true, bodyStructure: true },
+        { uid: true },
+      );
+      const bs = (info && info.bodyStructure ? info.bodyStructure : null) as BodyNode | null;
+      const textNode = findTextNode(bs);
 
-      let text = parsed.text ?? '';
-      if (!text && parsed.html) {
-        text = htmlToText(parsed.html);
+      // 2. Chemin rapide : ne télécharger QUE la partie texte (quelques Ko),
+      //    pas les pièces jointes. Repli plus bas si la structure est atypique.
+      if (info && info.envelope && textNode && textNode.part) {
+        try {
+          const dl = await client.download(String(uid), textNode.part, { uid: true });
+          const raw = await streamToBuffer(dl.content);
+          let text = decodeText(raw, textNode.parameters?.charset);
+          if ((textNode.type ?? '').toLowerCase() === 'text/html') text = htmlToText(text);
+          const truncated = text.length > config.limits.maxBodyChars;
+          if (truncated) text = text.slice(0, config.limits.maxBodyChars);
+          const env = info.envelope;
+          return {
+            uid,
+            subject: env.subject ?? '',
+            from: formatEnvelopeAddr(env.from?.[0]),
+            to: (env.to ?? []).map(formatEnvelopeAddr).filter(Boolean).join(', '),
+            date: toIso(env.date),
+            text,
+            truncated,
+            attachments: listAttachmentParts(bs).map((a) => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              sizeBytes: a.sizeBytes,
+            })),
+          };
+        } catch (err) {
+          logger.warn('readEmail: fetch partiel échoué, repli sur le mail complet', {
+            message: (err as Error).message,
+          });
+        }
       }
-      const truncated = text.length > config.limits.maxBodyChars;
-      if (truncated) text = text.slice(0, config.limits.maxBodyChars);
 
-      const fromText = parsed.from?.text ?? '';
-      const toText = Array.isArray(parsed.to)
-        ? parsed.to.map((a) => a.text).join(', ')
-        : parsed.to?.text ?? '';
-
-      return {
-        uid,
-        subject: parsed.subject ?? '',
-        from: fromText,
-        to: toText,
-        date: parsed.date ? parsed.date.toISOString() : null,
-        text,
-        truncated,
-        attachments: (parsed.attachments ?? []).map((a) => ({
-          filename: a.filename ?? '(sans nom)',
-          contentType: a.contentType ?? 'application/octet-stream',
-          sizeBytes: a.size ?? 0,
-        })),
-      };
+      // 3. Repli : télécharger le mail complet et le parser (comportement d'origine).
+      return await this.readEmailFull(client, uid);
     } finally {
       lock.release();
     }
   }
 
+  /** Repli : mail complet + mailparser (structure atypique ou fetch partiel KO). */
+  private async readEmailFull(client: ImapFlow, uid: number): Promise<EmailBody> {
+    const dl = await client.download(String(uid), undefined, { uid: true });
+    const parsed = await simpleParser(dl.content);
+    let text = parsed.text ?? '';
+    if (!text && parsed.html) text = htmlToText(parsed.html);
+    const truncated = text.length > config.limits.maxBodyChars;
+    if (truncated) text = text.slice(0, config.limits.maxBodyChars);
+    const toText = Array.isArray(parsed.to)
+      ? parsed.to.map((a) => a.text).join(', ')
+      : parsed.to?.text ?? '';
+    return {
+      uid,
+      subject: parsed.subject ?? '',
+      from: parsed.from?.text ?? '',
+      to: toText,
+      date: parsed.date ? parsed.date.toISOString() : null,
+      text,
+      truncated,
+      attachments: (parsed.attachments ?? []).map((a) => ({
+        filename: a.filename ?? '(sans nom)',
+        contentType: a.contentType ?? 'application/octet-stream',
+        sizeBytes: a.size ?? 0,
+      })),
+    };
+  }
+
   /**
    * Télécharge UNE pièce jointe d'un mail (L5.9). `index` = position dans la
-   * liste `attachments` renvoyée par readEmail (même parseur, même ordre).
-   * Retourne null si l'index n'existe pas. Le mail complet est téléchargé puis
-   * parsé — le cap de taille est vérifié en amont (route) sur sizeBytes.
+   * liste `attachments` renvoyée par readEmail (même ordre). On ne télécharge
+   * QUE la partie demandée via son identifiant MIME ; repli sur le mail complet
+   * si la structure est atypique. Retourne null si l'index n'existe pas.
    */
   async downloadAttachment(
     rec: AccountRecord,
@@ -374,6 +415,24 @@ class ImapService {
     const client = await this.getClient(rec);
     const lock = await client.getMailboxLock(folder);
     try {
+      const info = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
+      const parts = listAttachmentParts((info && info.bodyStructure ? info.bodyStructure : null) as BodyNode | null);
+      const target = parts[index];
+      if (target) {
+        try {
+          const dl = await client.download(String(uid), target.part, { uid: true });
+          const content = await streamToBuffer(dl.content);
+          return { filename: target.filename, contentType: target.contentType, content };
+        } catch (err) {
+          logger.warn('downloadAttachment: fetch partiel échoué, repli sur le mail complet', {
+            message: (err as Error).message,
+          });
+        }
+      } else if (parts.length > 0) {
+        // La structure est lisible mais l'index dépasse : pièce inexistante.
+        return null;
+      }
+      // Repli : mail complet + mailparser (même ordre que readEmailFull).
       const dl = await client.download(String(uid), undefined, { uid: true });
       const parsed = await simpleParser(dl.content);
       const att = (parsed.attachments ?? [])[index];
@@ -383,6 +442,30 @@ class ImapService {
         contentType: att.contentType ?? 'application/octet-stream',
         content: att.content,
       };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
+   * Télécharge TOUTES les pièces jointes d'un mail en une fois (pour un .zip).
+   * Ici on assume tout le message (on veut toutes les parties de toute façon) —
+   * une seule descente IMAP, puis mailparser pour découper proprement.
+   */
+  async downloadAllAttachments(
+    rec: AccountRecord,
+    folder: string,
+    uid: number,
+  ): Promise<{ filename: string; content: Buffer }[]> {
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const dl = await client.download(String(uid), undefined, { uid: true });
+      const parsed = await simpleParser(dl.content);
+      return (parsed.attachments ?? []).map((a, i) => ({
+        filename: a.filename ?? `piece-jointe-${i + 1}`,
+        content: a.content,
+      }));
     } finally {
       lock.release();
     }
@@ -552,6 +635,100 @@ class ImapService {
       items: metas.slice(0, 500).map((m) => ({ subject: m.subject, date: m.date })),
     };
   }
+}
+
+// --- Analyse de la structure MIME (lecture/téléchargement partiels) ---------
+// Un mail Outlook multipart pèse souvent plusieurs Mo (pièces jointes) ; pour
+// afficher le TEXTE ou récupérer UNE pièce, on ne télécharge QUE la partie
+// concernée via son identifiant (`part`), au lieu du message entier.
+
+type BodyNode = {
+  part?: string;
+  type?: string; // 'text/plain', 'application/pdf'…
+  size?: number;
+  disposition?: string;
+  dispositionParameters?: { filename?: string };
+  parameters?: { name?: string; charset?: string };
+  childNodes?: BodyNode[];
+};
+
+interface AttachmentPart {
+  part: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+/** Une partie feuille est une pièce jointe si disposition=attachment OU nom de fichier. */
+function isAttachmentLeaf(n: BodyNode): boolean {
+  const filename = n.dispositionParameters?.filename ?? n.parameters?.name;
+  return n.disposition?.toLowerCase() === 'attachment' || !!filename;
+}
+
+/** Liste ORDONNÉE des parties « pièce jointe » (même règle que countAttachments). */
+function listAttachmentParts(node: BodyNode | null | undefined): AttachmentPart[] {
+  const out: AttachmentPart[] = [];
+  const walk = (n: BodyNode) => {
+    if (n.childNodes?.length) {
+      n.childNodes.forEach(walk);
+      return;
+    }
+    if (isAttachmentLeaf(n) && n.part) {
+      const filename = n.dispositionParameters?.filename ?? n.parameters?.name ?? '(sans nom)';
+      out.push({
+        part: n.part,
+        filename,
+        contentType: (n.type ?? 'application/octet-stream').toLowerCase(),
+        sizeBytes: n.size ?? 0,
+      });
+    }
+  };
+  if (node) walk(node);
+  return out;
+}
+
+/** Meilleure partie texte à AFFICHER (text/plain de préférence, sinon text/html). */
+function findTextNode(node: BodyNode | null | undefined): BodyNode | null {
+  let plain: BodyNode | null = null;
+  let html: BodyNode | null = null;
+  const walk = (n: BodyNode) => {
+    if (n.childNodes?.length) {
+      n.childNodes.forEach(walk);
+      return;
+    }
+    if (isAttachmentLeaf(n) || !n.part) return;
+    const t = (n.type ?? '').toLowerCase();
+    if (t === 'text/plain' && !plain) plain = n;
+    else if (t === 'text/html' && !html) html = n;
+  };
+  if (node) walk(node);
+  return plain ?? html;
+}
+
+/** Décode un buffer selon le charset MIME (Node 20 = ICU complet). */
+function decodeText(buf: Buffer, charset: string | undefined): string {
+  try {
+    return new TextDecoder(charset || 'utf-8').decode(buf);
+  } catch {
+    return buf.toString('utf8');
+  }
+}
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+    else if (typeof chunk === 'string') chunks.push(Buffer.from(chunk));
+    else chunks.push(Buffer.from(chunk as Uint8Array));
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Adresse formatée « Nom <email> » depuis une entrée d'envelope IMAP. */
+function formatEnvelopeAddr(a: { name?: string | null; address?: string | null } | undefined): string {
+  if (!a) return '';
+  const addr = a.address ?? '';
+  return a.name ? `${a.name} <${addr}>` : addr;
 }
 
 function htmlToText(html: string): string {

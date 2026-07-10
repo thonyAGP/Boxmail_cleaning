@@ -408,9 +408,19 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
   white-space: pre-wrap; word-break: break-word; line-height: 1.55;
 }
 .reader-attachments { padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12.5px; }
-.reader-attachments .att { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
-.reader-attachments .att-dl { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
-.reader-attachments .att-dl:hover { text-decoration: underline; }
+.reader-attachments .att-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 8px; flex-wrap: wrap;
+}
+.reader-attachments .att {
+  display: flex; gap: 10px; align-items: center; padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+.reader-attachments .att-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.reader-attachments .att-size { white-space: nowrap; font-size: 11.5px; }
+.reader-attachments .att-view, .reader-attachments .att-dl { white-space: nowrap; }
 .reader-actions {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   padding: 12px 20px; border-top: 1px solid var(--border); background: #fafbfe;
