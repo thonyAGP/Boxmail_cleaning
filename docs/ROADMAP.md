@@ -820,7 +820,29 @@ LA killer feature. Sur une boîte ou toutes :
   lots avec progression (jobs existants) et journal complet. Rappel corbeille
   ~30 j = filet de sécurité.
 
-### ⬜ A5 — Relances pilotées + priorité par relation
+### ✅ A5 — Relances pilotées + priorité par relation — LIVRÉE
+
+**Livré.** **Escalade** : `FollowupItem.stage` (waiting → due (> seuil) →
+urgent (> 2× seuil) → stale (> 30 j)) + stageLabel/suggestion FR calculés
+dans followups.ts. Écran ⏰ Relances : badges par étape (🚨 urgent, 💤
+probablement abandonné — clôturer ?), bouton « 🗄️ Clôturer » sur les
+fils abandonnés (= dismiss existant), bouton « ✍️ Relancer » (dès due) →
+modale d'envoi EXISTANTE pré-remplie (destinataire, Re:, brouillon de
+relance poli avec date/délai, replyRef fil) — rien ne part sans clic.
+Accueil « Aujourd'hui » : badges d'étape + suggestion sur les lignes
+relance. **Priorité par relation** : migration `Sender.priority` (normal
+| always_important | never_urgent, jamais recalculée — survit à
+rebuildSenders) ; scoring importance : ⭐ +40 « ton choix », 🔕 plafond 30
+après calcul (raisons explicites) — loadSenderKinds enrichi ;
+`setSenderPriority` (categorize.ts) ; PATCH `/accounts/:slug/senders`
+accepte category et/ou priority (validations, journaux
+ui_sender_category/ui_sender_priority) ; stats expéditeurs exposent
+priority ; UI : sélecteur « Priorité » (normale / ⭐ / 🔕) à côté de la
+catégorie dans le tableau des expéditeurs. Tests : seed-priority.mts
+(13 asserts : 4 étapes, boost/plafond avec raisons, survie au recalcul)
++ ui-priority.mjs (11 checks : badges, brouillon pré-rempli, PATCH réels,
+écran Importants boosté). L'utilisateur doit valider EN RÉEL un envoi de
+relance (SMTP mocké en dev).
 
 - **Escalade automatique des états** (followups) : à relancer → urgent
   (2e seuil) → probablement abandonné (ex. 30 j) → « Clôturer ? ». L'outil

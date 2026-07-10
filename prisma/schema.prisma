@@ -300,6 +300,9 @@ model Sender {
   category         String?
   categorySource   String    @default("auto")
   categoryReason   String?
+  // Priorité par relation (A5) : normal | always_important | never_urgent.
+  // Choix de l'utilisateur, jamais recalculée.
+  priority         String    @default("normal")
   notes            String?
   updatedAt        DateTime  @updatedAt
 

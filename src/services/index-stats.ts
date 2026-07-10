@@ -38,6 +38,8 @@ export type SenderStatWithCategory = SenderStat & {
   category: string | null;
   categorySource: string;
   categoryReason: string | null;
+  /** Priorité par relation (A5) : normal | always_important | never_urgent. */
+  priority: string;
 };
 
 /** Équivalent index de getSenderStats — groupBy SQL sur le dossier. */
@@ -85,6 +87,7 @@ export async function senderStatsFromIndex(
         category: true,
         categorySource: true,
         categoryReason: true,
+        priority: true,
       },
     }),
   ]);
@@ -108,6 +111,7 @@ export async function senderStatsFromIndex(
       category: s?.category ?? null,
       categorySource: s?.categorySource ?? 'auto',
       categoryReason: s?.categoryReason ?? null,
+      priority: s?.priority ?? 'normal',
     };
   });
 

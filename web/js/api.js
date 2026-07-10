@@ -44,6 +44,8 @@ export const api = {
   todayNoise: (bucket) => request('GET', `/today/noise/${encodeURIComponent(bucket)}`),
   senderSetCategory: (slug, email, category) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, category }),
+  senderSetPriority: (slug, email, priority) =>
+    request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, priority }),
   categorizeAll: () => request('POST', '/categorize'),
   cleanup: (slug) => request('GET', `/accounts/${encodeURIComponent(slug)}/cleanup`),
   cleanupPreview: (slug, sender, folder = 'INBOX') =>

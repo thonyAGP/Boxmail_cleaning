@@ -83,6 +83,8 @@ interface ScoreInput {
 interface ScoreContext {
   /** Sender.kind de l'expéditeur (unknown si pas de fiche). */
   senderKind: string;
+  /** Priorité par relation (A5) : normal | always_important | never_urgent. */
+  senderPriority: string;
   /** true si le fil contient au moins un message sortant (conversation). */
   threadHasOutbound: boolean;
   /** true si ce mail est le dernier du fil, sans réponse sortante depuis. */
@@ -104,6 +106,10 @@ export function scoreMessage(
     reasons.push(`${points > 0 ? '+' : ''}${points} ${reason}`);
   };
 
+  // Priorité par relation (A5) : le choix de l'utilisateur prime sur tout.
+  if (ctx.senderPriority === 'always_important') {
+    add(40, 'expéditeur marqué ⭐ toujours important (ton choix)');
+  }
   const importantMatch = IMPORTANT_SENDER_RE.exec(senderText);
   if (importantMatch) {
     add(30, `expéditeur type banque/administration (« ${importantMatch[0]} »)`);
@@ -136,6 +142,10 @@ export function scoreMessage(
   }
 
   score = Math.max(0, Math.min(100, score));
+  if (ctx.senderPriority === 'never_urgent' && score > 30) {
+    score = 30;
+    reasons.push('plafonné à 30 : expéditeur marqué 🔕 jamais urgent (ton choix)');
+  }
   return { score, level: importanceLevel(score), reasons };
 }
 
@@ -164,15 +174,18 @@ async function loadThreadContext(threadIds: number[]) {
   return { lastAny, lastOut };
 }
 
-/** Sender.kind par adresse pour un lot d'expéditeurs (unknown si pas de fiche). */
-async function loadSenderKinds(account: string, emails: string[]): Promise<Map<string, string>> {
-  const kinds = new Map<string, string>();
+/** Sender.kind + priorité par adresse (unknown/normal si pas de fiche). */
+async function loadSenderKinds(
+  account: string,
+  emails: string[],
+): Promise<Map<string, { kind: string; priority: string }>> {
+  const kinds = new Map<string, { kind: string; priority: string }>();
   for (const batch of chunk([...new Set(emails)], 500)) {
     const rows = await db.sender.findMany({
       where: { accountSlug: account, email: { in: batch } },
-      select: { email: true, kind: true },
+      select: { email: true, kind: true, priority: true },
     });
-    for (const r of rows) kinds.set(r.email, r.kind);
+    for (const r of rows) kinds.set(r.email, { kind: r.kind, priority: r.priority });
   }
   return kinds;
 }
@@ -277,7 +290,8 @@ export async function getImportantEmails(
   const counts = { high: 0, medium: 0, low: 0 };
   for (const m of raw) {
     if (!m.fromEmail || !m.date) continue;
-    const senderKind = kinds.get(m.fromEmail) ?? 'unknown';
+    const meta = kinds.get(m.fromEmail);
+    const senderKind = meta?.kind ?? 'unknown';
     const last = m.threadId !== null ? lastAny.get(m.threadId) : null;
     const out = m.threadId !== null ? lastOut.get(m.threadId) : null;
     const isLastOfThread = !last || last.getTime() <= m.date.getTime();
@@ -287,6 +301,7 @@ export async function getImportantEmails(
       !AUTO_SENDER_RE.test(m.fromEmail);
     const item = buildItem(account, m, {
       senderKind,
+      senderPriority: meta?.priority ?? 'normal',
       threadHasOutbound: Boolean(out),
       awaitingReply,
       now,
@@ -376,7 +391,8 @@ export async function explainImportance(
     !AUTO_SENDER_RE.test(m.fromEmail);
 
   return buildItem(account, m, {
-    senderKind: kinds.get(m.fromEmail) ?? 'unknown',
+    senderKind: kinds.get(m.fromEmail)?.kind ?? 'unknown',
+    senderPriority: kinds.get(m.fromEmail)?.priority ?? 'normal',
     threadHasOutbound: Boolean(out),
     awaitingReply,
     now: Date.now(),

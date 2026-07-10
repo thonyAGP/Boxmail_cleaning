@@ -84,8 +84,11 @@ import {
 import {
   categorizeAccount,
   setSenderCategory,
+  setSenderPriority,
   SENDER_CATEGORIES,
+  SENDER_PRIORITIES,
   type SenderCategory,
+  type SenderPriority,
 } from '../services/categorize.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import {
@@ -620,32 +623,59 @@ export function buildAdminRouter(): Router {
   );
 
   // --- Catégorisation (A1 — Cap V3) ---------------------------------------------
-  // Corriger à la main la catégorie d'un expéditeur (category=null → retour auto).
+  // Corriger à la main la catégorie (category=null → retour auto) et/ou la
+  // priorité par relation (A5 : normal / always_important / never_urgent).
   router.patch(
     '/accounts/:slug/senders',
     guard(async (req, res) => {
       const slug = req.params.slug;
       const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+      const hasCategory = 'category' in (req.body ?? {});
       const rawCategory = req.body?.category ?? null;
+      const rawPriority = req.body?.priority;
       if (!email) {
         res.status(400).json({ error: 'email requis.' });
         return;
       }
-      if (rawCategory !== null && !SENDER_CATEGORIES.includes(rawCategory as SenderCategory)) {
+      if (hasCategory && rawCategory !== null && !SENDER_CATEGORIES.includes(rawCategory as SenderCategory)) {
         res.status(400).json({
           error: `Catégorie inconnue. Valeurs possibles : ${SENDER_CATEGORIES.join(', ')} (ou null pour revenir en automatique).`,
         });
         return;
       }
-      try {
-        const result = await setSenderCategory(slug, email, rawCategory as SenderCategory | null);
-        await recordOperation({
-          account: slug,
-          tool: 'ui_sender_category',
-          params: { email: result.email, category: result.category, source: result.source },
-          result: `catégorie ${result.category} (${result.source})`,
+      if (rawPriority !== undefined && !SENDER_PRIORITIES.includes(rawPriority as SenderPriority)) {
+        res.status(400).json({
+          error: `Priorité inconnue. Valeurs possibles : ${SENDER_PRIORITIES.join(', ')}.`,
         });
-        res.json(result);
+        return;
+      }
+      if (!hasCategory && rawPriority === undefined) {
+        res.status(400).json({ error: 'Indiquer category et/ou priority.' });
+        return;
+      }
+      try {
+        const out: Record<string, unknown> = { email: email.toLowerCase() };
+        if (hasCategory) {
+          const result = await setSenderCategory(slug, email, rawCategory as SenderCategory | null);
+          Object.assign(out, result);
+          await recordOperation({
+            account: slug,
+            tool: 'ui_sender_category',
+            params: { email: result.email, category: result.category, source: result.source },
+            result: `catégorie ${result.category} (${result.source})`,
+          });
+        }
+        if (rawPriority !== undefined) {
+          const result = await setSenderPriority(slug, email, rawPriority as SenderPriority);
+          out.priority = result.priority;
+          await recordOperation({
+            account: slug,
+            tool: 'ui_sender_priority',
+            params: { email: result.email, priority: result.priority },
+            result: `priorité ${result.priority}`,
+          });
+        }
+        res.json(out);
       } catch (err) {
         res.status(404).json({ error: (err as Error).message });
       }

@@ -43,9 +43,41 @@ export interface FollowupItem {
   thresholdHours: number;
   waitingHours: number;
   overdue: boolean;
+  /** Escalade pilotée (A5) : l'outil dit OÙ EN EST la relance. */
+  stage: FollowupStage;
+  stageLabel: string;
+  /** Ce que l'assistant suggère de faire, en français. */
+  suggestion: string;
   reason: string;
   state: ReplyState;
   snoozedUntil: string | null;
+}
+
+// waiting (seuil pas atteint) → due (à relancer) → urgent (2× le seuil) →
+// stale (30 j sans réponse : probablement abandonné — clôturer ?).
+export type FollowupStage = 'waiting' | 'due' | 'urgent' | 'stale';
+
+const STALE_HOURS = 30 * 24;
+
+const STAGE_LABELS: Record<FollowupStage, string> = {
+  waiting: 'en attente',
+  due: 'à relancer',
+  urgent: 'urgent',
+  stale: 'probablement abandonné',
+};
+
+const STAGE_SUGGESTIONS: Record<FollowupStage, string> = {
+  waiting: 'Laisse-lui encore un peu de temps.',
+  due: 'Envoie une relance polie.',
+  urgent: 'Relance sans attendre — deux fois le délai est passé.',
+  stale: 'Relance une dernière fois, ou clôture (bouton ✓ Traité).',
+};
+
+function followupStage(waitingHours: number, thresholdHours: number): FollowupStage {
+  if (waitingHours > STALE_HOURS) return 'stale';
+  if (waitingHours > 2 * thresholdHours) return 'urgent';
+  if (waitingHours > thresholdHours) return 'due';
+  return 'waiting';
 }
 
 export interface FollowupsOptions {
@@ -264,6 +296,9 @@ export async function getFollowupsDue(
       thresholdHours,
       waitingHours: Math.round(waitingHours * 10) / 10,
       overdue,
+      stage: followupStage(waitingHours, thresholdHours),
+      stageLabel: STAGE_LABELS[followupStage(waitingHours, thresholdHours)],
+      suggestion: STAGE_SUGGESTIONS[followupStage(waitingHours, thresholdHours)],
       reason: reasons.join(' · '),
       state,
       snoozedUntil,

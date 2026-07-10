@@ -690,11 +690,15 @@ async function renderToday() {
     ));
   }
   for (const f of t.todo.followups) {
+    const stageBadge =
+      f.stage === 'stale' ? '<span class="badge orange">💤 abandonné ? clôturer</span>'
+      : f.stage === 'urgent' ? '<span class="badge red">🚨 urgent</span>'
+      : f.overdue ? '<span class="badge red">en retard</span>' : '';
     rows.push(todayRow(
       `⏰ <strong>Relancer ${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — « ${esc(f.subject)} »
-       <span class="muted" style="font-size:12px">· sans réponse ${daysAgo(f.waitingHours)}</span>`,
+       <span class="muted" style="font-size:12px">· sans réponse ${daysAgo(f.waitingHours)}${f.suggestion ? ` · ${esc(f.suggestion)}` : ''}</span>`,
       { account: f.account, folder: f.folder, uid: f.uid, subject: f.subject, fromName: 'Toi (mail envoyé)', fromEmail: '', date: f.date, isSeen: true },
-      f.overdue ? '<span class="badge red">en retard</span>' : '',
+      stageBadge,
     ));
   }
 
@@ -1794,7 +1798,13 @@ function renderStatsTable() {
             ${Object.entries(SENDER_CATEGORY_LABELS)
               .map(([v, l]) => `<option value="${v}" ${s.category === v ? 'selected' : ''}>${l}</option>`)
               .join('')}
-          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas">✍️</span>' : ''}</td>
+          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas">✍️</span>' : ''}
+          <select class="stats-prio" data-address="${esc(s.address)}"
+            title="Priorité par relation : ⭐ booste l'importance de tous ses mails, 🔕 la plafonne">
+            <option value="normal" ${s.priority === 'normal' || !s.priority ? 'selected' : ''}>Priorité normale</option>
+            <option value="always_important" ${s.priority === 'always_important' ? 'selected' : ''}>⭐ Toujours important</option>
+            <option value="never_urgent" ${s.priority === 'never_urgent' ? 'selected' : ''}>🔕 Jamais urgent</option>
+          </select></td>
         <td class="num"><strong>${fmtNum(s.count)}</strong></td>
         <td class="num">${fmtSize(s.totalSizeBytes)}</td>
         <td class="num">${s.unsubscribePct > 0 ? `<span class="badge ${s.unsubscribePct >= 80 ? 'orange' : 'gray'}">${s.unsubscribePct}%</span>` : '—'}</td>
@@ -1834,6 +1844,23 @@ function renderStatsTable() {
       if (box.checked) sel.set(box.dataset.address, box.dataset.name);
       else sel.delete(box.dataset.address);
       renderExportBar();
+    });
+  });
+
+  // Priorité par relation (A5) : ⭐ toujours important / 🔕 jamais urgent.
+  el.querySelectorAll('.stats-prio').forEach((select) => {
+    select.addEventListener('change', async () => {
+      const slug = decodeURIComponent(location.hash.split('/')[2] ?? '');
+      select.disabled = true;
+      try {
+        const r = await api.senderSetPriority(slug, select.dataset.address, select.value);
+        const row = statsState.data.senders.find((s) => s.address === select.dataset.address);
+        if (row) row.priority = r.priority;
+        renderStatsTable();
+      } catch (err) {
+        alert(err.message);
+        select.disabled = false;
+      }
     });
   });
 
@@ -2581,6 +2608,26 @@ function renderFollowupsBody() {
       btn.disabled = false;
     }
   };
+  // ✍️ Relancer (A5) : brouillon pré-rempli — rien ne part sans ton clic.
+  body.querySelectorAll('.followup-draft').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = items[Number(btn.dataset.draft)];
+      if (!smtpEnabled) {
+        alert("Envoi désactivé sur ce serveur (ENABLE_SMTP_SEND=false dans le .env).");
+        return;
+      }
+      const days = Math.max(1, Math.round(i.waitingHours / 24));
+      openComposeModal({
+        account: i.account,
+        to: i.counterpartyEmail,
+        subject: /^re\s*:/i.test(i.subject) ? i.subject : `Re: ${i.subject}`,
+        text: `Bonjour,\n\nSauf erreur de ma part, je n'ai pas eu de retour sur mon message du ${fmtDate(i.date)}`
+          + ` (« ${i.subject} »), envoyé il y a ${days} jour${days > 1 ? 's' : ''}.\n`
+          + `As-tu eu l'occasion d'y jeter un œil ?\n\nMerci d'avance,\nAnthony`,
+        replyRef: { folder: i.folder, uid: i.uid, mode: 'reply' },
+      });
+    });
+  });
   body.querySelectorAll('.followup-snooze').forEach((sel) => {
     sel.addEventListener('change', () => {
       const days = Number(sel.value);
@@ -2604,22 +2651,29 @@ function followupRow(i, idx) {
   const ident = `data-account="${esc(i.account)}" data-thread="${i.threadId}"`;
   const actions =
     (i.state === 'active'
-      ? `<select class="followup-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
+      ? `${i.stage !== 'waiting' ? `<button class="btn btn-sm btn-primary followup-draft" data-draft="${idx}"
+           title="Prépare un mail de relance : tu relis, tu ajustes, tu envoies">✍️ Relancer</button>` : ''}
+         <select class="followup-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
            <option value="">⏰ Reporter…</option>
            <option value="1">1 jour</option><option value="3">3 jours</option>
            <option value="7">7 jours</option><option value="30">30 jours</option>
          </select>
-         <button class="btn btn-sm followup-dismiss" ${ident} title="Relance envoyée ou plus nécessaire">✓ Traité</button>`
+         <button class="btn btn-sm followup-dismiss" ${ident} title="${i.stage === 'stale' ? 'Clôturer : plus rien à attendre de ce fil' : 'Relance envoyée ou plus nécessaire'}">${i.stage === 'stale' ? '🗄️ Clôturer' : '✓ Traité'}</button>`
       : `<button class="btn btn-sm followup-restore" ${ident}>↩︎ Remettre en liste</button>`) +
     `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>`;
+  // Escalade pilotée (A5) : l'outil dit où en est la relance et quoi faire.
+  const stageBadge = {
+    waiting: `<span class="badge gray">sans réponse depuis ${waitLabel(i.waitingHours)}</span>`,
+    due: `<span class="badge red">⏰ à relancer — sans réponse depuis ${waitLabel(i.waitingHours)}</span>`,
+    urgent: `<span class="badge red">🚨 urgent — ${waitLabel(i.waitingHours)} sans réponse</span>`,
+    stale: `<span class="badge orange">💤 probablement abandonné (${waitLabel(i.waitingHours)}) — clôturer ?</span>`,
+  };
   const stateInfo =
     i.state === 'snoozed'
       ? `<span class="badge blue">reportée jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
       : i.state === 'dismissed'
         ? '<span class="badge gray">traitée</span>'
-        : i.overdue
-          ? `<span class="badge red">⏰ à relancer — sans réponse depuis ${waitLabel(i.waitingHours)}</span>`
-          : `<span class="badge gray">sans réponse depuis ${waitLabel(i.waitingHours)}</span>`;
+        : stageBadge[i.stage] ?? stageBadge.waiting;
   return `<div class="reply-row">
     <div class="reply-main">
       <div class="reply-top">

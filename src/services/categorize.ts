@@ -279,6 +279,32 @@ export async function categorizeAccount(
   return { messagesScanned: scanned, messagesUpdated: updated, sendersUpdated };
 }
 
+// -------------------------------------------------- Priorité par relation (A5)
+
+export const SENDER_PRIORITIES = ['normal', 'always_important', 'never_urgent'] as const;
+export type SenderPriority = (typeof SENDER_PRIORITIES)[number];
+
+/**
+ * Priorité par relation (A5) : « Soraya, toujours important » / « Amazon,
+ * jamais urgent ». Choix de l'utilisateur, jamais recalculé par la sync ;
+ * pris en compte par le score d'importance (+40 / plafond 30).
+ */
+export async function setSenderPriority(
+  accountSlug: string,
+  email: string,
+  priority: SenderPriority,
+): Promise<{ email: string; priority: SenderPriority }> {
+  await ensureDbReady();
+  const normalized = email.trim().toLowerCase();
+  const sender = await db.sender.findUnique({
+    where: { accountSlug_email: { accountSlug, email: normalized } },
+    select: { id: true },
+  });
+  if (!sender) throw new Error(`Expéditeur inconnu de l'index : ${normalized}`);
+  await db.sender.update({ where: { id: sender.id }, data: { priority } });
+  return { email: normalized, priority };
+}
+
 /**
  * Corrige la catégorie d'un expéditeur à la main (categorySource=manual —
  * plus jamais écrasée par la sync), ou repasse en automatique (category=null).

@@ -97,6 +97,16 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A5 livrée : relances pilotées + priorité par relation.** Escalade
+FollowupItem.stage (waiting/due/urgent >2× seuil/stale >30 j) + suggestion
+FR ; écran Relances : badges, 🗄️ Clôturer sur stale, ✍️ Relancer →
+modale d'envoi pré-remplie (brouillon poli, replyRef) ; accueil enrichi.
+Sender.priority (migration, jamais recalculée) : ⭐ always_important +40 /
+🔕 never_urgent plafond 30 dans importance.ts (raisons explicites) ;
+PATCH senders accepte category/priority (journalisé) ; sélecteur Priorité
+dans le tableau des expéditeurs. Tests : 13 asserts + 11 checks.
+L'utilisateur doit valider un envoi de relance EN RÉEL.
+
 **A4 livrée : « Pourquoi ma boîte est pleine ? » + Grand ménage.**
 services/report.ts : generateMailboxReport() (répartition par catégorie
 A1 avec %, ancienneté 4 tranches, top expéditeurs nombre/poids, par
@@ -488,8 +498,8 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : A1 → A4 FAITES. Prochaine livraison = A5 (relances pilotées +
-priorité par relation) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
+**Cap V3 : A1 → A5 FAITES. Prochaine livraison = A6 (mode apprentissage,
+extension de L7) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
 complet). L'utilisateur a demandé « Lance la série A » (10/07) :
 enchaîner les livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
