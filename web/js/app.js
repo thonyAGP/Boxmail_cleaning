@@ -372,6 +372,8 @@ function highlightNav() {
     document.querySelector('[data-nav="settings"]')?.classList.add('active');
   } else if (hash.startsWith('#/help')) {
     document.querySelector('[data-nav="help"]')?.classList.add('active');
+  } else if (hash.startsWith('#/attachments')) {
+    document.querySelector('[data-nav="attachments"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -407,6 +409,8 @@ function route() {
     renderSettings();
   } else if (hash.startsWith('#/help')) {
     renderHelp();
+  } else if (hash.startsWith('#/attachments')) {
+    renderAttachments();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -2465,6 +2469,101 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------------- Pièces jointes (L5.14)
+// Retrouver un document : recherche multi-boîtes limitée aux mails AVEC
+// pièces jointes (index local — la détection 📎 est posée à la sync).
+const attachState = { q: '', account: '', since: '', data: null, searched: false };
+
+async function renderAttachments() {
+  const main = $('#main');
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  main.innerHTML = `<div class="page-head">
+    <div><h1>📎 Pièces jointes</h1>
+      <div class="sub">Retrouve un document reçu ou envoyé : mails avec pièces jointes, toutes boîtes
+      confondues. Ouvre le mail puis clique ⬇️ pour télécharger. NB : seuls les mails indexés depuis
+      la version « pièces jointes » portent l'info — une synchro complète la pose sur l'historique.</div></div></div>
+    <form class="search-bar" id="attach-form">
+      <input type="search" id="a-q" placeholder="Expéditeur, sujet… (ex. facture, notaire, EDF)"
+        value="${esc(attachState.q)}" autocomplete="off">
+      <select id="a-account">
+        <option value="">🌐 toutes les boîtes</option>
+        ${accounts.map((a) => `<option value="${esc(a)}" ${a === attachState.account ? 'selected' : ''}>${esc(a)}</option>`).join('')}
+      </select>
+      <label class="muted" style="display:flex; align-items:center; gap:6px; font-size:12.5px">
+        depuis <input type="date" id="a-since" value="${esc(attachState.since)}"></label>
+      <button type="submit" class="btn btn-primary">📎 Chercher</button>
+    </form>
+    <div id="attach-results"></div>`;
+
+  $('#attach-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    attachState.q = $('#a-q').value.trim();
+    attachState.account = $('#a-account').value;
+    attachState.since = $('#a-since').value;
+    runAttachSearch();
+  });
+  $('#a-q').focus();
+
+  // Premier affichage : les plus récents, sans critère.
+  if (attachState.data) renderAttachResults();
+  else runAttachSearch();
+}
+
+async function runAttachSearch() {
+  const el = $('#attach-results');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><span class="spinner"></span>Recherche…</div>';
+  attachState.searched = true;
+  try {
+    attachState.data = await api.search({
+      q: attachState.q,
+      account: attachState.account,
+      since: attachState.since,
+      attachments: 1,
+      limit: 200,
+    });
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  renderAttachResults();
+}
+
+function renderAttachResults() {
+  const el = $('#attach-results');
+  const d = attachState.data;
+  if (!el || !d) return;
+  if (d.items.length === 0) {
+    el.innerHTML = `<div class="empty">Aucun mail avec pièce jointe trouvé.
+      Si tu cherches un mail ancien, lance d'abord une <strong>Sync complète</strong> sur la boîte
+      concernée (l'info 📎 est posée à l'indexation).</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px 8px">
+      <strong>${fmtNum(d.total)}</strong> mail(s) avec pièces jointes${d.truncated ? ` — les ${fmtNum(d.items.length)} plus récents affichés (affine ta recherche)` : ''}.
+      Clique un mail pour voir et télécharger ses fichiers.
+    </div>
+    <div class="panel"><div class="panel-body tight">
+      ${d.items.map((i, idx) => `
+        <div class="result-row ${i.isSeen ? '' : 'unread'}" data-idx="${idx}">
+          <span class="mail-date">${fmtDate(i.date)}</span>
+          ${accountChip(i.account)}
+          <span class="result-from" title="${esc(i.fromEmail)}">${esc(i.fromName || i.fromEmail)}</span>
+          <span class="result-subject">${esc(i.subject)}</span>
+          ${folderBadge(i)}
+          <span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>
+        </div>`).join('')}
+    </div></div>`;
+
+  el.querySelectorAll('.result-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const item = attachState.data.items[Number(row.dataset.idx)];
+      if (item) openReader(item, row, { onSeen: () => renderAttachResults(), onRemoved: () => runAttachSearch() });
+    });
+  });
 }
 
 // ---------------------------------------------------------------- Aide (L5.10)

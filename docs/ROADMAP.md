@@ -435,13 +435,17 @@ MÊME niveau, ordre maquette. Tests : seed (3 suivis dont 1 supprimé
 exclu, asserts multi-dossiers) + ui-flagged.mjs (11 checks, actions
 mockées page.route).
 
-### ⬜ L5.14 — Écran Pièces jointes
+### ✅ L5.14 — Écran Pièces jointes — LIVRÉE
 
-Maquette : entrée sidebar « Pièces jointes ». Écran `#/attachments` :
-recherche multi-boîtes filtrée `hasAttachments` (searchIndex existant),
-tri date, badge compteur, téléchargement direct (endpoint L5.9). SPEC V2
-« recherche documentaire » : v1 = par métadonnées du MAIL porteur (nom de
-fichier indexé = plus tard, nécessite stocker les noms à la sync).
+Entrée sidebar « 📎 Pièces jointes » + écran `#/attachments` : au
+chargement, les mails avec PJ les plus récents toutes boîtes (searchIndex
+`withAttachments`, limite 200) ; barre de recherche (q), filtre par boîte,
+filtre date « depuis » ; lignes avec chip compte coloré, badge dossier,
+compteur 📎N ; clic → panneau de lecture avec les liens ⬇️ (endpoint
+L5.9) ; état vide qui rappelle la Sync complète pour l'historique. SPEC V2
+« recherche documentaire » : v1 par métadonnées du MAIL porteur — le nom
+de fichier indexé viendra avec le stockage des noms à la sync (backlog).
+Tests : ui-attach-screen.mjs (7 checks).
 
 ### ⬜ L5.15 — Nettoyage conseillé global (sidebar + dashboard)
 

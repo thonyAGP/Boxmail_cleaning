@@ -101,6 +101,12 @@ L5.12 dossiers ✅ LIVRÉE → L5.13 mails suivis → L5.14 écran pièces joint
 → L5.15 nettoyage global → L5.16 dashboard maquette → puis L7 règles,
 brouillons IMAP, mémoire métier/LLM en 2e temps.
 
+**L5.14 livrée : Écran Pièces jointes.** Sidebar 📎 + `#/attachments` :
+mails avec PJ toutes boîtes au chargement (searchIndex withAttachments),
+recherche q + filtre boîte + depuis, chip compte + badge dossier +
+compteur 📎N, clic → panneau avec liens ⬇️, état vide rappelant la Sync
+complète. Tests : ui-attach-screen.mjs (7 checks).
+
 **L5.13 livrée : Mails suivis (⭐).** Pseudo-rôle `flagged` (tous dossiers
 hors corbeille/spam), isFlagged exposé partout, actions flag/unflag
 (\\Flagged IMAP + reflet index), étoile cliquable par ligne, bouton dans
