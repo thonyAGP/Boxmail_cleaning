@@ -5474,22 +5474,51 @@ function renderSearchResults() {
 // ⬇️ télécharger une pièce (avec retour visuel), ⬇️ Tout en .zip.
 const VIEWABLE_RE = /\.(pdf|png|jpe?g|gif|webp|svg|bmp|txt|csv)$/i;
 
+// Icône selon le type de fichier (indice visuel rapide, façon Outlook).
+function attIcon(name) {
+  if (/\.pdf$/i.test(name)) return '📕';
+  if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name)) return '🖼️';
+  if (/\.(docx?|odt|rtf)$/i.test(name)) return '📘';
+  if (/\.(xlsx?|ods|csv)$/i.test(name)) return '📗';
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return '🗜️';
+  return '📄';
+}
+
 function renderReaderAttachments(az, item, attachments) {
   const many = attachments.length > 1;
+  const totalBytes = attachments.reduce((s, a) => s + (a.sizeBytes || 0), 0);
+  // Puces horizontales compactes (façon Outlook), repliables quand il y en a
+  // plusieurs — pour ne pas repousser le corps du mail vers le bas.
   az.innerHTML = `<div class="att-head">
+      ${many ? `<button class="att-toggle" data-att-toggle title="Réduire / afficher la liste" aria-expanded="true">▾</button>` : '<span class="att-toggle-spacer"></span>'}
       <strong>📎 ${fmtNum(attachments.length)} pièce(s) jointe(s)</strong>
-      ${many ? `<button class="btn btn-sm" data-att-zip title="Télécharger toutes les pièces dans un .zip">⬇️ Tout télécharger (.zip)</button>` : ''}
+      <span class="muted att-total">· ${fmtSize(totalBytes)}</span>
+      ${many ? `<button class="btn btn-sm att-zip-btn" data-att-zip title="Télécharger toutes les pièces dans un .zip">⬇️ Tout (.zip)</button>` : ''}
     </div>
+    <div class="att-chips" id="att-chips">
     ${attachments.map((a, ai) => {
       const name = a.filename || `piece-jointe-${ai + 1}`;
       const canView = VIEWABLE_RE.test(name);
-      return `<div class="att">
-        <span class="att-name" title="${esc(name)}">📄 ${esc(name)}</span>
-        <span class="muted att-size">${fmtSize(a.sizeBytes)}</span>
-        ${canView ? `<button class="btn btn-sm att-view" data-att-view="${ai}" title="Ouvrir dans un onglet (sans télécharger)">👁️ Voir</button>` : ''}
-        <button class="btn btn-sm att-dl" data-att-dl="${ai}" data-att-name="${esc(name)}" title="Télécharger ${esc(name)}">⬇️ Télécharger</button>
+      return `<div class="att-chip" title="${esc(name)} · ${fmtSize(a.sizeBytes)}">
+        <span class="att-ico">${attIcon(name)}</span>
+        <span class="att-name">${esc(name)}</span>
+        <span class="att-size">${fmtSize(a.sizeBytes)}</span>
+        ${canView ? `<button class="att-act att-view" data-att-view="${ai}" title="Voir (ouvrir dans un onglet)">👁️</button>` : ''}
+        <button class="att-act att-dl" data-att-dl="${ai}" data-att-name="${esc(name)}" title="Télécharger ${esc(name)}">⬇️</button>
       </div>`;
-    }).join('')}`;
+    }).join('')}
+    </div>`;
+
+  // Réduire / déplier la liste des puces.
+  const toggle = az.querySelector('[data-att-toggle]');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const chips = az.querySelector('#att-chips');
+      const collapsed = chips.classList.toggle('collapsed');
+      toggle.textContent = collapsed ? '▸' : '▾';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    });
+  }
 
   // 👁️ Voir : ouvre l'URL inline dans un nouvel onglet (le navigateur affiche
   // et met en cache). L'onglet est ouvert AVANT (évite le blocage popup).
@@ -5518,7 +5547,7 @@ function renderReaderAttachments(az, item, attachments) {
         zipBtn,
         api.attachmentsZipUrl(item.account, item.folder, item.uid),
         `pieces-jointes-${item.account}-${item.uid}.zip`,
-        '⬇️ Tout télécharger (.zip)',
+        '⬇️ Tout (.zip)',
       );
     });
   }

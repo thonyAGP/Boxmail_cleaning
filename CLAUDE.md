@@ -99,6 +99,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Pièces jointes compactes façon Outlook (retour utilisateur 10/07 :
+« quand il y a plusieurs PJ, pouvoir réduire, affichage rapide et simple,
+les uns à la suite, à la mode Outlook »).** renderReaderAttachments
+(app.js) refait : puces horizontales `.att-chip` qui s'enroulent (icône
+par type via `attIcon`, nom ellipsé, taille, boutons icônes 👁️/⬇️) au
+lieu de lignes verticales hautes ; en-tête = compteur + TAILLE TOTALE +
+`⬇️ Tout (.zip)` + bouton ▾/▸ `data-att-toggle` qui REPLIE la liste
+(`.att-chips.collapsed`) quand il y a plusieurs PJ (le corps du mail n'est
+plus repoussé). Tests : ui-attach-perf.mjs passé à 14 checks (puces,
+taille totale, réduire/déplier). Capture 9 PJ : ~5 rangées au lieu de 9
+lignes.
+
 **Barre de chargement globale (retour utilisateur 10/07 : « affiche un
 loader lors de l'affichage, fais-le pour tout, simple mais efficace »).**
 Un seul branchement : `request()` (api.js) incrémente un compteur
