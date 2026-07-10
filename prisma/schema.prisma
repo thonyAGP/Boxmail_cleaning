@@ -264,6 +264,19 @@ model RetentionPolicy {
   updatedAt     DateTime  @updatedAt
 }
 
+// Suggestion d'apprentissage ignorée (A6) : « Ignorer » est définitif pour
+// une suggestion donnée — elle ne sera jamais reproposée.
+model SuggestionDismissal {
+  id        Int      @id @default(autoincrement())
+  // retention_auto | priority (les règles de classement ont leur propre cycle)
+  kind      String
+  // Référence stable : retention:<key> ou priority:<account>|<email>|<sens>
+  refKey    String
+  createdAt DateTime @default(now())
+
+  @@unique([kind, refKey])
+}
+
 // Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké
 // tel quel : il sert d'historique et de référence « nouveaux mails depuis le
 // dernier brief ». Global (tous comptes), pas de relation Account.

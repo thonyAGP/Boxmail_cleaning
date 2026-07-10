@@ -58,6 +58,16 @@ function refreshRulesBadge() {
     });
 }
 
+// Badge « 💡 Suggestions » (A6) : ce que l'assistant a appris de tes habitudes.
+function refreshSuggestionsBadge() {
+  api.suggestions().then((s) => {
+    const b = $('#suggestions-badge');
+    if (!b) return;
+    b.textContent = fmtNum(s.total);
+    b.classList.toggle('hidden', s.total === 0);
+  }).catch(() => {});
+}
+
 // Badge « ⭐ Mails suivis » de la sidebar (L5.13).
 function refreshFlaggedBadge() {
   api.messagesUnified({ role: 'flagged', limit: 1 }).then((d) => {
@@ -145,6 +155,7 @@ async function showApp() {
   refreshImportantBadge();
   refreshFlaggedBadge();
   refreshRulesBadge();
+  refreshSuggestionsBadge();
   refreshDeadlinesBadge();
   refreshTasksBadge();
 }
@@ -493,6 +504,8 @@ function highlightNav() {
     document.querySelector('[data-nav="bigclean"]')?.classList.add('active');
   } else if (hash.startsWith('#/rules')) {
     document.querySelector('[data-nav="rules"]')?.classList.add('active');
+  } else if (hash.startsWith('#/suggestions')) {
+    document.querySelector('[data-nav="suggestions"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -538,6 +551,8 @@ function route() {
     renderBigClean();
   } else if (hash.startsWith('#/rules')) {
     renderRules();
+  } else if (hash.startsWith('#/suggestions')) {
+    renderSuggestions();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -3457,6 +3472,118 @@ async function loadRetention() {
       }
     });
   });
+}
+
+// -------------------------------- Suggestions (A6 — Cap V3) : #/suggestions
+// L'assistant apprend de tes décisions et PROPOSE — il n'agit jamais seul.
+async function renderSuggestions() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>💡 Suggestions</h1>
+      <div class="sub">Ce que l'assistant a appris en t'observant : chaque suggestion vient avec sa preuve.
+      Valider = la règle existe. Ignorer = on ne t'en reparle plus. Rien ne s'applique sans toi.</div></div>
+    <div class="head-actions"><button class="btn" id="sugg-refresh">↻ Actualiser</button></div></div>
+    <div id="sugg-body"><div class="empty"><span class="spinner"></span>Analyse de tes habitudes…</div></div>`;
+  $('#sugg-refresh').addEventListener('click', loadSuggestions);
+  await loadSuggestions();
+}
+
+async function loadSuggestions() {
+  const body = $('#sugg-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse de tes habitudes…</div>';
+  let s;
+  try {
+    s = await api.suggestions();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+  refreshSuggestionsBadge();
+
+  if (s.total === 0) {
+    body.innerHTML = `<div class="empty">Rien à suggérer pour l'instant. 💡 L'assistant apprend au fil de
+      tes rangements, nettoyages et lectures — reviens dans quelques jours.</div>`;
+    return;
+  }
+
+  const row = (content, actions) => `<div class="today-row" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border)">
+    <div style="flex:1; min-width:0">${content}</div>${actions}</div>`;
+
+  body.innerHTML = `
+    ${s.rules.length ? `<div class="panel">
+      <div class="panel-head"><h2>🗂️ Règles de classement proposées</h2><span class="badge orange">${fmtNum(s.rules.length)}</span></div>
+      <div class="panel-body">
+        ${s.rules.map((r, i) => row(
+          `Si <strong>${r.rule.matchType === 'domain' ? 'domaine' : r.rule.matchType === 'subject' ? 'sujet' : 'expéditeur'} = ${esc(r.rule.matchValue)}</strong>
+           → déplacer vers 📂 <strong>${esc(r.rule.targetFolder)}</strong> ${accountChip(r.account)}
+           <br><span class="muted" style="font-size:12px">Preuve : ${esc(r.rule.reason)}${r.rule.pendingCount ? ` · ${fmtNum(r.rule.pendingCount)} mails à ranger dès maintenant` : ''}</span>`,
+          `<button class="btn btn-sm btn-primary sugg-rule-ok" data-i="${i}">✓ Valider</button>
+           <button class="btn btn-sm sugg-rule-no" data-i="${i}">✕ Refuser</button>`,
+        )).join('')}
+        <div class="muted" style="font-size:12.5px; padding-top:8px">Valider active la règle (rangement via
+        le bouton « Ranger » de l'écran <a href="#/rules">🗂️ Règles</a>, ou coche « auto » là-bas quand tu lui fais confiance).</div>
+      </div></div>` : ''}
+
+    ${s.retentionAuto.length ? `<div class="panel">
+      <div class="panel-head"><h2>🧹 Nettoyages à automatiser</h2><span class="badge orange">${fmtNum(s.retentionAuto.length)}</span></div>
+      <div class="panel-body">
+        ${s.retentionAuto.map((r, i) => row(
+          `<strong>${esc(r.label)}</strong><br><span class="muted" style="font-size:12px">Preuve : ${esc(r.evidence)}</span>`,
+          `<button class="btn btn-sm btn-primary sugg-ret-ok" data-i="${i}">✓ Passer en auto</button>
+           <button class="btn btn-sm sugg-ret-no" data-i="${i}">✕ Ignorer</button>`,
+        )).join('')}
+      </div></div>` : ''}
+
+    ${s.priorities.length ? `<div class="panel">
+      <div class="panel-head"><h2>⭐ Priorités par relation</h2><span class="badge orange">${fmtNum(s.priorities.length)}</span></div>
+      <div class="panel-body">
+        ${s.priorities.map((p, i) => row(
+          `${p.priority === 'always_important' ? '⭐' : '🔕'} <strong>${esc(p.name)}</strong>
+           <span class="muted" style="font-size:12px">${esc(p.email)}</span> ${accountChip(p.account)}
+           <br><span class="muted" style="font-size:12px">Preuve : ${esc(p.evidence)}</span>`,
+          `<button class="btn btn-sm btn-primary sugg-prio-ok" data-i="${i}">✓ ${p.priority === 'always_important' ? 'Toujours important' : 'Jamais urgent'}</button>
+           <button class="btn btn-sm sugg-prio-no" data-i="${i}">✕ Ignorer</button>`,
+        )).join('')}
+      </div></div>` : ''}`;
+
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadSuggestions();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  };
+  body.querySelectorAll('.sugg-rule-ok').forEach((btn) => btn.addEventListener('click', () => {
+    const r = s.rules[Number(btn.dataset.i)];
+    act(btn, () => api.ruleUpdate(r.account, r.rule.id, { status: 'active' }));
+  }));
+  body.querySelectorAll('.sugg-rule-no').forEach((btn) => btn.addEventListener('click', () => {
+    const r = s.rules[Number(btn.dataset.i)];
+    if (!confirm('Refuser cette règle ? Elle sera supprimée (elle pourra être re-suggérée plus tard si l\'habitude continue).')) return;
+    act(btn, () => api.ruleDelete(r.account, r.rule.id));
+  }));
+  body.querySelectorAll('.sugg-ret-ok').forEach((btn) => btn.addEventListener('click', () => {
+    const r = s.retentionAuto[Number(btn.dataset.i)];
+    if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans 🧹 Nettoyage conseillé.`)) return;
+    act(btn, () => api.retentionUpdate(r.policyId, { autoApply: true }));
+  }));
+  body.querySelectorAll('.sugg-ret-no').forEach((btn) => btn.addEventListener('click', () => {
+    const r = s.retentionAuto[Number(btn.dataset.i)];
+    act(btn, () => api.suggestionDismiss('retention_auto', `retention:${r.key}`));
+  }));
+  body.querySelectorAll('.sugg-prio-ok').forEach((btn) => btn.addEventListener('click', () => {
+    const p = s.priorities[Number(btn.dataset.i)];
+    act(btn, () => api.senderSetPriority(p.account, p.email, p.priority));
+  }));
+  body.querySelectorAll('.sugg-prio-no').forEach((btn) => btn.addEventListener('click', () => {
+    const p = s.priorities[Number(btn.dataset.i)];
+    act(btn, () => api.suggestionDismiss('priority', `priority:${p.account}|${p.email}|${p.priority}`));
+  }));
 }
 
 // -------------------------------- Grand ménage (A4 — Cap V3) : #/bigclean

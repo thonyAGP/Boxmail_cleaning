@@ -98,6 +98,7 @@ import {
   updatePolicy,
 } from '../services/retention.js';
 import { generateMailboxReport, runGrandMenage } from '../services/report.js';
+import { listSuggestions, dismissSuggestion, type DismissalKind } from '../services/learning.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -530,6 +531,36 @@ export function buildAdminRouter(): Router {
     guard(async (req, res) => {
       try {
         res.json(await listNoiseMessages(req.params.bucket as NoiseBucket));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // --- Mode apprentissage (A6 — Cap V3) --------------------------------------------
+  router.get(
+    '/suggestions',
+    guard(async (_req, res) => {
+      res.json(await listSuggestions());
+    }),
+  );
+
+  // « Ignorer » une suggestion (mémorisé — jamais reproposée). La VALIDATION
+  // passe par les endpoints existants (règles L7, rétention A3, priorités A5).
+  router.post(
+    '/suggestions/dismiss',
+    guard(async (req, res) => {
+      const kind = String(req.body?.kind ?? '');
+      const refKey = String(req.body?.refKey ?? '');
+      try {
+        await dismissSuggestion(kind as DismissalKind, refKey);
+        await recordOperation({
+          account: '(global)',
+          tool: 'ui_suggestion_dismiss',
+          params: { kind, refKey },
+          result: 'suggestion ignorée définitivement',
+        });
+        res.json({ ok: true });
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }

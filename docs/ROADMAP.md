@@ -853,7 +853,29 @@ relance (SMTP mocké en dev).
   lecture) ; override du scoring importance (+40 / cap 30) avec raison
   « expéditeur marqué toujours important » ; signal d'apprentissage A6.
 
-### ⬜ A6 — Mode Apprentissage (extension de L7)
+### ✅ A6 — Mode Apprentissage (extension de L7) — LIVRÉE
+
+**Livré. LA SÉRIE A (Cap V3) EST COMPLÈTE.** Modèle `SuggestionDismissal`
+(kind+refKey uniques : « Ignorer » est mémorisé, jamais reproposé) +
+migration. `services/learning.ts` : `listSuggestions()` — 3 familles,
+chacune avec sa PREUVE en français : (1) règles de classement = moteur
+L7 `suggestRules` existant relancé par compte (idempotent) + règles
+`suggested` remontées ; (2) rétention → auto = stratégie ACTIVÉE non-auto
+appliquée à la main ≥ 2 fois (comptage journal `retention_apply`/
+`grand_menage` par params.policy) ; (3) priorités par relation déduites
+du COMPORTEMENT DE LECTURE : ⭐ si ≥ 10 mails TOUS lus
+(person/company/non catégorisé), 🔕 si ≥ 20 mails dont ≥ 90 % jamais
+ouverts (jamais person) — cap 20 suggestions. `dismissSuggestion(kind,
+refKey)` (upsert idempotent, kinds validés). LA VALIDATION passe par les
+mécanismes existants (PATCH règle L7 → active, PATCH rétention autoApply,
+PATCH sender priority) — aucun nouveau chemin d'écriture. API : GET
+`/api/suggestions`, POST `/api/suggestions/dismiss` (journal
+ui_suggestion_dismiss). UI : écran `#/suggestions` (sidebar « 💡
+Suggestions » + badge total, rafraîchi au boot) — 3 panneaux, phrase +
+« Preuve : … » par ligne, ✓ Valider (confirmation pour l'auto) / ✕
+Ignorer, suggestion consommée disparaît naturellement (l'état a changé).
+Tests : seed-learning.mts (11 asserts) + ui-suggestions.mjs (14 checks,
+PATCH réels) + régressions ui-categorize/ui-retention.
 
 Toutes les décisions manuelles deviennent des signaux : le journal
 `operations.jsonl` + les corrections A1/A5 sont agrégés par un

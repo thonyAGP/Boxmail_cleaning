@@ -97,6 +97,19 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A6 livrée : mode apprentissage — LA SÉRIE A (CAP V3) EST COMPLÈTE.**
+services/learning.ts : listSuggestions() → 3 familles AVEC PREUVE
+(règles L7 suggested relancées par compte ; rétention→auto si appliquée
+à la main ≥ 2 fois — comptage journal ; priorités déduites de la
+lecture : ⭐ ≥ 10 mails tous lus, 🔕 ≥ 20 mails ≥ 90 % jamais ouverts,
+jamais person). Valider = endpoints existants ; Ignorer = mémorisé
+(modèle SuggestionDismissal). GET /api/suggestions + POST dismiss.
+Écran #/suggestions + badge sidebar. Tests : 11 asserts + 14 checks +
+régressions. **L'utilisateur doit VALIDER EN RÉEL sur son PC : le
+backfill 🏷️ des catégories (Paramètres), une application de stratégie
+de rétention, un envoi de relance ✍️, et le Grand ménage (IMAP/SMTP
+mockés en dev).**
+
 **A5 livrée : relances pilotées + priorité par relation.** Escalade
 FollowupItem.stage (waiting/due/urgent >2× seuil/stale >30 j) + suggestion
 FR ; écran Relances : badges, 🗄️ Clôturer sur stale, ✍️ Relancer →
@@ -498,10 +511,13 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : A1 → A5 FAITES. Prochaine livraison = A6 (mode apprentissage,
-extension de L7) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
-complet). L'utilisateur a demandé « Lance la série A » (10/07) :
-enchaîner les livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
+**Cap V3 : SÉRIE A COMPLÈTE (A1 → A6, livrées le 10/07).** Prochaines
+étapes possibles : L6 déploiement Oracle (~45 min avec l'utilisateur,
+tout est prêt — docs/DEPLOY-ORACLE.md), validations EN RÉEL listées dans
+l'« État » ci-dessous, ou backlog (dossiers intelligents, désinscription
+newsletters, brouillons IMAP, extraction PDF factures, analyse LLM
+Sonnet dédiée, tools MCP pour today/retention/report/suggestions —
+l'interface web les a, la façade MCP pas encore). L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),
