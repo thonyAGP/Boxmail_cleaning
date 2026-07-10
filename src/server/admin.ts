@@ -817,7 +817,8 @@ export function buildAdminRouter(): Router {
       const role = (UNIFIED_ROLES as readonly string[]).includes(String(req.query.role ?? ''))
         ? (String(req.query.role) as UnifiedRole)
         : undefined;
-      res.json(await listUnifiedInbox({ offset, limit, unseen, withAttachments, sort, dir, role }));
+      const q = String(req.query.q ?? '').slice(0, 200);
+      res.json(await listUnifiedInbox({ offset, limit, unseen, withAttachments, sort, dir, role, q }));
     }),
   );
 
@@ -843,6 +844,7 @@ export function buildAdminRouter(): Router {
         ? (String(req.query.sort) as 'date' | 'from' | 'subject')
         : undefined;
       const dir = String(req.query.dir ?? '') === 'asc' ? ('asc' as const) : ('desc' as const);
+      const q = String(req.query.q ?? '').slice(0, 200);
       res.json(
         await listFolderMessages(req.params.slug, folder, {
           offset,
@@ -851,6 +853,7 @@ export function buildAdminRouter(): Router {
           withAttachments,
           sort,
           dir,
+          q,
         }),
       );
     }),

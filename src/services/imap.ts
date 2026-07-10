@@ -388,6 +388,21 @@ class ImapService {
     }
   }
 
+  /**
+   * Quota de stockage de la boîte (RFC 2087 — supporté par Outlook.com).
+   * Retourne null si le serveur ne l'expose pas.
+   */
+  async fetchQuota(
+    rec: AccountRecord,
+  ): Promise<{ usedBytes: number; limitBytes: number } | null> {
+    const client = await this.getClient(rec);
+    const quota = (await client.getQuota()) as
+      | { storage?: { used?: number; limit?: number } }
+      | false;
+    if (!quota || !quota.storage?.limit) return null;
+    return { usedBytes: quota.storage.used ?? 0, limitBytes: quota.storage.limit };
+  }
+
   // --- Fil de discussion ----------------------------------------------------
 
   async getThread(rec: AccountRecord, folder: string, uid: number): Promise<EmailMeta[]> {

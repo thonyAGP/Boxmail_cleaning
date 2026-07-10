@@ -49,12 +49,13 @@ export const api = {
       folder,
       uids,
     }),
-  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc', role = 'inbox' } = {}) =>
+  messagesUnified: ({ offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc', role = 'inbox', q = '' } = {}) =>
     request(
       'GET',
       `/messages?offset=${offset}&limit=${limit}&sort=${sort}&dir=${dir}&role=${role}` +
         (unseen ? '&unseen=1' : '') +
-        (attachments ? '&attachments=1' : ''),
+        (attachments ? '&attachments=1' : '') +
+        (q ? `&q=${encodeURIComponent(q)}` : ''),
     ),
   accountSetColor: (slug, color) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}`, { color }),
@@ -93,11 +94,12 @@ export const api = {
     }),
   sendMail: (slug, payload) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),
-  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc' } = {}) => {
-    const q = new URLSearchParams({ folder, offset: String(offset), limit: String(limit), sort, dir });
-    if (unseen) q.set('unseen', '1');
-    if (attachments) q.set('attachments', '1');
-    return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${q}`);
+  listMessages: (slug, { folder = 'INBOX', offset = 0, limit = 50, unseen = false, attachments = false, sort = 'date', dir = 'desc', q = '' } = {}) => {
+    const p = new URLSearchParams({ folder, offset: String(offset), limit: String(limit), sort, dir });
+    if (unseen) p.set('unseen', '1');
+    if (attachments) p.set('attachments', '1');
+    if (q) p.set('q', q);
+    return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${p}`);
   },
   bulkAction: (slug, { folder, uids, action, destination }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/bulk`, {

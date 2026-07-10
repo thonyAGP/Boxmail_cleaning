@@ -94,13 +94,26 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
-**Rattrapage maquette 2 TERMINÉ (L5.12 → L5.17, retours utilisateur
+**Rattrapage maquette 2 TERMINÉ (L5.12 → L5.18, retours utilisateur
 10/07).** 6 livraisons poussées : dossiers, mails suivis, écran pièces
 jointes, nettoyage global, dashboard maquette, arborescence sidebar. Restent de la SPEC V2
 (hors multi-utilisateur) : L7 règles de classement + dossiers
 intelligents, brouillons IMAP (préparer une réponse sans l'envoyer),
 mémoire métier (entities/projects) + recherche dans le CONTENU des PJ —
 ces deux derniers via le Sonnet dédié, décision : après déploiement L6.
+
+**L5.18 livrée : navigation contextuelle + recherche consultation +
+quota.** Sidebar Option 1 (choix utilisateur) : Tableau de bord seul,
+COMPTES, « 🌐 TOUTES LES BOÎTES », ANALYSE & ACTIONS, OUTILS ; surlignage
+CONTEXTUEL (boîte précise → compte+dossier dans l'arborescence auto-
+dépliée ; unifié → entrée globale) ; titre #inbox-title explicite ; champ
+🔎 de filtre dans la barre d'outils inbox (param q sur les deux listings,
+quickTextFilter OR sujet/adresse/nom) ; quota IMAP par boîte (migration
+Account.quota*, fetchQuota RFC 2087 à chaque sync, overview expose
+used/limit/free/pct, colonne Espace utilisé orange ≥90 %/rouge ≥95 % +
+libre, carte vue compte, bannière 🚨 dashboard). Épinglage local REFUSÉ
+par l'utilisateur (pas de divergence avec Outlook) — ⭐ suivi = l'outil.
+Tests : ui-navquota.mjs (20 checks) + régressions.
 
 **L5.17 livrée : Arborescence des boîtes dans la sidebar.** Chaque compte
 a un bouton +/− qui déplie ses dossiers (rôle trié, badge non-lus, clic →

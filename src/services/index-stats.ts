@@ -114,6 +114,8 @@ export interface MailboxOverview {
     newsletters: number;
     totalSizeBytes: number;
   } | null;
+  /** Quota IMAP de la boîte (null si jamais récupéré). pct arrondi 0-100. */
+  quota: { usedBytes: number; limitBytes: number; freeBytes: number; pct: number } | null;
   topSenders: { address: string; name: string; count: number; unsubscribePct: number }[];
   senderCount: number;
 }
@@ -150,6 +152,19 @@ export async function mailboxOverview(account: string): Promise<MailboxOverview>
     };
   }
 
+  const quota =
+    acc.quotaLimitBytes && acc.quotaLimitBytes > 0n
+      ? {
+          usedBytes: Number(acc.quotaUsedBytes ?? 0n),
+          limitBytes: Number(acc.quotaLimitBytes),
+          freeBytes: Math.max(0, Number(acc.quotaLimitBytes) - Number(acc.quotaUsedBytes ?? 0n)),
+          pct: Math.min(
+            100,
+            Math.round((Number(acc.quotaUsedBytes ?? 0n) / Number(acc.quotaLimitBytes)) * 100),
+          ),
+        }
+      : null;
+
   const [indexedMessages, senderCount, topSenders] = await Promise.all([
     db.message.count({ where: { accountSlug: account, isDeleted: false } }),
     db.sender.count({ where: { accountSlug: account, messageCount: { gt: 0 } } }),
@@ -168,6 +183,7 @@ export async function mailboxOverview(account: string): Promise<MailboxOverview>
 
   return {
     account,
+    quota,
     emailAddress: acc.emailAddress,
     lastSyncAt: acc.lastSyncAt?.toISOString() ?? null,
     indexedMessages,

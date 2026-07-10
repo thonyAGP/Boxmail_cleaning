@@ -444,7 +444,19 @@ function highlightNav() {
   } else if (hash.startsWith('#/operations')) {
     document.querySelector('[data-nav="operations"]')?.classList.add('active');
   } else if (hash.startsWith('#/inbox')) {
-    document.querySelector('[data-nav="inbox"]')?.classList.add('active');
+    document.querySelectorAll('.side-folder.active').forEach((el) => el.classList.remove('active'));
+    if (inboxState.account) {
+      // Boîte précise : on allume le compte ET son dossier dans l'arborescence.
+      document.querySelector(`[data-account="${CSS.escape(inboxState.account)}"]`)?.classList.add('active');
+      document
+        .querySelector(
+          `.side-folder[data-goto-account="${CSS.escape(inboxState.account)}"][data-goto-folder="${CSS.escape(inboxState.folder || 'INBOX')}"]`,
+        )
+        ?.classList.add('active');
+    } else {
+      // Vue unifiée : on allume l'entrée « toutes les boîtes » du bon type.
+      document.querySelector(`a[href="#/inbox/@${CSS.escape(inboxState.role)}"]`)?.classList.add('active');
+    }
   } else if (hash.startsWith('#/search')) {
     document.querySelector('[data-nav="search"]')?.classList.add('active');
   } else if (hash.startsWith('#/replies')) {
@@ -509,6 +521,25 @@ function route() {
   } else {
     renderDashboard();
   }
+}
+
+// Barre de remplissage d'une boîte (L5.18) : orange ≥ 90 %, rouge ≥ 95 %.
+function quotaColor(pct) {
+  if (pct >= 95) return 'var(--red)';
+  if (pct >= 90) return 'var(--orange)';
+  return 'var(--accent)';
+}
+
+function quotaCell(q) {
+  if (!q) {
+    return '<span class="muted" style="font-size:12px">inconnu — lance une synchronisation</span>';
+  }
+  const color = quotaColor(q.pct);
+  return `<div class="quota-cell" title="${fmtSize(q.usedBytes)} utilisés sur ${fmtSize(q.limitBytes)}">
+    <div class="bar-track"><div class="bar-fill" style="width:${q.pct}%; background:${color}"></div></div>
+    <span style="white-space:nowrap; font-size:12px; ${q.pct >= 90 ? `color:${color}; font-weight:600` : ''}">
+      ${fmtSize(q.usedBytes)} / ${fmtSize(q.limitBytes)} · ${q.pct}%${q.pct >= 90 ? ` ⚠️ libre : ${fmtSize(q.freeBytes)}` : ''}</span>
+  </div>`;
 }
 
 // « +N depuis hier » pour la carte Nouveaux mails (L5.16).
@@ -608,27 +639,34 @@ async function renderDashboard() {
         <div class="kpi-sub"><a href="#/cleanup">voir et nettoyer</a></div></div>
     </div>
 
+    ${(() => {
+      const full = ov.accounts.filter((a) => a.quota && a.quota.pct >= 90);
+      return full.length
+        ? `<div class="notice warn">🚨 Boîte(s) presque pleine(s) :
+          ${full.map((a) => `<strong>${esc(a.account)}</strong> (${a.quota.pct}% — reste ${fmtSize(a.quota.freeBytes)})`).join(', ')}
+          — pense au <a href="#/cleanup">🧹 nettoyage</a>.</div>`
+        : '';
+    })()}
     ${ov.neverSynced.length ? `<div class="notice warn">⚠️ Boîte(s) jamais synchronisée(s) :
       ${ov.neverSynced.map((n) => `<strong>${esc(n)}</strong>`).join(', ')} —
       ouvrir la boîte dans le menu puis lancer une synchronisation.</div>` : ''}
 
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><h2>Aperçu par compte</h2></div>
+        <div class="panel-head"><h2>Aperçu par compte</h2>
+          <span class="muted" style="font-size:12px">espace : ⚠️ orange ≥ 90 % · rouge ≥ 95 %</span></div>
         <div class="panel-body tight"><table>
-          <thead><tr><th>Compte</th><th class="num">INBOX</th><th class="num">Non lus</th><th>Volume</th><th></th></tr></thead>
+          <thead><tr><th>Compte</th><th class="num">INBOX</th><th class="num">Non lus</th><th>Espace utilisé</th><th></th></tr></thead>
           <tbody>${ov.accounts
-            .map((a) => {
-              const max = Math.max(...ov.accounts.map((x) => x.inbox?.messages ?? 0), 1);
-              const pct = Math.round(((a.inbox?.messages ?? 0) / max) * 100);
-              return `<tr>
+            .map(
+              (a) => `<tr>
                 <td><strong>${esc(a.account)}</strong><br><span class="muted" style="font-size:12px">${esc(a.emailAddress)}</span></td>
                 <td class="num">${fmtNum(a.inbox?.messages ?? 0)}</td>
                 <td class="num">${fmtNum(a.inbox?.unseen ?? 0)}</td>
-                <td><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div></td>
+                <td>${quotaCell(a.quota)}</td>
                 <td><a class="btn btn-sm" href="#/account/${esc(a.account)}">Ouvrir</a></td>
-              </tr>`;
-            })
+              </tr>`,
+            )
             .join('')}</tbody>
         </table></div>
       </div>
@@ -1313,8 +1351,12 @@ async function renderAccount(slug) {
         <div class="kpi-value">${fmtNum(ov.inbox?.unseen ?? 0)}</div></div>
       <div class="kpi orange"><div class="kpi-label">📰 Newsletters</div>
         <div class="kpi-value">${fmtNum(ov.inbox?.newsletters ?? 0)}</div></div>
-      <div class="kpi"><div class="kpi-label">💾 Taille INBOX</div>
-        <div class="kpi-value" style="font-size:20px">${fmtSize(ov.inbox?.totalSizeBytes)}</div></div>
+      <div class="kpi"><div class="kpi-label">💾 Espace boîte</div>
+        <div class="kpi-value" style="font-size:20px; ${ov.quota && ov.quota.pct >= 90 ? `color:${quotaColor(ov.quota.pct)}` : ''}">
+          ${ov.quota ? `${ov.quota.pct}%` : fmtSize(ov.inbox?.totalSizeBytes)}</div>
+        <div class="kpi-sub">${ov.quota
+          ? `${fmtSize(ov.quota.usedBytes)} / ${fmtSize(ov.quota.limitBytes)} · libre : ${fmtSize(ov.quota.freeBytes)}`
+          : 'quota inconnu — synchronise la boîte'}</div></div>
       <div class="kpi"><div class="kpi-label">👥 Expéditeurs</div>
         <div class="kpi-value">${fmtNum(ov.senderCount)}</div>
         <div class="kpi-sub">dernière sync : ${fmtDateTime(ov.lastSyncAt)}</div></div>
@@ -3446,6 +3488,7 @@ const inboxState = {
   pageSize: 50,
   unseen: false,
   attachments: false,
+  q: '',
   sort: 'date',
   dir: 'desc',
   data: null,
@@ -3455,6 +3498,25 @@ const inboxState = {
 
 const isUnifiedInbox = () => inboxState.account === '';
 const inboxKey = (i) => `${i.account}|${i.folder}|${i.uid}`;
+
+const INBOX_ROLE_LABELS = {
+  inbox: '📥 Boîte de réception',
+  flagged: '⭐ Mails suivis',
+  sent: '📤 Envoyés',
+  drafts: '📝 Brouillons',
+  trash: '🗑️ Corbeille',
+  archive: '📦 Archive',
+  spam: '⚠️ Spam',
+};
+
+// Titre explicite de l'écran : on sait toujours OÙ on est (L5.18).
+function updateInboxTitle() {
+  const h1 = $('#inbox-title');
+  if (!h1) return;
+  h1.textContent = isUnifiedInbox()
+    ? `🌐 Toutes les boîtes — ${(INBOX_ROLE_LABELS[inboxState.role] ?? inboxState.role).replace(/^\S+ /, '')}`
+    : `📥 ${inboxState.account} — ${inboxState.folder || 'INBOX'}`;
+}
 
 async function renderInbox(slugFromHash) {
   const main = $('#main');
@@ -3472,16 +3534,24 @@ async function renderInbox(slugFromHash) {
     inboxState.selected.clear();
   } else if (slugFromHash && accounts.includes(slugFromHash)) {
     inboxState.account = slugFromHash;
+    if (!sideOpen.has(slugFromHash)) {
+      sideOpen.add(slugFromHash);
+      localStorage.setItem('bm.sideOpen', JSON.stringify([...sideOpen]));
+      renderAccountsNav();
+      loadSideFolders();
+    }
   }
   if (inboxState.account && !accounts.includes(inboxState.account)) {
     inboxState.account = ''; // compte disparu → retour à la vue unifiée
   }
 
   main.innerHTML = `<div class="page-head">
-    <div><h1>📥 Boîte de réception</h1>
+    <div><h1 id="inbox-title">📥 Boîte de réception</h1>
       <div class="sub">Tous les mails du dossier, page par page (index local — instantané).
       Clique un mail pour le lire ; coche pour agir en masse. Synchronise pour des résultats à jour.</div></div>
     <div class="head-actions">
+      <input type="search" id="inbox-q" placeholder="🔎 Filtrer : sujet, expéditeur…"
+        value="${esc(inboxState.q)}" title="Filtre la liste affichée (Entrée pour lancer, ✕ pour effacer)" style="width:210px">
       <select id="inbox-account" title="Boîte">
         <option value="" ${inboxState.account === '' ? 'selected' : ''}>🌐 Toutes les boîtes</option>
         ${accounts
@@ -3531,6 +3601,21 @@ async function renderInbox(slugFromHash) {
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
+  });
+  $('#inbox-q').addEventListener('search', (e) => {
+    inboxState.q = e.target.value.trim();
+    inboxState.offset = 0;
+    inboxState.selected.clear();
+    loadInbox();
+  });
+  $('#inbox-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      inboxState.q = e.target.value.trim();
+      inboxState.offset = 0;
+      inboxState.selected.clear();
+      loadInbox();
+    }
   });
   $('#inbox-refresh').addEventListener('click', loadInbox);
   $('#inbox-compose').addEventListener('click', () => {
@@ -3604,6 +3689,7 @@ async function loadInbox() {
           sort: inboxState.sort,
           dir: inboxState.dir,
           role: inboxState.role,
+          q: inboxState.q,
         })
       : await api.listMessages(inboxState.account, {
           folder: inboxState.folder,
@@ -3613,6 +3699,7 @@ async function loadInbox() {
           attachments: inboxState.attachments,
           sort: inboxState.sort,
           dir: inboxState.dir,
+          q: inboxState.q,
         });
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
@@ -3623,6 +3710,8 @@ async function loadInbox() {
     return;
   }
   inboxState.selected.clear();
+  updateInboxTitle();
+  highlightNav();
   renderInboxBody();
 }
 
@@ -3638,7 +3727,9 @@ function renderInboxBody() {
     <div class="panel"><div class="panel-body tight">
       ${d.items.length === 0
         ? `<div class="empty">${
-            inboxState.attachments
+            inboxState.q
+              ? `Aucun mail ne contient « ${esc(inboxState.q)} » ici. Efface le filtre (✕) ou essaie l'écran 🔎 Recherche pour chercher partout.`
+              : inboxState.attachments
               ? 'Aucun mail avec pièce jointe ici. NB : seuls les mails indexés depuis la version « pièces jointes » portent cette info — une resynchronisation complète la pose sur les nouveaux arrivages.'
               : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'
           }</div>`

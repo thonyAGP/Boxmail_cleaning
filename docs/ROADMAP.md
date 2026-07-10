@@ -493,6 +493,31 @@ suites précédentes repassées (recalées sur le seed élargi ; NB tests :
 le rate-limit login 10/15 min impose un restart serveur entre grosses
 salves de tests navigateur).
 
+### ✅ L5.18 — Navigation contextuelle, recherche dans la consultation, quota des boîtes — LIVRÉE
+
+Retours utilisateur 10/07 (2e vague). **Sidebar Option 1 (choix validé)** :
+🏠 Tableau de bord seul en tête, COMPTES (arborescence), section « 🌐
+TOUTES LES BOÎTES » (Réception/Suivis/Envoyés/Brouillons/Corbeille =
+vues fusionnées), ANALYSE & ACTIONS, OUTILS (Recherche, PJ, Journal,
+Paramètres, Aide). **Surlignage contextuel** : boîte précise → compte +
+dossier allumés dans l'arborescence (auto-dépliée), vue unifiée → entrée
+globale du bon type ; plus jamais la globale allumée quand on lit une
+boîte précise. **Titre d'écran explicite** (#inbox-title) : « 📥 brimmo —
+INBOX » / « 🌐 Toutes les boîtes — Envoyés ». **Recherche dans la
+consultation** : champ 🔎 dans la barre d'outils inbox (Entrée pour
+filtrer, ✕ pour effacer) — param `q` (OR sujet/adresse/nom, quickTextFilter)
+sur listUnifiedInbox/listFolderMessages + routes ; état vide mentionne le
+filtre. **Quota des boîtes** : migration Account.quotaUsed/LimitBytes,
+imapService.fetchQuota (RFC 2087, supporté Outlook.com) rafraîchi en fin
+de chaque sync (non bloquant), mailboxOverview expose {used, limit, free,
+pct} ; Aperçu par compte → colonne « Espace utilisé » (barre + « X / Y ·
+Z% », ORANGE ≥ 90 % / ROUGE ≥ 95 % + « ⚠️ libre : N »), carte 💾 de la
+vue compte, bannière 🚨 « boîte(s) presque pleine(s) » sur le dashboard
+avec lien nettoyage. **Épinglage : décision utilisateur = NON** (un pin
+local ne se refléterait pas dans Outlook — pin propriétaire, hors IMAP ;
+l'⭐ suivi synchronisé reste l'outil). Tests : curl (quota overview, q
+unifié + par dossier) + ui-navquota.mjs (20 checks) + 3 suites régression.
+
 ### SPEC V2 — points non couverts restants (hors multi-utilisateur)
 
 - **Règles de classement + dossiers intelligents** (mail_rules,

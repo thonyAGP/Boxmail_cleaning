@@ -396,9 +396,23 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   progress('Calcul des statistiques expéditeurs…');
   report.sendersUpdated = await rebuildSenders(rec.account);
 
+  // Quota de la boîte (taille max / utilisé) — non bloquant si le serveur
+  // ne l'expose pas ou si la commande échoue.
+  let quota: { usedBytes: number; limitBytes: number } | null = null;
+  try {
+    quota = await imapService.fetchQuota(rec);
+  } catch {
+    /* QUOTA indisponible : on garde les dernières valeurs connues */
+  }
+
   await db.account.update({
     where: { slug: rec.account },
-    data: { lastSyncAt: new Date() },
+    data: {
+      lastSyncAt: new Date(),
+      ...(quota
+        ? { quotaUsedBytes: BigInt(quota.usedBytes), quotaLimitBytes: BigInt(quota.limitBytes) }
+        : {}),
+    },
   });
 
   report.durationMs = Date.now() - started;

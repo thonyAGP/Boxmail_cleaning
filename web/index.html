@@ -35,26 +35,26 @@
       </div>
 
       <div class="side-section">
-        <div class="side-title">COMPTES</div>
+        <nav>
+          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 Tableau de bord</a>
+        </nav>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">COMPTES <span class="side-hint">＋ dossiers</span></div>
         <nav id="accounts-nav"></nav>
         <a class="side-link" id="add-account-btn">＋ Ajouter un compte</a>
       </div>
 
       <div class="side-section">
-        <div class="side-title">NAVIGATION</div>
+        <div class="side-title">🌐 TOUTES LES BOÎTES</div>
         <nav>
-          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 Tableau de bord</a>
           <a href="#/inbox/@inbox" class="side-link" data-nav="inbox">📥 Boîte de réception</a>
           <a href="#/inbox/@flagged" class="side-link" data-nav="inbox">⭐ Mails suivis
             <span class="badge orange hidden" id="flagged-badge"></span></a>
           <a href="#/inbox/@sent" class="side-link" data-nav="inbox">📤 Envoyés</a>
           <a href="#/inbox/@drafts" class="side-link" data-nav="inbox">📝 Brouillons</a>
-          <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
-          <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
           <a href="#/inbox/@trash" class="side-link" data-nav="inbox">🗑️ Corbeille</a>
-          <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
-          <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
-          <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
         </nav>
       </div>
 
@@ -72,6 +72,15 @@
         <a href="#/tasks" class="side-link" data-nav="tasks">☑️ Tâches
           <span class="badge orange hidden" id="tasks-badge"></span></a>
         <a href="#/cleanup" class="side-link" data-nav="cleanup">🧹 Nettoyage conseillé</a>
+      </div>
+
+      <div class="side-section">
+        <div class="side-title">OUTILS</div>
+        <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
+        <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
+        <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
+        <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
+        <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
       </div>
 
       <div class="side-footer">

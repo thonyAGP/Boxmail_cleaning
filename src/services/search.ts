@@ -178,6 +178,19 @@ function folderOrderBy(sort: FolderSort | undefined, dir: 'asc' | 'desc') {
 
 // 'flagged' = pseudo-rôle : tous les mails suivis (⭐), quel que soit le dossier
 // (corbeille et spam exclus).
+/** Clause OR sujet/adresse/nom pour le filtre rapide des listes de dossiers. */
+function quickTextFilter(q: string | undefined) {
+  const t = q?.trim();
+  if (!t) return {};
+  return {
+    OR: [
+      { subject: { contains: t } },
+      { fromEmail: { contains: t.toLowerCase() } },
+      { fromName: { contains: t } },
+    ],
+  };
+}
+
 export const UNIFIED_ROLES = ['inbox', 'sent', 'drafts', 'trash', 'archive', 'spam', 'flagged'] as const;
 export type UnifiedRole = (typeof UNIFIED_ROLES)[number];
 
@@ -191,6 +204,8 @@ export async function listUnifiedInbox(
     dir?: 'asc' | 'desc';
     /** Rôle de dossier agrégé sur toutes les boîtes (défaut : inbox). */
     role?: UnifiedRole;
+    /** Filtre texte rapide : sujet, adresse ou nom d'expéditeur (L5.18). */
+    q?: string;
   } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
@@ -204,6 +219,7 @@ export async function listUnifiedInbox(
       : { folder: { is: { role } } }),
     ...(opts.unseen ? { isSeen: false } : {}),
     ...(opts.withAttachments ? { hasAttachments: true } : {}),
+    ...quickTextFilter(opts.q),
   };
   const [total, rows] = await Promise.all([
     db.message.count({ where }),
@@ -269,6 +285,8 @@ export async function listFolderMessages(
     withAttachments?: boolean;
     sort?: FolderSort;
     dir?: 'asc' | 'desc';
+    /** Filtre texte rapide : sujet, adresse ou nom d'expéditeur (L5.18). */
+    q?: string;
   } = {},
 ): Promise<FolderListing> {
   await ensureDbReady();
@@ -280,6 +298,7 @@ export async function listFolderMessages(
     folder: { path: folder },
     ...(opts.unseen ? { isSeen: false } : {}),
     ...(opts.withAttachments ? { hasAttachments: true } : {}),
+    ...quickTextFilter(opts.q),
   };
   const [total, rows] = await Promise.all([
     db.message.count({ where }),

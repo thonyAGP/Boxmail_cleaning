@@ -516,3 +516,10 @@ th.sortable:hover { color: var(--accent); }
 .side-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-folder.muted { cursor: default; font-size: 11.5px; }
 .side-folder.muted:hover { background: none; color: #aab4cc; }
+
+/* Surlignage contextuel de l'arborescence (L5.18) */
+.side-folder.active { background: var(--accent); color: #fff; }
+.side-hint { font-size: 9.5px; opacity: .8; text-transform: none; letter-spacing: 0; }
+
+/* Quota des boîtes (L5.18) */
+.quota-cell { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
