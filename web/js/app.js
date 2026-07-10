@@ -3413,6 +3413,7 @@ async function loadRetention() {
             ${p.appliedCount ? ` · déjà nettoyé : ${fmtNum(p.appliedCount)}` : ''}</span></div>
           <span class="badge ${p.matchCount ? 'orange' : 'gray'}" title="Ce que la stratégie viserait aujourd'hui (simulation, rien n'est touché)">
             ${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
+          ${p.protectedCount ? `<span class="badge green" title="Mails écartés par la protection centrale : conversations où tu as répondu, mails étoilés, tâches/échéances liées, expéditeurs ⭐ toujours importants">🛡️ ${fmtNum(p.protectedCount)} protégés</span>` : ''}
           <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px; ${p.enabled ? '' : 'visibility:hidden'}"
             title="Appliquer automatiquement après chaque synchronisation (uniquement une stratégie déjà activée)">
             <input type="checkbox" class="ret-auto" data-id="${p.id}" ${p.autoApply ? 'checked' : ''}> auto</label>

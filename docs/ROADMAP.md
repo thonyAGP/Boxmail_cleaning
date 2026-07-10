@@ -899,6 +899,73 @@ existe, cocher auto = elle agit. Jamais d'action sans validation.
 
 ---
 
+## Série B — Fiabilisation sur données réelles (audit externe 10/07, ACCEPTÉ)
+
+> Audit reçu après la série A : « ne plus challenger sur le volume de
+> fonctionnalités, mais sur la précision réelle, la protection contre les
+> mauvaises décisions et la capacité à apprendre des corrections ». Plan
+> accepté, ordre = celui de l'audit. Fil rouge : la VALIDATION SUR DONNÉES
+> RÉELLES appartient à l'utilisateur (backfill 🏷️, sync complètes, examen
+> de 50 réponses attendues / 50 importants / 100 candidats nettoyage).
+
+### ✅ B1 — Protection centrale contre les mauvaises suppressions — LIVRÉE
+
+`PROTECTION_CLAUSES` exporté dans services/retention.ts, injecté dans
+`policyWhere` (donc hérité par TOUTES les stratégies, le Grand ménage
+— report.ts passe par policyWhere — et l'auto-rétention). Un mail n'est
+JAMAIS visé si : ⭐ étoilé ; répondu (\\Answered) ; fil contenant un mail
+SORTANT (conversation engagée) ; tâche « à faire » liée ; échéance
+proposée/confirmée liée ; expéditeur ⭐ toujours important (priorité A5).
+S'ajoute (ne remplace pas) la garantie « personne » exclue. listPolicies
+expose `protectedCount` (visés sans protection − visés avec) → badge
+« 🛡️ N protégés » sur chaque stratégie du panneau rétention. Tests :
+seed étendu — 6 signaux posés sur 6 mails distincts, aperçu 12→7 scopé
+boîte, protectedCount=5, expéditeur prioritaire → 0 visé (42 asserts).
+
+### ⬜ B2 — Écran « Vérifier l'analyse » (contrôle qualité)
+
+Page qui tire un ÉCHANTILLON réel : 10 réponses attendues, 10 importants,
+10 newsletters, 10 notifications, 10 candidats nettoyage. Pour chaque
+mail : Correct / Incorrect / Ne sais pas + raison (mauvaise catégorie,
+pas de réponse attendue, important raté, ne jamais supprimer cet
+expéditeur…). Stockage AnalysisFeedback (verdict + raison + contexte
+dénormalisé). Restitution : % de précision par moteur. Les corrections
+alimentent : catégorie manuelle, priorité expéditeur, dismissals.
+
+### ⬜ B3 — Réponse attendue v2 + importants « non traités »
+
+Réponses : distinguer question / action demandée / réponse explicitement
+attendue / information / automatique ; motifs FR sans « ? » (« merci de me
+transmettre », « dans l'attente de votre retour », « pouvez-vous
+valider ») ; ignorer le texte CITÉ (déjà : détection sujet ; corps fourni
+par le client dans l'analyse du mail ouvert) ; vérifier dernier message du
+fil + destinataire principal vs copie (toEmails). Importants : remplacer
+la fenêtre 7 j / top 5 par 3 groupes — « nouveaux », « non traités »
+(anciens sans réponse/tâche/action, même lus), « probablement traités » ;
+afficher « +N autres » au-delà de la sélection ; score enrichi (priorité
+manuelle, échéance liée, relance reçue, jours sans traitement).
+
+### ⬜ B4 — Confiance de l'analyse (forte/moyenne/faible)
+
+Migration `Message.analysisConfidence` (high|medium|low) + signaux posés
+à la catégorisation/intention : forte = expéditeur ET intention
+concordent, ou règle corrigée/validée ; moyenne = un signal fort ;
+faible = mot générique seul (« confirmation »…). Confiance FAIBLE ⇒
+ajoutée à PROTECTION_CLAUSES (jamais de suppression auto) + affichée
+(tooltip raison). Boutons correct/incorrect (B2) alimentent la confiance.
+
+### ⬜ B5 — Stratégies à risque moyen affinées
+
+Confirmations : limiter à des sous-types sûrs (commande, inscription) —
+exclure résiliation/assurance/contrat (mots-clés) ; notifications :
+exclure alertes de sécurité/connexion/mot de passe/banque ; livraisons :
+exclure litige/remboursement/colis non reçu/garantie ; newsletters/promos :
+exclure les expéditeurs ayant déjà produit un mail important ou une
+conversation. Apprentissage (A6) : exiger 2 signaux concordants pour les
+suggestions de priorité (lu/non-lu + réponses envoyées/étoiles/tâches).
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).

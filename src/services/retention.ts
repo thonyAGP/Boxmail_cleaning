@@ -60,7 +60,32 @@ type PolicyRow = NonNullable<Awaited<ReturnType<typeof db.retentionPolicy.findUn
 // Fragment WHERE commun (SQL brut : le lien Message→Sender n'est pas une
 // relation Prisma). Cible : boîtes de réception, entrants, non supprimés,
 // plus vieux que ageDays (+ non lus si unseenOnly).
-function policyWhere(p: PolicyRow, accountSlug?: string): { sql: string; params: unknown[] } {
+/**
+ * PROTECTION CENTRALE (B1 — fiabilisation). Un mail n'est JAMAIS visé par une
+ * stratégie de rétention (ni par le Grand ménage ni par l'auto-rétention, qui
+ * passent tous ici) si l'un de ces signaux « humains » est présent :
+ *  - mail étoilé (⭐ suivi) ;
+ *  - mail auquel tu as répondu (\Answered) ;
+ *  - fil de discussion contenant un mail SORTANT (conversation engagée) ;
+ *  - tâche « à faire » liée au mail ;
+ *  - échéance proposée ou confirmée liée au mail ;
+ *  - expéditeur marqué ⭐ toujours important (priorité manuelle A5).
+ * S'ajoute à la garantie « 0 mail personnel » (catégorie person exclue).
+ */
+export const PROTECTION_CLAUSES = [
+  `m.isFlagged = 0`,
+  `m.isAnswered = 0`,
+  `NOT EXISTS (SELECT 1 FROM Message mo WHERE mo.threadId = m.threadId AND mo.isOutbound = 1)`,
+  `NOT EXISTS (SELECT 1 FROM Task t WHERE t.messageId = m.id AND t.status = 'todo')`,
+  `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
+  `(s.priority IS NULL OR s.priority != 'always_important')`,
+] as const;
+
+function policyWhere(
+  p: PolicyRow,
+  accountSlug?: string,
+  opts: { withProtection?: boolean } = {},
+): { sql: string; params: unknown[] } {
   const clauses = [
     `m.isDeleted = 0`,
     `m.isOutbound = 0`,
@@ -70,6 +95,7 @@ function policyWhere(p: PolicyRow, accountSlug?: string): { sql: string; params:
     // « personne » (ou marqué tel à la main) n'est JAMAIS visé, même si un de
     // ses mails matche une intention (promo transférée, etc.).
     `(s.category IS NULL OR s.category != 'person')`,
+    ...(opts.withProtection === false ? [] : PROTECTION_CLAUSES),
   ];
   const params: unknown[] = [Date.now() - p.ageDays * 86_400_000];
   if (p.unseenOnly) clauses.push(`m.isSeen = 0`);
@@ -111,6 +137,8 @@ export interface PolicyWithCount {
   /** Simulation index-only : ce que la stratégie viserait AUJOURD'HUI. */
   matchCount: number;
   matchSizeBytes: number;
+  /** Mails qui matcheraient mais que la protection centrale écarte (B1). */
+  protectedCount: number;
 }
 
 /** Toutes les stratégies (presets garantis) avec leur simulation. */
@@ -121,10 +149,17 @@ export async function listPolicies(): Promise<PolicyWithCount[]> {
   const out: PolicyWithCount[] = [];
   for (const p of policies) {
     const { sql, params } = policyWhere(p);
-    const rows = await db.$queryRawUnsafe<{ cnt: bigint; size: bigint | null }[]>(
-      `SELECT COUNT(*) AS cnt, SUM(m.sizeBytes) AS size ${FROM} WHERE ${sql}`,
-      ...params,
-    );
+    const raw = policyWhere(p, undefined, { withProtection: false });
+    const [rows, rawRows] = await Promise.all([
+      db.$queryRawUnsafe<{ cnt: bigint; size: bigint | null }[]>(
+        `SELECT COUNT(*) AS cnt, SUM(m.sizeBytes) AS size ${FROM} WHERE ${sql}`,
+        ...params,
+      ),
+      db.$queryRawUnsafe<{ cnt: bigint }[]>(
+        `SELECT COUNT(*) AS cnt ${FROM} WHERE ${raw.sql}`,
+        ...raw.params,
+      ),
+    ]);
     out.push({
       id: p.id,
       key: p.key,
@@ -140,6 +175,7 @@ export async function listPolicies(): Promise<PolicyWithCount[]> {
       lastAppliedAt: p.lastAppliedAt?.toISOString() ?? null,
       matchCount: Number(rows[0]?.cnt ?? 0),
       matchSizeBytes: Number(rows[0]?.size ?? 0),
+      protectedCount: Math.max(0, Number(rawRows[0]?.cnt ?? 0) - Number(rows[0]?.cnt ?? 0)),
     });
   }
   return out;

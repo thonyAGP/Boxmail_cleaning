@@ -97,6 +97,19 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**SÉRIE B lancée (audit externe accepté : fiabilisation > nouvelles
+fonctions). B1 LIVRÉE : protection centrale.** `PROTECTION_CLAUSES`
+(retention.ts) injecté dans policyWhere → hérité par stratégies, Grand
+ménage et auto-rétention : jamais visé si étoilé / répondu / fil avec
+sortant / tâche todo liée / échéance active liée / expéditeur ⭐ toujours
+important (+ garantie person inchangée). listPolicies expose
+protectedCount → badge « 🛡️ N protégés ». Tests : 42 asserts (6 signaux,
+aperçu scopé, prioritaire → 0). Suite : B2 écran « Vérifier l'analyse »
+→ B3 réponse attendue v2 + importants non traités → B4 confiance
+high/medium/low (faible ⇒ protégé) → B5 stratégies affinées — plans dans
+ROADMAP.md section « Série B ». La VALIDATION RÉELLE reste chez
+l'utilisateur (backfill, syncs, examen des détections).
+
 **A6 livrée : mode apprentissage — LA SÉRIE A (CAP V3) EST COMPLÈTE.**
 services/learning.ts : listSuggestions() → 3 familles AVEC PREUVE
 (règles L7 suggested relancées par compte ; rétention→auto si appliquée
