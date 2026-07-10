@@ -1,25 +1,43 @@
 // Client API minimal — toutes les requêtes passent par /api (session cookie).
 
+// Indicateur d'activité réseau global : chaque requête (ou téléchargement)
+// incrémente un compteur ; l'interface affiche une barre de chargement tant
+// qu'il est > 0. Un seul branchement → un loader sur TOUS les écrans.
+let inFlight = 0;
+function activityBegin() {
+  inFlight += 1;
+  if (inFlight === 1) window.dispatchEvent(new CustomEvent('api-activity', { detail: { active: true } }));
+}
+function activityEnd() {
+  inFlight = Math.max(0, inFlight - 1);
+  if (inFlight === 0) window.dispatchEvent(new CustomEvent('api-activity', { detail: { active: false } }));
+}
+
 async function request(method, path, body) {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: 'same-origin',
-  });
-  let data = null;
+  activityBegin();
   try {
-    data = await res.json();
-  } catch {
-    /* réponse vide */
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      /* réponse vide */
+    }
+    if (!res.ok) {
+      const err = new Error(data?.error || `Erreur ${res.status}`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  } finally {
+    activityEnd();
   }
-  if (!res.ok) {
-    const err = new Error(data?.error || `Erreur ${res.status}`);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
-  return data;
 }
 
 export const api = {
@@ -191,6 +209,9 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/dismiss`),
   replyRestore: (slug, threadId) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
+  // Pour les opérations hors request() (téléchargements de PJ en fetch direct)
+  // qui veulent aussi allumer la barre de chargement globale.
+  activity: { begin: activityBegin, end: activityEnd },
 };
 
 // ---- Helpers de formatage partagés ----

@@ -110,6 +110,32 @@ function installGlobalUx() {
   window.addEventListener('scroll', () => {
     topBtn.classList.toggle('hidden', window.scrollY < 600);
   }, { passive: true });
+
+}
+
+// Barre de chargement globale (haut de l'écran) : allumée dès qu'une requête
+// réseau est en cours (api-activity émis par api.js). Installée AU DÉMARRAGE
+// du module, avant toute requête, pour couvrir même le tout premier
+// chargement (login, overview…). Anti-clignotement : n'apparaît que si le
+// chargement dure plus de 120 ms.
+function installTopLoader() {
+  if (document.getElementById('top-loader')) return;
+  const loader = document.createElement('div');
+  loader.id = 'top-loader';
+  loader.className = 'top-loader';
+  loader.setAttribute('role', 'progressbar');
+  loader.setAttribute('aria-label', 'Chargement en cours');
+  document.body.appendChild(loader);
+  let showTimer = null;
+  window.addEventListener('api-activity', (e) => {
+    if (e.detail.active) {
+      if (!showTimer) showTimer = setTimeout(() => loader.classList.add('is-loading'), 120);
+    } else {
+      clearTimeout(showTimer);
+      showTimer = null;
+      loader.classList.remove('is-loading');
+    }
+  });
 }
 
 // ---------------------------------------------------------------- Auth & boot
@@ -5506,6 +5532,7 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
   const original = restoreLabel ?? btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Préparation…';
+  api.activity.begin(); // allume aussi la barre de chargement globale
   try {
     const res = await fetch(url, { credentials: 'same-origin' });
     if (!res.ok) {
@@ -5529,6 +5556,8 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
     btn.disabled = false;
     alert(`Téléchargement impossible : ${err.message}`);
     setTimeout(() => { btn.textContent = original; }, 3000);
+  } finally {
+    api.activity.end();
   }
 }
 
@@ -5957,4 +5986,5 @@ async function renderOperations() {
     : '<div class="empty">Aucune opération journalisée pour l\'instant.</div>';
 }
 
+installTopLoader();
 boot();

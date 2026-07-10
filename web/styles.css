@@ -180,6 +180,26 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Barre de chargement globale : au-dessus de TOUT (reader z96, modales z100). */
+.top-loader {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 200;
+  pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .2s ease;
+}
+.top-loader.is-loading { opacity: 1; }
+.top-loader::before {
+  content: ""; position: absolute; top: 0; height: 100%; width: 40%; left: -40%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: top-loader-slide 1.05s ease-in-out infinite;
+}
+@keyframes top-loader-slide {
+  0%   { left: -45%; width: 45%; }
+  50%  { width: 60%; }
+  100% { left: 100%; width: 45%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-loader::before { animation: none; left: 0; width: 100%; background: var(--accent); opacity: .6; }
+}
+
 .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
 .placeholder-card { opacity: .65; }

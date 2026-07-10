@@ -99,6 +99,18 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Barre de chargement globale (retour utilisateur 10/07 : « affiche un
+loader lors de l'affichage, fais-le pour tout, simple mais efficace »).**
+Un seul branchement : `request()` (api.js) incrémente un compteur
+`inFlight` et émet `api-activity` (0↔1) ; `installTopLoader()` (app.js,
+appelé AU DÉMARRAGE du module, avant boot — pour couvrir même login/
+overview) crée `#top-loader` (barre 3 px en haut, z 200 au-dessus de tout,
+gradient accent animé, `prefers-reduced-motion` OK) et l'allume/éteint,
+avec anti-clignotement (n'apparaît qu'après 120 ms). `api.activity.begin/
+end` exposé pour les téléchargements de PJ (fetch direct) → la barre
+s'allume aussi. Tests : ui-loader.mjs (5 checks : présence, repos, allumée
+sur réponse lente 700 ms, éteinte après, z ≥ 101).
+
 **Perf & confort lecture/PJ (retours utilisateur 10/07 : « 20 s pour
 ouvrir un mail », « le téléchargement des PJ pareil, on ne sait pas si
 c'est en cours ou en échec », « il manque l'année », « télécharger tout
