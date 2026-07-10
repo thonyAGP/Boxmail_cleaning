@@ -97,6 +97,23 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Cap V3 acté (10/07/2026) : « Mon assistant personnel de messagerie ».**
+L'utilisateur a validé un changement de philosophie : l'objectif n'est plus
+de gérer des mails mais de transformer la boîte en ACTIONS (« tu dois
+répondre à 4 personnes, tu peux supprimer 842 newsletters ») — sensation de
+boîte vide, zéro oubli important. Plan détaillé écrit dans ROADMAP.md
+section « Cap V3 » : A1 moteur de catégorisation (fondation : qui écrit /
+pourquoi, index-only, explicable, migration Sender.category +
+Message.intent) → A2 accueil « Aujourd'hui » orienté actions (🔥 À FAIRE /
+🟠 IMPORTANT / 🟢 PEUT ATTENDRE / ⚪ BRUIT) → A3 stratégies de rétention
+(OTP 7 j, livraisons 30 j, notifs 90 j, confirmations 6 mois…) → A4
+« Pourquoi ma boîte est pleine ? » + Grand ménage → A5 relances pilotées
+(escalade) + priorité par relation → A6 apprentissage (décisions →
+suggestions). L'existant est CONSERVÉ (les briques livrées sont les organes
+de la vision, la consultation L5.x reste accessible) ; garde-fous
+inchangés ; heuristiques d'abord, Sonnet dédié en 2e temps. L6 reste
+orthogonal, prêt le jour J.
+
 **L7 livrée : Règles de classement.** Modèle MailRule + migration,
 services/rules.ts (suggestRules 2 heuristiques index-only idempotentes :
 rangement manuel récurrent dossier custom + grosses newsletters ;
@@ -424,9 +441,11 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**L6-prep faite : le déploiement Oracle est prêt à exécuter — suivre
-docs/DEPLOY-ORACLE.md AVEC l'utilisateur (~45 min : VM OCI, DNS, script
-1-commande, Entra, connecteur Cowork). L7 règles de classement : FAIT.**
+**Cap V3 : prochaine livraison = A1 (moteur de catégorisation), sauf si
+l'utilisateur demande d'abord L6 — voir ROADMAP.md section « Cap V3 »
+(plan A1→A6 complet).** L6-prep faite : le déploiement Oracle reste prêt à
+exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
+(~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),
 désinscription newsletters, brouillons IMAP, analyse LLM Sonnet dédiée.
 IMPORTANT avant/pendant L6 : l'utilisateur doit valider en réel (sur son

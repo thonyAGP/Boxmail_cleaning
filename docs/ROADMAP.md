@@ -614,6 +614,145 @@ moins prioritaires que le déploiement L6.
 
 ---
 
+## Cap V3 (décision utilisateur 10/07/2026) — « Mon assistant personnel de messagerie », orienté ACTIONS
+
+> **La promesse.** « En ouvrant l'application 5 minutes chaque matin, tu peux
+> être certain qu'aucun email important ne t'échappera, tout en réduisant
+> progressivement des années d'accumulation de messages inutiles. »
+>
+> **Le renversement.** Le mail devient un objet technique. L'utilisateur ne
+> travaille plus avec des mails mais avec des ACTIONS : « Tu dois répondre à
+> 4 personnes. Tu dois payer une facture. Tu peux supprimer 842 newsletters.
+> Tout le reste peut être ignoré. »
+
+**Principes actés :**
+1. **Rien n'est jeté de l'existant.** Les briques déjà livrées (réponses en
+   attente, relances, échéances, importance explicable, nettoyage, règles L7,
+   brief, tâches) SONT les organes de la vision — elles changent de place,
+   pas de nature. La consultation classique (inbox, dossiers, recherche,
+   lecture — L5.x) reste accessible, mais n'est plus la porte d'entrée.
+2. **Tout est explicable.** Jamais de « score IA » opaque : chaque décision
+   (catégorie, priorité, proposition de suppression) porte ses raisons en
+   français, comme `importance.ts` le fait déjà.
+3. **Garde-fous inchangés et non négociables** : simulation/aperçu d'abord,
+   validation explicite, soft delete, lots de 200, journal complet.
+   L'apprentissage SUGGÈRE, il n'agit jamais seul tant que l'utilisateur n'a
+   pas coché « auto » (mécanique L7 existante).
+4. **Heuristiques d'abord, LLM ensuite.** Les moteurs ci-dessous sont
+   index-only (sujets, expéditeurs, en-têtes, comportement). L'analyse fine
+   du CONTENU (intention sémantique, extraction PDF de factures) reste actée
+   pour le 2e temps via le Sonnet dédié (décision 07/2026, coût).
+
+**Ce que la vision demande et qui existe déjà** (à réutiliser, pas à
+réécrire) : score explicable = `importance.ts` (reasons[]) ; « il attend une
+réponse » = `attention.ts` ; suivi des conversations sans réponse =
+`followups.ts` ; échéances = `deadlines.ts` ; « qui écrit » v1 =
+`Sender.kind` ; apprentissage v1 = `rules.ts/suggestRules` (observe déjà les
+rangements manuels) ; rapport de boîte v1 = stats senders + nettoyage
+auto/perso ; brief = `brief.ts`. Les livraisons A1-A6 étendent ces organes.
+
+### ⬜ A1 — Moteur de catégorisation (LA fondation : qui écrit, pourquoi)
+
+Tout le cap V3 s'appuie dessus. Deux axes calculés par heuristiques
+index-only, stockés et EXPLIQUÉS :
+- **Migration** : `Sender.category` (person, family_friend, company, bank,
+  insurance, admin, client_supplier, marketplace, social, newsletter,
+  notification, ad, noreply) — remplace/élargit `kind` en gardant la
+  compat ; `Message.intent` (reply_expected, invoice, confirmation,
+  shipping, otp, appointment, document, reminder, info, promo) +
+  `Message.intentReason` court.
+- **`services/categorize.ts`** : classification expéditeur (regex domaines
+  banques/assurances/admin FR, marketplaces, réseaux sociaux, motifs
+  noreply/notification existants, comportement : conversation → person) ;
+  intention par motifs sujet FR/EN (« votre commande/colis », « code de
+  vérification », « facture/à régler », « rendez-vous », « re: » +
+  question…) + en-têtes déjà indexés (List-Unsubscribe, auto-submitted).
+  Idempotent, ne JAMAIS écraser une catégorie posée manuellement
+  (`categorySource: auto|manual`).
+- Calcul à la sync (nouveaux mails) + **job de backfill** sur tout l'index
+  (index-only donc rapide) lancé depuis Paramètres.
+- API : catégorie/intention exposées sur tous les listings ; PATCH pour
+  corriger un expéditeur à la main (vue stats) — correction = signal
+  d'apprentissage (A6).
+- Tests : jeu de ~30 mails synthétiques couvrant chaque catégorie/intention.
+
+### ⬜ A2 — Accueil « Aujourd'hui » orienté actions
+
+Remplace le dashboard comme page d'accueil (le dashboard actuel reste en
+sous-page « Statistiques »). Quatre blocs, AUCUNE liste de mails :
+- **🔥 À FAIRE** : réponses attendues (attention.ts), échéances du jour/en
+  retard, factures détectées (A1 intent=invoice non traitée), relances dues.
+- **🟠 IMPORTANT** : importants high non lus (importance.ts).
+- **🟢 PEUT ATTENDRE** : conversations medium, le reste des entrants person.
+- **⚪ BRUIT** : compteurs par catégorie (newsletters, notifications, promos)
+  avec bouton d'action DIRECTE « Supprimer les N » / « Archiver les N » →
+  modale d'aperçu existante (garde-fous inchangés).
+Chaque ligne est une PHRASE d'action (« Répondre à Soraya — reçu il y a
+2 j »), clic → panneau de lecture existant. Le brief ☀️ s'intègre en tête.
+
+### ⬜ A3 — Stratégies de rétention (nettoyage V2)
+
+Catalogue de règles de nettoyage par catégorie × âge, chacune activable
+individuellement, TOUJOURS avec simulation avant exécution :
+- OTP/codes > 7 j ; expéditions/livraisons > 30 j ; notifications (GitHub,
+  réseaux sociaux…) > 90 j ; confirmations de commande > 6 mois ;
+  newsletters jamais ouvertes > 90 j ; promos jamais ouvertes ; billets/
+  réservations après la date de l'événement (croise A1 + dates deadlines).
+- **Migration** `RetentionPolicy` (catégorie/intention cible, âge, action
+  trash|archive, enabled, appliedCount) + presets livrés désactivés.
+- Écran « 🧹 Nettoyage » enrichi : chaque stratégie affiche « N mails ·
+  X Mo » (simulation index-only), bouton Aperçu → liste exacte → exécution
+  par lots journalisée. Exécution possible post-sync pour les stratégies
+  cochées « auto » (même garde-fou que L7 : jamais auto sans validation
+  préalable de la stratégie).
+
+### ⬜ A4 — « Pourquoi ma boîte est pleine ? » + mode Grand ménage
+
+LA killer feature. Sur une boîte ou toutes :
+- **Rapport** (index-only, job) : répartition % par catégorie A1, top
+  expéditeurs par volume ET par octets (sizeBytes), ancienneté, « tu peux
+  supprimer N mails / récupérer X Go sans risque » (agrégat des stratégies
+  A3 + candidats nettoyage existants, mails personnels JAMAIS comptés).
+- **Grand ménage** : bouton unique → analyse complète → rapport → simulation
+  globale (par stratégie, dépliable) → l'utilisateur coche → exécution par
+  lots avec progression (jobs existants) et journal complet. Rappel corbeille
+  ~30 j = filet de sécurité.
+
+### ⬜ A5 — Relances pilotées + priorité par relation
+
+- **Escalade automatique des états** (followups) : à relancer → urgent
+  (2e seuil) → probablement abandonné (ex. 30 j) → « Clôturer ? ». L'outil
+  propose la relance (brouillon pré-rempli via la modale d'envoi existante)
+  et propose la clôture — l'utilisateur clique.
+- **Priorité par relation** : `Sender.priority` (always_important /
+  never_urgent / normal), réglable d'un clic (vue stats, panneau de
+  lecture) ; override du scoring importance (+40 / cap 30) avec raison
+  « expéditeur marqué toujours important » ; signal d'apprentissage A6.
+
+### ⬜ A6 — Mode Apprentissage (extension de L7)
+
+Toutes les décisions manuelles deviennent des signaux : le journal
+`operations.jsonl` + les corrections A1/A5 sont agrégés par un
+`services/learning.ts` (job périodique index-only) qui détecte les
+récurrences (« tu as supprimé 12× les notifications GitHub Actions »,
+« tu archives toujours Booking », « tu ouvres toujours Club Med ») et crée
+des SUGGESTIONS : règles de classement (mécanique L7 existante), stratégies
+de rétention A3, priorités A5. Écran « 💡 Suggestions » groupé par type,
+avec la preuve (« observé N fois sur 3 semaines ») ; valider = la règle
+existe, cocher auto = elle agit. Jamais d'action sans validation.
+
+### Explicitement REPORTÉ (pour ne pas se disperser)
+
+- Extraction PDF des factures + archivage documentaire hors mail (nécessite
+  parsing de contenu — 2e temps, Sonnet dédié).
+- Fusion des doublons (risqué, valeur faible tant que le bruit domine).
+- Détection sémantique fine des intentions dans le CORPS (Sonnet dédié).
+- L6 (déploiement Oracle) reste ORTHOGONAL : prêt à exécuter le jour où
+  l'utilisateur veut y passer ~45 min — avant ou pendant la série A, au
+  choix.
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).
