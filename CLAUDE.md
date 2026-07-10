@@ -97,6 +97,16 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A4 livrée : « Pourquoi ma boîte est pleine ? » + Grand ménage.**
+services/report.ts : generateMailboxReport() (répartition par catégorie
+A1 avec %, ancienneté 4 tranches, top expéditeurs nombre/poids, par
+boîte, récupérable = union distincte des cibles A3) ; runGrandMenage
+(cocher = activer + appliquer, rapport par stratégie). GARANTIE « 0 mail
+personnel » ancrée dans policyWhere (catégorie person exclue de toutes
+les stratégies). GET /api/report + POST /api/grand-menage (job). Écran
+#/bigclean (sidebar 🧺) : KPI, barres, ancienneté, top poids, lancement
+coché par défaut avec aperçus. Tests : 14 asserts + 13 checks.
+
 **A3 livrée : stratégies de rétention.** Modèle RetentionPolicy global +
 7 presets DÉSACTIVÉS (OTP 7 j, livraisons 30 j, notifs 90 j, réseaux
 sociaux 90 j, confirmations 6 mois, newsletters jamais lues 90 j, promos
@@ -478,11 +488,10 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : A1, A2, A3 FAITES. Prochaine livraison = A4 (« Pourquoi ma
-boîte est pleine ? » + Grand ménage) — voir ROADMAP.md section « Cap V3 »
-(plan A1→A6 complet). L'utilisateur a demandé « Lance la série A »
-(10/07) : enchaîner les livraisons A dans l'ordre, un commit/push
-chacune.** L6-prep faite : le déploiement Oracle reste prêt à
+**Cap V3 : A1 → A4 FAITES. Prochaine livraison = A5 (relances pilotées +
+priorité par relation) — voir ROADMAP.md section « Cap V3 » (plan A1→A6
+complet). L'utilisateur a demandé « Lance la série A » (10/07) :
+enchaîner les livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),

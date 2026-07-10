@@ -66,6 +66,10 @@ function policyWhere(p: PolicyRow, accountSlug?: string): { sql: string; params:
     `m.isOutbound = 0`,
     `f.role = 'inbox'`,
     `m.date < ?`,
+    // GARANTIE Cap V3 : « 0 mail personnel supprimé » — un expéditeur classé
+    // « personne » (ou marqué tel à la main) n'est JAMAIS visé, même si un de
+    // ses mails matche une intention (promo transférée, etc.).
+    `(s.category IS NULL OR s.category != 'person')`,
   ];
   const params: unknown[] = [Date.now() - p.ageDays * 86_400_000];
   if (p.unseenOnly) clauses.push(`m.isSeen = 0`);

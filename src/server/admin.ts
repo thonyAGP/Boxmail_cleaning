@@ -94,6 +94,7 @@ import {
   applyPolicy,
   updatePolicy,
 } from '../services/retention.js';
+import { generateMailboxReport, runGrandMenage } from '../services/report.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -529,6 +530,35 @@ export function buildAdminRouter(): Router {
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }
+    }),
+  );
+
+  // --- « Pourquoi ma boîte est pleine ? » + Grand ménage (A4 — Cap V3) ------------
+  router.get(
+    '/report',
+    guard(async (_req, res) => {
+      res.json(await generateMailboxReport());
+    }),
+  );
+
+  // Grand ménage : applique les stratégies cochées (job — cocher = valider,
+  // l'activation de chaque stratégie est persistée, tout est journalisé).
+  router.post(
+    '/grand-menage',
+    guard(async (req, res) => {
+      const ids = Array.isArray(req.body?.policyIds)
+        ? (req.body.policyIds as unknown[]).map(Number).filter((x) => Number.isInteger(x) && x > 0)
+        : [];
+      if (ids.length === 0) {
+        res.status(400).json({ error: 'Coche au moins une stratégie (policyIds).' });
+        return;
+      }
+      if (hasRunningJob('grand-menage')) {
+        res.status(409).json({ error: 'Un grand ménage est déjà en cours.' });
+        return;
+      }
+      const job = startJob('grand-menage', (progress) => runGrandMenage(ids, progress));
+      res.status(202).json({ jobId: job.id });
     }),
   );
 

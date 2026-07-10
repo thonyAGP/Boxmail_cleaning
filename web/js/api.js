@@ -35,6 +35,8 @@ export const api = {
     return request('GET', `/accounts/${encodeURIComponent(slug)}/stats?${q}`);
   },
   today: () => request('GET', '/today'),
+  report: () => request('GET', '/report'),
+  grandMenage: (policyIds) => request('POST', '/grand-menage', { policyIds }),
   retention: () => request('GET', '/retention'),
   retentionPreview: (id) => request('GET', `/retention/${id}/preview`),
   retentionApply: (id) => request('POST', `/retention/${id}/apply`),

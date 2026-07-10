@@ -489,6 +489,8 @@ function highlightNav() {
     document.querySelector('[data-nav="attachments"]')?.classList.add('active');
   } else if (hash.startsWith('#/cleanup')) {
     document.querySelector('[data-nav="cleanup"]')?.classList.add('active');
+  } else if (hash.startsWith('#/bigclean')) {
+    document.querySelector('[data-nav="bigclean"]')?.classList.add('active');
   } else if (hash.startsWith('#/rules')) {
     document.querySelector('[data-nav="rules"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
@@ -532,6 +534,8 @@ function route() {
     renderAttachments();
   } else if (hash.startsWith('#/cleanup')) {
     renderCleanupGlobal();
+  } else if (hash.startsWith('#/bigclean')) {
+    renderBigClean();
   } else if (hash.startsWith('#/rules')) {
     renderRules();
   } else if (hash.startsWith('#/important')) {
@@ -3398,6 +3402,149 @@ async function loadRetention() {
         alert(err.message);
       }
     });
+  });
+}
+
+// -------------------------------- Grand ménage (A4 — Cap V3) : #/bigclean
+// « Pourquoi ma boîte est pleine ? » : rapport index-only instantané +
+// lancement groupé des stratégies de rétention cochées (cocher = valider).
+function pctBar(pct, color) {
+  return `<div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${Math.max(1, pct)}%; background:${color || 'var(--accent)'}"></div></div>`;
+}
+
+async function renderBigClean() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🧺 Grand ménage</h1>
+      <div class="sub">Pourquoi ta boîte est pleine, et ce qu'on peut récupérer SANS RISQUE.
+      L'analyse ne touche à rien : tu regardes, tu coches, tu valides.</div></div>
+    <div class="head-actions"><button class="btn" id="bigclean-refresh">🔍 Ré-analyser</button></div></div>
+    <div id="bigclean-body"><div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes (index local)…</div></div>`;
+  $('#bigclean-refresh').addEventListener('click', loadBigClean);
+  await loadBigClean();
+}
+
+async function loadBigClean() {
+  const body = $('#bigclean-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes (index local)…</div>';
+  let r;
+  try {
+    r = await api.report();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+
+  const uncategorized = r.byCategory.find((c) => c.category === 'unknown');
+  const needCategories = (uncategorized?.pct ?? 0) >= 50;
+  const maxCat = Math.max(1, ...r.byCategory.map((c) => c.count));
+  const maxAge = Math.max(1, ...r.byAge.map((a) => a.count));
+  const usable = r.deletable.policies.filter((p) => p.matchCount > 0);
+
+  body.innerHTML = `
+    ${needCategories ? `<div class="notice warn">🏷️ La plupart des mails ne sont pas encore catégorisés :
+      lance « Recalculer les catégories » dans <a href="#/settings">⚙️ Paramètres</a> puis reviens — le rapport sera bien plus précis.</div>` : ''}
+
+    <div class="cards">
+      <div class="kpi"><div class="kpi-label">✉️ Mails analysés</div>
+        <div class="kpi-value">${fmtNum(r.totals.messages)}</div>
+        <div class="kpi-sub">${fmtNum(r.totals.accounts)} boîte(s), hors corbeille/spam</div></div>
+      <div class="kpi"><div class="kpi-label">💾 Espace occupé</div>
+        <div class="kpi-value">${fmtSize(r.totals.sizeBytes)}</div>
+        <div class="kpi-sub">taille des mails indexés</div></div>
+      <div class="kpi accent"><div class="kpi-label">🧺 Récupérable sans risque</div>
+        <div class="kpi-value">${fmtNum(r.deletable.count)}</div>
+        <div class="kpi-sub">mails · ${fmtSize(r.deletable.sizeBytes)} — 0 mail personnel, garanti</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>📊 Pourquoi ma boîte est pleine ?</h2></div>
+      <div class="panel-body">
+        ${r.byCategory.map((c) => `
+          <div style="display:flex; align-items:center; gap:10px; padding:5px 0">
+            <div style="width:210px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${esc(c.label)}</div>
+            ${pctBar((c.count / maxCat) * 100, c.category === 'person' || c.category === 'outbound' ? 'var(--green, #3a9d5d)' : undefined)}
+            <div style="width:190px; text-align:right" class="muted">${fmtNum(c.count)} mails · ${c.pct}% · ${fmtSize(c.sizeBytes)}</div>
+          </div>`).join('')}
+        <div class="muted" style="font-size:12.5px; padding-top:8px">Répartition par type d'expéditeur (catégories de l'assistant).
+        Corrige un expéditeur mal classé depuis la vue de sa boîte (tableau des expéditeurs).</div>
+      </div>
+    </div>
+
+    <div class="cards" style="grid-template-columns: 1fr 1fr; align-items:start">
+      <div class="panel" style="margin:0">
+        <div class="panel-head"><h2>⏳ Ancienneté</h2></div>
+        <div class="panel-body">
+          ${r.byAge.map((a) => `
+            <div style="display:flex; align-items:center; gap:10px; padding:5px 0">
+              <div style="width:110px">${esc(a.label)}</div>
+              ${pctBar((a.count / maxAge) * 100)}
+              <div style="width:150px; text-align:right" class="muted">${fmtNum(a.count)} · ${fmtSize(a.sizeBytes)}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="panel" style="margin:0">
+        <div class="panel-head"><h2>🏋️ Top expéditeurs (poids)</h2></div>
+        <div class="panel-body tight">
+          <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th></tr></thead>
+          <tbody>${r.topSendersBySize.slice(0, 8).map((s) => `<tr>
+            <td>${esc(s.name || s.email)} ${accountChip(s.account)}<br>
+              <span class="muted" style="font-size:11.5px">${esc(s.email)}</span></td>
+            <td class="num">${fmtNum(s.messageCount)}</td>
+            <td class="num">${fmtSize(s.sizeBytes)}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>🧺 Lancer le grand ménage</h2>
+        <span class="badge green">≈ ${fmtNum(r.deletable.count)} mails · ${fmtSize(r.deletable.sizeBytes)} récupérables</span></div>
+      <div class="panel-body">
+        ${usable.length === 0
+          ? `<div class="empty">Rien à récupérer pour l'instant via les stratégies. ${needCategories ? 'Lance d\'abord le calcul des catégories (bandeau ci-dessus).' : '🎉'}</div>`
+          : `${usable.map((p) => `
+            <div style="display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border)">
+              <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer">
+                <input type="checkbox" class="gm-check" data-id="${p.id}" data-count="${p.matchCount}" checked>
+                <span><strong>${esc(p.label)}</strong></span></label>
+              <span class="badge orange">${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
+              <button class="btn btn-sm gm-preview" data-id="${p.id}">👀 Aperçu</button>
+            </div>`).join('')}
+          <div style="display:flex; align-items:center; gap:10px; padding-top:12px">
+            <span class="muted" style="font-size:12.5px; flex:1">Tout part à la CORBEILLE (récupérable ~30 jours),
+            par lots de 200, opération par opération dans le <a href="#/operations">journal</a>.
+            Les mails de personnes ne sont jamais touchés.</span>
+            <button class="btn btn-primary" id="gm-launch">🧺 Lancer le grand ménage</button>
+          </div>`}
+      </div>
+    </div>`;
+
+  body.querySelectorAll('.gm-preview').forEach((btn) => {
+    btn.addEventListener('click', () => openRetentionPreview(Number(btn.dataset.id)));
+  });
+  $('#gm-launch')?.addEventListener('click', async () => {
+    const checked = [...body.querySelectorAll('.gm-check:checked')];
+    if (checked.length === 0) {
+      alert('Coche au moins une stratégie.');
+      return;
+    }
+    const total = checked.reduce((s, c) => s + Number(c.dataset.count), 0);
+    if (!confirm(`Grand ménage : ≈ ${fmtNum(total)} mails partiront à la corbeille (${checked.length} stratégie(s)).\n\nIls restent récupérables ~30 jours. Les stratégies cochées seront ACTIVÉES (tu peux les désactiver ensuite dans 🧹 Nettoyage conseillé). On y va ?`)) return;
+    const btn = $('#gm-launch');
+    btn.disabled = true;
+    btn.textContent = 'Grand ménage lancé…';
+    try {
+      await api.grandMenage(checked.map((c) => Number(c.dataset.id)));
+      pollJobs();
+      alert('🧺 Grand ménage lancé en arrière-plan — suis l\'avancement via la pastille d\'activité, puis « 🔍 Ré-analyser » pour voir le résultat.');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '🧺 Lancer le grand ménage';
+      alert(err.message);
+    }
   });
 }
 

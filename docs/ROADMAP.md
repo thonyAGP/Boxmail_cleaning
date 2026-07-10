@@ -785,7 +785,30 @@ individuellement, TOUJOURS avec simulation avant exécution :
   cochées « auto » (même garde-fou que L7 : jamais auto sans validation
   préalable de la stratégie).
 
-### ⬜ A4 — « Pourquoi ma boîte est pleine ? » + mode Grand ménage
+### ✅ A4 — « Pourquoi ma boîte est pleine ? » + mode Grand ménage — LIVRÉE
+
+**Livré.** `services/report.ts` : `generateMailboxReport()` index-only
+instantané (périmètre : non supprimés hors corbeille/spam) — répartition
+par catégorie A1 (+ « Toi (envoyés) » et « Non catégorisé », pct),
+ancienneté 4 tranches (<1 an, 1-3, 3-5, >5 ans), top expéditeurs par
+nombre ET par poids (table Sender), répartition par boîte, et
+« récupérable sans risque » = UNION DISTINCTE SQL des cibles des 7
+stratégies A3 (pas de double compte) ; `runGrandMenage(policyIds)` —
+cocher = valider : active chaque stratégie (persisté) puis l'applique
+(mêmes garde-fous A3, erreurs par boîte, rapport par stratégie).
+**GARANTIE « 0 mail personnel » ancrée dans le moteur** : policyWhere
+(A3) exclut désormais s.category='person' de TOUTES les stratégies —
+même une promo transférée par une personne n'est jamais visée (testé).
+API : GET `/api/report`, POST `/api/grand-menage` {policyIds} (job
+`grand-menage`, 409 si en cours). UI : écran `#/bigclean` (sidebar « 🧺
+Grand ménage ») — 3 cartes KPI (mails analysés, espace, récupérable avec
+la garantie), barres de répartition par catégorie (CSS bar-track
+existant), ancienneté, top poids, bloc de lancement (stratégies à cible
+cochées par défaut, badge simulation, 👀 aperçu réutilisé d'A3,
+confirmation chiffrée, job suivi par la pastille). Tests :
+seed-report.mts (14 asserts dont la garantie personne et l'union) +
+ui-bigclean.mjs (13 checks, job réel). Billets après événement :
+toujours au backlog (croisement dates).
 
 LA killer feature. Sur une boîte ou toutes :
 - **Rapport** (index-only, job) : répartition % par catégorie A1, top
