@@ -328,24 +328,111 @@ $('#add-account-btn').addEventListener('click', openEnrollModal);
 let pendingAutoSync = null;
 
 // ---------------------------------------------------------------- Sidebar
-async function refreshOverview() {
-  overviewCache = await api.overview();
-  rebuildAccountColors();
+// Arborescence des boîtes (L5.17) : chaque compte se déplie (+/−) pour montrer
+// ses dossiers — clic sur un dossier → lecture directe de ce dossier. L'état
+// déplié est mémorisé ; les dossiers viennent de l'index (instantané).
+let sideOpen = new Set(JSON.parse(localStorage.getItem('bm.sideOpen') ?? '[]'));
+const sideFoldersCache = new Map(); // slug -> folders[] (invalidé à chaque refreshOverview)
+
+const SIDE_ROLE_ORDER = { inbox: 0, sent: 1, drafts: 2, archive: 3, custom: 4, trash: 8, spam: 9 };
+
+function sideFolderList(slug) {
+  const folders = sideFoldersCache.get(slug);
+  if (!folders) return '<div class="side-folder muted">chargement…</div>';
+  const usable = folders
+    .filter((f) => f.messageCount > 0 || ['inbox', 'sent', 'drafts', 'trash'].includes(f.role))
+    .sort((a, b) =>
+      (SIDE_ROLE_ORDER[a.role] ?? 5) - (SIDE_ROLE_ORDER[b.role] ?? 5) || a.path.localeCompare(b.path));
+  if (usable.length === 0) {
+    return '<div class="side-folder muted">aucun dossier indexé — synchronise la boîte</div>';
+  }
+  return usable
+    .map(
+      (f) => `<a class="side-folder" data-goto-folder="${esc(f.path)}" data-goto-account="${esc(slug)}"
+        title="${esc(f.path)} (${fmtNum(f.messageCount)} mails)">
+        <span class="side-folder-name">${FOLDER_ROLE_EMOJI[f.role] ?? '📂'} ${esc(f.name || f.path)}</span>
+        ${f.unseenCount ? `<span class="badge blue">${fmtNum(f.unseenCount)}</span>` : ''}
+      </a>`,
+    )
+    .join('');
+}
+
+function renderAccountsNav() {
   const nav = $('#accounts-nav');
+  if (!nav || !overviewCache) return;
   const bySlug = new Map(overviewCache.accounts.map((a) => [a.account, a]));
   const items = overviewCache.enrolled.map((e) => {
     const ov = bySlug.get(e.account);
     const unseen = ov?.inbox?.unseen;
-    return `<a href="#/account/${esc(e.account)}" class="side-link" data-account="${esc(e.account)}">
-      <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
-      <span class="account-email" title="${esc(e.username)}">${esc(e.account)}</span>
-      ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à sync</span>'}
-    </a>`;
+    const open = sideOpen.has(e.account);
+    return `<div class="side-acct">
+      <div class="side-link" data-account="${esc(e.account)}">
+        <button class="side-caret" data-toggle="${esc(e.account)}"
+          title="${open ? 'Replier' : 'Déplier'} les dossiers de ${esc(e.account)}">${open ? '−' : '+'}</button>
+        <a href="#/account/${esc(e.account)}" class="side-acct-link" title="${esc(e.username)}">
+          <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
+          <span class="account-email">${esc(e.account)}</span></a>
+        ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à sync</span>'}
+      </div>
+      ${open ? `<div class="side-folders">${sideFolderList(e.account)}</div>` : ''}
+    </div>`;
   });
   nav.innerHTML =
     items.join('') ||
     '<div class="side-link disabled">Aucun compte enrôlé</div>';
+
+  nav.querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const slug = btn.dataset.toggle;
+      if (sideOpen.has(slug)) sideOpen.delete(slug);
+      else sideOpen.add(slug);
+      localStorage.setItem('bm.sideOpen', JSON.stringify([...sideOpen]));
+      renderAccountsNav();
+      loadSideFolders();
+    });
+  });
+  nav.querySelectorAll('[data-goto-folder]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const slug = el.dataset.gotoAccount;
+      inboxState.account = slug;
+      localStorage.setItem('bm.inboxAccount', slug);
+      inboxState.role = 'inbox';
+      inboxState.folder = el.dataset.gotoFolder;
+      inboxState.offset = 0;
+      inboxState.selected.clear();
+      const target = `#/inbox/${encodeURIComponent(slug)}`;
+      if (location.hash === target) route();
+      else location.hash = target;
+    });
+  });
   highlightNav();
+}
+
+// Charge (une fois par rafraîchissement) les dossiers des comptes dépliés.
+function loadSideFolders() {
+  for (const slug of sideOpen) {
+    if (sideFoldersCache.has(slug)) continue;
+    if (!(overviewCache?.enrolled ?? []).some((e) => e.account === slug)) continue;
+    api.folders(slug)
+      .then(({ folders }) => {
+        sideFoldersCache.set(slug, folders);
+        renderAccountsNav();
+      })
+      .catch(() => {
+        sideFoldersCache.set(slug, []);
+        renderAccountsNav();
+      });
+  }
+}
+
+async function refreshOverview() {
+  overviewCache = await api.overview();
+  rebuildAccountColors();
+  sideFoldersCache.clear(); // compteurs à jour au prochain dépliage
+  renderAccountsNav();
+  loadSideFolders();
 }
 
 function highlightNav() {

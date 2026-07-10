@@ -94,13 +94,23 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
-**Rattrapage maquette 2 TERMINÉ (L5.12 → L5.16, retour utilisateur
-10/07).** 5 livraisons poussées : dossiers, mails suivis, écran pièces
-jointes, nettoyage global, dashboard maquette. Restent de la SPEC V2
+**Rattrapage maquette 2 TERMINÉ (L5.12 → L5.17, retours utilisateur
+10/07).** 6 livraisons poussées : dossiers, mails suivis, écran pièces
+jointes, nettoyage global, dashboard maquette, arborescence sidebar. Restent de la SPEC V2
 (hors multi-utilisateur) : L7 règles de classement + dossiers
 intelligents, brouillons IMAP (préparer une réponse sans l'envoyer),
 mémoire métier (entities/projects) + recherche dans le CONTENU des PJ —
 ces deux derniers via le Sonnet dédié, décision : après déploiement L6.
+
+**L5.17 livrée : Arborescence des boîtes dans la sidebar.** Chaque compte
+a un bouton +/− qui déplie ses dossiers (rôle trié, badge non-lus, clic →
+#/inbox/<slug> sur ce dossier) ; nom du compte → vue compte ; dossiers
+chargés à la demande (api.folders), cache vidé à chaque refreshOverview,
+état déplié dans localStorage bm.sideOpen ; vues globales inchangées.
+refreshOverview scindé en renderAccountsNav()/loadSideFolders(). NB
+tests : rate-limit login 10/15 min → redémarrer le serveur de test entre
+les salves playwright. Tests : ui-sidetree.mjs (13 checks) + 3 suites
+repassées.
 
 **L5.16 livrée : Dashboard maquette.** « Bonjour Anthony 👋 » + date,
 6 cartes KPI (nouveaux mails aujourd'hui +delta vs hier — `newMails` dans

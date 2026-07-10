@@ -492,3 +492,27 @@ th.sortable:hover { color: var(--accent); }
 /* Actions rapides du dashboard (L5.16) */
 .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .quick-actions .btn { text-decoration: none; }
+
+/* Arborescence des boîtes dans la sidebar (L5.17) */
+.side-acct .side-link { padding: 6px 8px; gap: 6px; }
+.side-acct-link {
+  display: flex; align-items: center; gap: 8px; color: inherit;
+  text-decoration: none; flex: 1; min-width: 0;
+}
+.side-caret {
+  width: 18px; height: 18px; flex-shrink: 0; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.25); background: transparent; color: #cfd6e6;
+  font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
+}
+.side-caret:hover { background: var(--navy-2); color: #fff; border-color: rgba(255,255,255,.5); }
+.side-folders { margin: 0 0 4px 20px; border-left: 1px solid rgba(255,255,255,.12); }
+.side-folder {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 10px;
+  color: #aab4cc; font-size: 12.5px; cursor: pointer; border-radius: 0 8px 8px 0;
+  text-decoration: none;
+}
+.side-folder:hover { background: var(--navy-2); color: #fff; }
+.side-folder .badge { margin-left: auto; }
+.side-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-folder.muted { cursor: default; font-size: 11.5px; }
+.side-folder.muted:hover { background: none; color: #aab4cc; }

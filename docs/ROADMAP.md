@@ -473,6 +473,26 @@ Retrouver un document, Voir le nettoyage, Calendrier, Régénérer le
 brief) ; « Activité récente » et « Aperçu par compte » existaient déjà.
 Tests : parcours navigateur (9 checks) + capture complète.
 
+### ✅ L5.17 — Arborescence des boîtes dans la sidebar — LIVRÉE
+
+Retour utilisateur : « naviguer par boîte email ou toutes en même temps
+sur la consultation des envoyés, des reçus… avec des + qui déplient les
+sous-dossiers d'une boîte ». Chaque compte de la sidebar a un bouton +/−
+qui déplie SES dossiers (emoji par rôle, tri inbox→sent→drafts→archive→
+custom→trash→spam, badge non-lus par dossier) — clic sur un dossier →
+lecture directe (#/inbox/<slug> sur ce dossier). Le nom du compte reste
+cliquable vers la vue compte. Dossiers chargés à la demande depuis
+l'index (api.folders), cache invalidé à chaque refreshOverview (compteurs
+frais), état déplié mémorisé (localStorage bm.sideOpen). Les entrées
+globales (Boîte de réception, Mails suivis, Envoyés, Brouillons,
+Corbeille) restent les vues « toutes les boîtes ». refreshOverview
+factorisé (renderAccountsNav/loadSideFolders). Tests : ui-sidetree.mjs
+(13 checks : repli par défaut, dépliage+compteurs, navigation dossier,
+vue globale intacte, mémorisation après rechargement, repli) + les 3
+suites précédentes repassées (recalées sur le seed élargi ; NB tests :
+le rate-limit login 10/15 min impose un restart serveur entre grosses
+salves de tests navigateur).
+
 ### SPEC V2 — points non couverts restants (hors multi-utilisateur)
 
 - **Règles de classement + dossiers intelligents** (mail_rules,
