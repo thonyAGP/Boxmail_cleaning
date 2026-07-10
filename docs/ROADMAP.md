@@ -579,6 +579,41 @@ est prêt :**
 
 ---
 
+## ✅ L7 — Règles de classement (Rule Engine SPEC V2) — LIVRÉ
+
+**Suggestion → aperçu → application VALIDÉE — jamais de déplacement sans
+accord.** Modèle `MailRule` (matchType sender/domain/subject, matchValue,
+targetFolder, status suggested/active/paused, autoApply, reason FR,
+appliedCount, unique par compte+critère). `services/rules.ts` :
+- `suggestRules` (index only, idempotent, n'écrase jamais une règle
+  existante) — 2 heuristiques : « tu as déjà rangé ≥3 mails de X dans le
+  dossier custom Y et ≥2 attendent en inbox » ; « ≥10 newsletters de X en
+  inbox → dossier Newsletters (créé au besoin) » ;
+- `previewRule` (mails inbox matchés, cap 500) ; `applyRule` (createFolder
+  au besoin, moveEmails par lots de 200 groupés par dossier source,
+  reflectBulkInIndex, journal items complet, suggested→active,
+  appliedCount) ; `updateRule` (GARDE-FOU : autoApply exige status
+  active) ; `createRule` (manuelle, active) ; `deleteRule` ;
+- `runAutoRules` : hook post-sync (sync.ts, non bloquant, import
+  dynamique) — UNIQUEMENT les règles actives cochées auto, journal
+  `rule_auto_apply`, progress dans le job de sync.
+5 tools MCP (suggest/list/preview/apply — dryRun si confirm≠true —/
+set_status ; **43 tools au total**). API REST : GET/POST
+`/accounts/:slug/rules[(/suggest|/:id/preview|/:id/apply)]`, PATCH/DELETE
+`/:id`. UI : section sidebar « RÈGLES & AUTOMATISATION » + badge
+(suggestions en attente), écran `#/rules` groupé par boîte — phrase « Si
+expéditeur = X → déplacer vers 📂 Y » + raison, badges état/auto/N à
+ranger, actions Aperçu (modale : liste exacte + bouton Déplacer N) /
+Valider / Ranger N / auto / Pause / Supprimer, modale ＋ Nouvelle règle
+(datalist des dossiers existants). Sidebar resserrée (retour utilisateur :
+espaces réduits). Tests : seed étendu (dossier custom Locations + airbnb
+rangés/en attente — 37 asserts dont idempotence et garde-fou auto) +
+ui-rules.mjs (14 checks, apply mocké) + régression ui-navquota.
+**Dossiers intelligents (vues enregistrées) : reportés au backlog** —
+moins prioritaires que le déploiement L6.
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).

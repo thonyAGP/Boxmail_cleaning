@@ -35,6 +35,7 @@ model Account {
   senders         Sender[]
   attentionStates AttentionState[]
   deadlines       Deadline[]
+  mailRules       MailRule[]
 }
 
 model Folder {
@@ -202,6 +203,35 @@ model Task {
   doneAt      DateTime?
 
   @@index([status, dueDate])
+}
+
+// Règle de classement (L7 — SPEC V2 Rule Engine). Cycle de vie :
+// suggested (proposée, à valider) → active (applicable) → paused.
+// GARDE-FOU : jamais appliquée sans validation — autoApply n'est possible
+// que sur une règle activée explicitement par l'utilisateur.
+model MailRule {
+  id           Int       @id @default(autoincrement())
+  accountSlug  String
+  // sender (adresse exacte) | domain (…@domaine) | subject (le sujet contient)
+  matchType    String
+  matchValue   String
+  // Chemin du dossier cible (créé au besoin à l'application)
+  targetFolder String
+  // suggested | active | paused
+  status       String    @default("suggested")
+  // true = appliquée automatiquement aux nouveaux mails à chaque sync
+  autoApply    Boolean   @default(false)
+  // Justification en français (affichée telle quelle)
+  reason       String
+  appliedCount  Int       @default(0)
+  lastAppliedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+
+  @@unique([accountSlug, matchType, matchValue])
+  @@index([accountSlug, status])
 }
 
 // Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké

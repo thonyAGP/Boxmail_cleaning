@@ -72,6 +72,15 @@ import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
+import {
+  suggestRules,
+  listRules,
+  previewRule,
+  applyRule,
+  updateRule,
+  createRule,
+  deleteRule,
+} from '../services/rules.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -278,6 +287,82 @@ export function buildAdminRouter(): Router {
         neverSynced: enrolled.filter((n) => !indexed.has(n)),
         newMails,
       });
+    }),
+  );
+
+  // --- Règles de classement (L7) --------------------------------------------------
+  // GARDE-FOU : suggestion ≠ application. L'application passe par un aperçu
+  // puis une confirmation ; tout déplacement est journalisé.
+  router.get(
+    '/accounts/:slug/rules',
+    guard(async (req, res) => {
+      res.json({ rules: await listRules(req.params.slug) });
+    }),
+  );
+
+  router.post(
+    '/accounts/:slug/rules/suggest',
+    guard(async (req, res) => {
+      res.json(await suggestRules(req.params.slug));
+    }),
+  );
+
+  router.post(
+    '/accounts/:slug/rules',
+    guard(async (req, res) => {
+      const matchType = String(req.body?.matchType ?? '');
+      if (!['sender', 'domain', 'subject'].includes(matchType)) {
+        res.status(400).json({ error: 'Type de critère invalide (sender/domain/subject).' });
+        return;
+      }
+      res.json(
+        await createRule(req.params.slug, {
+          matchType: matchType as 'sender' | 'domain' | 'subject',
+          matchValue: String(req.body?.matchValue ?? ''),
+          targetFolder: String(req.body?.targetFolder ?? ''),
+        }),
+      );
+    }),
+  );
+
+  router.get(
+    '/accounts/:slug/rules/:id/preview',
+    guard(async (req, res) => {
+      res.json(await previewRule(req.params.slug, Number.parseInt(req.params.id, 10)));
+    }),
+  );
+
+  router.post(
+    '/accounts/:slug/rules/:id/apply',
+    guard(async (req, res) => {
+      const rec = await resolveAccount(req.params.slug);
+      res.json(await applyRule(rec, Number.parseInt(req.params.id, 10)));
+    }),
+  );
+
+  router.patch(
+    '/accounts/:slug/rules/:id',
+    guard(async (req, res) => {
+      const status = ['active', 'paused'].includes(String(req.body?.status ?? ''))
+        ? (String(req.body.status) as 'active' | 'paused')
+        : undefined;
+      res.json(
+        await updateRule(req.params.slug, Number.parseInt(req.params.id, 10), {
+          status,
+          autoApply:
+            req.body?.autoApply === undefined ? undefined : Boolean(req.body.autoApply),
+          targetFolder:
+            req.body?.targetFolder === undefined ? undefined : String(req.body.targetFolder),
+        }),
+      );
+    }),
+  );
+
+  router.delete(
+    '/accounts/:slug/rules/:id',
+    guard(async (req, res) => {
+      await deleteRule(req.params.slug, Number.parseInt(req.params.id, 10));
+      res.json({ ok: true });
     }),
   );
 

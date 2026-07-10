@@ -396,6 +396,19 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   progress('Calcul des statistiques expéditeurs…');
   report.sendersUpdated = await rebuildSenders(rec.account);
 
+  // Règles de classement automatiques (L7) : UNIQUEMENT celles validées
+  // avec l'option auto — non bloquant, chaque application est journalisée.
+  try {
+    const { runAutoRules } = await import('./rules.js');
+    const auto = await runAutoRules(rec, progress);
+    if (auto.moved > 0) progress(`Règles automatiques : ${auto.moved} mails rangés.`);
+  } catch (err) {
+    logger.warn('règles auto post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Quota de la boîte (taille max / utilisé) — non bloquant si le serveur
   // ne l'expose pas ou si la commande échoue.
   let quota: { usedBytes: number; limitBytes: number } | null = null;

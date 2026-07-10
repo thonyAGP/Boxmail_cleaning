@@ -47,7 +47,7 @@ body {
 .app { display: flex; min-height: 100vh; }
 .sidebar {
   width: 240px; flex-shrink: 0; background: var(--navy); color: #cfd6e6;
-  display: flex; flex-direction: column; padding: 18px 12px; gap: 18px;
+  display: flex; flex-direction: column; padding: 14px 12px; gap: 10px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
 .brand { display: flex; gap: 10px; align-items: center; padding: 4px 8px; }
@@ -58,12 +58,12 @@ body {
 .brand-name { color: #fff; font-weight: 600; font-size: 15px; }
 .brand-sub { font-size: 11px; opacity: .7; }
 .side-title {
-  font-size: 10.5px; letter-spacing: .8px; opacity: .55; margin: 0 8px 6px;
+  font-size: 10.5px; letter-spacing: .8px; opacity: .55; margin: 4px 8px 3px;
   display: flex; align-items: center; gap: 6px;
 }
 .side-link {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
-  color: #cfd6e6; text-decoration: none; font-size: 13.5px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 8px;
+  color: #cfd6e6; text-decoration: none; font-size: 13px; cursor: pointer;
 }
 .side-link:hover { background: var(--navy-2); color: #fff; }
 .side-link.active { background: var(--accent); color: #fff; }
@@ -494,7 +494,7 @@ th.sortable:hover { color: var(--accent); }
 .quick-actions .btn { text-decoration: none; }
 
 /* Arborescence des boîtes dans la sidebar (L5.17) */
-.side-acct .side-link { padding: 6px 8px; gap: 6px; }
+.side-acct .side-link { padding: 4px 8px; gap: 6px; }
 .side-acct-link {
   display: flex; align-items: center; gap: 8px; color: inherit;
   text-decoration: none; flex: 1; min-width: 0;
@@ -507,7 +507,7 @@ th.sortable:hover { color: var(--accent); }
 .side-caret:hover { background: var(--navy-2); color: #fff; border-color: rgba(255,255,255,.5); }
 .side-folders { margin: 0 0 4px 20px; border-left: 1px solid rgba(255,255,255,.12); }
 .side-folder {
-  display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 10px;
+  display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px;
   color: #aab4cc; font-size: 12.5px; cursor: pointer; border-radius: 0 8px 8px 0;
   text-decoration: none;
 }

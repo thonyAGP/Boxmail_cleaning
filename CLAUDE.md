@@ -38,8 +38,9 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
 
 - `index.ts` — Express : `/mcp` (bearer), `/api` (admin, session cookie),
   `/admin` (statique `web/`), `/health`
-- `mcp/tools/*` — 38 tools MCP (accounts, folders, read, write, sync, export,
-  attention : réponses/relances/importance, échéances, briefs, tâches)
+- `mcp/tools/*` — 43 tools MCP (accounts, folders, read, write, sync, export,
+  attention : réponses/relances/importance, échéances, briefs, tâches,
+  règles de classement)
 - `server/admin.ts` — API REST de l'interface (login, overview, stats,
   cleanup preview/messages/execute, sync jobs, enroll popup+code, version,
   update, jobs, operations)
@@ -58,6 +59,8 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
     `index-stats.ts`, `update.ts` (version/check/apply, BOXMAIL_SUPERVISED),
     `brief.ts` (agrégat brief quotidien/hebdo, archivé dans BriefRun),
     `tasks.ts` (liste à faire, sources manual/mail/deadline),
+    `rules.ts` (règles de classement L7 : suggest/preview/apply/auto —
+    jamais d'application sans validation, hook runAutoRules post-sync),
     `smtp.ts` (envoi XOAUTH2 ACTIF par défaut : RFC822 composé une fois,
     In-Reply-To/References, copie Envoyés via imapService.appendToSent)
 - `prisma/schema.prisma` — Account, Folder, Message, Thread, Sender (SQLite,
@@ -93,6 +96,22 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**L7 livrée : Règles de classement.** Modèle MailRule + migration,
+services/rules.ts (suggestRules 2 heuristiques index-only idempotentes :
+rangement manuel récurrent dossier custom + grosses newsletters ;
+previewRule ; applyRule — createFolder au besoin, move par lots de 200,
+journal items, suggested→active ; updateRule avec GARDE-FOU autoApply⇒
+active ; createRule manuelle ; runAutoRules post-sync non bloquant pour
+les règles cochées auto). 5 tools MCP (43 au total, apply en dryRun sans
+confirm). API /accounts/:slug/rules*. UI : section sidebar « RÈGLES &
+AUTOMATISATION » + badge suggestions, écran #/rules groupé par boîte
+(aperçu modale avec liste exacte + bouton Déplacer N, valider/ranger/
+auto/pause/supprimer, ＋ Nouvelle règle avec datalist des dossiers).
+Sidebar resserrée (retour utilisateur). Dossiers intelligents → backlog.
+Tests : seed 37 asserts + ui-rules.mjs 14 checks + régression navquota.
+L'utilisateur doit VALIDER EN RÉEL l'application d'une règle (move IMAP
+réel + création de dossier — mocké en dev).
 
 **Rattrapage maquette 2 TERMINÉ (L5.12 → L5.18, retours utilisateur
 10/07).** 6 livraisons poussées : dossiers, mails suivis, écran pièces
@@ -407,8 +426,9 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 **L6-prep faite : le déploiement Oracle est prêt à exécuter — suivre
 docs/DEPLOY-ORACLE.md AVEC l'utilisateur (~45 min : VM OCI, DNS, script
-1-commande, Entra, connecteur Cowork).** Backlog ensuite : règles de
-classement (L7), désinscription newsletters, analyse LLM Sonnet dédiée.
+1-commande, Entra, connecteur Cowork). L7 règles de classement : FAIT.**
+Backlog ensuite : dossiers intelligents (vues enregistrées),
+désinscription newsletters, brouillons IMAP, analyse LLM Sonnet dédiée.
 IMPORTANT avant/pendant L6 : l'utilisateur doit valider en réel (sur son
 PC) les pièces jointes, les actions en masse multi-boîtes et l'ENVOI
 (testé uniquement mocké — pas d'IMAP/SMTP dans l'environnement de dev).

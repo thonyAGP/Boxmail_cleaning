@@ -45,6 +45,19 @@ function accountChip(slug) {
 }
 let smtpEnabled = false; // renseigné par /api/me au chargement
 
+// Badge « 🗂️ Règles » : suggestions en attente de validation (L7).
+function refreshRulesBadge() {
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  Promise.all(accounts.map((slug) => api.rules(slug).catch(() => ({ rules: [] }))))
+    .then((all) => {
+      const n = all.reduce((s, { rules }) => s + rules.filter((r) => r.status === 'suggested').length, 0);
+      const b = $('#rules-badge');
+      if (!b) return;
+      b.textContent = fmtNum(n);
+      b.classList.toggle('hidden', n === 0);
+    });
+}
+
 // Badge « ⭐ Mails suivis » de la sidebar (L5.13).
 function refreshFlaggedBadge() {
   api.messagesUnified({ role: 'flagged', limit: 1 }).then((d) => {
@@ -131,6 +144,7 @@ async function showApp() {
   refreshFollowupsBadge();
   refreshImportantBadge();
   refreshFlaggedBadge();
+  refreshRulesBadge();
   refreshDeadlinesBadge();
   refreshTasksBadge();
 }
@@ -475,6 +489,8 @@ function highlightNav() {
     document.querySelector('[data-nav="attachments"]')?.classList.add('active');
   } else if (hash.startsWith('#/cleanup')) {
     document.querySelector('[data-nav="cleanup"]')?.classList.add('active');
+  } else if (hash.startsWith('#/rules')) {
+    document.querySelector('[data-nav="rules"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -514,6 +530,8 @@ function route() {
     renderAttachments();
   } else if (hash.startsWith('#/cleanup')) {
     renderCleanupGlobal();
+  } else if (hash.startsWith('#/rules')) {
+    renderRules();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -2660,6 +2678,295 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------------- Règles de classement (L7)
+// Suggestion → aperçu → application VALIDÉE. Jamais de déplacement sans ton
+// accord ; l'« auto » ne concerne que les règles que tu as activées.
+const RULE_TYPE_LABELS = {
+  sender: 'expéditeur',
+  domain: 'domaine',
+  subject: 'le sujet contient',
+};
+
+async function renderRules() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🗂️ Règles de classement</h1>
+      <div class="sub">« Si expéditeur X → déplacer vers le dossier Y ». Mail Assistant te PROPOSE
+      des règles (rangements que tu fais déjà à la main, grosses newsletters) — rien n'est déplacé
+      sans ta validation. Une règle validée peut ensuite s'appliquer automatiquement à chaque
+      synchronisation si tu coches « auto ».</div></div>
+    <div class="head-actions">
+      <button class="btn" id="rules-new">＋ Nouvelle règle</button>
+      <button class="btn btn-primary" id="rules-suggest">💡 Suggérer des règles</button>
+    </div></div>
+    <div id="rules-notice"></div>
+    <div id="rules-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  $('#rules-suggest').addEventListener('click', runRulesSuggest);
+  $('#rules-new').addEventListener('click', openRuleModal);
+  await loadRules();
+}
+
+const rulesState = { byAccount: [] };
+
+async function loadRules() {
+  const body = $('#rules-body');
+  if (!body) return;
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  const byAccount = [];
+  for (const slug of accounts) {
+    try {
+      const { rules } = await api.rules(slug);
+      if (rules.length) byAccount.push({ slug, rules });
+    } catch {
+      /* boîte pas indexée */
+    }
+  }
+  rulesState.byAccount = byAccount;
+  renderRulesBody();
+}
+
+async function runRulesSuggest() {
+  const btn = $('#rules-suggest');
+  const notice = $('#rules-notice');
+  btn.disabled = true;
+  notice.innerHTML = '<div class="notice"><span class="spinner"></span>Analyse de tes boîtes (rangements manuels, newsletters)…</div>';
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  let created = 0;
+  for (const slug of accounts) {
+    try {
+      const r = await api.rulesSuggest(slug);
+      created += r.created;
+    } catch {
+      /* boîte pas indexée */
+    }
+  }
+  btn.disabled = false;
+  notice.innerHTML = created
+    ? `<div class="notice">💡 <strong>${fmtNum(created)}</strong> nouvelle(s) règle(s) suggérée(s) — regarde l'aperçu de chacune avant de valider.</div>`
+    : '<div class="notice">Aucune nouvelle suggestion : rien de récurrent à automatiser pour l\'instant.</div>';
+  await loadRules();
+}
+
+function ruleSentence(r) {
+  return `Si <strong>${esc(RULE_TYPE_LABELS[r.matchType] ?? r.matchType)}</strong> = « ${esc(r.matchValue)} »
+    → déplacer vers <strong>📂 ${esc(r.targetFolder)}</strong>`;
+}
+
+function renderRulesBody() {
+  const body = $('#rules-body');
+  if (!body) return;
+  if (rulesState.byAccount.length === 0) {
+    body.innerHTML = `<div class="empty">Aucune règle pour l'instant. Clique
+      <strong>💡 Suggérer des règles</strong> pour que Mail Assistant analyse tes boîtes, ou
+      <strong>＋ Nouvelle règle</strong> pour en créer une toi-même.</div>`;
+    return;
+  }
+  const statusBadge = (r) =>
+    r.status === 'suggested' ? '<span class="badge orange">à valider</span>'
+    : r.status === 'active' ? '<span class="badge green">active</span>'
+    : '<span class="badge gray">en pause</span>';
+
+  body.innerHTML = rulesState.byAccount
+    .map(
+      ({ slug, rules }) => `<div class="panel">
+      <div class="panel-head"><h2>${accountChip(slug)}</h2>
+        <span class="muted" style="font-size:12px">${fmtNum(rules.length)} règle(s)</span></div>
+      <div class="panel-body tight">
+        ${rules
+          .map(
+            (r) => `<div class="reply-row">
+          <div class="reply-main">
+            <div class="reply-top">${statusBadge(r)}
+              ${r.autoApply ? '<span class="badge blue" title="Appliquée automatiquement à chaque synchronisation">🤖 auto</span>' : ''}
+              ${r.pendingCount ? `<span class="badge orange">${fmtNum(r.pendingCount)} mail(s) à ranger</span>` : '<span class="badge gray">rien en attente</span>'}
+            </div>
+            <div class="reply-subject">${ruleSentence(r)}</div>
+            <div class="reply-reason muted">${esc(r.reason)}${r.appliedCount ? ` · déjà ${fmtNum(r.appliedCount)} mails rangés` : ''}</div>
+          </div>
+          <div class="reply-side"><div class="reply-actions">
+            <button class="btn btn-sm" data-rule-preview data-account="${esc(slug)}" data-id="${r.id}">👁️ Aperçu</button>
+            ${r.status === 'suggested'
+              ? `<button class="btn btn-sm btn-green" data-rule-validate data-account="${esc(slug)}" data-id="${r.id}">✓ Valider</button>
+                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}">✕ Ignorer</button>`
+              : r.status === 'active'
+              ? `${r.pendingCount ? `<button class="btn btn-sm btn-primary" data-rule-apply data-account="${esc(slug)}" data-id="${r.id}" data-count="${r.pendingCount}" data-folder="${esc(r.targetFolder)}">▶️ Ranger ${fmtNum(r.pendingCount)}</button>` : ''}
+                 <label class="muted" style="display:flex; align-items:center; gap:4px; font-size:12px" title="Appliquer automatiquement à chaque synchronisation">
+                   <input type="checkbox" data-rule-auto data-account="${esc(slug)}" data-id="${r.id}" ${r.autoApply ? 'checked' : ''}> auto</label>
+                 <button class="btn btn-sm" data-rule-pause data-account="${esc(slug)}" data-id="${r.id}">⏸ Pause</button>
+                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)">🗑️</button>`
+              : `<button class="btn btn-sm btn-green" data-rule-validate data-account="${esc(slug)}" data-id="${r.id}">▶ Réactiver</button>
+                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)">🗑️</button>`}
+          </div></div>
+        </div>`,
+          )
+          .join('')}
+      </div>
+    </div>`,
+    )
+    .join('') +
+    `<div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 Une règle DÉPLACE des mails (jamais de suppression), par lots de 200, dossier créé au
+      besoin, chaque application journalisée avec la liste exacte des mails.</div>`;
+
+  const notice = (html) => { $('#rules-notice').innerHTML = html; };
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      await loadRules();
+    } catch (err) {
+      btn.disabled = false;
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+  };
+
+  body.querySelectorAll('[data-rule-validate]').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.ruleUpdate(btn.dataset.account, Number(btn.dataset.id), { status: 'active' })));
+  });
+  body.querySelectorAll('[data-rule-pause]').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      act(btn, () => api.ruleUpdate(btn.dataset.account, Number(btn.dataset.id), { status: 'paused', autoApply: false })));
+  });
+  body.querySelectorAll('[data-rule-delete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Supprimer cette règle ? (Les mails déjà rangés ne bougent pas.)')) return;
+      act(btn, () => api.ruleDelete(btn.dataset.account, Number(btn.dataset.id)));
+    });
+  });
+  body.querySelectorAll('[data-rule-auto]').forEach((box) => {
+    box.addEventListener('change', () =>
+      act(box, async () => {
+        await api.ruleUpdate(box.dataset.account, Number(box.dataset.id), { autoApply: box.checked });
+        notice(box.checked
+          ? '<div class="notice">🤖 Règle automatique : elle s\'appliquera aux nouveaux mails à chaque synchronisation.</div>'
+          : '<div class="notice">Règle repassée en manuel.</div>');
+      }));
+  });
+  body.querySelectorAll('[data-rule-apply]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!confirm(`Déplacer ${btn.dataset.count} mail(s) vers « ${btn.dataset.folder} » ?\n(Déplacement uniquement — récupérable en re-déplaçant ; tout est journalisé.)`)) return;
+      act(btn, async () => {
+        const r = await api.ruleApply(btn.dataset.account, Number(btn.dataset.id));
+        notice(`<div class="notice">✅ ${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ».</div>`);
+      });
+    });
+  });
+  body.querySelectorAll('[data-rule-preview]').forEach((btn) => {
+    btn.addEventListener('click', () => openRulePreview(btn.dataset.account, Number(btn.dataset.id)));
+  });
+}
+
+// Aperçu : la liste EXACTE des mails que la règle déplacerait.
+async function openRulePreview(slug, id) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="width:640px">
+    <div class="modal-head"><h2>👁️ Aperçu de la règle</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  try {
+    const p = await api.rulePreview(slug, id);
+    $('#modal-body').innerHTML = `
+      <div class="notice" style="margin-bottom:10px">${ruleSentence(p.rule)}<br>
+        <span class="muted">${esc(p.rule.reason)}</span></div>
+      ${p.total === 0
+        ? '<div class="empty">Rien à ranger en ce moment — la règle attendra les prochains mails.</div>'
+        : `<div class="muted" style="font-size:12.5px; margin-bottom:6px"><strong>${fmtNum(p.total)}</strong> mail(s) seraient déplacés${p.total > p.items.length ? ` (les ${fmtNum(p.items.length)} plus récents affichés)` : ''} :</div>
+      <div style="max-height:320px; overflow-y:auto">
+        ${p.items.map((m) => `<div class="op-line"><span class="op-time">${fmtDate(m.date)}</span>
+          <span style="flex:1">${esc(m.subject)}</span></div>`).join('')}
+      </div>`}`;
+    $('#modal-foot').innerHTML = `
+      <button class="btn" id="rule-preview-close">Fermer</button>
+      ${p.total > 0 ? `<button class="btn btn-primary" id="rule-preview-apply">▶️ Déplacer ${fmtNum(p.total)} mail(s) vers 📂 ${esc(p.rule.targetFolder)}</button>` : ''}`;
+    $('#rule-preview-close').addEventListener('click', closeModal);
+    $('#rule-preview-apply')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const r = await api.ruleApply(slug, id);
+        closeModal();
+        $('#rules-notice').innerHTML = `<div class="notice">✅ ${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ». La règle est validée.</div>`;
+        await loadRules();
+      } catch (err) {
+        e.target.disabled = false;
+        alert(err.message);
+      }
+    });
+  } catch (err) {
+    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+// Création manuelle d'une règle.
+function openRuleModal() {
+  closeModal();
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="width:520px">
+    <div class="modal-head"><h2>＋ Nouvelle règle</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="compose-grid">
+        <label>Boîte</label><select id="nr-account">${accounts.map((a) => `<option>${esc(a)}</option>`).join('')}</select>
+        <label>Critère</label><select id="nr-type">
+          <option value="sender">expéditeur exact (adresse)</option>
+          <option value="domain">domaine (tout @exemple.fr)</option>
+          <option value="subject">le sujet contient…</option>
+        </select>
+        <label>Valeur</label><input type="text" id="nr-value" placeholder="ex. news@airbnb.fr, airbnb.fr, ou Facture">
+        <label>Dossier</label><input type="text" id="nr-folder" list="nr-folders" placeholder="ex. Locations/Airbnb (créé au besoin)">
+      </div>
+      <datalist id="nr-folders"></datalist>
+      <div id="nr-error"></div>
+      <div class="trash-note" style="margin-top:10px">🛟 La règle est créée ACTIVE mais ne déplace
+        rien tant que tu ne cliques pas « Ranger » (ou ne coches pas « auto »).</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="nr-cancel">Annuler</button>
+      <button class="btn btn-primary" id="nr-create">Créer la règle</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  $('#nr-cancel').addEventListener('click', closeModal);
+
+  const fillFolders = () => {
+    api.folders($('#nr-account').value).then(({ folders }) => {
+      $('#nr-folders').innerHTML = folders
+        .filter((f) => !['trash', 'spam', 'sent', 'drafts'].includes(f.role))
+        .map((f) => `<option value="${esc(f.path)}">`).join('');
+    }).catch(() => {});
+  };
+  $('#nr-account').addEventListener('change', fillFolders);
+  fillFolders();
+  $('#nr-value').focus();
+
+  $('#nr-create').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.ruleCreate($('#nr-account').value, {
+        matchType: $('#nr-type').value,
+        matchValue: $('#nr-value').value,
+        targetFolder: $('#nr-folder').value,
+      });
+      closeModal();
+      $('#rules-notice').innerHTML = '<div class="notice">✅ Règle créée (active). Utilise 👁️ Aperçu puis ▶️ Ranger pour l\'appliquer.</div>';
+      await loadRules();
+    } catch (err) {
+      e.target.disabled = false;
+      $('#nr-error').innerHTML = `<div class="notice warn" style="margin-top:8px">⚠️ ${esc(err.message)}</div>`;
+    }
+  });
 }
 
 // ------------------------------------------------- Nettoyage conseillé global (L5.15)
