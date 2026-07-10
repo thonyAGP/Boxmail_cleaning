@@ -101,6 +101,13 @@ L5.12 dossiers ✅ LIVRÉE → L5.13 mails suivis → L5.14 écran pièces joint
 → L5.15 nettoyage global → L5.16 dashboard maquette → puis L7 règles,
 brouillons IMAP, mémoire métier/LLM en 2e temps.
 
+**L5.15 livrée : Nettoyage conseillé global.** Sidebar 🧹 + `#/cleanup` :
+candidats de toutes les boîtes groupés par boîte, bannière totale, mêmes
+colonnes que la vue compte, bouton 🧹 → modale d'aperçu existante ;
+agrégation client (boucle api.cleanup), zéro nouveau backend ; bouton
+« Voir et nettoyer » sur le panneau dashboard. Seed : 12 newsletters/boîte
+(candidat « sûr » par boîte).
+
 **L5.14 livrée : Écran Pièces jointes.** Sidebar 📎 + `#/attachments` :
 mails avec PJ toutes boîtes au chargement (searchIndex withAttachments),
 recherche q + filtre boîte + depuis, chip compte + badge dossier +

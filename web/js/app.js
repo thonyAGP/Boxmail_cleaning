@@ -374,6 +374,8 @@ function highlightNav() {
     document.querySelector('[data-nav="help"]')?.classList.add('active');
   } else if (hash.startsWith('#/attachments')) {
     document.querySelector('[data-nav="attachments"]')?.classList.add('active');
+  } else if (hash.startsWith('#/cleanup')) {
+    document.querySelector('[data-nav="cleanup"]')?.classList.add('active');
   } else if (hash.startsWith('#/important')) {
     document.querySelector('[data-nav="important"]')?.classList.add('active');
   } else if (hash.startsWith('#/tasks')) {
@@ -411,6 +413,8 @@ function route() {
     renderHelp();
   } else if (hash.startsWith('#/attachments')) {
     renderAttachments();
+  } else if (hash.startsWith('#/cleanup')) {
+    renderCleanupGlobal();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
   } else if (hash.startsWith('#/tasks')) {
@@ -529,8 +533,9 @@ async function renderDashboard() {
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Nettoyage conseillé</h2>
-          <span class="badge green">${fmtNum(deletable)} mails « sûrs »</span></div>
+        <div class="panel-head"><h2>🧹 Nettoyage conseillé</h2>
+          <span><span class="badge green">${fmtNum(deletable)} mails « sûrs »</span>
+          <a class="btn btn-sm" href="#/cleanup" style="margin-left:8px">Voir et nettoyer</a></span></div>
         <div class="panel-body tight">
           ${allCandidates.length === 0 ? '<div class="empty">Aucun candidat détecté (ou boîtes pas encore synchronisées).</div>' : `
           <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th><th>Risque</th><th></th></tr></thead>
@@ -2469,6 +2474,77 @@ function deadlineRow(x, idx) {
       <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------------- Nettoyage conseillé global (L5.15)
+// Tous les candidats de toutes les boîtes, groupés par boîte. « Nettoyer »
+// ouvre l'aperçu détaillé existant (liste cochable) — les garde-fous ne
+// changent pas : corbeille uniquement, confirmation, journal.
+async function renderCleanupGlobal() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🧹 Nettoyage conseillé</h1>
+      <div class="sub">Les expéditeurs qui encombrent tes boîtes (newsletters, notifications…),
+      toutes boîtes confondues. « Nettoyer » montre d'abord la liste exacte des mails — rien ne
+      part sans ta confirmation, et tout va dans la corbeille (récupérable ~30 jours).</div></div>
+    <div class="head-actions"><button class="btn" id="cleanup-refresh">↻ Actualiser</button></div></div>
+    <div id="cleanup-global-body"><div class="empty"><span class="spinner"></span>Analyse des boîtes…</div></div>`;
+  $('#cleanup-refresh').addEventListener('click', loadCleanupGlobal);
+  await loadCleanupGlobal();
+}
+
+async function loadCleanupGlobal() {
+  const body = $('#cleanup-global-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse des boîtes…</div>';
+  const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
+  const perAccount = [];
+  let totalDeletable = 0;
+  let totalCandidates = 0;
+  for (const slug of accounts) {
+    try {
+      const d = await api.cleanup(slug);
+      if (d.candidates.length) {
+        perAccount.push({ slug, ...d });
+        totalDeletable += d.totalDeletableEstimate ?? 0;
+        totalCandidates += d.candidates.length;
+      }
+    } catch {
+      /* boîte pas encore indexée : ignorée */
+    }
+  }
+  if (!body.isConnected) return;
+  if (perAccount.length === 0) {
+    body.innerHTML = '<div class="empty">Rien à nettoyer pour l\'instant. 🎉 (Ou boîtes pas encore synchronisées.)</div>';
+    return;
+  }
+  body.innerHTML = `
+    <div class="notice">✨ <strong>${fmtNum(totalDeletable)}</strong> mails « sûrs » peuvent partir à la
+      corbeille, répartis sur <strong>${fmtNum(totalCandidates)}</strong> expéditeurs et
+      ${fmtNum(perAccount.length)} boîte(s).</div>
+    ${perAccount.map(({ slug, candidates, totalDeletableEstimate }) => `
+      <div class="panel">
+        <div class="panel-head"><h2>${accountChip(slug)}</h2>
+          <span class="badge green">${fmtNum(totalDeletableEstimate)} mails « sûrs »</span></div>
+        <div class="panel-body tight">
+          <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Non lus</th>
+            <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
+          <tbody>${candidates.map((c) => `<tr>
+            <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
+            <td class="num">${fmtNum(c.messageCount)}</td>
+            <td class="num">${fmtNum(c.unseenCount)}</td>
+            <td class="num">${fmtSize(c.totalSizeBytes)}</td>
+            <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
+            <td class="muted" style="font-size:12px; max-width:240px">${esc(c.reason)}</td>
+            <td><button class="btn btn-sm cleanup-btn" data-account="${esc(slug)}"
+              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
+          </tr>`).join('')}</tbody></table>
+        </div>
+      </div>`).join('')}
+    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
+      🛟 Aperçu détaillé avant chaque nettoyage (liste cochable mail par mail, tri
+      automatique/personnel), corbeille uniquement, lots de 200, tout est journalisé.</div>`;
+  bindCleanupButtons(body);
 }
 
 // ------------------------------------------------- Pièces jointes (L5.14)

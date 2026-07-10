@@ -447,13 +447,18 @@ L5.9) ; état vide qui rappelle la Sync complète pour l'historique. SPEC V2
 de fichier indexé viendra avec le stockage des noms à la sync (backlog).
 Tests : ui-attach-screen.mjs (7 checks).
 
-### ⬜ L5.15 — Nettoyage conseillé global (sidebar + dashboard)
+### ✅ L5.15 — Nettoyage conseillé global (sidebar + dashboard) — LIVRÉE
 
-Maquette : entrée sidebar « Nettoyage conseillé » + panneau dashboard
-agrégé multi-boîtes avec total « N mails peuvent être supprimés » et
-bouton « Voir et nettoyer ». Backend : GET /api/cleanup agrégé (boucle
-getCleanupCandidates par compte). Écran `#/cleanup` groupé par boîte,
-réutilise la modale existante.
+Entrée sidebar « 🧹 Nettoyage conseillé » + écran `#/cleanup` : tous les
+candidats de toutes les boîtes, groupés par boîte (chip colorée), bannière
+totale « N mails sûrs · X expéditeurs · Y boîtes », colonnes complètes
+(mails, non lus, taille, risque, pourquoi), bouton 🧹 → la MODALE d'aperçu
+existante (garde-fous inchangés). Agrégation côté client (boucle
+api.cleanup par compte, boîtes non indexées ignorées) — aucun nouveau
+backend. Dashboard : le panneau existant gagne un bouton « Voir et
+nettoyer » vers l'écran. Tests : seed enrichi (12 newsletters/boîte →
+candidat sûr par boîte, asserts service) + parcours navigateur (5 checks,
+ouverture de la modale depuis l'écran global incluse).
 
 ### ⬜ L5.16 — Dashboard conforme maquette
 
