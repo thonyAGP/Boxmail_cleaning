@@ -460,13 +460,18 @@ nettoyer » vers l'écran. Tests : seed enrichi (12 newsletters/boîte →
 candidat sûr par boîte, asserts service) + parcours navigateur (5 checks,
 ouverture de la modale depuis l'écran global incluse).
 
-### ⬜ L5.16 — Dashboard conforme maquette
+### ✅ L5.16 — Dashboard conforme maquette — LIVRÉE
 
-« Bonjour Anthony 👋 » + date ; carte « Nouveaux mails +N depuis hier »
-(nouvelle table de snapshots quotidiens OU approx createdAt) ; panneau
-« Activité récente » (3 dernières opérations du journal) ; panneau
-« Actions rapides » (Rechercher, Nouveau mail, Analyser cette boîte,
-Générer le brief) ; « Aperçu par compte » avec barres (existe en partie).
+« Bonjour Anthony 👋 » + sous-titre tutoyé + chip date du jour ; cartes
+KPI maquette : ✉️ Nouveaux mails aujourd'hui (+N vs hier — overview expose
+`newMails {today, yesterday}` par Message.date rôle inbox), ⭐ importants
+(à traiter), ↩️ réponses (+ « plus ancienne : X j »), ⏰ relances, 📅
+échéances (+ « prochaine : date »), 🧹 supprimables (lien voir et
+nettoyer) — valeurs asynchrones remplies par les loaders existants des
+panneaux ; panneau « ⚡ Actions rapides » (Rechercher, Nouveau mail,
+Retrouver un document, Voir le nettoyage, Calendrier, Régénérer le
+brief) ; « Activité récente » et « Aperçu par compte » existaient déjà.
+Tests : parcours navigateur (9 checks) + capture complète.
 
 ### SPEC V2 — points non couverts restants (hors multi-utilisateur)
 

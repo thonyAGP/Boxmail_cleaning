@@ -488,3 +488,7 @@ th.sortable:hover { color: var(--accent); }
 /* Étoile de suivi (L5.13) */
 .star { cursor: pointer; font-size: 15px; vertical-align: middle; user-select: none; }
 .star:hover { transform: scale(1.2); display: inline-block; }
+
+/* Actions rapides du dashboard (L5.16) */
+.quick-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-actions .btn { text-decoration: none; }

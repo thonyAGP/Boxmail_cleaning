@@ -424,12 +424,23 @@ function route() {
   }
 }
 
+// « +N depuis hier » pour la carte Nouveaux mails (L5.16).
+function newMailsDelta(nm) {
+  if (!nm) return '&nbsp;';
+  const diff = nm.today - nm.yesterday;
+  if (diff > 0) return `+${fmtNum(diff)} par rapport à hier`;
+  if (diff < 0) return `${fmtNum(diff)} par rapport à hier`;
+  return 'comme hier';
+}
+
 // ---------------------------------------------------------------- Dashboard
 async function renderDashboard() {
   const main = $('#main');
-  main.innerHTML = `<div class="page-head"><div><h1>Bonjour 👋</h1>
-    <div class="sub">Voici ce qui se passe dans vos boîtes.</div></div>
+  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  main.innerHTML = `<div class="page-head"><div><h1>Bonjour Anthony 👋</h1>
+    <div class="sub">Voici ce qui se passe dans tes boîtes aujourd'hui.</div></div>
     <div class="head-actions">
+      <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(today)}</span>
       <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">🔄 Tout synchroniser</button>
       <button class="btn" id="refresh-btn">↻ Actualiser</button>
     </div></div>
@@ -457,10 +468,6 @@ async function renderDashboard() {
       <code>npm run enroll -- --account &lt;nom&gt;</code> sur le serveur.</div>`;
     return;
   }
-
-  const totalInbox = ov.accounts.reduce((s, a) => s + (a.inbox?.messages ?? 0), 0);
-  const totalUnseen = ov.totals.unseenInbox;
-  const totalNews = ov.accounts.reduce((s, a) => s + (a.inbox?.newsletters ?? 0), 0);
 
   // Nettoyage conseillé (tous comptes indexés, en parallèle).
   const cleanups = await Promise.all(
@@ -494,17 +501,24 @@ async function renderDashboard() {
     </div>
 
     <div class="cards">
-      <div class="kpi"><div class="kpi-label">📥 Mails en boîte de réception</div>
-        <div class="kpi-value">${fmtNum(totalInbox)}</div>
-        <div class="kpi-sub">${ov.accounts.length} boîte(s) indexée(s)</div></div>
-      <div class="kpi accent"><div class="kpi-label">🔵 Non lus</div>
-        <div class="kpi-value">${fmtNum(totalUnseen)}</div></div>
-      <div class="kpi orange"><div class="kpi-label">📰 Newsletters / notifications</div>
-        <div class="kpi-value">${fmtNum(totalNews)}</div>
-        <div class="kpi-sub">mails avec lien de désinscription</div></div>
+      <div class="kpi accent"><div class="kpi-label">✉️ Nouveaux mails aujourd'hui</div>
+        <div class="kpi-value">${fmtNum(ov.newMails?.today ?? 0)}</div>
+        <div class="kpi-sub">${newMailsDelta(ov.newMails)}</div></div>
+      <div class="kpi"><div class="kpi-label">⭐ Mails importants</div>
+        <div class="kpi-value" id="kpi-important">…</div>
+        <div class="kpi-sub">à traiter</div></div>
+      <div class="kpi"><div class="kpi-label">↩️ Réponses en attente</div>
+        <div class="kpi-value" id="kpi-replies">…</div>
+        <div class="kpi-sub" id="kpi-replies-sub">&nbsp;</div></div>
+      <div class="kpi orange"><div class="kpi-label">⏰ Relances à faire</div>
+        <div class="kpi-value" id="kpi-followups">…</div>
+        <div class="kpi-sub" id="kpi-followups-sub">&nbsp;</div></div>
+      <div class="kpi"><div class="kpi-label">📅 Échéances détectées</div>
+        <div class="kpi-value" id="kpi-deadlines">…</div>
+        <div class="kpi-sub" id="kpi-deadlines-sub">&nbsp;</div></div>
       <div class="kpi green"><div class="kpi-label">🧹 Supprimables sans risque</div>
         <div class="kpi-value">${fmtNum(deletable)}</div>
-        <div class="kpi-sub">estimation par expéditeur</div></div>
+        <div class="kpi-sub"><a href="#/cleanup">voir et nettoyer</a></div></div>
     </div>
 
     ${ov.neverSynced.length ? `<div class="notice warn">⚠️ Boîte(s) jamais synchronisée(s) :
@@ -575,8 +589,29 @@ async function renderDashboard() {
         <div class="panel-head"><h2>Activité récente</h2>
           <a class="btn btn-sm" href="#/operations">Voir tout</a></div>
         <div class="panel-body" id="dash-ops"><span class="spinner"></span></div>
+        <div class="panel-head"><h2>⚡ Actions rapides</h2></div>
+        <div class="panel-body quick-actions">
+          <a class="btn" href="#/search">🔎 Rechercher un mail</a>
+          <button class="btn" id="qa-compose">✉️ Nouveau mail</button>
+          <a class="btn" href="#/attachments">📎 Retrouver un document</a>
+          <a class="btn" href="#/cleanup">🧹 Voir le nettoyage</a>
+          <a class="btn" href="#/calendar">🗓️ Calendrier</a>
+          <button class="btn" id="qa-brief">☀️ Régénérer le brief</button>
+        </div>
       </div>
     </div>`;
+
+  $('#qa-compose')?.addEventListener('click', () => {
+    if (!smtpEnabled) {
+      alert("Envoi désactivé sur ce serveur (ENABLE_SMTP_SEND=false dans le .env).");
+      return;
+    }
+    openComposeModal({ account: (overviewCache?.enrolled ?? [])[0]?.account });
+  });
+  $('#qa-brief')?.addEventListener('click', () => {
+    $('#brief-generate')?.click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   initBriefPanel();
 
@@ -591,6 +626,8 @@ async function renderDashboard() {
   // Mails importants (top 5, score le plus haut d'abord).
   api.important().then((d) => {
     refreshImportantBadge(d);
+    const kpi = $('#kpi-important');
+    if (kpi) kpi.textContent = fmtNum(d.items.length);
     const el = $('#dash-important');
     if (!el) return;
     const top = d.items.slice(0, 5);
@@ -615,6 +652,12 @@ async function renderDashboard() {
   // Réponses en attente (top 5, les plus en retard d'abord).
   api.replies().then((d) => {
     refreshRepliesBadge(d);
+    const kpi = $('#kpi-replies');
+    if (kpi) {
+      kpi.textContent = fmtNum(d.counts.active);
+      const oldest = Math.max(0, ...d.items.filter((i) => i.state === 'active').map((i) => i.waitingHours ?? 0));
+      if (oldest >= 24) $('#kpi-replies-sub').textContent = `plus ancienne : ${fmtNum(Math.round(oldest / 24))} j`;
+    }
     const el = $('#dash-replies');
     if (!el) return;
     const top = d.items.filter((i) => i.state === 'active').slice(0, 5);
@@ -639,6 +682,12 @@ async function renderDashboard() {
   // Relances à faire (top 3, les plus en retard d'abord).
   api.followups().then((d) => {
     refreshFollowupsBadge(d);
+    const kpi = $('#kpi-followups');
+    if (kpi) {
+      kpi.textContent = fmtNum(d.counts.active);
+      const oldest = Math.max(0, ...d.items.filter((i) => i.state === 'active').map((i) => i.waitingHours ?? 0));
+      if (oldest >= 24) $('#kpi-followups-sub').textContent = `plus ancien : ${fmtNum(Math.round(oldest / 24))} j`;
+    }
     const el = $('#dash-followups');
     if (!el) return;
     const top = d.items.filter((i) => i.state === 'active').slice(0, 3);
@@ -663,6 +712,14 @@ async function renderDashboard() {
   // Échéances à venir (top 5 futures, proposées + confirmées).
   api.deadlines().then((d) => {
     refreshDeadlinesBadge(d);
+    const kpi = $('#kpi-deadlines');
+    if (kpi) {
+      const upcoming = d.items
+        .filter((x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays >= -1)
+        .sort((a, b) => a.inDays - b.inDays);
+      kpi.textContent = fmtNum(upcoming.length);
+      if (upcoming[0]) $('#kpi-deadlines-sub').textContent = `prochaine : ${fmtDate(upcoming[0].date)}`;
+    }
     const el = $('#dash-deadlines');
     if (!el) return;
     const top = d.items

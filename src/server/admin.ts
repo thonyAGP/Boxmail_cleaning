@@ -244,12 +244,24 @@ export function buildAdminRouter(): Router {
         totals: { accounts: 0, indexedMessages: 0, unseenInbox: 0 },
       };
       const colors = new Map<string, string | null>();
+      // Nouveaux mails reçus (INBOX, par date du mail) : aujourd'hui vs hier.
+      let newMails = { today: 0, yesterday: 0 };
       try {
         await ensureDbReady();
         overview = await globalOverview();
         for (const a of await db.account.findMany({ select: { slug: true, color: true } })) {
           colors.set(a.slug, a.color);
         }
+        const startToday = new Date();
+        startToday.setHours(0, 0, 0, 0);
+        const startYesterday = new Date(startToday.getTime() - 86_400_000);
+        const inboxWhere = { isDeleted: false, folder: { is: { role: 'inbox' } } };
+        newMails = {
+          today: await db.message.count({ where: { ...inboxWhere, date: { gte: startToday } } }),
+          yesterday: await db.message.count({
+            where: { ...inboxWhere, date: { gte: startYesterday, lt: startToday } },
+          }),
+        };
       } catch {
         // Base non migrée : on renvoie une vue vide, le front l'explique.
       }
@@ -264,6 +276,7 @@ export function buildAdminRouter(): Router {
         ...overview,
         enrolled: enrolledInfo,
         neverSynced: enrolled.filter((n) => !indexed.has(n)),
+        newMails,
       });
     }),
   );

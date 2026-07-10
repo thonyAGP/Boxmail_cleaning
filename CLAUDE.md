@@ -94,12 +94,19 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
-**Rattrapage maquette 2 EN COURS (retour utilisateur 10/07 : lire les
-mails dans les dossiers + écarts SPEC V2/maquette non traités).** Analyse
-d'écarts complète consignée dans ROADMAP.md (« Rattrapage maquette 2 ») :
-L5.12 dossiers ✅ LIVRÉE → L5.13 mails suivis → L5.14 écran pièces jointes
-→ L5.15 nettoyage global → L5.16 dashboard maquette → puis L7 règles,
-brouillons IMAP, mémoire métier/LLM en 2e temps.
+**Rattrapage maquette 2 TERMINÉ (L5.12 → L5.16, retour utilisateur
+10/07).** 5 livraisons poussées : dossiers, mails suivis, écran pièces
+jointes, nettoyage global, dashboard maquette. Restent de la SPEC V2
+(hors multi-utilisateur) : L7 règles de classement + dossiers
+intelligents, brouillons IMAP (préparer une réponse sans l'envoyer),
+mémoire métier (entities/projects) + recherche dans le CONTENU des PJ —
+ces deux derniers via le Sonnet dédié, décision : après déploiement L6.
+
+**L5.16 livrée : Dashboard maquette.** « Bonjour Anthony 👋 » + date,
+6 cartes KPI (nouveaux mails aujourd'hui +delta vs hier — `newMails` dans
+/api/overview —, importants, réponses, relances, échéances + prochaine,
+supprimables), panneau ⚡ Actions rapides, KPI remplis par les loaders
+des panneaux existants. **Rattrapage maquette 2 TERMINÉ (L5.12→L5.16).**
 
 **L5.15 livrée : Nettoyage conseillé global.** Sidebar 🧹 + `#/cleanup` :
 candidats de toutes les boîtes groupés par boîte, bannière totale, mêmes
