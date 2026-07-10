@@ -742,7 +742,34 @@ sous-page « Statistiques »). Quatre blocs, AUCUNE liste de mails :
 Chaque ligne est une PHRASE d'action (« Répondre à Soraya — reçu il y a
 2 j »), clic → panneau de lecture existant. Le brief ☀️ s'intègre en tête.
 
-### ⬜ A3 — Stratégies de rétention (nettoyage V2)
+### ✅ A3 — Stratégies de rétention (nettoyage V2) — LIVRÉE
+
+**Livré.** Modèle `RetentionPolicy` (global toutes boîtes, clé de preset
+unique, matchIntent/matchCategory (OR si les deux), unseenOnly, ageDays,
+action trash, enabled/autoApply, appliedCount) + migration.
+`services/retention.ts` : 7 presets livrés DÉSACTIVÉS (otp7, shipping30,
+notif90, social90, confirm180, newsletter90 jamais lues, promo30 jamais
+lues) — upsert idempotent qui ne touche jamais enabled/autoApply ;
+`listPolicies` (simulation SQL count+octets par stratégie) ;
+`previewPolicy` (liste exacte cap 500, plus anciens d'abord) ;
+`applyPolicy` (dryRun PAR DÉFAUT, exige enabled, corbeille par lots de
+200 groupés compte+dossier via imapService.moveToTrash +
+reflectBulkInIndex, erreurs par boîte sans arrêt, UNE entrée de journal
+par boîte avec liste exacte — pas de journal si échec sans action,
+appliedCount incrémenté) ; `updatePolicy` (GARDE-FOU autoApply⇒enabled,
+désactivation ⇒ auto retombe, ageDays 1-3650) ; `runAutoRetention` hook
+post-sync (sync.ts, non bloquant, scoped au compte, journal
+retention_auto_apply). API : GET `/api/retention` (+simulations), GET
+`/retention/:id/preview`, POST `/retention/:id/apply` (job
+`retention:<id>`, 409 si en cours, 400 si désactivée), PATCH
+`/retention/:id`. UI : panneau « 🗂️ Stratégies de rétention » en tête de
+`#/cleanup` — toggle par stratégie, badge simulation live, case « auto »
+(visible si activée, confirmation explicite), 👀 Aperçu (modale liste
+exacte), 🧹 Appliquer (confirm → job suivi par la pastille). Billets/
+réservations après événement : reporté (nécessite le croisement dates —
+avec A4/A5). Tests : seed-retention.mts (13 asserts) + ui-retention.mjs
+(12 checks — job réel avec IMAP indisponible → terminé proprement).
+L'utilisateur doit VALIDER EN RÉEL une application (IMAP réel mocké en dev).
 
 Catalogue de règles de nettoyage par catégorie × âge, chacune activable
 individuellement, TOUJOURS avec simulation avant exécution :

@@ -3291,9 +3291,150 @@ async function renderCleanupGlobal() {
       toutes boîtes confondues. « Nettoyer » montre d'abord la liste exacte des mails — rien ne
       part sans ta confirmation, et tout va dans la corbeille (récupérable ~30 jours).</div></div>
     <div class="head-actions"><button class="btn" id="cleanup-refresh">↻ Actualiser</button></div></div>
+    <div id="retention-body"></div>
     <div id="cleanup-global-body"><div class="empty"><span class="spinner"></span>Analyse des boîtes…</div></div>`;
-  $('#cleanup-refresh').addEventListener('click', loadCleanupGlobal);
+  $('#cleanup-refresh').addEventListener('click', () => {
+    loadRetention();
+    loadCleanupGlobal();
+  });
+  loadRetention();
   await loadCleanupGlobal();
+}
+
+// ------------------------------------------ Stratégies de rétention (A3 — Cap V3)
+// Règles de bon sens par type de mail × âge (« OTP > 7 j », « newsletters
+// jamais ouvertes > 90 j »…), livrées DÉSACTIVÉES. Simulation permanente,
+// aperçu exact avant application, corbeille uniquement.
+async function loadRetention() {
+  const el = $('#retention-body');
+  if (!el) return;
+  el.innerHTML = '<div class="panel"><div class="panel-body"><div class="empty"><span class="spinner"></span>Simulation des stratégies…</div></div></div>';
+  let data;
+  try {
+    data = await api.retention();
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!el.isConnected) return;
+
+  const target = (p) => {
+    const parts = [];
+    if (p.matchIntent) parts.push(`intention « ${p.matchIntent} »`);
+    if (p.matchCategory) parts.push(`expéditeurs « ${p.matchCategory} »`);
+    if (p.unseenOnly) parts.push('jamais ouverts');
+    return parts.join(' · ');
+  };
+
+  el.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>🗂️ Stratégies de rétention</h2>
+      <span class="badge gray">${fmtNum(data.policies.filter((p) => p.enabled).length)} activée(s) / ${fmtNum(data.policies.length)}</span></div>
+    <div class="panel-body">
+      ${data.policies.map((p) => `
+        <div class="today-row" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border)">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer" title="Activer / désactiver cette stratégie">
+            <input type="checkbox" class="ret-enable" data-id="${p.id}" ${p.enabled ? 'checked' : ''}></label>
+          <div style="flex:1; min-width:0; ${p.enabled ? '' : 'opacity:.55'}">
+            <strong>${esc(p.label)}</strong>
+            <span class="muted" style="font-size:12px">· ${esc(target(p))} · plus de ${fmtNum(p.ageDays)} j
+            ${p.appliedCount ? ` · déjà nettoyé : ${fmtNum(p.appliedCount)}` : ''}</span></div>
+          <span class="badge ${p.matchCount ? 'orange' : 'gray'}" title="Ce que la stratégie viserait aujourd'hui (simulation, rien n'est touché)">
+            ${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
+          <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px; ${p.enabled ? '' : 'visibility:hidden'}"
+            title="Appliquer automatiquement après chaque synchronisation (uniquement une stratégie déjà activée)">
+            <input type="checkbox" class="ret-auto" data-id="${p.id}" ${p.autoApply ? 'checked' : ''}> auto</label>
+          <button class="btn btn-sm ret-preview" data-id="${p.id}" ${p.matchCount ? '' : 'disabled'}>👀 Aperçu</button>
+          <button class="btn btn-sm btn-primary ret-apply" data-id="${p.id}" data-count="${p.matchCount}"
+            data-label="${esc(p.label)}" ${p.enabled && p.matchCount ? '' : 'disabled'}>🧹 Appliquer</button>
+        </div>`).join('')}
+      <div class="muted" style="font-size:12.5px; padding-top:8px">
+        Simulation en continu : rien n'est touché tant que tu n'appliques pas. Tout part à la
+        corbeille (récupérable ~30 jours) et chaque passage est journalisé. « auto » = la stratégie
+        s'applique seule après chaque synchronisation — à activer quand tu lui fais confiance.
+        Les compteurs s'appuient sur les catégories : lance « 🏷️ Recalculer » dans ⚙️ Paramètres si tout est à zéro.</div>
+    </div></div>`;
+
+  el.querySelectorAll('.ret-enable').forEach((box) => {
+    box.addEventListener('change', async () => {
+      try {
+        await api.retentionUpdate(Number(box.dataset.id), { enabled: box.checked });
+      } catch (err) {
+        alert(err.message);
+      }
+      loadRetention();
+    });
+  });
+  el.querySelectorAll('.ret-auto').forEach((box) => {
+    box.addEventListener('change', async () => {
+      if (box.checked && !confirm(
+        'Passer cette stratégie en AUTOMATIQUE ?\n\nElle s\'appliquera seule après chaque synchronisation (corbeille, journalisée). Tu peux revenir en arrière à tout moment.',
+      )) {
+        box.checked = false;
+        return;
+      }
+      try {
+        await api.retentionUpdate(Number(box.dataset.id), { autoApply: box.checked });
+      } catch (err) {
+        alert(err.message);
+      }
+      loadRetention();
+    });
+  });
+  el.querySelectorAll('.ret-preview').forEach((btn) => {
+    btn.addEventListener('click', () => openRetentionPreview(Number(btn.dataset.id)));
+  });
+  el.querySelectorAll('.ret-apply').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(
+        `Appliquer « ${btn.dataset.label} » ?\n\n≈ ${btn.dataset.count} mails partiront à la corbeille (récupérables ~30 jours). L'opération tourne en arrière-plan et est journalisée.`,
+      )) return;
+      btn.disabled = true;
+      try {
+        await api.retentionApply(Number(btn.dataset.id));
+        pollJobs();
+        alert('🧹 Application lancée — suis l\'avancement via la pastille d\'activité, puis actualise.');
+      } catch (err) {
+        btn.disabled = false;
+        alert(err.message);
+      }
+    });
+  });
+}
+
+async function openRetentionPreview(id) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>👀 Aperçu de la stratégie</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
+    <div class="modal-foot" id="modal-foot"><button class="btn" onclick="document.querySelector('.modal-overlay').remove()">Fermer</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  let data;
+  try {
+    data = await api.retentionPreview(id);
+  } catch (err) {
+    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  $('#modal-body').innerHTML = `
+    <p><strong>${esc(data.policy)}</strong> — ${fmtNum(data.total)} mail(s) visé(s) aujourd'hui.
+    ${data.truncated ? `<br><span class="muted">Aperçu limité aux ${fmtNum(data.items.length)} plus anciens.</span>` : ''}</p>
+    <div style="max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px">
+      <table><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
+      <tbody>${data.items.map((m) => `<tr>
+        <td>${accountChip(m.account)}</td>
+        <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(m.subject)}</td>
+        <td class="muted" style="font-size:12px">${esc(m.fromName || m.fromEmail)}</td>
+        <td class="num" style="font-size:12px">${fmtDate(m.date)}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>
+    <p class="muted" style="font-size:12.5px">Rien n'est touché depuis cet aperçu — l'application se
+    fait depuis l'écran, avec confirmation.</p>`;
 }
 
 async function loadCleanupGlobal() {

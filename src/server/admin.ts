@@ -88,6 +88,12 @@ import {
   type SenderCategory,
 } from '../services/categorize.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
+import {
+  listPolicies,
+  previewPolicy,
+  applyPolicy,
+  updatePolicy,
+} from '../services/retention.js';
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
@@ -520,6 +526,63 @@ export function buildAdminRouter(): Router {
     guard(async (req, res) => {
       try {
         res.json(await listNoiseMessages(req.params.bucket as NoiseBucket));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // --- Stratégies de rétention (A3 — Cap V3) --------------------------------------
+  router.get(
+    '/retention',
+    guard(async (_req, res) => {
+      res.json({ policies: await listPolicies() });
+    }),
+  );
+
+  router.get(
+    '/retention/:id/preview',
+    guard(async (req, res) => {
+      try {
+        res.json(await previewPolicy(Number(req.params.id)));
+      } catch (err) {
+        res.status(404).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // Application réelle : job asynchrone (peut toucher des milliers de mails),
+  // suivi par la pastille d'activité. La stratégie doit être ACTIVÉE.
+  router.post(
+    '/retention/:id/apply',
+    guard(async (req, res) => {
+      const id = Number(req.params.id);
+      const kind = `retention:${id}`;
+      if (hasRunningJob(kind)) {
+        res.status(409).json({ error: 'Cette stratégie est déjà en cours d’application.' });
+        return;
+      }
+      try {
+        // Vérifie existence + activation AVANT de lancer le job (erreur propre).
+        const dry = await applyPolicy(id, { confirm: false });
+        const job = startJob(kind, (progress) => applyPolicy(id, { confirm: true, progress }));
+        res.status(202).json({ jobId: job.id, matched: dry.matched });
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  router.patch(
+    '/retention/:id',
+    guard(async (req, res) => {
+      try {
+        const p = await updatePolicy(Number(req.params.id), {
+          enabled: typeof req.body?.enabled === 'boolean' ? req.body.enabled : undefined,
+          autoApply: typeof req.body?.autoApply === 'boolean' ? req.body.autoApply : undefined,
+          ageDays: typeof req.body?.ageDays === 'number' ? req.body.ageDays : undefined,
+        });
+        res.json({ ok: true, policy: { id: p.id, enabled: p.enabled, autoApply: p.autoApply, ageDays: p.ageDays } });
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }

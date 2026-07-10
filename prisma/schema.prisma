@@ -238,6 +238,32 @@ model MailRule {
   @@index([accountSlug, status])
 }
 
+// Stratégie de rétention (A3 — Cap V3) : « les codes OTP de plus de 7 jours
+// partent à la corbeille ». GLOBALE (toutes les boîtes), livrée en preset
+// DÉSACTIVÉ — rien ne s'applique sans activation explicite, et autoApply
+// exige enabled (même garde-fou que MailRule).
+model RetentionPolicy {
+  id            Int       @id @default(autoincrement())
+  // Clé stable du preset (otp7, shipping30…) — unique, upsert idempotent.
+  key           String    @unique
+  label         String
+  // Cible : intention du mail (Message.intent) et/ou catégorie de
+  // l'expéditeur (Sender.category). Au moins l'un des deux.
+  matchIntent   String?
+  matchCategory String?
+  // true = ne vise que les mails JAMAIS lus (newsletters, promos).
+  unseenOnly    Boolean   @default(false)
+  ageDays       Int
+  // trash (corbeille, récupérable ~30 j) — archive viendra plus tard.
+  action        String    @default("trash")
+  enabled       Boolean   @default(false)
+  autoApply     Boolean   @default(false)
+  appliedCount  Int       @default(0)
+  lastAppliedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
 // Exécution d'un brief (Phase 8 — L5). Le JSON complet du brief est stocké
 // tel quel : il sert d'historique et de référence « nouveaux mails depuis le
 // dernier brief ». Global (tous comptes), pas de relation Account.

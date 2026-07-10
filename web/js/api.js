@@ -35,6 +35,10 @@ export const api = {
     return request('GET', `/accounts/${encodeURIComponent(slug)}/stats?${q}`);
   },
   today: () => request('GET', '/today'),
+  retention: () => request('GET', '/retention'),
+  retentionPreview: (id) => request('GET', `/retention/${id}/preview`),
+  retentionApply: (id) => request('POST', `/retention/${id}/apply`),
+  retentionUpdate: (id, patch) => request('PATCH', `/retention/${id}`, patch),
   todayNoise: (bucket) => request('GET', `/today/noise/${encodeURIComponent(bucket)}`),
   senderSetCategory: (slug, email, category) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, category }),

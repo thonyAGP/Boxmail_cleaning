@@ -97,6 +97,17 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**A3 livrée : stratégies de rétention.** Modèle RetentionPolicy global +
+7 presets DÉSACTIVÉS (OTP 7 j, livraisons 30 j, notifs 90 j, réseaux
+sociaux 90 j, confirmations 6 mois, newsletters jamais lues 90 j, promos
+jamais lues 30 j). services/retention.ts : simulation live, aperçu exact
+cap 500, applyPolicy dry-run par défaut + corbeille lots de 200 + journal
+par boîte, updatePolicy (autoApply⇒enabled), runAutoRetention post-sync.
+API /api/retention* (apply = job). UI : panneau en tête de #/cleanup
+(toggle, badge simulation, auto avec confirmation, aperçu, appliquer).
+Tests : 13 asserts + 12 checks. L'utilisateur doit valider une
+application EN RÉEL.
+
 **A2 livrée : accueil « Aujourd'hui » orienté actions.** `#/today` est la
 PAGE D'ACCUEIL par défaut (le Tableau de bord reste en 2e position).
 services/today.ts : generateToday() index-only — À FAIRE (réponses
@@ -467,10 +478,11 @@ garde-fou d'exécution IMAP). Seed de test : voir scratchpad session
 
 ## PROCHAINE ÉTAPE
 
-**Cap V3 : A1 et A2 FAITES. Prochaine livraison = A3 (stratégies de
-rétention) — voir ROADMAP.md section « Cap V3 » (plan A1→A6 complet).
-L'utilisateur a demandé « Lance la série A » (10/07) : enchaîner les
-livraisons A dans l'ordre, un commit/push chacune.** L6-prep faite : le déploiement Oracle reste prêt à
+**Cap V3 : A1, A2, A3 FAITES. Prochaine livraison = A4 (« Pourquoi ma
+boîte est pleine ? » + Grand ménage) — voir ROADMAP.md section « Cap V3 »
+(plan A1→A6 complet). L'utilisateur a demandé « Lance la série A »
+(10/07) : enchaîner les livraisons A dans l'ordre, un commit/push
+chacune.** L6-prep faite : le déploiement Oracle reste prêt à
 exécuter à tout moment — suivre docs/DEPLOY-ORACLE.md AVEC l'utilisateur
 (~45 min : VM OCI, DNS, script 1-commande, Entra, connecteur Cowork).
 Backlog ensuite : dossiers intelligents (vues enregistrées),

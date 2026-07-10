@@ -420,6 +420,19 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     });
   }
 
+  // Stratégies de rétention automatiques (A3) : UNIQUEMENT celles activées
+  // ET cochées auto — non bloquant, chaque passage est journalisé.
+  try {
+    const { runAutoRetention } = await import('./retention.js');
+    const auto = await runAutoRetention(rec, progress);
+    if (auto.deleted > 0) progress(`Rétention automatique : ${auto.deleted} mails à la corbeille.`);
+  } catch (err) {
+    logger.warn('rétention auto post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Quota de la boîte (taille max / utilisé) — non bloquant si le serveur
   // ne l'expose pas ou si la commande échoue.
   let quota: { usedBytes: number; limitBytes: number } | null = null;
