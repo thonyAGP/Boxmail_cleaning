@@ -99,6 +99,10 @@ TOKEN_ENCRYPTION_KEY=${ENC_KEY}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 MS_CLIENT_ID=00449d9d-90ad-4891-939b-7e55f4d4d816
 SYNC_INTERVAL_MINUTES=30
+# Mise à jour automatique du serveur : heure du passage quotidien (0-23).
+# Le serveur va chercher les nouveautés tout seul ; en cas de problème il
+# revient à la version précédente plutôt que de rester cassé.
+AUTO_UPDATE_HOUR=4
 LOG_LEVEL=info
 RATE_LIMIT_MAX=120
 RATE_LIMIT_WINDOW_MS=60000
@@ -108,6 +112,15 @@ ENV
 fi
 
 # --- 3. Build -------------------------------------------------------------------
+# Si le script est relancé alors que l'app tourne déjà, on l'arrête d'abord :
+# le moteur de migration Prisma exige un accès EXCLUSIF au fichier SQLite,
+# sinon « Error: SQLite database error / database is locked ». pm2 la relance
+# quelques lignes plus bas.
+if command -v pm2 >/dev/null && pm2 describe boxmail-mcp >/dev/null 2>&1; then
+  say "Arrêt temporaire de l'application (libère la base pour les migrations)…"
+  pm2 stop boxmail-mcp >/dev/null 2>&1 || true
+fi
+
 say "Dépendances, base de données, compilation…"
 npm install --no-audit --no-fund
 npm run db:setup

@@ -78,6 +78,7 @@ import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
+import { autoUpdateStatus } from '../services/autoupdate.js';
 import { createBackup, listBackups, backupPath } from '../services/backup.js';
 import { getHealth } from '../services/health.js';
 import { exportAccounts, importAccounts } from '../services/portability.js';
@@ -2007,7 +2008,11 @@ export function buildAdminRouter(): Router {
   router.get(
     '/version',
     guard(async (_req, res) => {
-      res.json({ ...(await version()), autoSync: autoSyncStatus() });
+      res.json({
+        ...(await version()),
+        autoSync: autoSyncStatus(),
+        autoUpdate: autoUpdateStatus(),
+      });
     }),
   );
 

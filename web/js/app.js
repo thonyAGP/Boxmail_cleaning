@@ -4473,6 +4473,20 @@ function renderHelp() {
     </ul>`)}`;
 }
 
+// Libellé de la mise à jour automatique du serveur (le PC, lui, se met à
+// jour à chaque lancement de MailAssistant.bat).
+function autoUpdateLabel(a) {
+  if (!a || !a.enabled) {
+    return '<span class="muted">✕ désactivée — ici, la mise à jour se fait au lancement</span>';
+  }
+  const quand = `chaque nuit à ${String(a.hour).padStart(2, '0')} h`;
+  if (!a.lastResult) return `✅ ${quand} · <span class="muted">aucun passage encore</span>`;
+  const emoji = a.lastResult === 'échec' ? '⚠️' : '✅';
+  const detail = a.lastRunAt ? ` le ${fmtDateTime(a.lastRunAt)}` : '';
+  return `${emoji} ${quand}<div class="muted" style="font-size:11.5px">dernier passage${detail} :
+    ${esc(a.lastResult)}${a.lastMessage ? ` — ${esc(a.lastMessage.slice(0, 120))}` : ''}</div>`;
+}
+
 // Libellé de l'auto-sync (L5.11) pour le panneau Serveur des Paramètres.
 function autoSyncLabel(a) {
   if (!a || !a.intervalMinutes) {
@@ -4542,6 +4556,8 @@ function renderSettingsBody() {
         <div class="set-line"><span class="muted">Version</span><span>${v ? `${esc(v.commit)} · ${esc(v.date)}` : '—'}</span></div>
         <div class="set-line"><span class="muted">Mise à jour</span>
           <span id="set-update"><span class="spinner"></span>vérification…</span></div>
+        <div class="set-line"><span class="muted">Mise à jour automatique</span>
+          <span>${autoUpdateLabel(v?.autoUpdate)}</span></div>
         <div class="set-line"><span class="muted">Superviseur (relance auto)</span>
           <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
         <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>

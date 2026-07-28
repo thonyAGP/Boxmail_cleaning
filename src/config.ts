@@ -95,6 +95,16 @@ export const config = {
     // local à la demande) ; 30 recommandé sur le serveur 24/7 (L6).
     autoIntervalMinutes: int('SYNC_INTERVAL_MINUTES', 0),
   },
+  update: {
+    // Mise à jour automatique du serveur : heure (0-23) du passage quotidien,
+    // 4 h du matin par défaut. Mettre -1 pour la désactiver.
+    // Sous Windows elle est ignorée de toute façon : MailAssistant.bat met
+    // déjà à jour à chaque lancement (et les fichiers natifs sont verrouillés
+    // tant que le serveur tourne). Le défaut « activé » est VOULU : sans lui,
+    // un serveur déjà installé sans cette variable ne se mettrait jamais à
+    // jour tout seul — c'est justement ce qu'on veut éviter.
+    autoHour: int('AUTO_UPDATE_HOUR', 4),
+  },
   limits: {
     // Plafond dur par opération de suppression (SPEC §6.3).
     maxDeletePerCall: 200,

@@ -99,6 +99,31 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L6.1 — LE SERVEUR SE MET À JOUR TOUT SEUL (28/07).** Déclencheur :
+« on ne va pas faire des déploiements manuels pour le futur… », après une
+mise à jour SSH en échec sur `database is locked`. CAUSE : la mise à jour
+lançait `npm run db:setup` (= `prisma migrate deploy`) PENDANT que l'app
+tenait le fichier SQLite — le moteur de migration exige l'exclusivité. Même
+piège que sous Windows, jamais traité côté Linux ; automatiser sans corriger
+aurait cassé CHAQUE nuit. RÈGLE POSÉE : **on ne migre jamais pendant que
+l'app sert**. `scripts/db-setup.mjs` accepte `generate`/`migrate`
+(npm run db:generate / db:migrate) ; `src/db/migrate.ts`
+(`ensureMigrationsApplied` : compare prisma/migrations à
+`_prisma_migrations`, ne lance le moteur que s'il reste du travail, ferme la
+connexion avant) appelé dans index.ts AVANT `app.listen` — échec ⇒ on
+démarre quand même (pas de boucle pm2) ; update.ts et autoupdate.ts font
+`db:generate` seulement ; setup-oracle.sh arrête l'app avant db:setup s'il
+est relancé. `services/autoupdate.ts` : passage quotidien à
+`AUTO_UPDATE_HOUR` (défaut **4**, activé par défaut EXPRÈS pour que le
+serveur déjà installé sans la variable se mette à jour ; ignoré sous
+Windows) — check → note le commit → sauvegarde → pull → install → generate
+→ build → exit(0) (pm2 relance) ; **échec ⇒ `git reset --hard` sur le commit
+d'avant + rebuild**, on reste sur la version d'hier qui marche. État dans
+GET /api/version → ligne « Mise à jour automatique » des Paramètres. Tests :
+12 asserts migrations + 14 asserts autoupdate sur un vrai dépôt git jetable
+(dont le retour arrière vérifié fichiers à l'appui) + démarrage réel sur
+base neuve (16 migrations en 2,6 s puis /health OK).
+
 **L6 DÉPLOIEMENT FAIT (28/07) — le serveur tourne en ligne.**
 `https://boxmail.lb2i.com` — Oracle Cloud ARM (VM.Standard.A1.Flex, 6 Go,
 Ubuntu 24.04 Minimal aarch64), région Madrid, IP `51.170.60.55`. Vérifié de

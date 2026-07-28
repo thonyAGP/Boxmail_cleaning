@@ -10,6 +10,8 @@ import { imapService } from './services/imap.js';
 import { buildAdminRouter } from './server/admin.js';
 import { startAutoSync } from './services/autosync.js';
 import { startAutoBackup } from './services/backup.js';
+import { startAutoUpdate } from './services/autoupdate.js';
+import { ensureMigrationsApplied } from './db/migrate.js';
 
 /**
  * Bootstrap serveur HTTP + MCP (transport Streamable HTTP).
@@ -64,6 +66,20 @@ function jsonRpcError(code: number, message: string) {
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
 async function main() {
+  // Migrations de la base AVANT d'ouvrir le service : c'est le seul moment où
+  // personne ne tient le fichier SQLite. Une mise à jour qui migrerait pendant
+  // que l'app tourne échouerait (« database is locked ») — voir db/migrate.ts.
+  try {
+    const { applied } = await ensureMigrationsApplied();
+    if (applied.length > 0) {
+      logger.info('base mise à jour au démarrage', { migrations: applied.length });
+    }
+  } catch (err) {
+    // On démarre quand même : mieux vaut un serveur qui répond et explique le
+    // problème (écran 🩺 État du système) qu'une boucle de redémarrages.
+    logger.error('migrations au démarrage impossibles', { error: (err as Error).message });
+  }
+
   const app = express();
   app.disable('x-powered-by');
   // 'loopback' : ne croire X-Forwarded-For que si la connexion vient de
@@ -144,6 +160,7 @@ async function main() {
     });
     startAutoSync();
     startAutoBackup();
+    startAutoUpdate();
   });
 
   // Arrêt propre.

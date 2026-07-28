@@ -214,8 +214,17 @@ bas « Comment marche l'IA ».)
 
 ## Et après ?
 
-- **Mises à jour** : le bandeau bleu de l'interface fonctionne aussi sur le
-  serveur (pm2 relance tout seul). Tu livres comme d'habitude.
+- **Mises à jour : le serveur s'en occupe tout seul.** Chaque nuit à 4 h
+  (`AUTO_UPDATE_HOUR`), il regarde s'il y a du neuf, l'installe et redémarre.
+  Si quelque chose se passe mal, il **revient à la version de la veille** et
+  continue de tourner : on ne se réveille jamais avec un serveur cassé. Le
+  résultat du dernier passage s'affiche dans ⚙️ **Paramètres → Serveur**.
+  Le bandeau bleu de l'interface reste disponible pour mettre à jour tout de
+  suite sans attendre la nuit. **Plus aucune connexion SSH n'est nécessaire.**
+  - Détail technique utile si tu diagnostiques un jour : les migrations de
+    base de données ne sont **jamais** appliquées pendant que l'application
+    tourne (SQLite refuserait : *database is locked*) — elles passent au
+    redémarrage, quand plus personne ne tient le fichier.
 - **Ton PC** : tu peux continuer avec `MailAssistant.bat` en local, ou ne
   plus utiliser que le serveur — les deux ne partagent pas leur index.
 - **Logs serveur** (si besoin de diagnostic) : `pm2 logs boxmail-mcp`.
@@ -229,6 +238,7 @@ bas « Comment marche l'IA ».)
 | AADSTS50011 à l'enrôlement | URI de l'étape 4 mal copiée ou pas encore propagée (attends 10 min). |
 | Claude répond « unauthorized » | Le header Bearer du connecteur ne correspond pas au `MCP_BEARER_TOKEN` du récap. |
 | L'interface dit « non supervisé » | `pm2 startOrReload deploy/ecosystem.config.cjs && pm2 save` |
+| `database is locked` pendant une mise à jour à la main | Ne jamais lancer `npm run db:setup` pendant que l'application tourne : `pm2 stop boxmail-mcp` d'abord — ou plus simple, laisser faire la mise à jour automatique / le bandeau bleu, qui appliquent les migrations au redémarrage. |
 
 ---
 

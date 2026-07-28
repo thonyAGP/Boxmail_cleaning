@@ -20,6 +20,8 @@
     "stats": "tsx src/cli/stats.ts",
     "sync": "tsx src/cli/sync.ts",
     "db:setup": "node scripts/db-setup.mjs",
+    "db:generate": "node scripts/db-setup.mjs generate",
+    "db:migrate": "node scripts/db-setup.mjs migrate",
     "genkey":"node --input-type=module -e \"import{randomBytes}from'node:crypto';console.log(randomBytes(32).toString('base64'))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

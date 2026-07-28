@@ -1035,6 +1035,50 @@ réelle IMAP est à valider par l'utilisateur (pas d'IMAP en dev).
 
 ---
 
+## ✅ L6.1 — Le serveur se met à jour tout seul (livrée 28/07/2026)
+
+**Déclencheur utilisateur** : « on ne va pas faire des déploiements manuels
+pour le futur… », après une mise à jour manuelle en SSH qui a ÉCHOUÉ avec
+`Error: SQLite database error / database is locked`.
+
+**La cause, et pourquoi elle était bloquante.** La mise à jour lançait
+`npm run db:setup` (donc `prisma migrate deploy`) pendant que l'application
+tournait et tenait le fichier SQLite ouvert. Le moteur de migration veut un
+accès exclusif → échec systématique. C'est le même piège que sous Windows
+(fichiers verrouillés), déjà contourné là-bas mais pas côté Linux. Automatiser
+sans corriger ça aurait produit un échec CHAQUE NUIT.
+
+**Règle posée : on ne migre jamais pendant que l'app sert.**
+- pendant la mise à jour : `npm run db:generate` seulement (ne touche pas la
+  base) — `scripts/db-setup.mjs` accepte désormais `generate` / `migrate` ;
+- au démarrage suivant : `src/db/migrate.ts` → `ensureMigrationsApplied()`
+  compare les dossiers de `prisma/migrations` à la table `_prisma_migrations`,
+  et ne lance le moteur QUE s'il reste quelque chose à faire (coût nul au
+  démarrage normal) ; il ferme d'abord la connexion Prisma pour libérer le
+  fichier. Appelé dans `index.ts` AVANT `app.listen`. Si ça échoue, le serveur
+  démarre quand même et l'explique (🩺 État du système) plutôt que d'entrer en
+  boucle de redémarrages.
+- `deploy/setup-oracle.sh` arrête l'app avant `db:setup` s'il est relancé.
+
+**`services/autoupdate.ts`** : passage quotidien à `AUTO_UPDATE_HOUR`
+(défaut **4 h** — activé par défaut exprès, pour qu'un serveur déjà installé
+sans la variable se mette quand même à jour ; ignoré sous Windows où
+MailAssistant.bat s'en charge). Séquence : check → si rien, on s'arrête →
+on note le commit courant → sauvegarde → pull → install → generate → build →
+`process.exit(0)` (pm2 relance). **En cas d'échec à n'importe quelle étape :
+`git reset --hard` sur le commit d'avant + recompilation** — mieux vaut la
+version d'hier qui marche que celle du jour qui plante. État exposé par
+`GET /api/version` → ligne « Mise à jour automatique » dans ⚙️ Paramètres.
+
+**Tests** : 12 asserts migrations (base neuve → 16 migrations appliquées,
+schéma le plus récent réellement présent, 2e démarrage gratuit, client Prisma
+qui se reconnecte après `$disconnect`) + 14 asserts autoupdate sur un VRAI
+dépôt git jetable (rien de neuf / version qui ne compile pas → retour arrière
+vérifié fichiers à l'appui / version corrigée qui passe) + démarrage réel du
+serveur sur base neuve (16 migrations en 2,6 s puis `/health` OK).
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).

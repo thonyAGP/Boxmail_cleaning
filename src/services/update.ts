@@ -9,7 +9,8 @@ const execFileP = promisify(execFile);
  *
  * - version()      : commit/branche/date actuels (affichés dans l'interface)
  * - checkUpdates() : git fetch + nombre de commits de retard + leurs titres
- * - applyUpdate()  : pull --ff-only → npm install → db:setup → build → exit(0)
+ * - applyUpdate()  : pull --ff-only → npm install → db:generate → build → exit(0)
+ *   (les migrations de base attendent le redémarrage : voir src/db/migrate.ts)
  *   Le superviseur (MailAssistant.bat, pm2, systemd) relance le processus,
  *   qui repart sur le nouveau code. Aucune entrée utilisateur n'est passée
  *   aux commandes (fixes), le tout derrière la session admin.
@@ -107,7 +108,12 @@ export async function applyUpdate(progress: (m: string) => void): Promise<{ rest
     progress('Code récupéré — installation et compilation au redémarrage (MailAssistant.bat)…');
   } else {
     await runStep('npm install --no-audit --no-fund', progress);
-    await runStep('npm run db:setup', progress);
+    // PAS de migration ici : le serveur tourne et tient le fichier SQLite —
+    // `prisma migrate deploy` échouerait sur « database is locked » (constaté
+    // en réel sur le serveur le 28/07). On ne fait que régénérer le client
+    // (aucun accès à la base) ; les migrations passent au redémarrage, via
+    // ensureMigrationsApplied() — voir src/db/migrate.ts.
+    await runStep('npm run db:generate', progress);
     await runStep('npm run build', progress);
   }
 
