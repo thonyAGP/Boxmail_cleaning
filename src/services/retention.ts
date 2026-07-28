@@ -69,14 +69,41 @@ const SENSITIVE_SUBJECTS: { matchIntent?: string; matchCategory?: string; words:
 // Newsletters/promos : expéditeur écarté s'il a DÉJÀ compté pour toi —
 // conversation engagée, mail étoilé ou répondu, tâche créée depuis un de
 // ses mails. (Complète B1, qui ne protège que le mail concerné.)
-const ENGAGED_SENDER_CLAUSES = [
-  `NOT EXISTS (SELECT 1 FROM Message ms JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
-     WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0)`,
-  `NOT EXISTS (SELECT 1 FROM Message ms WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail
-     AND ms.isDeleted = 0 AND (ms.isFlagged = 1 OR ms.isAnswered = 1))`,
-  `NOT EXISTS (SELECT 1 FROM Message ms JOIN Task t ON t.messageId = ms.id
-     WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0)`,
-] as const;
+/**
+ * Horizon d'engagement (P2.1) : au-delà, un échange ancien ne protège plus.
+ *
+ * POURQUOI : sans borne, avoir répondu UNE fois dans un fil en 2019 protégeait
+ * ce fil À VIE. Sur des boîtes accumulées depuis des années, cette protection
+ * finissait par recouvrir l'essentiel du volume et rendait le nettoyage de
+ * masse impossible — alors que c'est l'objectif premier de l'outil.
+ *
+ * Deux ans : assez long pour couvrir un dossier qui traîne (litige, garantie,
+ * déclaration annuelle), assez court pour libérer les vieilles newsletters
+ * auxquelles on a répondu une fois il y a longtemps.
+ */
+export const ENGAGEMENT_HORIZON_DAYS = 730;
+
+// L'engagement compte s'il est RÉCENT : un expéditeur avec qui tu as échangé
+// il y a six ans ne doit plus sanctuariser ses newsletters.
+function engagedSenderClauses(now = Date.now()): { clauses: string[]; params: unknown[] } {
+  const cutoff = now - ENGAGEMENT_HORIZON_DAYS * 86_400_000;
+  return {
+    clauses: [
+      `NOT EXISTS (SELECT 1 FROM Message ms JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
+         WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0
+         AND (mo.date IS NULL OR mo.date >= ?))`,
+      `NOT EXISTS (SELECT 1 FROM Message ms WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail
+         AND ms.isDeleted = 0 AND (ms.isFlagged = 1 OR ms.isAnswered = 1)
+         AND (ms.date IS NULL OR ms.date >= ?))`,
+      // Une tâche encore À FAIRE compte quelle que soit son ancienneté ;
+      // une tâche déjà réglée ne compte que si elle est récente.
+      `NOT EXISTS (SELECT 1 FROM Message ms JOIN Task t ON t.messageId = ms.id
+         WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0
+         AND (t.status = 'todo' OR t.createdAt >= ?))`,
+    ],
+    params: [cutoff, cutoff, cutoff],
+  };
+}
 
 function refinementClauses(p: { matchIntent: string | null; matchCategory: string | null }): {
   clauses: string[];
@@ -95,7 +122,9 @@ function refinementClauses(p: { matchIntent: string | null; matchCategory: strin
     }
   }
   if (p.matchCategory === 'newsletter' || p.matchIntent === 'promo') {
-    clauses.push(...ENGAGED_SENDER_CLAUSES);
+    const engaged = engagedSenderClauses();
+    clauses.push(...engaged.clauses);
+    params.push(...engaged.params);
   }
   return { clauses, params };
 }
@@ -137,15 +166,36 @@ type PolicyRow = NonNullable<Awaited<ReturnType<typeof db.retentionPolicy.findUn
  *    incorrecte : on ne supprime jamais sur un doute).
  * S'ajoute à la garantie « 0 mail personnel » (catégorie person exclue).
  */
-export const PROTECTION_CLAUSES = [
-  `m.isFlagged = 0`,
-  `m.isAnswered = 0`,
-  `NOT EXISTS (SELECT 1 FROM Message mo WHERE mo.threadId = m.threadId AND mo.isOutbound = 1)`,
-  `NOT EXISTS (SELECT 1 FROM Task t WHERE t.messageId = m.id AND t.status = 'todo')`,
-  `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
-  `(s.priority IS NULL OR s.priority != 'always_important')`,
-  `(m.analysisConfidence IS NULL OR m.analysisConfidence != 'low')`,
-] as const;
+/**
+ * Protections d'un mail. Deux familles :
+ *  - ABSOLUES : signaux EXPLICITES de ta part (étoile, tâche à faire, échéance
+ *    active, expéditeur « toujours important »), plus le garde-fou « analyse
+ *    incertaine ». Elles ne s'éteignent jamais.
+ *  - GRADUÉES : traces d'un échange (mail répondu, fil où tu as écrit). Elles
+ *    ne valent que si l'échange est RÉCENT (voir ENGAGEMENT_HORIZON_DAYS).
+ *
+ * Une date inconnue est traitée comme récente : dans le doute, on protège.
+ */
+export function protectionClauses(now = Date.now()): { clauses: string[]; params: unknown[] } {
+  const cutoff = now - ENGAGEMENT_HORIZON_DAYS * 86_400_000;
+  return {
+    clauses: [
+      // --- Absolues ---
+      `m.isFlagged = 0`,
+      `NOT EXISTS (SELECT 1 FROM Task t WHERE t.messageId = m.id AND t.status = 'todo')`,
+      `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
+      `(s.priority IS NULL OR s.priority != 'always_important')`,
+      `(m.analysisConfidence IS NULL OR m.analysisConfidence != 'low')`,
+      // --- Graduées ---
+      // Répondu : protège tant que c'est récent. Une date inconnue protège.
+      `(m.isAnswered = 0 OR (m.date IS NOT NULL AND m.date < ?))`,
+      `NOT EXISTS (SELECT 1 FROM Message mo WHERE mo.threadId = m.threadId AND mo.isOutbound = 1
+         AND (mo.date IS NULL OR mo.date >= ?))`,
+    ],
+    params: [cutoff, cutoff],
+  };
+}
+
 
 function policyWhere(
   p: PolicyRow,
@@ -161,9 +211,15 @@ function policyWhere(
     // « personne » (ou marqué tel à la main) n'est JAMAIS visé, même si un de
     // ses mails matche une intention (promo transférée, etc.).
     `(s.category IS NULL OR s.category != 'person')`,
-    ...(opts.withProtection === false ? [] : PROTECTION_CLAUSES),
   ];
   const params: unknown[] = [Date.now() - p.ageDays * 86_400_000];
+  // Protections B1 + graduation temporelle P2.1 (clauses ET paramètres :
+  // l'ordre des deux tableaux doit rester aligné).
+  if (opts.withProtection !== false) {
+    const protection = protectionClauses();
+    clauses.push(...protection.clauses);
+    params.push(...protection.params);
+  }
   // Affinage B5 (sujets sensibles, expéditeurs déjà « engagés ») : compté
   // comme protection — le badge 🛡️ inclut ces mails écartés.
   if (opts.withProtection !== false) {

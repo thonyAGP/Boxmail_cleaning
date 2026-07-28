@@ -3508,7 +3508,7 @@ async function loadRetention() {
             ${p.appliedCount ? ` · déjà nettoyé : ${fmtNum(p.appliedCount)}` : ''}</span></div>
           <span class="badge ${p.matchCount ? 'orange' : 'gray'}" title="Ce que la stratégie viserait aujourd'hui (simulation, rien n'est touché)">
             ${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
-          ${p.protectedCount ? `<span class="badge green" title="Mails écartés par la protection centrale : conversations où tu as répondu, mails étoilés, tâches/échéances liées, expéditeurs ⭐ toujours importants">🛡️ ${fmtNum(p.protectedCount)} protégés</span>` : ''}
+          ${p.protectedCount ? `<span class="badge green" title="Mails écartés par la protection : mails étoilés, tâches/échéances liées, expéditeurs ⭐ toujours importants (toujours protégés), et conversations récentes (échanges de moins de 2 ans)">🛡️ ${fmtNum(p.protectedCount)} protégés</span>` : ''}
           <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px; ${p.enabled ? '' : 'visibility:hidden'}"
             title="Appliquer automatiquement après chaque synchronisation (uniquement une stratégie déjà activée)">
             <input type="checkbox" class="ret-auto" data-id="${p.id}" ${p.autoApply ? 'checked' : ''}> auto</label>
@@ -3520,7 +3520,11 @@ async function loadRetention() {
         Simulation en continu : rien n'est touché tant que tu n'appliques pas. Tout part à la
         corbeille (récupérable ~30 jours) et chaque passage est journalisé. « auto » = la stratégie
         s'applique seule après chaque synchronisation — à activer quand tu lui fais confiance.
-        Les compteurs s'appuient sur les catégories : lance « 🏷️ Recalculer » dans ⚙️ Paramètres si tout est à zéro.</div>
+        Les compteurs s'appuient sur les catégories : lance « 🏷️ Recalculer » dans ⚙️ Paramètres si tout est à zéro.
+        <br>🛡️ <strong>Ce qui est protégé :</strong> pour toujours, tes mails étoilés, ceux liés à une tâche
+        ou une échéance en cours, et les expéditeurs marqués ⭐ ; et pendant <strong>2 ans</strong>, tout ce
+        avec quoi tu as interagi (mail répondu, conversation où tu as écrit). Passé ce délai, un vieil échange
+        isolé ne bloque plus le nettoyage.</div>
     </div></div>`;
 
   el.querySelectorAll('.ret-enable').forEach((box) => {
