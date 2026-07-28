@@ -105,14 +105,36 @@ le plus simple depuis Windows est le terminal intégré à la console Oracle :
 > (<https://www.putty.org>) — un peu plus long (conversion de la clé avec
 > PuTTYgen). Cloud Shell reste le plus simple.
 
-### Coller ces 3 lignes
+### Coller ces lignes
 
 Une fois connecté (l'invite devient `ubuntu@... :~$`), colle :
 
 ```bash
+sudo apt-get update -qq && sudo apt-get install -y -qq git
 git clone https://github.com/thonyAGP/Boxmail_cleaning.git boxmail
 cd boxmail
 bash deploy/setup-oracle.sh
+```
+
+> ⚠️ La première ligne est indispensable : les images **Ubuntu Minimal**
+> (celles des machines ARM gratuites) n'embarquent pas `git`, et le clone
+> échouerait.
+
+**Variante « une seule commande », pratique depuis un téléphone** (aucune
+question à répondre, donc rien à reprendre si la connexion se coupe) —
+mets un espace avant `ssh` pour la garder hors de l'historique :
+
+```bash
+ ssh -o StrictHostKeyChecking=no -i *.key ubuntu@IP_PUBLIQUE -t "
+sudo apt-get update -qq && sudo apt-get install -y -qq git &&
+rm -rf boxmail &&
+git clone https://github.com/thonyAGP/Boxmail_cleaning.git boxmail &&
+cd boxmail &&
+BOXMAIL_DOMAIN=boxmail.lb2i.com \
+BOXMAIL_EMAIL=ton@email.fr \
+BOXMAIL_ADMIN_PASSWORD='ton-mot-de-passe' \
+bash deploy/setup-oracle.sh
+"
 ```
 
 Le script pose **3 questions** :
