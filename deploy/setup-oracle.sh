@@ -34,16 +34,34 @@ if [[ $(id -u) -eq 0 ]]; then
 fi
 
 # --- 0. Questions --------------------------------------------------------------
-DOMAIN_DEFAULT="mcp.lb2i.fr"
-read -rp "Nom de domaine du serveur [${DOMAIN_DEFAULT}] : " DOMAIN
+# Les trois réponses peuvent être fournies à l'avance par variables
+# d'environnement (BOXMAIL_DOMAIN / BOXMAIL_EMAIL / BOXMAIL_ADMIN_PASSWORD).
+# Utile depuis un téléphone : l'installation devient UNE commande, sans
+# question à répondre — donc rien à reprendre si la connexion se coupe.
+DOMAIN_DEFAULT="boxmail.lb2i.com"
+if [[ -n "${BOXMAIL_DOMAIN:-}" ]]; then
+  DOMAIN="$BOXMAIL_DOMAIN"
+else
+  read -rp "Nom de domaine du serveur [${DOMAIN_DEFAULT}] : " DOMAIN
+fi
 DOMAIN="${DOMAIN:-$DOMAIN_DEFAULT}"
-read -rp "Email pour le certificat TLS (rappels Let's Encrypt) : " CERT_EMAIL
+
+if [[ -n "${BOXMAIL_EMAIL:-}" ]]; then
+  CERT_EMAIL="$BOXMAIL_EMAIL"
+else
+  read -rp "Email pour le certificat TLS (rappels Let's Encrypt) : " CERT_EMAIL
+fi
+
 if [[ -f .env ]]; then
   say ".env existant trouvé — il est conservé tel quel."
   ADMIN_PASSWORD=""
 else
-  read -rsp "Mot de passe de l'interface web (ADMIN_PASSWORD, FORT) : " ADMIN_PASSWORD
-  echo
+  if [[ -n "${BOXMAIL_ADMIN_PASSWORD:-}" ]]; then
+    ADMIN_PASSWORD="$BOXMAIL_ADMIN_PASSWORD"
+  else
+    read -rsp "Mot de passe de l'interface web (ADMIN_PASSWORD, FORT) : " ADMIN_PASSWORD
+    echo
+  fi
   if [[ ${#ADMIN_PASSWORD} -lt 12 ]]; then
     echo "Mot de passe trop court (12 caractères minimum)." >&2
     exit 1
