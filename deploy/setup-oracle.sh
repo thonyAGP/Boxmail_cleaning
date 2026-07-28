@@ -51,12 +51,17 @@ else
 fi
 
 # --- 1. Paquets ----------------------------------------------------------------
+# Les images « Minimal » d'Ubuntu n'embarquent ni curl ni ca-certificates :
+# on les installe AVANT de s'en servir pour ajouter le dépôt Node.
+say "Préparation du système…"
+sudo apt-get update -qq
+sudo apt-get install -y -qq curl ca-certificates gnupg openssl
+
 say "Installation des paquets (Node 20, nginx, certbot)…"
 if ! command -v node >/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 20 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
-sudo apt-get update -qq
 sudo apt-get install -y -qq nginx certbot python3-certbot-nginx git
 command -v pm2 >/dev/null || sudo npm install -g pm2
 ok "node $(node -v), nginx, certbot, pm2"
