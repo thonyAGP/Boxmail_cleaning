@@ -184,6 +184,7 @@ async function showApp() {
   refreshSuggestionsBadge();
   refreshDeadlinesBadge();
   refreshTasksBadge();
+  refreshUnsubBadge();
 }
 
 // Badge tâches : nombre à faire (rouge si au moins une en retard).
@@ -526,6 +527,8 @@ function highlightNav() {
     document.querySelector('[data-nav="attachments"]')?.classList.add('active');
   } else if (hash.startsWith('#/cleanup')) {
     document.querySelector('[data-nav="cleanup"]')?.classList.add('active');
+  } else if (hash.startsWith('#/unsubscribe')) {
+    document.querySelector('[data-nav="unsubscribe"]')?.classList.add('active');
   } else if (hash.startsWith('#/bigclean')) {
     document.querySelector('[data-nav="bigclean"]')?.classList.add('active');
   } else if (hash.startsWith('#/rules')) {
@@ -573,6 +576,8 @@ function route() {
     renderHelp();
   } else if (hash.startsWith('#/attachments')) {
     renderAttachments();
+  } else if (hash.startsWith('#/unsubscribe')) {
+    renderUnsubscribe();
   } else if (hash.startsWith('#/cleanup')) {
     renderCleanupGlobal();
   } else if (hash.startsWith('#/bigclean')) {
@@ -3467,6 +3472,132 @@ async function renderCleanupGlobal() {
   });
   loadRetention();
   await loadCleanupGlobal();
+}
+
+// ------------------------------------------------ Désinscriptions (P2.2)
+// Tarir le flux à la source : plutôt que de supprimer les mêmes newsletters
+// éternellement, on demande à l'expéditeur d'arrêter.
+const UNSUB_METHOD = {
+  'one-click': ['⚡', 'en un clic', 'Cet expéditeur accepte une désinscription immédiate, sans page à ouvrir.'],
+  mail: ['✉️', 'par mail', 'On envoie une demande de désinscription depuis ta boîte.'],
+  lien: ['🔗', 'page web', 'Aucune désinscription automatique : sa page s’ouvrira dans un onglet.'],
+};
+
+async function renderUnsubscribe() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head"><div><h1>🚫 Désinscriptions</h1>
+    <div class="sub">Arrêter les listes à la source — c'est ce qui empêche tes boîtes de se remplir à nouveau.</div></div>
+    <div class="head-actions">
+      <button class="btn" id="unsub-refresh" title="Va lire les en-têtes de désinscription des expéditeurs de type liste">🔍 Chercher les liens</button>
+      <label class="muted" style="font-size:12.5px; display:flex; align-items:center; gap:4px">
+        <input type="checkbox" id="unsub-done"> voir les désinscrits</label>
+    </div></div>
+    <div id="unsub-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+
+  $('#unsub-refresh').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.unsubscribeRefresh();
+      pollJobs();
+      $('#unsub-body').innerHTML = `<div class="notice">🔍 Recherche des liens de désinscription lancée —
+        suis l'avancement via la pastille d'activité, puis reviens sur cet écran.</div>`;
+    } catch (err) {
+      alert(err.message);
+      e.target.disabled = false;
+    }
+  });
+  $('#unsub-done').addEventListener('change', loadUnsubscribe);
+  loadUnsubscribe();
+}
+
+async function loadUnsubscribe() {
+  const el = $('#unsub-body');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
+  let data;
+  try {
+    data = await api.unsubscribeList({ done: $('#unsub-done')?.checked });
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!data.senders.length) {
+    el.innerHTML = `<div class="empty">Aucun expéditeur avec un lien de désinscription connu.
+      Clique « 🔍 Chercher les liens » : l'assistant lit l'en-tête de désinscription du dernier mail
+      de chaque newsletter (aucun contenu n'est téléchargé).</div>`;
+    return;
+  }
+  const totalMails = data.senders.reduce((s, x) => s + x.messageCount, 0);
+  el.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2>Listes dont tu peux te désinscrire</h2>
+      <span class="badge orange">${fmtNum(data.senders.length)} expéditeur(s) · ${fmtNum(totalMails)} mails</span></div>
+    <div class="panel-body">
+      <div class="tablewrap"><table class="table-compact"><thead><tr>
+        <th>Boîte</th><th>Expéditeur</th><th class="num">Mails</th><th class="num">Poids</th>
+        <th>Méthode</th><th></th></tr></thead><tbody>
+      ${data.senders.map((s, i) => {
+        const [emoji, label, why] = UNSUB_METHOD[s.method] ?? ['🔗', s.method, ''];
+        return `<tr>
+          <td style="white-space:nowrap">${accountChip(s.account)}</td>
+          <td style="max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+            title="${esc(s.email)}">${esc(s.displayName || s.email)}
+            <span class="muted" style="font-size:11.5px">${esc(s.email)}</span></td>
+          <td class="num">${fmtNum(s.messageCount)}</td>
+          <td class="num">${fmtSize(s.totalSizeBytes)}</td>
+          <td style="white-space:nowrap" title="${esc(why)}">${emoji} ${esc(label)}</td>
+          <td style="white-space:nowrap; text-align:right">
+            ${s.unsubscribedAt
+              ? `<span class="badge green" title="${esc(s.note || '')}">✅ désinscrit</span>`
+              : `<button class="btn btn-sm" data-unsub="${i}">🚫 Me désinscrire</button>`}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>
+      <div class="muted" style="font-size:12.5px; padding-top:10px">
+        ⚡ <strong>En un clic</strong> = l'expéditeur respecte le standard de désinscription : c'est immédiat et sûr.
+        ✉️ <strong>Par mail</strong> = une demande part depuis ta boîte.
+        🔗 <strong>Page web</strong> = rien n'est cliqué automatiquement, sa page s'ouvre et tu décides —
+        chez un expéditeur douteux, cliquer confirmerait surtout que ton adresse est active.
+        <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">🧹 Nettoyage conseillé</a> pour le stock déjà reçu.</div>
+    </div></div>`;
+
+  el.querySelectorAll('[data-unsub]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const s = data.senders[Number(btn.dataset.unsub)];
+      if (!confirm(`Se désinscrire de « ${s.displayName || s.email} » ?\n\n${UNSUB_METHOD[s.method]?.[2] ?? ''}`)) return;
+      btn.disabled = true;
+      btn.textContent = '⏳ En cours…';
+      try {
+        const r = await api.unsubscribeSender(s.account, s.email);
+        if (r.openUrl) {
+          // On n'ouvre jamais la page sans toi : c'est ton clic qui l'ouvre.
+          if (confirm(`${r.message}\n\nOuvrir la page de désinscription maintenant ?`)) {
+            window.open(r.openUrl, '_blank', 'noopener');
+            if (confirm('Une fois la démarche faite sur leur site, marquer cet expéditeur comme désinscrit ?')) {
+              await api.unsubscribeMark(s.account, s.email);
+            }
+          }
+        } else {
+          alert(r.message);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+      loadUnsubscribe();
+    });
+  });
+}
+
+// Badge : nombre de listes dont on peut se désinscrire.
+async function refreshUnsubBadge() {
+  try {
+    const { senders } = await api.unsubscribeList({});
+    const el = $('#unsub-badge');
+    if (!el) return;
+    el.textContent = fmtNum(senders.length);
+    el.classList.toggle('hidden', senders.length === 0);
+  } catch {
+    /* pas de badge */
+  }
 }
 
 // ------------------------------------------ Stratégies de rétention (A3 — Cap V3)

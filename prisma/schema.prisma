@@ -351,6 +351,17 @@ model Sender {
   // Priorité par relation (A5) : normal | always_important | never_urgent.
   // Choix de l'utilisateur, jamais recalculée.
   priority         String    @default("normal")
+  // Désinscription (P2.2) — extrait de l'en-tête List-Unsubscribe du dernier
+  // mail de cet expéditeur. Stocké ici (et pas sur chaque mail) parce qu'on se
+  // désinscrit d'un EXPÉDITEUR, pas d'un message.
+  unsubscribeHttp    String?
+  unsubscribeMailto  String?
+  // RFC 8058 : l'expéditeur accepte une désinscription en un appel, sans
+  // ouvrir de page ni confirmer — c'est la voie la plus sûre et la plus nette.
+  unsubscribeOneClick Boolean  @default(false)
+  // Trace de notre action : quand, et ce qui s'est passé.
+  unsubscribedAt     DateTime?
+  unsubscribeNote    String?
   notes            String?
   updatedAt        DateTime  @updatedAt
 

@@ -81,6 +81,12 @@ import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
 import { createBackup, listBackups, backupPath } from '../services/backup.js';
 import { getHealth } from '../services/health.js';
 import {
+  listUnsubscribable,
+  refreshUnsubscribeLinks,
+  unsubscribeSender,
+  markUnsubscribed,
+} from '../services/unsubscribe.js';
+import {
   suggestRules,
   listRules,
   previewRule,
@@ -1841,6 +1847,77 @@ export function buildAdminRouter(): Router {
           .type('text/vcard; charset=utf-8')
           .setHeader('Content-Disposition', `attachment; filename="contacts-${slug}-${stamp}.vcf"`)
           .send(toVCard(senders));
+      }
+    }),
+  );
+
+  // --- Désinscription des listes (P2.2) -------------------------------------
+  // Tarir le flux à la source. Rien n'est jamais automatique : on liste, tu
+  // décides, et chaque désinscription est journalisée.
+  router.get(
+    '/unsubscribe',
+    guard(async (req, res) => {
+      const account = typeof req.query.account === 'string' ? req.query.account : undefined;
+      const includeDone = req.query.done === '1';
+      res.json({ senders: await listUnsubscribable(account, { includeDone }) });
+    }),
+  );
+
+  // Va chercher les liens de désinscription (en-têtes IMAP) — travail long.
+  router.post(
+    '/unsubscribe/refresh',
+    guard(async (_req, res) => {
+      if (hasRunningJob('unsubscribe-refresh')) {
+        res.status(409).json({ error: 'Une recherche de liens est déjà en cours.' });
+        return;
+      }
+      const job = startJob('unsubscribe-refresh', async (progress) => {
+        const results: Record<string, unknown> = {};
+        for (const name of await listAccountNames()) {
+          try {
+            const rec = await resolveAccount(name);
+            progress(`[${name}] recherche des liens de désinscription…`);
+            results[name] = await refreshUnsubscribeLinks(rec, { onProgress: progress });
+          } catch (err) {
+            results[name] = { error: (err as Error).message };
+          }
+        }
+        return results;
+      });
+      res.status(202).json({ jobId: job.id });
+    }),
+  );
+
+  router.post(
+    '/accounts/:slug/unsubscribe',
+    guard(async (req, res) => {
+      const email = typeof req.body?.email === 'string' ? req.body.email : '';
+      if (!email) {
+        res.status(400).json({ error: 'email requis.' });
+        return;
+      }
+      try {
+        const rec = await resolveAccount(req.params.slug);
+        res.json(await unsubscribeSender(rec, email));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // « J'ai fait la démarche sur leur page » : on garde la trace.
+  router.post(
+    '/accounts/:slug/unsubscribe/mark',
+    guard(async (req, res) => {
+      const email = typeof req.body?.email === 'string' ? req.body.email : '';
+      if (!email) {
+        res.status(400).json({ error: 'email requis.' });
+        return;
+      }
+      try {
+        res.json(await markUnsubscribed(req.params.slug, email));
+      } catch (err) {
+        res.status(404).json({ error: (err as Error).message });
       }
     }),
   );

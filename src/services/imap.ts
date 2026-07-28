@@ -472,6 +472,39 @@ class ImapService {
   }
 
   /**
+   * En-têtes de désinscription d'un mail (P2.2). Deux lignes d'en-tête, aucun
+   * corps : c'est l'opération la plus légère possible côté IMAP.
+   */
+  async fetchUnsubscribeHeaders(
+    rec: AccountRecord,
+    folder: string,
+    uid: number,
+  ): Promise<{ listUnsubscribe?: string; listUnsubscribePost?: string } | null> {
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const msg = await client.fetchOne(
+        String(uid),
+        { uid: true, headers: ['list-unsubscribe', 'list-unsubscribe-post'] },
+        { uid: true },
+      );
+      if (!msg || !msg.headers) return null;
+      const raw = msg.headers.toString('utf8');
+      const pick = (name: string): string | undefined => {
+        // En-tête éventuellement replié sur plusieurs lignes (RFC 5322).
+        const re = new RegExp(`^${name}\\s*:([\\s\\S]*?)(?=\\r?\\n[^\\s]|$)`, 'im');
+        return re.exec(raw)?.[1]?.replace(/\r?\n\s+/g, ' ').trim();
+      };
+      return {
+        listUnsubscribe: pick('list-unsubscribe'),
+        listUnsubscribePost: pick('list-unsubscribe-post'),
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
    * Quota de stockage de la boîte (RFC 2087 — supporté par Outlook.com).
    * Retourne null si le serveur ne l'expose pas.
    */

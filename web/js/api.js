@@ -209,6 +209,18 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/dismiss`),
   replyRestore: (slug, threadId) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
+  // Désinscriptions (P2.2)
+  unsubscribeList: ({ account, done } = {}) => {
+    const q = new URLSearchParams();
+    if (account) q.set('account', account);
+    if (done) q.set('done', '1');
+    return request('GET', `/unsubscribe${q.toString() ? `?${q}` : ''}`);
+  },
+  unsubscribeRefresh: () => request('POST', '/unsubscribe/refresh'),
+  unsubscribeSender: (slug, email) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/unsubscribe`, { email }),
+  unsubscribeMark: (slug, email) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/unsubscribe/mark`, { email }),
   // Santé du système (P0.4)
   health: () => request('GET', '/health'),
   // Sauvegardes (P0.3)

@@ -99,6 +99,37 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**PHASE 2 « NETTOYER POUR DE VRAI » (P2.1 + P2.2, 28/07).**
+- **P2.1 protection graduée** : `ENGAGEMENT_HORIZON_DAYS = 730` dans
+  retention.ts. `PROTECTION_CLAUSES` (const) remplacée par
+  `protectionClauses()` et `ENGAGED_SENDER_CLAUSES` par
+  `engagedSenderClauses()` — des FONCTIONS qui renvoient {clauses, params}
+  (l'ordre des deux tableaux doit rester aligné dans policyWhere).
+  ABSOLUES : étoilé, tâche todo, échéance active, expéditeur ⭐, confiance
+  faible, catégorie person. GRADUÉES (2 ans) : mail répondu, fil avec
+  sortant, expéditeur « engagé ». Date inconnue ⇒ on protège. PIÈGE
+  rencontré : j'avais écrit « répondu ET RÉCENT ⇒ supprimable » au lieu de
+  « répondu ET ANCIEN ⇒ supprimable » — trouvé par le test. Autre piège :
+  la protection B5 est GLOBALE à l'expéditeur, donc chaque scénario de test
+  doit avoir SON expéditeur, sinon un cas masque les autres. Tests : 11.
+- **P2.2 désinscription** : migration `unsubscribe_links` (Sender.
+  unsubscribeHttp/Mailto/OneClick/unsubscribedAt/unsubscribeNote — sur
+  l'EXPÉDITEUR, pas sur chaque mail : on se désinscrit d'un expéditeur).
+  `services/unsubscribe.ts` : parseListUnsubscribe (chevrons ou non),
+  hasOneClick (RFC 8058), refreshUnsubscribeLinks (job : lit l'en-tête du
+  DERNIER mail de chaque expéditeur liste via
+  `imapService.fetchUnsubscribeHeaders` — 2 en-têtes, aucun corps),
+  listUnsubscribable, unsubscribeSender (one-click = POST
+  `List-Unsubscribe=One-Click` ; mail = SMTP ; lien = JAMAIS cliqué
+  automatiquement, l'URL est rendue à l'utilisateur — cliquer chez un
+  expéditeur douteux confirme que l'adresse est vivante), markUnsubscribed.
+  Écran `#/unsubscribe` (sidebar 🚫 + badge). rebuildSenders ne touche pas
+  ces champs (vérifié). Tests : 23 asserts (dont un VRAI serveur HTTP local
+  qui vérifie méthode POST + corps RFC 8058, et le cas « serveur refuse ⇒
+  aucune fausse confirmation ») + 13 checks navigateur.
+- RESTE À FAIRE côté utilisateur : lancer « 🔍 Chercher les liens » une
+  fois (les liens ne sont pas dans l'index existant), puis se désinscrire.
+
 **PHASE 0 « FIABILISER » COMPLÈTE (P0.1→P0.4, 28/07) — issue d'une revue
 croisée Gemini 3.1 Pro + ChatGPT 5.6 commandée par l'utilisateur.** Les deux
 convergeaient : le projet manquait moins d'intelligence que de BOUCLE
