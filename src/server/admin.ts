@@ -79,6 +79,7 @@ import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
 import { createBackup, listBackups, backupPath } from '../services/backup.js';
+import { getHealth } from '../services/health.js';
 import {
   suggestRules,
   listRules,
@@ -1841,6 +1842,16 @@ export function buildAdminRouter(): Router {
           .setHeader('Content-Disposition', `attachment; filename="contacts-${slug}-${stamp}.vcf"`)
           .send(toVCard(senders));
       }
+    }),
+  );
+
+  // --- Santé du système (P0.4) ----------------------------------------------
+  // « L'absence d'alerte n'est pas une preuve que tout va bien » : on mesure
+  // la fraîcheur des synchros, pas seulement leurs résultats.
+  router.get(
+    '/health',
+    guard(async (_req, res) => {
+      res.json(await getHealth());
     }),
   );
 

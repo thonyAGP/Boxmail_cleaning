@@ -209,6 +209,8 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/dismiss`),
   replyRestore: (slug, threadId) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
+  // Santé du système (P0.4)
+  health: () => request('GET', '/health'),
   // Sauvegardes (P0.3)
   backups: () => request('GET', '/backups'),
   backupCreate: () => request('POST', '/backups'),

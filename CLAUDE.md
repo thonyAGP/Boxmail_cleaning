@@ -99,6 +99,48 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**PHASE 0 « FIABILISER » COMPLÈTE (P0.1→P0.4, 28/07) — issue d'une revue
+croisée Gemini 3.1 Pro + ChatGPT 5.6 commandée par l'utilisateur.** Les deux
+convergeaient : le projet manquait moins d'intelligence que de BOUCLE
+OPÉRATIONNELLE FIABLE. Leurs affirmations ont été VÉRIFIÉES dans le code
+avant d'agir (plusieurs étaient fausses — voir ci-dessous).
+- **P0.1** : `applySqlitePragmas()` dans db/client.ts (WAL + busy_timeout 5 s
+  + synchronous=NORMAL, appelé depuis ensureDbReady) — sans WAL une écriture
+  bloquait TOUTES les lectures. Et `reconcileMoves()` dans sync.ts : IMAP n'a
+  pas de notion de déplacement, donc un mail rangé ailleurs devenait une
+  nouvelle ligne et les tâches/échéances/verdicts pointaient dans le vide.
+  On identifie par `internetMessageId` (DÉJÀ stocké et indexé — ChatGPT
+  affirmait le contraire, c'était faux : aucune migration nécessaire) et on
+  repointe Task (+ folder/uid dénormalisés)/Deadline/AttentionState/
+  AnalysisFeedback. `report.movedMessages`.
+- **P0.2** : detectDeadlines branché post-sync, VOLONTAIREMENT avant
+  runAutoRules/runAutoRetention (une échéance protège son mail : détecter
+  après aurait pu supprimer un mail porteur d'une date). Nouvelle option
+  `indexedSince` (filtre sur Message.createdAt) — sans elle le scan des
+  corps relisait les mêmes mails toutes les 30 min. `report.deadlinesFound`.
+- **P0.3** : `services/backup.ts` — VACUUM INTO (copie cohérente même en
+  écriture, contrairement à une copie de fichier en WAL), rotation 7,
+  horodatage à la SECONDE (sinon deux sauvegardes rapprochées s'écrasent —
+  trouvé par le test), `backups/` gitignoré. Déclenché quotidiennement
+  (startAutoBackup dans index.ts) ET avant chaque applyUpdate. API
+  /api/backups (+ download avec anti-traversée via listBackups). Panneau
+  « 💾 Sauvegardes » dans Paramètres. RAISON D'ÊTRE : l'index se reconstruit
+  depuis IMAP, mais PAS les tâches/échéances/règles/corrections manuelles.
+- **P0.4** : `services/health.ts` — signal principal = FRAÎCHEUR de
+  `Account.lastSyncAt` (robuste par construction : quelle que soit la panne,
+  la date cesse d'avancer ; aucune migration). Seuils adaptatifs (2 cycles
+  d'auto-sync, sinon 24 h/72 h), + quota ≥90/95 %, + compteur de mails non
+  analysés, + erreurs des jobs en mémoire. GET /api/health. Panneau
+  « 🩺 État du système » (couverture N/N) + bandeau dashboard affiché
+  UNIQUEMENT si problème (un bandeau permanent ne serait plus lu).
+- Tests : 12 + 7 + 16 (dont une RESTAURATION RÉELLE de la sauvegarde ouverte
+  comme base de travail) + 13 asserts, et 9 + 11 checks navigateur.
+- Suite décidée avec l'utilisateur : **Phase 1** (Telegram — PAS d'email :
+  « je veux nettoyer mes boîtes, pas recevoir des mails en plus » ; +
+  engagements sortants), puis **Phase 2** (protection GRADUÉE dans le temps
+  — aujourd'hui un fil répondu une fois est protégé à vie, ce qui bloquera
+  le nettoyage de masse ; + désinscription), puis Phase 3.
+
 **Pièces jointes compactes façon Outlook (retour utilisateur 10/07 :
 « quand il y a plusieurs PJ, pouvoir réduire, affichage rapide et simple,
 les uns à la suite, à la mode Outlook »).** renderReaderAttachments

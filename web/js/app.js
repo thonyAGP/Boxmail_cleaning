@@ -1000,6 +1000,7 @@ async function renderDashboard() {
     ${ov.neverSynced.length ? `<div class="notice warn">⚠️ Boîte(s) jamais synchronisée(s) :
       ${ov.neverSynced.map((n) => `<strong>${esc(n)}</strong>`).join(', ')} —
       ouvrir la boîte dans le menu puis lancer une synchronisation.</div>` : ''}
+    <div id="health-banner"></div>
 
     <div class="grid-2">
       <div class="panel">
@@ -1089,6 +1090,21 @@ async function renderDashboard() {
   });
 
   initBriefPanel();
+
+  // Santé du système (P0.4) : on n'affiche RIEN quand tout va bien — un
+  // bandeau permanent finirait par ne plus être lu. Le silence n'est fiable
+  // que parce que cette vérification tourne à chaque affichage.
+  api.health().then((h) => {
+    const el = $('#health-banner');
+    if (!el || h.level === 'ok') return;
+    const lignes = h.accounts
+      .filter((a) => a.level !== 'ok')
+      .map((a) => `<strong>${esc(a.account)}</strong> : ${esc(a.message)}`)
+      .join(' · ');
+    el.innerHTML = `<div class="notice warn">
+      ${h.level === 'error' ? '🚨' : '⚠️'} <strong>L'assistant ne travaille pas normalement</strong> —
+      ${lignes}. <a href="#/settings">Voir l'état du système</a></div>`;
+  }).catch(() => { /* la santé ne doit jamais casser le tableau de bord */ });
 
   api.operations(6).then(({ operations }) => {
     const el = $('#dash-ops');
@@ -4393,6 +4409,18 @@ function renderSettingsBody() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>🩺 État du système</h2>
+        <button class="btn btn-sm" id="set-health-refresh" title="Revérifier maintenant">↻ Vérifier</button></div>
+      <div class="panel-body">
+        <div class="muted" style="font-size:12.5px; margin-bottom:10px">
+          Si une boîte cesse d'être synchronisée (jeton expiré, connexion refusée, serveur arrêté),
+          l'assistant se tait — et ce silence ressemble à « rien à signaler ».
+          C'est ici que tu le vois.</div>
+        <div id="health-body"><span class="spinner"></span>Vérification…</div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>💾 Sauvegardes</h2>
         <button class="btn btn-sm" id="set-backup" title="Créer une sauvegarde maintenant">💾 Sauvegarder maintenant</button></div>
       <div class="panel-body">
@@ -4406,6 +4434,33 @@ function renderSettingsBody() {
     </div>`;
 
   const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  // --- État du système (P0.4) -----------------------------------------------
+  const HEALTH_DOT = { ok: '🟢', warn: '🟠', error: '🔴' };
+  const loadHealth = async () => {
+    const el = $('#health-body');
+    if (!el) return;
+    try {
+      const h = await api.health();
+      el.innerHTML = `
+        <div class="set-line"><span class="muted">Couverture</span>
+          <span>${HEALTH_DOT[h.level]} <strong>${h.totals.fresh}/${h.totals.accounts}</strong> boîte(s) à jour ·
+          ${fmtNum(h.totals.indexedMessages)} mails indexés</span></div>
+        <div class="set-line"><span class="muted">Synchronisation automatique</span>
+          <span>${h.autoSync.enabled ? `toutes les ${h.autoSync.intervalMinutes} min` : '✕ désactivée (synchro à la demande)'}</span></div>
+        ${h.totals.unanalyzed > 0 ? `<div class="set-line"><span class="muted">Mails pas encore analysés</span>
+          <span>${fmtNum(h.totals.unanalyzed)}</span></div>` : ''}
+        ${h.accounts.map((a) => `<div class="set-line">
+          <span>${HEALTH_DOT[a.level]} ${esc(a.account)}</span>
+          <span class="muted" style="font-size:12px">${esc(a.message)}${a.lastSyncAt ? ` · ${fmtDateTime(a.lastSyncAt)}` : ''}</span></div>`).join('')}
+        ${h.recentErrors.length ? `<div class="notice warn" style="margin-top:10px">
+          ⚠️ ${h.recentErrors.map(esc).join('<br>')}</div>` : ''}`;
+    } catch (err) {
+      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    }
+  };
+  loadHealth();
+  $('#set-health-refresh')?.addEventListener('click', loadHealth);
 
   // --- Sauvegardes (P0.3) ---------------------------------------------------
   const loadBackups = async () => {
