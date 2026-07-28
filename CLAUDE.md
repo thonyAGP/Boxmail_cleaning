@@ -99,6 +99,29 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**P2.3 — PROTECTION PAR LA NATURE DU MAIL (29/07).** Retour utilisateur
+avec capture : la fenêtre proposait 364 mails de `no_reply@leroymerlin.fr`
+TOUS cochés, « Votre facture » et « Votre ticket 378 » compris — « tu
+confonds des mails de publicité avec des mails contenant des pièces jointes
+de tickets ». DÉFAUT STRUCTUREL : on classait par EXPÉDITEUR (unsubscribe /
+noreply), or un magasin envoie ses pubs ET tes tickets depuis la MÊME
+adresse robot — aucun signal expéditeur ne peut les séparer. Corrigé aux
+3 niveaux : (1) categorize.ts, motif `document` élargi (ticket de caisse,
+votre ticket, reçu, bon d'achat, garantie, duplicata, certificat) — sans ça
+« Votre ticket 378 » = `info` ; (2) cleanup.ts : `documentSignals()` +
+3e catégorie `kind='document'` PRIORITAIRE sur `auto` (pièce jointe /
+intention invoice-document / sujet nommant une pièce), `keepCount` +
+`deletableCount` par expéditeur (groupBy) → l'estimation « N sûrs » exclut
+les pièces, `documentUidsOf()` retire les pièces quand on nettoie « tout
+l'expéditeur » sans sélection ; (3) retention.ts `protectionClauses()` +=
+`m.hasAttachments = 0` et `intent NOT IN ('invoice','document')` → vaut
+pour TOUTES les stratégies, y compris auto. UI : case **📄 À conserver**
+décochée par défaut + badge vert par ligne + « 📄 N gardés » dans les
+3 tableaux. Tests : 19 asserts rejouant sa capture (9 pubs/OTP supprimables,
+6 tickets/factures gardés) + aperçu réel de la stratégie « promotions ».
+**L'UTILISATEUR DOIT RELANCER 🏷️ Recalculer les catégories** — l'existant
+porte l'ancienne intention.
+
 **Journal ouvrable + boîte visible sur le nettoyage (retours utilisateur
 29/07).** (1) « dans activité récente, on déploie les mails concernés mais
 ensuite on ne peut pas les afficher, on a juste l'en-tête » : les items du

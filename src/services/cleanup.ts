@@ -22,6 +22,10 @@ export interface CleanupCandidate {
   newestMessageAt: string | null;
   riskLevel: 'safe' | 'medium';
   reason: string;
+  /** Mails porteurs d'une pièce (facture, ticket…) — jamais dans l'estimation. */
+  keepCount: number;
+  /** Ce qui peut réellement partir : messageCount − keepCount. */
+  deletableCount: number;
 }
 
 export async function getCleanupCandidates(
@@ -35,6 +39,23 @@ export async function getCleanupCandidates(
     where: { accountSlug: account, messageCount: { gte: minCount } },
     orderBy: { messageCount: 'desc' },
   });
+
+  // Combien de mails « à conserver » chaque expéditeur a-t-il envoyés ?
+  // Une seule requête groupée : un expéditeur publicitaire qui envoie aussi
+  // tes tickets ne doit pas afficher un total de suppressions gonflé.
+  const keepRows = senders.length
+    ? await db.message.groupBy({
+        by: ['fromEmail'],
+        where: {
+          accountSlug: account,
+          isDeleted: false,
+          fromEmail: { in: senders.map((s) => s.email) },
+          OR: [{ hasAttachments: true }, { intent: { in: ['invoice', 'document'] } }],
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const keepBySender = new Map(keepRows.map((r) => [r.fromEmail ?? '', r._count._all]));
 
   const candidates: CleanupCandidate[] = [];
   for (const s of senders) {
@@ -59,7 +80,13 @@ export async function getCleanupCandidates(
     }
 
     if (!riskLevel) continue;
+    const keepCount = keepBySender.get(s.email) ?? 0;
+    if (keepCount > 0) {
+      reasons.push(`${keepCount} mail(s) porteurs d'une pièce sont mis de côté`);
+    }
     candidates.push({
+      keepCount,
+      deletableCount: Math.max(0, s.messageCount - keepCount),
       sender: s.email,
       senderName: s.displayName ?? '',
       messageCount: s.messageCount,
@@ -77,7 +104,7 @@ export async function getCleanupCandidates(
     candidates,
     totalDeletableEstimate: candidates
       .filter((c) => c.riskLevel === 'safe')
-      .reduce((sum, c) => sum + c.messageCount, 0),
+      .reduce((sum, c) => sum + c.deletableCount, 0),
   };
 }
 
@@ -152,9 +179,42 @@ export interface CleanupMessage {
   date: string | null;
   isSeen: boolean;
   sizeBytes: number;
-  kind: 'auto' | 'personal';
+  /**
+   * `document` = mail porteur d'une pièce (ticket, facture, attestation) :
+   * jamais coché par défaut, même quand l'expéditeur est un robot publicitaire.
+   */
+  kind: 'auto' | 'personal' | 'document';
   /** Pourquoi ce classement (affiché dans l'interface). */
   signals: string[];
+}
+
+/**
+ * Un mail « porteur de document » se reconnaît à sa NATURE, pas à son
+ * expéditeur — c'est tout l'enjeu du retour utilisateur du 29/07 :
+ * no_reply@leroymerlin.fr envoie les soldes ET les tickets de caisse.
+ * Signaux (index seulement) : une pièce jointe, une intention facture/document,
+ * ou un sujet qui nomme une pièce.
+ */
+const DOCUMENT_SUBJECT_RE =
+  /(factur|(votre|vos|ton) ticket|ticket de caisse|ticket n[°o]|re[çc]u de|votre re[çc]u|bon d'achat|bon de commande|attestation|contrat|devis|justificatif|garantie|remboursement|avoir\b|duplicata|certificat|relev[ée]|bulletin)/i;
+
+export function documentSignals(m: {
+  subject?: string | null;
+  intent?: string | null;
+  hasAttachments?: boolean | null;
+  attachmentCount?: number | null;
+}): string[] {
+  const out: string[] = [];
+  if (m.hasAttachments) {
+    const n = m.attachmentCount ?? 0;
+    out.push(n > 1 ? `📎 ${n} pièces jointes` : '📎 pièce jointe');
+  }
+  if (m.intent === 'invoice') out.push('facture ou paiement');
+  else if (m.intent === 'document') out.push('document (ticket, attestation…)');
+  if (out.length === 0 && DOCUMENT_SUBJECT_RE.test(m.subject ?? '')) {
+    out.push('le sujet annonce une pièce à conserver');
+  }
+  return out;
 }
 
 /**
@@ -191,6 +251,9 @@ export async function listCleanupMessages(
       sizeBytes: true,
       threadId: true,
       fromEmail: true,
+      hasAttachments: true,
+      attachmentCount: true,
+      intent: true,
     },
   });
 
@@ -213,12 +276,18 @@ export async function listCleanupMessages(
     if (/^(re|tr|fwd?|aw)\s*:/i.test(m.subject ?? '')) signals.push('sujet de réponse');
     const personal = signals.length > 0;
 
-    if (!personal) {
+    // Un mail qui porte une pièce passe AVANT le classement « automatique » :
+    // l'expéditeur peut être un robot, le contenu se garde quand même.
+    const docs = personal ? [] : documentSignals(m);
+    const isDocument = docs.length > 0;
+    if (isDocument) signals.push(...docs);
+
+    if (!personal && !isDocument) {
       if (m.hasListUnsubscribe) signals.push('lien de désinscription');
       if (AUTO_SENDER_RE.test(m.fromEmail ?? '')) signals.push('expéditeur automatique');
     }
-    const auto = !personal && signals.length > 0;
-    if (!personal && !auto) signals.push("aucun marqueur d'automatisation");
+    const auto = !personal && !isDocument && signals.length > 0;
+    if (!personal && !isDocument && !auto) signals.push("aucun marqueur d'automatisation");
 
     return {
       uid: m.uid,
@@ -226,7 +295,7 @@ export async function listCleanupMessages(
       date: m.date?.toISOString() ?? null,
       isSeen: m.isSeen,
       sizeBytes: m.sizeBytes,
-      kind: auto ? 'auto' : 'personal',
+      kind: isDocument ? 'document' : auto ? 'auto' : 'personal',
       signals,
     };
   });
@@ -235,6 +304,40 @@ export async function listCleanupMessages(
 }
 
 const CLEANUP_BATCH = 200;
+
+/**
+ * Parmi ces UIDs, lesquels portent une pièce à conserver ? (index seulement)
+ * Sert de filet quand on nettoie « tout un expéditeur » sans sélection fine.
+ */
+export async function documentUidsOf(
+  account: string,
+  folder: string,
+  uids: number[],
+): Promise<Set<number>> {
+  const keep = new Set<number>();
+  if (uids.length === 0) return keep;
+  const f = await db.folder.findUnique({
+    where: { accountSlug_path: { accountSlug: account, path: folder } },
+    select: { id: true },
+  });
+  if (!f) return keep;
+  for (let i = 0; i < uids.length; i += 900) {
+    const rows = await db.message.findMany({
+      where: { folderId: f.id, uid: { in: uids.slice(i, i + 900) } },
+      select: {
+        uid: true,
+        subject: true,
+        intent: true,
+        hasAttachments: true,
+        attachmentCount: true,
+      },
+    });
+    for (const r of rows) {
+      if (documentSignals(r).length > 0) keep.add(r.uid);
+    }
+  }
+  return keep;
+}
 
 /**
  * Exécute le nettoyage d'un expéditeur : déplacement vers la corbeille par
@@ -279,6 +382,17 @@ export async function executeSenderCleanup(
   } else {
     progress(`Recherche des mails de ${sender} sur le serveur…`);
     uids = await imapService.searchUids(rec, folder, { from: sender });
+    // Garde-fou : « tout l'expéditeur » ne veut PAS dire ses factures et ses
+    // tickets. On retire de la liste les mails porteurs d'une pièce, connus
+    // par l'index (retour utilisateur 29/07 — pubs et tickets de caisse
+    // partagent la même adresse no_reply).
+    const kept = await documentUidsOf(rec.account, folder, uids);
+    if (kept.size > 0) {
+      uids = uids.filter((u) => !kept.has(u));
+      progress(
+        `${kept.size} mail(s) mis de côté : ils portent une pièce (facture, ticket, document).`,
+      );
+    }
   }
   if (uids.length === 0) {
     progress('Aucun mail à traiter.');

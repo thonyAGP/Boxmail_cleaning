@@ -186,6 +186,13 @@ export function protectionClauses(now = Date.now()): { clauses: string[]; params
       `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
       `(s.priority IS NULL OR s.priority != 'always_important')`,
       `(m.analysisConfidence IS NULL OR m.analysisConfidence != 'low')`,
+      // Un mail qui PORTE un document ne se supprime pas (retour utilisateur
+      // 29/07 : « tu confonds des mails de publicité avec des mails contenant
+      // des pièces jointes de tickets »). Le même expéditeur — un no_reply de
+      // magasin — envoie les pubs ET les tickets de caisse : classer par
+      // expéditeur ne suffit pas, il faut regarder la NATURE du mail.
+      `m.hasAttachments = 0`,
+      `(m.intent IS NULL OR m.intent NOT IN ('invoice', 'document'))`,
       // --- Graduées ---
       // Répondu : protège tant que c'est récent. Une date inconnue protège.
       `(m.isAnswered = 0 OR (m.date IS NOT NULL AND m.date < ?))`,

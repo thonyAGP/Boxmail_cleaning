@@ -1079,6 +1079,46 @@ serveur sur base neuve (16 migrations en 2,6 s puis `/health` OK).
 
 ---
 
+## ✅ P2.3 — Protection par la NATURE du mail (livrée 29/07/2026)
+
+**Déclencheur utilisateur**, capture à l'appui : « typiquement un nettoyage
+qui est mal fait […] tu confonds des mails de publicité avec des mails
+contenant des pièces jointes de tickets. Les 1ers doivent être nettoyés,
+les tickets non ! » — la fenêtre de nettoyage proposait **364 mails de
+`no_reply@leroymerlin.fr` tous cochés**, « Votre facture » et « Votre
+ticket 378 » compris.
+
+**Le défaut était structurel** : on classait par EXPÉDITEUR (lien de
+désinscription, adresse noreply) et pas par nature du mail. Or un magasin
+envoie ses soldes ET tes tickets de caisse depuis la même adresse robot :
+aucun signal au niveau de l'expéditeur ne peut les distinguer.
+
+Trois niveaux corrigés d'un coup :
+1. **Intention (A1)** — le motif `document` reconnaît maintenant les tickets
+   de caisse, reçus, bons d'achat, garanties, duplicatas, certificats. Sans
+   ça « Votre ticket 378 » tombait en « info ».
+2. **Nettoyage fin** — troisième catégorie `document` dans
+   `listCleanupMessages`, prioritaire sur `auto` : pièce jointe, intention
+   facture/document, ou sujet nommant une pièce (`documentSignals()`).
+   Écran : case **📄 À conserver**, décochée par défaut, badge vert par
+   ligne avec le motif en infobulle. `getCleanupCandidates` expose
+   `keepCount`/`deletableCount` (une requête groupée) — l'estimation
+   « N mails sûrs » ne compte plus les pièces, et le tableau affiche
+   « 📄 N gardés ». `executeSenderCleanup` sans sélection retire les mails
+   à pièce du lot (`documentUidsOf`) : « tout l'expéditeur » ne veut pas
+   dire ses factures.
+3. **Rétention / Grand ménage** — `protectionClauses()` gagne
+   `m.hasAttachments = 0` et `intent NOT IN ('invoice','document')` : la
+   protection vaut pour TOUTES les stratégies, y compris automatiques.
+
+**Tests** : 19 asserts rejouant sa capture (15 mails du même expéditeur :
+9 pubs/OTP → supprimables, 6 tickets/factures → gardés), dont l'aperçu réel
+de la stratégie « promotions » qui ne vise aucun ticket.
+**À FAIRE PAR L'UTILISATEUR** : relancer **🏷️ Recalculer les catégories**
+(⚙️ Paramètres) — les mails déjà indexés portent l'ancienne intention.
+
+---
+
 ## Backlog (petites livraisons, à caser quand pertinent)
 
 - Renommer/supprimer un compte depuis l'interface (CLI --rename/--remove existent).

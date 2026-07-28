@@ -1062,7 +1062,7 @@ async function renderDashboard() {
           <tbody>${allCandidates.slice(0, 8).map((c) => `<tr>
             <td>${esc(c.senderName || c.sender)} ${accountChip(c.account)}<br>
               <span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-            <td class="num">${fmtNum(c.messageCount)}</td>
+            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
             <td><button class="btn btn-sm cleanup-btn" data-account="${esc(c.account)}"
@@ -1859,7 +1859,7 @@ async function loadAccountCleanup(slug) {
         <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
       <tbody>${data.candidates.map((c) => `<tr>
         <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-        <td class="num">${fmtNum(c.messageCount)}</td>
+        <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
         <td class="num">${fmtNum(c.unseenCount)}</td>
         <td class="num">${fmtSize(c.totalSizeBytes)}</td>
         <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
@@ -2162,6 +2162,10 @@ async function openCleanupModal(account, sender, senderName) {
 
   const autos = list.messages.filter((m) => m.kind === 'auto');
   const persos = list.messages.filter((m) => m.kind === 'personal');
+  // 📄 Mails porteurs d'une pièce : jamais cochés, même venant d'un robot
+  // publicitaire — c'est le même expéditeur qui envoie les soldes et tes
+  // tickets de caisse.
+  const docs = list.messages.filter((m) => m.kind === 'document');
   // Sélection par défaut : uniquement les mails clairement automatiques.
   const selected = new Set(autos.map((m) => m.uid));
 
@@ -2178,6 +2182,10 @@ async function openCleanupModal(account, sender, senderName) {
     <div class="cat-toggle">
       <label><input type="checkbox" id="cat-auto" checked>
         🤖 <strong>Automatiques</strong> (${fmtNum(autos.length)}) — lien de désinscription ou expéditeur noreply</label>
+      <label><input type="checkbox" id="cat-doc">
+        📄 <strong>À conserver</strong> (${fmtNum(docs.length)}) — pièce jointe, facture, ticket, attestation.
+        Un magasin envoie ses pubs ET tes tickets depuis la même adresse :
+        ceux-là sont mis de côté. <strong>Décochés par défaut.</strong></label>
       <label><input type="checkbox" id="cat-perso">
         👤 <strong>Possiblement personnels</strong> (${fmtNum(persos.length)}) — répondu, suivi, conversation,
         ou sans marqueur automatique. <strong>Décochés par défaut.</strong></label>
@@ -2191,7 +2199,10 @@ async function openCleanupModal(account, sender, senderName) {
           <input type="checkbox" data-uid="${m.uid}" data-kind="${m.kind}" ${m.kind === 'auto' ? 'checked' : ''}>
           <span class="mail-date">${fmtDate(m.date)}</span>
           <span class="mail-subject" title="${esc(m.signals.join(' · '))}">${esc(m.subject)}</span>
-          <span class="badge ${m.kind === 'auto' ? 'gray' : 'blue'}">${m.kind === 'auto' ? '🤖 auto' : '👤 perso'}</span>
+          <span class="badge ${m.kind === 'auto' ? 'gray' : m.kind === 'document' ? 'green' : 'blue'}"
+            title="${esc(m.signals.join(' · '))}">${
+              m.kind === 'auto' ? '🤖 auto' : m.kind === 'document' ? '📄 à conserver' : '👤 perso'
+            }</span>
           ${m.isSeen ? '' : '<span class="badge orange">non lu</span>'}
         </label>`).join('')}
     </div>
@@ -2218,7 +2229,8 @@ async function openCleanupModal(account, sender, senderName) {
   const rowBoxes = [...overlay.querySelectorAll('.mail-row input[type=checkbox]')];
   const syncCategoryBox = (kind) => {
     const boxes = rowBoxes.filter((b) => b.dataset.kind === kind);
-    const box = kind === 'auto' ? $('#cat-auto') : $('#cat-perso');
+    const box =
+      kind === 'auto' ? $('#cat-auto') : kind === 'document' ? $('#cat-doc') : $('#cat-perso');
     const checkedCount = boxes.filter((b) => b.checked).length;
     box.checked = checkedCount === boxes.length && boxes.length > 0;
     box.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
@@ -2235,6 +2247,7 @@ async function openCleanupModal(account, sender, senderName) {
     });
   };
   bindCategory('#cat-auto', 'auto');
+  bindCategory('#cat-doc', 'document');
   bindCategory('#cat-perso', 'personal');
   for (const b of rowBoxes) {
     b.addEventListener('change', () => {
@@ -4290,7 +4303,7 @@ async function loadCleanupGlobal() {
             <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
           <tbody>${candidates.map((c) => `<tr>
             <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-            <td class="num">${fmtNum(c.messageCount)}</td>
+            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
             <td class="num">${fmtNum(c.unseenCount)}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>

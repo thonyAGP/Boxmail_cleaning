@@ -178,8 +178,12 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
   },
   {
     intent: 'document',
-    re: /(attestation|contrat|devis|justificatif|bulletin|relev[ée]|document (disponible|[àa] signer)|votre document|signature (requise|[ée]lectronique)|pi[èe]ce jointe)/i,
-    label: 'document transmis ou à signer',
+    // Les TICKETS DE CAISSE et reçus entrent ici (retour utilisateur 29/07) :
+    // un magasin envoie depuis la MÊME adresse no_reply ses pubs et tes
+    // tickets — sans ce motif, « Votre ticket 378 » tombait en « info » et se
+    // retrouvait coché pour la corbeille avec les soldes.
+    re: /(attestation|contrat|devis|justificatif|bulletin|relev[ée]|document (disponible|[àa] signer)|votre document|signature (requise|[ée]lectronique)|pi[èe]ce jointe|(votre|vos|ton) ticket|ticket de caisse|ticket n[°o]|votre re[çc]u|bon d'achat|bon de commande|garantie|duplicata|certificat)/i,
+    label: 'document transmis ou à signer (facture, ticket, attestation…)',
   },
   {
     intent: 'promo',
