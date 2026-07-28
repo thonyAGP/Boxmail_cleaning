@@ -35,6 +35,8 @@ export interface SyncReport {
   foldersSynced: string[];
   newMessages: number;
   deletedMessages: number;
+  /** Mails rangés ailleurs, rattachés à leur nouvelle place (P0.1). */
+  movedMessages?: number;
   flagUpdates: number;
   threadsLinked: number;
   sendersUpdated: number;
@@ -134,6 +136,9 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   };
 
   const selfEmail = rec.username.toLowerCase();
+  // Mails disparus de leur dossier pendant CE run : candidats à un
+  // déplacement (rangement, mise à la corbeille…) — voir reconcileMoves.
+  const goneMessageIds: number[] = [];
 
   await db.account.upsert({
     where: { slug: rec.account },
@@ -326,6 +331,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             });
           }
           report.deletedMessages += goneIds.length;
+          goneMessageIds.push(...goneIds);
         }
         // Réapparitions (rare : déplacement aller-retour).
         const returned = await db.message.findMany({
@@ -398,6 +404,24 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
       }
     }
   });
+
+  // --- 3d. Mails DÉPLACÉS : on suit le mail, pas sa position ------------------
+  // Un mail rangé dans un autre dossier disparaît d'un côté et réapparaît de
+  // l'autre avec un nouvel UID : sans ça, la tâche/échéance/verdict qui y était
+  // rattaché pointerait vers une ligne morte (« mail introuvable »).
+  if (goneMessageIds.length) {
+    try {
+      report.movedMessages = await reconcileMoves(rec.account, goneMessageIds);
+      if (report.movedMessages) {
+        progress(`${report.movedMessages} mail(s) déplacé(s) rattaché(s) à leur nouvelle place.`);
+      }
+    } catch (err) {
+      logger.warn('rattachement des mails déplacés en échec', {
+        account: rec.account,
+        error: (err as Error).message,
+      });
+    }
+  }
 
   // --- 4. Rattachement des fils de discussion --------------------------------
   progress('Rattachement des fils de discussion…');
@@ -473,6 +497,86 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
  * Rattache les messages sans fil à un thread : d'abord par In-Reply-To
  * (chaînage exact), sinon par sujet normalisé, sinon nouveau fil.
  */
+/**
+ * Rattache ce qui dépend d'un mail DÉPLACÉ (P0.1).
+ *
+ * IMAP n'a pas de notion de « déplacement » : le mail disparaît du dossier
+ * source (nouvel UID ailleurs). Sans traitement, une tâche, une échéance, un
+ * verdict de qualité ou un report de réponse rattaché à l'ancienne ligne
+ * pointerait dans le vide — l'utilisateur verrait « mail introuvable » après
+ * un simple rangement, y compris quand c'est NOTRE règle de classement qui a
+ * déplacé le mail.
+ *
+ * On identifie le mail par son en-tête Message-ID (`internetMessageId`), stable
+ * quel que soit le dossier, et on repointe les références vers la ligne vivante.
+ * L'ancienne ligne reste en place (isDeleted) : c'est une trace, exclue de tous
+ * les écrans.
+ */
+export async function reconcileMoves(accountSlug: string, goneIds: number[]): Promise<number> {
+  let moved = 0;
+  for (const ids of chunk(goneIds, 500)) {
+    const gone = await db.message.findMany({
+      where: { id: { in: ids }, isDeleted: true, internetMessageId: { not: null } },
+      select: { id: true, internetMessageId: true },
+    });
+    if (gone.length === 0) continue;
+
+    // Le même Message-ID, toujours vivant ailleurs = le mail a été déplacé.
+    const live = await db.message.findMany({
+      where: {
+        accountSlug,
+        isDeleted: false,
+        internetMessageId: { in: gone.map((g) => g.internetMessageId as string) },
+      },
+      select: { id: true, uid: true, internetMessageId: true, folder: { select: { path: true } } },
+    });
+    if (live.length === 0) continue;
+    const liveByMsgId = new Map(live.map((m) => [m.internetMessageId as string, m]));
+
+    for (const g of gone) {
+      const target = liveByMsgId.get(g.internetMessageId as string);
+      if (!target || target.id === g.id) continue;
+      await relinkMessageReferences(g.id, target);
+      moved++;
+    }
+  }
+  return moved;
+}
+
+/** Repointe les références d'un mail vers sa nouvelle ligne (voir reconcileMoves). */
+async function relinkMessageReferences(
+  oldId: number,
+  target: { id: number; uid: number; folder: { path: string } },
+): Promise<void> {
+  // Les contraintes d'unicité (une échéance par mail+date, un verdict par
+  // moteur+mail) peuvent déjà être prises côté cible : dans ce cas on laisse
+  // l'ancienne référence telle quelle plutôt que de faire échouer la sync.
+  const safeUpdate = async (label: string, run: () => Promise<unknown>) => {
+    try {
+      await run();
+    } catch (err) {
+      logger.warn('rattachement partiel', { label, oldId, newId: target.id, error: (err as Error).message });
+    }
+  };
+
+  await safeUpdate('tasks', () =>
+    db.task.updateMany({
+      where: { messageId: oldId },
+      // folder/uid sont dénormalisés pour ouvrir le mail source : à remettre à jour.
+      data: { messageId: target.id, folder: target.folder.path, uid: target.uid },
+    }),
+  );
+  await safeUpdate('deadlines', () =>
+    db.deadline.updateMany({ where: { messageId: oldId }, data: { messageId: target.id } }),
+  );
+  await safeUpdate('attention', () =>
+    db.attentionState.updateMany({ where: { messageId: oldId }, data: { messageId: target.id } }),
+  );
+  await safeUpdate('feedback', () =>
+    db.analysisFeedback.updateMany({ where: { messageId: oldId }, data: { messageId: target.id } }),
+  );
+}
+
 export async function linkThreads(accountSlug: string): Promise<number> {
   const orphans = await db.message.findMany({
     where: { accountSlug, threadId: null },
