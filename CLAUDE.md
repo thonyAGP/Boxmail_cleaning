@@ -99,6 +99,25 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**Journal ouvrable + boîte visible sur le nettoyage (retours utilisateur
+29/07).** (1) « dans activité récente, on déploie les mails concernés mais
+ensuite on ne peut pas les afficher, on a juste l'en-tête » : les items du
+journal ne portaient que sujet+date. `OperationEntry.items` accepte
+maintenant `folder`/`uid` OPTIONNELS — renseignés UNIQUEMENT quand le mail
+est resté en place (detect_deadlines, tâches créées/terminées, marquage
+lu/non-lu) et volontairement OMIS après suppression/déplacement (l'UID ne
+pointerait plus sur rien ⇒ pas de lien mort). `validateUids` (search.ts)
+renvoie l'uid par item, l'appelant décide. Front : `opLine` rend le sujet
+en lien `[data-op-open]` quand folder+uid sont là, écouteur DÉLÉGUÉ dans
+installGlobalUx (les lignes sont réécrites à chaque rafraîchissement).
+(2) « il manque un indicateur de couleur permettant de dire dans quelle
+boîte le ménage va être effectué » : `accountChip` sur les lignes du
+panneau « Nettoyage conseillé », dans le titre de la modale, dans la phrase
+d'intro ET sur le bouton d'action (« vers la corbeille de <boîte> ») —
+`accountChip(slug, {onDark:true})` (pastille opaque, sinon illisible sur le
+bouton vert). Tests : ui-oplog-open.mjs, 14 checks (dont le contre-cas
+« mail supprimé non cliquable » et l'ouverture réelle du corps).
+
 **L6.1 — LE SERVEUR SE MET À JOUR TOUT SEUL (28/07).** Déclencheur :
 « on ne va pas faire des déploiements manuels pour le futur… », après une
 mise à jour SSH en échec sur `database is locked`. CAUSE : la mise à jour

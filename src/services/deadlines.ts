@@ -273,7 +273,8 @@ export async function detectDeadlines(
   let created = 0;
   let alreadyKnown = 0;
   let bodiesRead = 0;
-  const createdItems: { subject: string; date: string | null }[] = [];
+  const createdItems: { subject: string; date: string | null; folder?: string; uid?: number }[] =
+    [];
 
   const record = async (
     msg: (typeof messages)[number],
@@ -328,6 +329,9 @@ export async function detectDeadlines(
     createdItems.push({
       subject: `${msg.subject ?? '(sans sujet)'} → ${ex.date.toLocaleDateString('fr-FR')}`,
       date: msg.date?.toISOString() ?? null,
+      // Le mail n'a pas bougé : on garde de quoi le rouvrir depuis le journal.
+      folder: msg.folder.path,
+      uid: msg.uid,
     });
   };
 

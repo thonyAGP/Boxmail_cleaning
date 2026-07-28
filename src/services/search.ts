@@ -371,10 +371,12 @@ export async function validateUids(
   account: string,
   folder: string,
   uids: number[],
-): Promise<{ uids: number[]; items: { subject: string; date: string | null }[] }> {
+): Promise<{ uids: number[]; items: { subject: string; date: string | null; uid: number }[] }> {
   await ensureDbReady();
   const valid: number[] = [];
-  const items: { subject: string; date: string | null }[] = [];
+  // L'UID est renvoyé avec chaque item : l'appelant décide s'il le journalise
+  // (mail resté en place ⇒ ouvrable depuis le journal) ou non (mail déplacé).
+  const items: { subject: string; date: string | null; uid: number }[] = [];
   for (let i = 0; i < uids.length; i += 500) {
     const rows = await db.message.findMany({
       where: {
@@ -387,7 +389,11 @@ export async function validateUids(
     });
     for (const r of rows) {
       valid.push(r.uid);
-      items.push({ subject: r.subject ?? '(sans sujet)', date: r.date?.toISOString() ?? null });
+      items.push({
+        subject: r.subject ?? '(sans sujet)',
+        date: r.date?.toISOString() ?? null,
+        uid: r.uid,
+      });
     }
   }
   return { uids: valid, items };

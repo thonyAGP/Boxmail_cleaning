@@ -1325,7 +1325,14 @@ export function buildAdminRouter(): Router {
         folder,
         params: { count: uids.length, action, ...(destinationUsed ? { destination: destinationUsed } : {}) },
         affectedUids: uids,
-        items: items.slice(0, 500),
+        // Marquer lu/non-lu laisse les mails à leur place : on garde le dossier
+        // et l'UID pour pouvoir les rouvrir depuis le journal. Supprimer ou
+        // déplacer les fait changer d'endroit : on n'écrit que sujet + date,
+        // sinon le journal proposerait des liens morts.
+        items:
+          action === 'seen' || action === 'unseen'
+            ? items.slice(0, 500).map((i) => ({ ...i, folder }))
+            : items.slice(0, 500).map(({ subject, date }) => ({ subject, date })),
         result:
           action === 'delete' ? `soft-deleted ${uids.length} -> ${destinationUsed}`
           : action === 'move' ? `moved ${uids.length} -> ${destinationUsed}`

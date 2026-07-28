@@ -38,9 +38,14 @@ function accountColor(slug) {
 }
 
 /** Pastille de compte colorée, utilisée sur tous les écrans. */
-function accountChip(slug) {
+// `onDark` : pastille posée sur un fond coloré (bouton d'action) — le fond
+// translucide habituel y devient illisible, on passe en pastille opaque.
+function accountChip(slug, { onDark = false } = {}) {
   if (!slug) return '';
   const c = accountColor(slug);
+  if (onDark) {
+    return `<span class="badge acct-chip" style="background:#fff; color:${c}; border:1px solid #fff">${esc(slug)}</span>`;
+  }
   return `<span class="badge acct-chip" style="background:${c}1f; color:${c}; border:1px solid ${c}55">${esc(slug)}</span>`;
 }
 let smtpEnabled = false; // renseigné par /api/me au chargement
@@ -83,6 +88,26 @@ let globalUxInstalled = false;
 function installGlobalUx() {
   if (globalUxInstalled) return;
   globalUxInstalled = true;
+
+  // Ouvrir un mail listé dans le journal d'activité (panneau « Activité
+  // récente » du tableau de bord ET écran 📜 Journal). Délégué : les lignes
+  // sont réécrites à chaque rafraîchissement, un écouteur par ligne serait
+  // reperdu à chaque fois.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('[data-op-open]');
+    if (!a) return;
+    e.preventDefault();
+    openReaderFor(
+      {
+        account: a.dataset.acc,
+        folder: a.dataset.folder,
+        uid: Number(a.dataset.uid),
+        subject: a.dataset.subject,
+        date: a.dataset.date || null,
+      },
+      { onRemoved: () => route() },
+    );
+  });
 
   // Échap ferme le panneau de lecture, puis les modales — partout. Si un
   // brouillon est en cours dans la modale d'envoi, on demande confirmation.
@@ -1035,7 +1060,8 @@ async function renderDashboard() {
           ${allCandidates.length === 0 ? '<div class="empty">Aucun candidat détecté (ou boîtes pas encore synchronisées).</div>' : `
           <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th><th>Risque</th><th></th></tr></thead>
           <tbody>${allCandidates.slice(0, 8).map((c) => `<tr>
-            <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)} · ${esc(c.account)}</span></td>
+            <td>${esc(c.senderName || c.sender)} ${accountChip(c.account)}<br>
+              <span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
             <td class="num">${fmtNum(c.messageCount)}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
@@ -1661,11 +1687,20 @@ function opLine(op) {
   }
 
   const meta = [op.account, op.folder].filter(Boolean).map(esc).join(' · ');
+  // Chaque mail listé est OUVRABLE quand le journal a gardé son dossier et son
+  // UID (c'est le cas quand l'opération ne l'a pas déplacé). Sinon on affiche
+  // le sujet en texte simple plutôt qu'un lien qui échouerait.
+  const opItem = (i) => {
+    const date = `<span class="mail-date">${fmtDate(i.date)}</span>`;
+    if (!i.folder || !i.uid) return `<div>${date} ${esc(i.subject)}</div>`;
+    return `<div>${date} <a href="#" class="op-open" title="Ouvrir ce mail"
+      data-op-open="1" data-acc="${esc(op.account ?? '')}" data-folder="${esc(i.folder)}"
+      data-uid="${Number(i.uid)}" data-subject="${esc(i.subject)}"
+      data-date="${esc(i.date ?? '')}">${esc(i.subject)}</a></div>`;
+  };
   const items = Array.isArray(op.items) && op.items.length
     ? `<details class="op-details"><summary>Voir les ${fmtNum(op.items.length)} mails concernés</summary>
-       <div class="op-items">${op.items
-         .map((i) => `<div><span class="mail-date">${fmtDate(i.date)}</span> ${esc(i.subject)}</div>`)
-         .join('')}</div></details>`
+       <div class="op-items">${op.items.map(opItem).join('')}</div></details>`
     : '';
 
   return `<div class="op-line"><span class="op-time">${fmtDateTime(op.ts)}</span>
@@ -2101,7 +2136,7 @@ async function openCleanupModal(account, sender, senderName) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal">
-    <div class="modal-head"><h2>🧹 Nettoyer « ${esc(senderName)} »</h2>
+    <div class="modal-head"><h2>🧹 Nettoyer « ${esc(senderName)} » ${accountChip(account)}</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
     <div class="modal-foot" id="modal-foot"></div>
@@ -2131,7 +2166,8 @@ async function openCleanupModal(account, sender, senderName) {
   const selected = new Set(autos.map((m) => m.uid));
 
   $('#modal-body').innerHTML = `
-    <p>Mails de <strong>${esc(sender)}</strong> (dossier ${esc(preview.folder)}) :</p>
+    <p>Mails de <strong>${esc(sender)}</strong> dans la boîte ${accountChip(account)}
+      (dossier ${esc(preview.folder)}) :</p>
     <div class="preview-grid">
       <div class="preview-item"><div class="lbl">Mails au total</div><div class="val">${fmtNum(preview.count)}</div></div>
       <div class="preview-item"><div class="lbl">Taille totale</div><div class="val">${fmtSize(preview.totalSizeBytes)}</div></div>
@@ -2169,7 +2205,10 @@ async function openCleanupModal(account, sender, senderName) {
 
   const confirmBtn = $('#modal-confirm');
   const updateConfirm = () => {
-    confirmBtn.textContent = `Déplacer ${fmtNum(selected.size)} mails vers la corbeille`;
+    // La boîte visée est rappelée jusque SUR le bouton d'action : c'est le
+    // dernier instant avant de toucher aux mails.
+    confirmBtn.innerHTML = `Déplacer ${fmtNum(selected.size)} mails vers la corbeille de
+      ${accountChip(account, { onDark: true })}`;
     confirmBtn.disabled = selected.size === 0;
   };
   updateConfirm();

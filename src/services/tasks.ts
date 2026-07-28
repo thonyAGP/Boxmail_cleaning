@@ -166,7 +166,13 @@ export async function createTask(input: CreateTaskInput): Promise<TaskItem> {
     account: input.account ?? 'global',
     tool: 'create_task',
     params: { taskId: row.id, title, dueDate: row.dueDate?.toISOString() ?? null, source: row.source },
-    items: [{ subject: title, date: row.dueDate?.toISOString() ?? null }],
+    items: [
+      {
+        subject: title,
+        date: row.dueDate?.toISOString() ?? null,
+        ...(folder && uid ? { folder, uid } : {}),
+      },
+    ],
     result: 'tâche créée',
   });
   return toItem(row);
@@ -205,7 +211,13 @@ export async function taskFromDeadline(account: string, deadlineId: number): Pro
     account,
     tool: 'task_from_deadline',
     params: { taskId: row.id, deadlineId, dueDate: d.date.toISOString() },
-    items: [{ subject: d.title, date: d.date.toISOString() }],
+    items: [
+      {
+        subject: d.title,
+        date: d.date.toISOString(),
+        ...(msg ? { folder: msg.folder.path, uid: msg.uid } : {}),
+      },
+    ],
     result: 'tâche créée depuis une échéance',
   });
   return toItem(row);
@@ -228,7 +240,13 @@ async function setTaskStatus(
     account: row.accountSlug ?? 'global',
     tool: toolName,
     params: { taskId: id },
-    items: [{ subject: row.title, date: row.dueDate?.toISOString() ?? null }],
+    items: [
+      {
+        subject: row.title,
+        date: row.dueDate?.toISOString() ?? null,
+        ...(row.folder && row.uid ? { folder: row.folder, uid: row.uid } : {}),
+      },
+    ],
     result: resultLabel,
   });
   return toItem(updated);

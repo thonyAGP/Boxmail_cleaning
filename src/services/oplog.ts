@@ -18,8 +18,15 @@ export interface OperationEntry {
   folder?: string;
   dryRun?: boolean;
   result?: string;
-  /** Contenu concerné (sujet + date par mail) pour savoir EXACTEMENT quoi. */
-  items?: { subject: string; date: string | null }[];
+  /**
+   * Contenu concerné (sujet + date par mail) pour savoir EXACTEMENT quoi.
+   * `folder`/`uid` sont renseignés UNIQUEMENT quand le mail est resté à sa
+   * place : l'interface s'en sert pour rendre le sujet cliquable et rouvrir
+   * le mail. Après une suppression ou un déplacement, on les omet — l'UID
+   * d'origine ne pointerait plus sur rien (mieux vaut du texte simple qu'un
+   * lien mort).
+   */
+  items?: { subject: string; date: string | null; folder?: string; uid?: number }[];
 }
 
 const SENSITIVE_KEYS = /token|secret|password|authorization|bearer|cache/i;

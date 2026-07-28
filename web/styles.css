@@ -359,6 +359,9 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 }
 .op-items div { padding: 3px 0; border-bottom: 1px solid #f0f2f7; }
 .op-items div:last-child { border-bottom: none; }
+/* Sujet cliquable = le mail est encore à sa place et peut être rouvert. */
+.op-items a.op-open { color: var(--accent); text-decoration: none; cursor: pointer; }
+.op-items a.op-open:hover { text-decoration: underline; }
 
 /* ---------- Indicateur global d'activité ---------- */
 .activity-chip {
