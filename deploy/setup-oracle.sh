@@ -105,6 +105,34 @@ sudo env PATH="$PATH" pm2 startup systemd -u "$USER" --hp "$HOME" >/dev/null || 
 pm2 save
 ok "boxmail-mcp sous pm2"
 
+# --- 4b. Pare-feu local ----------------------------------------------------------
+# PIÈGE ORACLE : les images Ubuntu d'OCI embarquent des règles iptables qui
+# REJETTENT tout sauf SSH. Ouvrir les ports dans la Security List ne suffit
+# donc pas — sans ça, Let's Encrypt ne peut pas joindre le port 80 et la
+# demande de certificat échoue. On insère les autorisations en TÊTE de chaîne
+# (avant la règle de rejet), puis on les rend permanentes.
+say "Ouverture des ports 80/443 sur le pare-feu local…"
+if command -v iptables >/dev/null; then
+  for port in 80 443; do
+    if ! sudo iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null; then
+      sudo iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+    fi
+  done
+  if command -v netfilter-persistent >/dev/null; then
+    sudo netfilter-persistent save >/dev/null 2>&1 || true
+  else
+    sudo apt-get install -y -qq iptables-persistent >/dev/null 2>&1 || true
+    sudo netfilter-persistent save >/dev/null 2>&1 || true
+  fi
+  ok "ports 80/443 autorisés localement (règles rendues permanentes)"
+fi
+# ufw n'est pas actif par défaut sur ces images, mais si l'utilisateur l'a
+# activé un jour, on l'ouvre aussi plutôt que d'échouer sans explication.
+if command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+  sudo ufw allow 80/tcp >/dev/null && sudo ufw allow 443/tcp >/dev/null
+  ok "ufw : 80/443 autorisés"
+fi
+
 # --- 5. nginx + TLS --------------------------------------------------------------
 say "Configuration nginx pour ${DOMAIN}…"
 sudo tee /etc/nginx/sites-available/boxmail >/dev/null <<NGINX
