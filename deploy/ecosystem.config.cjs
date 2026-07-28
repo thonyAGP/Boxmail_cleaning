@@ -1,6 +1,6 @@
 // pm2 — configuration de process pour boxmail-mcp
 //
-//   pm2 start deploy/ecosystem.config.js
+//   pm2 start deploy/ecosystem.config.cjs
 //   pm2 save            # persiste la liste des process
 //   pm2 startup         # génère le service systemd de démarrage auto
 //   pm2 logs boxmail-mcp

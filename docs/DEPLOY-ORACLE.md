@@ -228,7 +228,7 @@ bas « Comment marche l'IA ».)
 | Certificat refusé par certbot | Le DNS doit pointer vers l'instance AVANT l'étape 3 — attends la propagation puis relance `bash deploy/setup-oracle.sh` (il est relançable sans risque). |
 | AADSTS50011 à l'enrôlement | URI de l'étape 4 mal copiée ou pas encore propagée (attends 10 min). |
 | Claude répond « unauthorized » | Le header Bearer du connecteur ne correspond pas au `MCP_BEARER_TOKEN` du récap. |
-| L'interface dit « non supervisé » | `pm2 startOrReload deploy/ecosystem.config.js && pm2 save` |
+| L'interface dit « non supervisé » | `pm2 startOrReload deploy/ecosystem.config.cjs && pm2 save` |
 
 ---
 

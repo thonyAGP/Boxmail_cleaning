@@ -477,7 +477,7 @@ src/
     enroll.ts           CLI d'enrôlement (device code flow)
 deploy/
   nginx.conf.example
-  ecosystem.config.js   pm2
+  ecosystem.config.cjs   pm2
   oci-firewall.md
 .env.example
 ```

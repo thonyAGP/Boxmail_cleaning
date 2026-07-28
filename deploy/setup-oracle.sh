@@ -116,7 +116,7 @@ ok "build OK"
 
 # --- 4. pm2 ---------------------------------------------------------------------
 say "Démarrage sous pm2 (relance auto)…"
-pm2 startOrReload deploy/ecosystem.config.js
+pm2 startOrReload deploy/ecosystem.config.cjs
 pm2 save
 # Service systemd au boot (idempotent — pm2 affiche la commande sudo si besoin)
 sudo env PATH="$PATH" pm2 startup systemd -u "$USER" --hp "$HOME" >/dev/null || true
