@@ -37,6 +37,8 @@ export interface SyncReport {
   deletedMessages: number;
   /** Mails rangés ailleurs, rattachés à leur nouvelle place (P0.1). */
   movedMessages?: number;
+  /** Échéances détectées automatiquement sur les nouveaux mails (P0.2). */
+  deadlinesFound?: number;
   flagUpdates: number;
   threadsLinked: number;
   sendersUpdated: number;
@@ -438,6 +440,28 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     await computeConfidenceForAccount(rec.account, { onlyMissing: true });
   } catch (err) {
     logger.warn('confiance post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
+  // Échéances des NOUVEAUX mails (P0.2). Placé ici volontairement : AVANT les
+  // automatismes de rangement/suppression, parce qu'une échéance protège son
+  // mail (PROTECTION_CLAUSES) — détecter après, ce serait risquer de mettre à
+  // la corbeille un mail porteur d'une date avant de l'avoir vue.
+  // `indexedSince` limite le travail aux mails arrivés pendant CETTE sync :
+  // sans lui, le scan des contenus relirait les mêmes mails toutes les 30 min.
+  try {
+    const { detectDeadlines } = await import('./deadlines.js');
+    const det = await detectDeadlines(rec, {
+      sinceDays: 30,
+      deep: true,
+      indexedSince: new Date(started),
+    });
+    report.deadlinesFound = det.created;
+    if (det.created > 0) progress(`Échéances : ${det.created} nouvelle(s) détectée(s).`);
+  } catch (err) {
+    logger.warn('détection des échéances post-sync en échec', {
       account: rec.account,
       error: (err as Error).message,
     });

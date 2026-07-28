@@ -226,7 +226,17 @@ export interface DetectReport {
 
 export async function detectDeadlines(
   rec: AccountRecord,
-  opts: { sinceDays?: number; deep?: boolean; onProgress?: (m: string) => void } = {},
+  opts: {
+    sinceDays?: number;
+    deep?: boolean;
+    /**
+     * Ne traiter que les mails INDEXÉS après cette date (P0.2) : le passage
+     * automatique après chaque sync ne doit voir que les nouveaux arrivants,
+     * sinon il relirait les mêmes contenus toutes les 30 minutes.
+     */
+    indexedSince?: Date;
+    onProgress?: (m: string) => void;
+  } = {},
 ): Promise<DetectReport> {
   await ensureDbReady();
   const started = Date.now();
@@ -244,6 +254,7 @@ export async function detectDeadlines(
       hasListUnsubscribe: false,
       date: { gte: since },
       folder: { is: { role: { notIn: ['trash', 'spam', 'drafts'] } } },
+      ...(opts.indexedSince ? { createdAt: { gte: opts.indexedSince } } : {}),
     },
     orderBy: { date: 'desc' },
     select: {
