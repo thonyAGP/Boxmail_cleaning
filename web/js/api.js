@@ -209,6 +209,10 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/dismiss`),
   replyRestore: (slug, threadId) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
+  // Sauvegardes (P0.3)
+  backups: () => request('GET', '/backups'),
+  backupCreate: () => request('POST', '/backups'),
+  backupDownloadUrl: (file) => `/api/backups/${encodeURIComponent(file)}/download`,
   // Pour les opérations hors request() (téléchargements de PJ en fetch direct)
   // qui veulent aussi allumer la barre de chargement globale.
   activity: { begin: activityBegin, end: activityEnd },

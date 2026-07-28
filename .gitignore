@@ -6,6 +6,7 @@ logs/
 
 # Base de données locale (index des mails) — jamais commitée
 data/
+backups/
 *.db
 *.db-journal
 

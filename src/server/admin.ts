@@ -78,6 +78,7 @@ import { toVCard, toOutlookCsv } from '../services/export.js';
 import { sendEmail, validateRecipients } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
+import { createBackup, listBackups, backupPath } from '../services/backup.js';
 import {
   suggestRules,
   listRules,
@@ -1840,6 +1841,46 @@ export function buildAdminRouter(): Router {
           .setHeader('Content-Disposition', `attachment; filename="contacts-${slug}-${stamp}.vcf"`)
           .send(toVCard(senders));
       }
+    }),
+  );
+
+  // --- Sauvegardes (P0.3) ---------------------------------------------------
+  // L'index des mails se reconstruit depuis IMAP, mais pas les tâches,
+  // échéances, règles et corrections manuelles : c'est ça qu'on protège.
+  router.get(
+    '/backups',
+    guard(async (_req, res) => {
+      res.json({ backups: listBackups() });
+    }),
+  );
+
+  router.post(
+    '/backups',
+    guard(async (_req, res) => {
+      try {
+        const b = await createBackup('manuelle');
+        await recordOperation({
+          account: '(système)',
+          tool: 'ui_backup_create',
+          params: { file: b.file, sizeBytes: b.sizeBytes },
+          result: 'sauvegarde créée',
+        });
+        res.json(b);
+      } catch (err) {
+        res.status(500).json({ error: `Sauvegarde impossible : ${(err as Error).message}` });
+      }
+    }),
+  );
+
+  router.get(
+    '/backups/:file/download',
+    guard(async (req, res) => {
+      const path = backupPath(String(req.params.file));
+      if (!path) {
+        res.status(404).json({ error: 'Sauvegarde introuvable.' });
+        return;
+      }
+      res.download(path);
     }),
   );
 

@@ -85,6 +85,17 @@ function runStep(command: string, progress: (m: string) => void): Promise<void> 
 }
 
 export async function applyUpdate(progress: (m: string) => void): Promise<{ restarted: boolean }> {
+  // Filet de sécurité (P0.3) : une mise à jour peut faire évoluer la base
+  // (migrations). On sauvegarde AVANT, jamais après — non bloquant : une
+  // sauvegarde impossible ne doit pas empêcher la mise à jour.
+  try {
+    const { createBackup } = await import('./backup.js');
+    const b = await createBackup('avant-mise-a-jour');
+    progress(`💾 Sauvegarde faite (${b.file})`);
+  } catch (err) {
+    progress(`⚠️ Sauvegarde impossible (${(err as Error).message}) — on continue.`);
+  }
+
   const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
   await runStep(`git pull --ff-only origin ${branch}`, progress);
 

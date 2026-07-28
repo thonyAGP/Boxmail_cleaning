@@ -4390,9 +4390,62 @@ function renderSettingsBody() {
         <div class="set-line"><span class="muted">Catégories de l'assistant</span>
           <span><button class="btn btn-sm" id="set-categorize" title="Recalcule « qui écrit » et « pourquoi » pour tous les mails déjà indexés (index local, rapide)">🏷️ Recalculer les catégories</button></span></div>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>💾 Sauvegardes</h2>
+        <button class="btn btn-sm" id="set-backup" title="Créer une sauvegarde maintenant">💾 Sauvegarder maintenant</button></div>
+      <div class="panel-body">
+        <div class="muted" style="font-size:12.5px; margin-bottom:10px">
+          Tes mails restent chez Microsoft, mais <strong>ton travail d'organisation</strong> (tâches,
+          échéances validées, règles, catégories et priorités corrigées à la main) n'existe qu'ici.
+          Une sauvegarde est faite <strong>chaque jour</strong> et <strong>avant chaque mise à jour</strong> ;
+          les 7 dernières sont conservées.</div>
+        <div id="backups-list"><span class="spinner"></span>Chargement…</div>
+      </div>
     </div>`;
 
   const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  // --- Sauvegardes (P0.3) ---------------------------------------------------
+  const loadBackups = async () => {
+    const el = $('#backups-list');
+    if (!el) return;
+    try {
+      const { backups } = await api.backups();
+      el.innerHTML = backups.length
+        ? backups.map((b) => `<div class="set-line">
+            <span>${esc(b.file.replace(/^boxmail_/, '').replace(/\.db$/, ''))}
+              <span class="muted" style="font-size:11.5px">· ${fmtSize(b.sizeBytes)}</span></span>
+            <span><button class="btn btn-sm" data-backup-dl="${esc(b.file)}"
+              title="Télécharger cette sauvegarde sur ton PC">⬇️ Télécharger</button></span></div>`).join('')
+        : '<div class="muted">Aucune sauvegarde pour l’instant — la première sera faite automatiquement.</div>';
+      el.querySelectorAll('[data-backup-dl]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const file = btn.dataset.backupDl;
+          downloadWithFeedback(btn, api.backupDownloadUrl(file), file, '⬇️ Télécharger');
+        });
+      });
+    } catch (err) {
+      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    }
+  };
+  loadBackups();
+
+  $('#set-backup')?.addEventListener('click', async () => {
+    const btn = $('#set-backup');
+    btn.disabled = true;
+    btn.textContent = '⏳ Sauvegarde…';
+    try {
+      const b = await api.backupCreate();
+      notice(`<div class="notice">💾 Sauvegarde créée (${esc(fmtSize(b.sizeBytes))}).</div>`);
+      await loadBackups();
+    } catch (err) {
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+    btn.disabled = false;
+    btn.textContent = '💾 Sauvegarder maintenant';
+  });
 
   $('#set-categorize')?.addEventListener('click', async () => {
     const btn = $('#set-categorize');
