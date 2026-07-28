@@ -1271,7 +1271,17 @@ async function renderDashboard() {
       <button class="btn btn-primary btn-sm" id="update-btn" style="margin-left:10px">Mettre à jour maintenant</button>`;
     body.prepend(el);
     $('#update-btn').addEventListener('click', () => applyUpdateFlow(el));
-  }).catch(() => {});
+  }).catch((err) => {
+    // Ne PAS rester muet : sans ça, une vérification en échec est
+    // indiscernable d'un « tu es à jour » — et on reste sur une vieille
+    // version sans jamais le savoir.
+    const el = document.createElement('div');
+    el.className = 'notice warn';
+    el.innerHTML = `⚠️ <strong>Impossible de vérifier les mises à jour</strong> —
+      ${esc(err.message)}.<br><span class="muted" style="font-size:12.5px">Ferme Mail Assistant
+      et relance <strong>MailAssistant.bat</strong> : il récupère le code au démarrage.</span>`;
+    body.prepend(el);
+  });
 }
 
 // Relie tous les [data-open] d'un conteneur au panneau de lecture. `mapFn`
@@ -4530,6 +4540,8 @@ function renderSettingsBody() {
       <div class="panel-head"><h2>🖥️ Serveur</h2></div>
       <div class="panel-body">
         <div class="set-line"><span class="muted">Version</span><span>${v ? `${esc(v.commit)} · ${esc(v.date)}` : '—'}</span></div>
+        <div class="set-line"><span class="muted">Mise à jour</span>
+          <span id="set-update"><span class="spinner"></span>vérification…</span></div>
         <div class="set-line"><span class="muted">Superviseur (relance auto)</span>
           <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
         <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>
@@ -4606,6 +4618,24 @@ function renderSettingsBody() {
     </div>`;
 
   const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  // --- Mise à jour : visible LÀ où l'utilisateur regarde la version ----------
+  api.updateCheck().then(({ behind, commits }) => {
+    const el = $('#set-update');
+    if (!el) return;
+    el.innerHTML = behind
+      ? `<span class="badge orange">⬆️ ${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}</span>
+         <button class="btn btn-sm btn-primary" id="set-update-btn">Mettre à jour</button>
+         <div class="muted" style="font-size:11.5px; margin-top:4px">${commits.slice(0, 2).map(esc).join(' · ')}</div>`
+      : '✅ à jour';
+    $('#set-update-btn')?.addEventListener('click', () => applyUpdateFlow(el));
+  }).catch((err) => {
+    const el = $('#set-update');
+    if (!el) return;
+    el.innerHTML = `<span class="badge red">⚠️ vérification impossible</span>
+      <div class="muted" style="font-size:11.5px; margin-top:4px">${esc(err.message)} —
+      ferme Mail Assistant et relance <strong>MailAssistant.bat</strong>.</div>`;
+  });
 
   // --- Transfert des boîtes --------------------------------------------------
   const portMsg = (html) => { $('#port-result').innerHTML = html; };
