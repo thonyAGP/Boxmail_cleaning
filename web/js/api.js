@@ -221,6 +221,11 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/unsubscribe`, { email }),
   unsubscribeMark: (slug, email) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/unsubscribe/mark`, { email }),
+  // Transfert des boîtes entre installations
+  accountsExport: (passphrase, accounts) =>
+    request('POST', '/accounts/export', { passphrase, accounts }),
+  accountsImport: (envelope, passphrase, overwrite) =>
+    request('POST', '/accounts/import', { envelope, passphrase, overwrite }),
   // Santé du système (P0.4)
   health: () => request('GET', '/health'),
   // Sauvegardes (P0.3)

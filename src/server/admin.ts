@@ -80,6 +80,7 @@ import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
 import { createBackup, listBackups, backupPath } from '../services/backup.js';
 import { getHealth } from '../services/health.js';
+import { exportAccounts, importAccounts } from '../services/portability.js';
 import {
   listUnsubscribable,
   refreshUnsubscribeLinks,
@@ -1918,6 +1919,36 @@ export function buildAdminRouter(): Router {
         res.json(await markUnsubscribed(req.params.slug, email));
       } catch (err) {
         res.status(404).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // --- Transfert des boîtes entre installations -----------------------------
+  // Enrôler une fois, réutiliser ailleurs (PC ↔ serveur). Le paquet est
+  // chiffré par une phrase secrète choisie ici : il ne dépend d'aucune machine.
+  router.post(
+    '/accounts/export',
+    guard(async (req, res) => {
+      const passphrase = typeof req.body?.passphrase === 'string' ? req.body.passphrase : '';
+      const names = Array.isArray(req.body?.accounts) ? (req.body.accounts as string[]) : undefined;
+      try {
+        res.json(await exportAccounts(passphrase, names));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  router.post(
+    '/accounts/import',
+    guard(async (req, res) => {
+      const passphrase = typeof req.body?.passphrase === 'string' ? req.body.passphrase : '';
+      const overwrite = req.body?.overwrite === true;
+      try {
+        const report = await importAccounts(req.body?.envelope, passphrase, { overwrite });
+        res.json(report);
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
       }
     }),
   );

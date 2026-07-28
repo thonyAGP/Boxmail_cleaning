@@ -99,6 +99,40 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**L6 DÉPLOIEMENT FAIT (28/07) — le serveur tourne en ligne.**
+`https://boxmail.lb2i.com` — Oracle Cloud ARM (VM.Standard.A1.Flex, 6 Go,
+Ubuntu 24.04 Minimal aarch64), région Madrid, IP `51.170.60.55`. Vérifié de
+l'extérieur : /health OK, certificat Let's Encrypt valide, redirection
+http→https, /mcp sans token = 401, HSTS + nosniff actifs.
+PIÈGES RENCONTRÉS (tous corrigés dans le dépôt) : (1) shape `E5.Flex`
+choisie par erreur = PAYANTE (~30 $/mois) → seules `A1.Flex` (ARM) et
+`E2.1.Micro` sont Always Free ; (2) capacité Always Free saturée → il faut
+passer le compte en Pay As You Go (reste gratuit) ; (3) image Minimal sans
+`git` ni `curl` → installés en tout premier ; (4) iptables d'OCI bloque
+tout sauf SSH → ouverture 80/443 ajoutée au script ; (5)
+`ecosystem.config.js` refusé par pm2 (projet en modules ES) → renommé en
+`.cjs` ; (6) session SSH mobile qui se coupe → le script accepte
+BOXMAIL_DOMAIN/BOXMAIL_EMAIL/BOXMAIL_ADMIN_PASSWORD pour une installation
+en UNE commande, lançable via `nohup` en arrière-plan.
+Reste côté utilisateur : enrôler les boîtes, brancher le connecteur Claude
+(URL `https://boxmail.lb2i.com/mcp` + bearer du récap).
+
+**Transfert des boîtes entre installations (demande utilisateur : « une
+fois renseignée en local ou sur le site, besoin de le faire seulement une
+fois »).** `services/portability.ts` : exportAccounts déchiffre les
+cacheBlob avec la clé LOCALE puis rechiffre le tout avec une phrase secrète
+(scrypt + AES-256-GCM, 12 car. min) → le fichier ne dépend d'aucune
+machine ; importAccounts fait l'inverse et ne remplace une boîte déjà
+enrôlée QUE sur accord explicite (overwrite). POST /accounts/export et
+/accounts/import. Panneau « 📦 Transférer mes boîtes » dans Paramètres,
+avec DEUX avertissements : le fichier donne un accès complet aux boîtes, et
+après transfert il ne faut utiliser QU'UNE installation (les jetons de
+rafraîchissement tournent — deux installations actives se déconnecteraient
+mutuellement). Tests : 15 asserts (aucun jeton en clair dans le fichier,
+mauvaise phrase refusée sans indice, fichier altéré détecté par GCM, et
+surtout le cache MSAL restitué IDENTIQUE = accès réellement utilisables)
++ 9 checks navigateur.
+
 **PHASE 2 « NETTOYER POUR DE VRAI » (P2.1 + P2.2, 28/07).**
 - **P2.1 protection graduée** : `ENGAGEMENT_HORIZON_DAYS = 730` dans
   retention.ts. `PROTECTION_CLAUSES` (const) remplacée par

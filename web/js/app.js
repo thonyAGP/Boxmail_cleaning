@@ -4544,6 +4544,43 @@ function renderSettingsBody() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>📦 Transférer mes boîtes</h2></div>
+      <div class="panel-body">
+        <div class="muted" style="font-size:12.5px; margin-bottom:12px">
+          Enrôle tes boîtes <strong>une seule fois</strong>, puis transfère-les vers ton autre
+          installation (ton PC ↔ ce serveur) au lieu de tout ressaisir.
+          Le fichier produit est protégé par une phrase secrète que tu choisis — il ne dépend
+          d'aucune machine.</div>
+
+        <div class="notice warn" style="font-size:12.5px">
+          ⚠️ Ce fichier donne un <strong>accès complet à tes boîtes</strong> : traite-le comme un
+          mot de passe (ne l'envoie pas par mail, supprime-le après usage).
+          Et après le transfert, <strong>n'utilise qu'une seule installation</strong> : si les deux
+          tournent en même temps, elles finissent par se déconnecter mutuellement.</div>
+
+        <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
+          <span><strong>Exporter</strong><br>
+            <span class="muted" style="font-size:12px">depuis cette installation</span></span>
+          <span style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+            <input type="password" id="exp-pass" placeholder="phrase secrète (12 car. min)"
+              style="min-width:220px" autocomplete="new-password">
+            <button class="btn btn-sm" id="exp-btn">📤 Exporter mes boîtes</button></span>
+        </div>
+
+        <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
+          <span><strong>Importer</strong><br>
+            <span class="muted" style="font-size:12px">depuis un fichier exporté</span></span>
+          <span style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+            <input type="file" id="imp-file" accept=".json,application/json">
+            <input type="password" id="imp-pass" placeholder="phrase secrète du fichier"
+              style="min-width:200px" autocomplete="off">
+            <button class="btn btn-sm" id="imp-btn">📥 Importer</button></span>
+        </div>
+        <div id="port-result"></div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>🩺 État du système</h2>
         <button class="btn btn-sm" id="set-health-refresh" title="Revérifier maintenant">↻ Vérifier</button></div>
       <div class="panel-body">
@@ -4569,6 +4606,63 @@ function renderSettingsBody() {
     </div>`;
 
   const notice = (html) => { $('#settings-notice').innerHTML = html; };
+
+  // --- Transfert des boîtes --------------------------------------------------
+  const portMsg = (html) => { $('#port-result').innerHTML = html; };
+
+  $('#exp-btn')?.addEventListener('click', async () => {
+    const pass = $('#exp-pass').value;
+    const btn = $('#exp-btn');
+    btn.disabled = true;
+    try {
+      const env = await api.accountsExport(pass);
+      // Téléchargement local : le fichier n'est jamais laissé sur le serveur.
+      const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `boxmail-boites-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      $('#exp-pass').value = '';
+      portMsg(`<div class="notice">📤 ${fmtNum(env.accounts)} boîte(s) exportée(s) — le fichier
+        est dans tes téléchargements. Garde bien la phrase secrète : sans elle, il est inutilisable.</div>`);
+    } catch (err) {
+      portMsg(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+    btn.disabled = false;
+  });
+
+  $('#imp-btn')?.addEventListener('click', async () => {
+    const file = $('#imp-file').files?.[0];
+    const pass = $('#imp-pass').value;
+    if (!file) { portMsg('<div class="notice warn">⚠️ Choisis d’abord le fichier exporté.</div>'); return; }
+    const btn = $('#imp-btn');
+    btn.disabled = true;
+    try {
+      const envelope = JSON.parse(await file.text());
+      let r = await api.accountsImport(envelope, pass, false);
+      // Boîtes déjà présentes ici : on demande avant d'écraser des accès en usage.
+      if (r.skipped.length && confirm(
+        `${r.skipped.length} boîte(s) sont déjà enrôlées ici :\n` +
+        r.skipped.map((s) => `· ${s.account}`).join('\n') +
+        `\n\nRemplacer leurs accès par ceux du fichier ?`)) {
+        r = await api.accountsImport(envelope, pass, true);
+      }
+      $('#imp-pass').value = '';
+      await refreshOverview();
+      portMsg(`<div class="notice">📥 ${fmtNum(r.imported.length)} boîte(s) importée(s)${
+        r.imported.length ? ' : ' + r.imported.map(esc).join(', ') : ''}.
+        ${r.skipped.length ? `<br><span class="muted">Ignorées (déjà présentes) : ${r.skipped.map((s) => esc(s.account)).join(', ')}</span>` : ''}
+        <br>Lance maintenant une <strong>synchronisation</strong> pour indexer leurs mails.</div>`);
+      renderSettingsBody();
+    } catch (err) {
+      portMsg(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+    btn.disabled = false;
+  });
 
   // --- État du système (P0.4) -----------------------------------------------
   const HEALTH_DOT = { ok: '🟢', warn: '🟠', error: '🔴' };
