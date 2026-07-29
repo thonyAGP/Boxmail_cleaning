@@ -102,6 +102,25 @@ const AD_RE = /(\bpromo(tions?)?\b|marketing|offres?@|\bdeals?\b|\bsales?@|publi
 const PERSONAL_DOMAIN_RE =
   /@(gmail|googlemail|hotmail|outlook|live|msn|yahoo|orange|wanadoo|free|sfr|neuf|laposte|icloud|me|mac|protonmail|proton|gmx|aol)\.(com|fr|net|me|ch)$/i;
 
+/**
+ * Boîtes gratuites ouvertes à n'importe qui — y compris la famille mail.com,
+ * dont les domaines à consonance professionnelle (accountant.com,
+ * consultant.com…) sont le déguisement favori de l'hameçonnage.
+ *
+ * Sert à UNE chose : une banque, un assureur ou une administration n'écrit
+ * JAMAIS depuis une telle adresse. C'est ce qui permet de refuser la
+ * protection à `Paymentconfirmation @paypalservice
+ * <team_execsales@accountant.com>` (relevé en base, classé « banque » en
+ * confiance haute) sans pour autant déclasser les vrais organismes qui
+ * passent par un prestataire — `no-reply@xoom.com` (PayPal),
+ * `bnpp-epargne-entreprise@s2e-net.com` (BNP), `legal@mail.lolivier.fr`.
+ */
+const FREE_MAILBOX_RE = new RegExp(
+  PERSONAL_DOMAIN_RE.source.replace(/\$$/, '') +
+    '|@(mail|email|accountant|consultant|engineer|doctor|techie|cheerful|post|usa|writeme|iname|europe|myself|dr|programmer|lawyer)\\.com$',
+  'i',
+);
+
 export interface SenderSignals {
   email: string;
   displayName?: string | null;
@@ -121,17 +140,26 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
   const text = `${s.email} ${s.displayName ?? ''}`;
   let m: RegExpExecArray | null;
 
-  // C4 — défaut n°3 : les catégories PROTÉGÉES (banque, assurance,
-  // administration) sont reconnues sur l'ADRESSE seule, jamais sur le nom
-  // affiché. Un nom affiché est choisi librement par l'expéditeur, y compris
-  // par un hameçonneur : relevé en base, `Paymentconfirmation @paypalservice
-  // <team_execsales@accountant.com>` était classé « banque » en confiance
-  // haute et héritait ainsi de la protection réservée aux vrais mails
-  // bancaires. C'est une propriété de sûreté, pas une préférence de réglage.
-  if ((m = ADMIN_RE.exec(s.email))) return { category: 'admin', reason: `administration (« ${m[0]} »)` };
-  if ((m = BANK_RE.exec(s.email))) return { category: 'bank', reason: `banque / argent (« ${m[0]} »)` };
-  if ((m = INSURANCE_RE.exec(s.email)))
-    return { category: 'insurance', reason: `assurance / mutuelle (« ${m[0]} »)` };
+  // C4 — défaut n°3 : une marque PROTÉGÉE (banque, assurance, administration)
+  // vaut sans réserve quand elle est dans l'ADRESSE. Dans le seul nom affiché,
+  // elle ne vaut que si l'adresse n'est pas une boîte gratuite : un nom affiché
+  // est choisi librement, y compris par un hameçonneur. Relevé en base,
+  // `Paymentconfirmation @paypalservice <team_execsales@accountant.com>` était
+  // classé « banque » en confiance haute et héritait de la protection réservée
+  // aux vrais mails bancaires.
+  //
+  // La première version de ce correctif n'acceptait QUE l'adresse. La
+  // simulation sur les 2 996 expéditeurs réels a montré qu'elle déclassait
+  // 23 organismes authentiques passant par un prestataire (Xoom pour PayPal,
+  // s2e-net.com pour BNP, une agence AXA sur son propre domaine) : leur retirer
+  // la protection pour neutraliser un seul hameçonneur était le mauvais
+  // échange. D'où ce critère plus fin.
+  if (!FREE_MAILBOX_RE.test(s.email)) {
+    if ((m = ADMIN_RE.exec(text))) return { category: 'admin', reason: `administration (« ${m[0]} »)` };
+    if ((m = BANK_RE.exec(text))) return { category: 'bank', reason: `banque / argent (« ${m[0]} »)` };
+    if ((m = INSURANCE_RE.exec(text)))
+      return { category: 'insurance', reason: `assurance / mutuelle (« ${m[0]} »)` };
+  }
 
   // Réseaux sociaux et boutiques restent reconnus sur le texte entier : ce
   // sont des catégories NETTOYABLES, donc une marque usurpée dans le nom
