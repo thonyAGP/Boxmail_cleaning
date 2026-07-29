@@ -1345,6 +1345,24 @@ précédence, un seul format de journal.
 
 ### C4 — Les règles découvertes (demande explicite de l'utilisateur)
 
+**✅ LIVRÉ (29/07).** Les trois règles sont codées dans `categorizeSender`
+(categorize.ts) — et NON dans un écran de suggestions comme prévu à l'origine :
+c'est dans le moteur qu'elles servent aux ~31 000 mails que l'IA ne jugera
+jamais. Détail des correctifs et des pièges dans CLAUDE.md § État. Deux leçons
+qui valent au-delà de C4 :
+- **La cause réelle n'était pas celle qu'on croyait.** La première passe
+  faisait conclure « le nom affiché humain trompe le moteur » ; la requête en
+  base a montré que 860 des 1 084 faux « personne » venaient du raccourci
+  `conversational`, testé AVANT la détection d'adresse automatique. Toujours
+  remonter à `categoryReason` avant de coder une règle.
+- **Simuler sur les données réelles avant de déployer.** La première version
+  du correctif passait les 32 tests unitaires ET aurait retiré leur protection
+  à 23 organismes financiers authentiques joignables via un prestataire. Seul
+  un passage à blanc sur les 2 996 expéditeurs l'a montré.
+
+Mesure : récupérable 6 746 → 6 925 (+179), fausses « personnes » automatiques
+1 084 → 1 013. Gain de volume modeste, gain de sûreté réel.
+
 **MATIÈRE BRUTE DISPONIBLE (première passe du 29/07 : 3 389 mails jugés,
 677 expéditeurs corrigés sur 7 boîtes).** Trois règles sortent des faits, pas
 d'une intuition — chacune est adossée à des exemples réels :

@@ -102,6 +102,39 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (session en cours)
 
+**C4 LIVRÉ (29/07) : les trois règles tirées de la passe, codées dans le
+moteur.** Choix assumé : les règles vont dans `categorizeSender`, PAS dans un
+écran de suggestions — c'est là qu'elles servent aux ~31 000 mails que l'IA
+ne jugera jamais. Chaque règle est adossée à une requête en base, et la
+CAUSE réelle différait de ce que la première passe laissait croire :
+1. **Le raccourci « conversation » fabriquait les fausses personnes**
+   (860 des 1 084 « personne » automatiques portaient la raison « vous avez
+   déjà échangé »). Un accusé de non-remise EST une réponse à ton envoi : le
+   fil contient un sortant ⇒ « conversation » ⇒ « personne », la catégorie la
+   PLUS protégée. Et le test d'adresse automatique passait APRÈS, donc n'était
+   jamais atteint. Ce n'était PAS le nom affiché, contrairement à ce que
+   j'avais écrit d'abord. Correctif : garde-fou `isServiceAddress` DEVANT le
+   test de conversation. Volontairement restreint : ni `info@`, ni `contact@`,
+   ni `service@` (adresses ordinaires des artisans réels — testé).
+2. **Caisses bancaires régionales invisibles** : elles écrivent depuis
+   `ca-<region>.fr` sans jamais nommer « crédit agricole ». Ajout de
+   `ca-*.fr`, `e-ca-*.fr`, `cmb.fr`, monabanq/oney/cofidis/bpp…
+3. **Marque protégée refusée depuis une boîte GRATUITE.** PIÈGE ÉVITÉ DE
+   JUSTESSE : ma première version n'acceptait la marque que dans l'adresse —
+   la simulation sur les 2 996 expéditeurs réels a montré qu'elle déclassait
+   23 organismes AUTHENTIQUES passant par un prestataire (`no-reply@xoom.com`
+   pour PayPal, `bnpp-epargne-entreprise@s2e-net.com`, une agence AXA).
+   Le bon critère était ailleurs : `team_execsales@accountant.com` est un
+   webmail gratuit (famille mail.com) — une banque n'écrit jamais de là.
+   **TOUJOURS simuler sur les données réelles avant de déployer une règle de
+   classement** : le test unitaire seul n'aurait pas vu la régression.
+Ajout des réseaux 2000 (hi5, Meetic, Badoo, Skyrock, Copains d'avant, WAYN,
+Facebox, Viadeo, MySpace). Test : 37 asserts bâtis sur des expéditeurs
+RELEVÉS EN BASE, contre-cas compris. Backfill lancé sur les 7 boîtes.
+MESURE : récupérable 6 746 → **6 925** (+179), fausses « personnes » auto
+1 084 → 1 013 (−71). Le gain en volume est modeste ; le vrai gain est la
+sûreté (les documents bancaires ne sont plus du bruit).
+
 **PREMIER RATTRAPAGE MASSIF EXÉCUTÉ (29/07) : 3 389 mails jugés, 677
 expéditeurs corrigés.** Demande utilisateur : « répare les extraits et lance
 ici par blocs de 500 les analyses de mails. Tu peux le donner à un agent
