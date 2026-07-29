@@ -11,6 +11,14 @@ backups/
 *.db-journal
 
 # Node
+# Clés privées : JAMAIS dans le dépôt, même par accident. Une clé déposée à la
+# racine du projet serait embarquée par un simple `git add -A` et publiée sur
+# GitHub — d'où ces motifs, posés avant que ça n'arrive (29/07).
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+
 node_modules/
 dist/
 npm-debug.log*

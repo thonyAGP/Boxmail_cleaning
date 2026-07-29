@@ -100,6 +100,29 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   (public, app « boxmail-mcp », comptes perso uniquement, flux publics activés,
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
+## Accès au serveur de production (à ne plus rechercher)
+
+- VM Oracle : `ubuntu@51.170.60.55` (hôte `instance-20260728-1911`), dépôt
+  dans **`/home/ubuntu/boxmail`**, app sous pm2 (`boxmail-mcp`).
+- Clé privée rangée sur le PC de l'utilisateur :
+  `C:\Users\leberan\.ssh\oracle-boxmail.key` (droits restreints à son compte),
+  avec un raccourci dans `~/.ssh/config` : **`ssh boxmail`** suffit.
+- **PIÈGE (perdu ~1 h le 29/07)** : l'« Oracle Cloud Shell » de la console
+  N'EST PAS la VM — c'est une machine de console séparée, avec son propre
+  clone du dépôt dans `~/boxmail`. Une commande lancée là-bas met à jour ce
+  clone et ne touche PAS la production ; le symptôme est
+  `bash: pm2: command not found`. Toujours vérifier l'invite : `cloudshell`
+  = mauvaise machine.
+- Mise à jour désormais gérée par un **minuteur systemd**
+  (`boxmail-update.timer`, chaque nuit 04:00 UTC) qui exécute
+  `deploy/update-boot.sh` → `deploy/update.sh`. `AUTO_UPDATE_HOUR=-1` dans le
+  `.env` du serveur : la mise à jour interne à l'app est éteinte, il n'y a
+  qu'UN responsable.
+- Vérification rapide qu'un déploiement a pris : `GET /api/analysis/coverage`
+  répond **401** (route existante, session requise) et non 404.
+- Ne JAMAIS déposer de clé dans le dossier du projet : `git add -A` la
+  publierait. `.gitignore` couvre désormais `*.key`, `*.pem`, `id_rsa*`.
+
 ## État (fin de session précédente)
 
 **LA MISE À JOUR DEPUIS L'INTERFACE NE POUVAIT PAS FONCTIONNER SOUS LINUX
