@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService } from './imap.js';
@@ -232,6 +234,111 @@ export async function backfillSnippets(
       `${result.intentsImproved} intention(s) précisée(s) — reste ${result.remaining}.`,
   );
   return result;
+}
+
+// ------------------------------------------- Rattrapage repris après redémarrage
+
+export type BackfillScope = 'recent' | 'all';
+
+export interface PendingBackfill {
+  scope: BackfillScope;
+  requestedAt: string;
+}
+
+/**
+ * Marqueur sur DISQUE de « l'utilisateur a demandé un rattrapage ».
+ *
+ * POURQUOI un fichier et pas la mémoire : les jobs vivent dans le processus.
+ * Or le serveur redémarre à chaque mise à jour — et depuis que celles-ci sont
+ * automatiques, ça arrive toutes les nuits. Un rattrapage de plusieurs heures
+ * mourait donc en silence, en laissant l'interface afficher des compteurs
+ * figés (constaté en réel le 29/07 : le job est mort à 09h26, l'utilisateur
+ * l'a vu bloqué sans comprendre pourquoi). Le marqueur permet au serveur de
+ * REPRENDRE tout seul au démarrage suivant.
+ */
+const MARKER = (): string => resolve(process.cwd(), 'data', 'snippet-backfill.json');
+
+export function requestBackfill(scope: BackfillScope): void {
+  try {
+    const path = MARKER();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ scope, requestedAt: new Date().toISOString() }), 'utf8');
+  } catch (err) {
+    logger.warn('marqueur de rattrapage non écrit', { error: (err as Error).message });
+  }
+}
+
+export function pendingBackfill(): PendingBackfill | null {
+  try {
+    const path = MARKER();
+    if (!existsSync(path)) return null;
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<PendingBackfill>;
+    return raw.scope === 'all' || raw.scope === 'recent'
+      ? { scope: raw.scope, requestedAt: raw.requestedAt ?? '' }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearBackfill(): void {
+  try {
+    const path = MARKER();
+    if (existsSync(path)) unlinkSync(path);
+  } catch {
+    /* le marqueur disparaîtra au prochain passage */
+  }
+}
+
+/** Plafond par passage : un job ne tourne pas indéfiniment (il est repris). */
+const MAX_ROUNDS = 40;
+
+/**
+ * Rattrapage sur TOUTES les boîtes, par lots, jusqu'à épuisement ou plafond.
+ * Partagé par le bouton de l'interface et par la reprise au démarrage — un
+ * seul comportement. Le marqueur n'est effacé que lorsqu'il ne reste plus rien
+ * à lire : tant qu'il subsiste du travail, un redémarrage reprend la main.
+ */
+export async function runBackfillAllAccounts(
+  scope: BackfillScope,
+  progress: (m: string) => void = () => {},
+): Promise<Record<string, unknown>> {
+  const { listAccountNames, resolveAccount } = await import('./accounts.js');
+  const sinceDays = scope === 'all' ? null : undefined;
+  const results: Record<string, unknown> = {};
+  let leftOver = 0;
+
+  for (const name of await listAccountNames()) {
+    try {
+      const rec = await resolveAccount(name);
+      let filled = 0;
+      let empty = 0;
+      let intents = 0;
+      let remaining = 0;
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        progress(`[${name}] lecture des mails — lot ${round + 1}…`);
+        const r = await backfillSnippets(rec, { sinceDays, onProgress: progress });
+        filled += r.filled;
+        empty += r.empty;
+        intents += r.intentsImproved;
+        remaining = r.remaining;
+        if (r.scanned === 0 || remaining === 0) break;
+      }
+      leftOver += remaining;
+      results[name] = { filled, empty, intentsImproved: intents, remaining };
+    } catch (err) {
+      results[name] = { error: (err as Error).message };
+      progress(`⚠️ ${name} en échec (${(err as Error).message}) — on continue.`);
+    }
+  }
+
+  if (leftOver === 0) {
+    clearBackfill();
+    progress('✅ Plus aucun mail à lire — rattrapage terminé.');
+  } else {
+    progress(`⏸️ ${leftOver} mail(s) restants — la lecture reprendra automatiquement.`);
+  }
+  return { ...results, remaining: leftOver };
 }
 
 export interface AccountCoverage {

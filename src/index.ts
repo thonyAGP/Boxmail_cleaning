@@ -12,6 +12,29 @@ import { startAutoSync } from './services/autosync.js';
 import { startAutoBackup } from './services/backup.js';
 import { startAutoUpdate } from './services/autoupdate.js';
 import { ensureMigrationsApplied } from './db/migrate.js';
+import { pendingBackfill, runBackfillAllAccounts } from './services/snippets.js';
+import { startJob, hasRunningJob } from './services/jobs.js';
+
+/**
+ * Reprise du rattrapage des extraits après un redémarrage (C1).
+ * Les jobs vivent en mémoire : une mise à jour — donc chaque nuit — tuait un
+ * rattrapage de plusieurs heures, en silence. Le marqueur laissé sur disque
+ * par la demande de l'utilisateur permet de reprendre là où on s'était arrêté.
+ */
+function resumeSnippetBackfill(): void {
+  const pending = pendingBackfill();
+  if (!pending || hasRunningJob('snippets')) return;
+  logger.info('reprise du rattrapage des extraits', { scope: pending.scope });
+  // Léger décalage : on laisse le serveur finir de se mettre en route.
+  const timer = setTimeout(() => {
+    startJob('snippets', async (progress, setMeta) => {
+      setMeta({ scope: pending.scope, resumed: true });
+      progress('Reprise automatique après redémarrage…');
+      return runBackfillAllAccounts(pending.scope, progress);
+    });
+  }, 15_000);
+  timer.unref();
+}
 
 /**
  * Bootstrap serveur HTTP + MCP (transport Streamable HTTP).
@@ -161,6 +184,7 @@ async function main() {
     startAutoSync();
     startAutoBackup();
     startAutoUpdate();
+    resumeSnippetBackfill();
   });
 
   // Arrêt propre.

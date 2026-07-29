@@ -106,7 +106,12 @@ import {
   type SenderCategory,
   type SenderPriority,
 } from '../services/categorize.js';
-import { analysisCoverage, backfillSnippets } from '../services/snippets.js';
+import {
+  analysisCoverage,
+  requestBackfill,
+  runBackfillAllAccounts,
+  type BackfillScope,
+} from '../services/snippets.js';
 import { analysisProgress } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import {
@@ -845,38 +850,13 @@ export function buildAdminRouter(): Router {
         res.status(409).json({ error: 'Une récupération des extraits est déjà en cours.' });
         return;
       }
-      const sinceDays = req.body?.scope === 'all' ? null : undefined;
-      // Plafond de sécurité : un job ne tourne pas indéfiniment. S'il reste du
-      // travail au bout de MAX_ROUNDS, l'utilisateur relance — c'est reprenable.
-      const MAX_ROUNDS = 40;
+      const scope: BackfillScope = req.body?.scope === 'all' ? 'all' : 'recent';
+      // Marqueur sur disque AVANT de lancer : si le serveur redémarre au
+      // milieu (mise à jour nocturne…), il reprend tout seul au démarrage.
+      requestBackfill(scope);
       const job = startJob('snippets', async (progress, setMeta) => {
-        // Portée exposée à l'interface : « 3 derniers mois » et « toute la
-        // boîte » n'ont pas le même compteur de restant.
-        setMeta({ scope: sinceDays === null ? 'all' : 'recent' });
-        const results: Record<string, unknown> = {};
-        for (const name of await listAccountNames()) {
-          try {
-            const rec = await resolveAccount(name);
-            let filled = 0;
-            let empty = 0;
-            let intents = 0;
-            let remaining = 0;
-            for (let round = 0; round < MAX_ROUNDS; round++) {
-              progress(`[${name}] lecture des mails — lot ${round + 1}…`);
-              const r = await backfillSnippets(rec, { sinceDays, onProgress: progress });
-              filled += r.filled;
-              empty += r.empty;
-              intents += r.intentsImproved;
-              remaining = r.remaining;
-              if (r.scanned === 0 || remaining === 0) break;
-            }
-            results[name] = { filled, empty, intentsImproved: intents, remaining };
-          } catch (err) {
-            results[name] = { error: (err as Error).message };
-            progress(`⚠️ ${name} en échec (${(err as Error).message}) — on continue.`);
-          }
-        }
-        return results;
+        setMeta({ scope });
+        return runBackfillAllAccounts(scope, progress);
       });
       res.status(202).json({ jobId: job.id });
     }),
