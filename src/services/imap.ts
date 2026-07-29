@@ -816,13 +816,37 @@ function findTextNode(node: BodyNode | null | undefined): BodyNode | null {
   return plain ?? html;
 }
 
-/** Décode un buffer selon le charset MIME (Node 20 = ICU complet). */
+/**
+ * Décode un buffer selon le charset MIME (Node 20 = ICU complet), en réparant
+ * les charsets MAL DÉCLARÉS — courant sur les vieux mails (2004-2010), et très
+ * visible dans les extraits : « voilÃ », « Ã© », « � ».
+ *
+ * Deux erreurs symétriques, détectables :
+ *  - de l'UTF-8 étiqueté latin-1 → on lit « Ã© » là où il y a « é » ;
+ *  - du latin-1 étiqueté UTF-8 → on obtient le caractère de remplacement « � ».
+ * Dans les deux cas on tente l'autre lecture et on la garde si elle est propre.
+ */
 function decodeText(buf: Buffer, charset: string | undefined): string {
-  try {
-    return new TextDecoder(charset || 'utf-8').decode(buf);
-  } catch {
-    return buf.toString('utf8');
+  const attempt = (cs: string): string | null => {
+    try {
+      return new TextDecoder(cs).decode(buf);
+    } catch {
+      return null;
+    }
+  };
+  const declared = attempt(charset || 'utf-8') ?? buf.toString('utf8');
+
+  // Signature de l'UTF-8 lu comme du latin-1 : un Ã/Â suivi d'un octet haut.
+  if (/[ÂÃ][-¿]/.test(declared)) {
+    const asUtf8 = attempt('utf-8');
+    if (asUtf8 && !asUtf8.includes('�')) return asUtf8;
   }
+  // Caractère de remplacement : le charset annoncé était faux dans l'autre sens.
+  if (declared.includes('�')) {
+    const asLatin = attempt('windows-1252');
+    if (asLatin && !asLatin.includes('�')) return asLatin;
+  }
+  return declared;
 }
 
 async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {

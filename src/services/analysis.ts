@@ -286,10 +286,20 @@ export async function applyVerdicts(
     }
     journal.set(msg.accountSlug, arr);
 
-    // Catégorie d'expéditeur : on ne remplit QUE la case « je ne sais pas »
-    // (company / vide) et seulement sur un verdict sûr. L'IA complète les
-    // heuristiques, elle ne rejuge pas une marque déjà reconnue — sinon la
-    // catégorie d'un expéditeur changerait au gré des mails.
+    // Catégorie d'expéditeur : l'IA corrige toute catégorie posée
+    // AUTOMATIQUEMENT (par les regex), sur un verdict sûr uniquement.
+    //
+    // Au départ je ne laissais remplir que la case « je ne sais pas »
+    // (company/vide), par prudence. C'était trop restrictif, et ça bloquait
+    // précisément ce qu'il fallait débloquer : les heuristiques classent
+    // « personne » des expéditeurs comme member@hi5.com, meetic@meetic.com ou
+    // postmaster@… — or « personne » est la catégorie la PLUS protectrice
+    // (garantie « 0 mail personnel »), donc ces robots devenaient
+    // définitivement innettoyables (constaté en réel le 29/07).
+    //
+    // Garde-fous conservés : une catégorie MANUELLE n'est jamais touchée, un
+    // verdict IA déjà posé n'est pas rejugé (pas de valse d'un mail à
+    // l'autre), et rien n'est supprimé sans aperçu ni confirmation.
     if (v.senderCategory !== undefined && v.senderCategory !== null && msg.fromEmail) {
       if (!isCategory(v.senderCategory)) {
         out.rejections.push({ id: v.id, why: `catégorie inconnue : « ${String(v.senderCategory)} »` });
@@ -298,11 +308,7 @@ export async function applyVerdicts(
           where: { accountSlug_email: { accountSlug: msg.accountSlug, email: msg.fromEmail } },
           select: { id: true, category: true, categorySource: true },
         });
-        if (
-          sender &&
-          sender.categorySource === 'auto' &&
-          (sender.category === null || sender.category === 'company')
-        ) {
+        if (sender && sender.categorySource === 'auto') {
           await db.sender.update({
             where: { id: sender.id },
             data: {
