@@ -4563,6 +4563,11 @@ function autoSyncLabel(a) {
 }
 
 // ---------------------------------------------------------------- Paramètres (L5.8)
+// Minuteur du rafraîchissement automatique du panneau « Compréhension des
+// mails » pendant une lecture. Au niveau module : il doit survivre aux
+// re-rendus du corps de l'écran, et être annulable quand on quitte.
+let snipTimer = null;
+
 async function renderSettings() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
@@ -4863,21 +4868,55 @@ function renderSettingsBody() {
     btn.textContent = '💾 Sauvegarder maintenant';
   });
 
+  // Rafraîchissement automatique tant qu'une lecture tourne : sans lui, les
+  // compteurs restaient figés et rien n'indiquait qu'un travail était en cours
+  // (retour utilisateur 29/07). Le minuteur s'arrête dès qu'on quitte l'écran.
   const loadCoverage = async () => {
     const el = $('#snip-coverage');
-    if (!el) return;
+    if (!el) {
+      if (snipTimer) { clearTimeout(snipTimer); snipTimer = null; }
+      return;
+    }
     try {
-      const { totals: t, ai } = await api.analysisCoverage();
+      const { totals: t, ai, job } = await api.analysisCoverage();
+      const running = Boolean(job && job.running);
+      const scopeLabel = job && job.scope === 'all' ? 'toute la boîte' : '3 derniers mois';
       el.innerHTML = `
+        ${running ? `<div class="notice" style="margin-bottom:10px">
+          <span class="spinner"></span><strong>Lecture en cours</strong> — ${scopeLabel}
+          ${job.lastMessage ? `<div class="muted" style="font-size:12px; margin-top:4px">${esc(job.lastMessage)}</div>` : ''}
+          <div class="muted" style="font-size:12px">Les compteurs ci-dessous se mettent à jour tout seuls.</div>
+        </div>` : ''}
+        ${!running && job && job.status === 'error' ? `<div class="notice warn" style="margin-bottom:10px">
+          ⚠️ Dernière lecture interrompue : ${esc(job.error || 'raison inconnue')}. Tu peux la relancer.</div>` : ''}
         <div class="set-line"><span class="muted">Mails dont le texte est connu</span>
           <span><strong>${t.snippetCoveragePct} %</strong> de ${fmtNum(t.total)} mails</span></div>
-        <div class="set-line"><span class="muted">3 derniers mois restant à lire</span>
-          <span>${fmtNum(t.recentWithoutSnippet)} sur ${fmtNum(t.recent)}</span></div>
+        <div class="set-line"><span class="muted">Restant à lire — toute la boîte</span>
+          <span${running && job.scope === 'all' ? ' style="font-weight:600"' : ''}>${fmtNum(t.withoutSnippet)} mails</span></div>
+        <div class="set-line"><span class="muted">Restant à lire — 3 derniers mois</span>
+          <span${running && job.scope !== 'all' ? ' style="font-weight:600"' : ''}>${fmtNum(t.recentWithoutSnippet)} sur ${fmtNum(t.recent)}</span></div>
         <div class="set-line"><span class="muted">Analyse jugée incertaine</span>
           <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>
         ${ai ? `<div class="set-line"><span class="muted">Analysés par l'IA</span>
           <span><strong>${ai.pct} %</strong> · ${fmtNum(ai.analysed)} sur ${fmtNum(ai.withText)} lisibles
           ${ai.remainingUncertain ? `<br><span class="muted" style="font-size:12px">${fmtNum(ai.remainingUncertain)} cas douteux à reprendre</span>` : ''}</span></div>` : ''}`;
+
+      const br = $('#snip-recent');
+      const ba = $('#snip-all');
+      if (br) {
+        br.disabled = running || t.recentWithoutSnippet === 0;
+        br.title = t.recentWithoutSnippet === 0
+          ? 'Tous les mails des 3 derniers mois sont déjà lus'
+          : 'Les mails des 3 derniers mois qui n’ont pas encore d’extrait';
+      }
+      if (ba) {
+        ba.disabled = running || t.withoutSnippet === 0;
+        ba.title = t.withoutSnippet === 0
+          ? 'Toute la boîte est déjà lue'
+          : `${fmtNum(t.withoutSnippet)} mails restants — beaucoup plus long`;
+      }
+      if (snipTimer) clearTimeout(snipTimer);
+      snipTimer = running ? setTimeout(loadCoverage, 8000) : null;
     } catch (err) {
       el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     }
@@ -4889,9 +4928,9 @@ function renderSettingsBody() {
     try {
       await api.snippetsBackfill(scope);
       notice(`<div class="notice">📖 Lecture du texte des mails lancée
-        (${scope === 'all' ? 'toute la boîte' : 'les 3 derniers mois'}) —
-        suis l'avancement via la pastille d'activité en bas de la barre latérale.
-        Reviens ici pour voir le compteur progresser.</div>`);
+        (${scope === 'all' ? 'toute la boîte' : 'les 3 derniers mois'}).
+        L'avancement s'affiche juste au-dessus et se met à jour tout seul.</div>`);
+      loadCoverage();
     } catch (err) {
       btn.disabled = false;
       notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);

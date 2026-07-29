@@ -817,7 +817,22 @@ export function buildAdminRouter(): Router {
     '/analysis/coverage',
     guard(async (_req, res) => {
       const [coverage, ai] = await Promise.all([analysisCoverage(), analysisProgress()]);
-      res.json({ ...coverage, ai });
+      // État du rattrapage EN COURS : sans ça, l'interface affichait des
+      // compteurs figés et rien n'indiquait qu'un travail tournait
+      // (retour utilisateur 29/07).
+      const last = listJobs(50).find((j) => j.kind === 'snippets');
+      const job = last
+        ? {
+            running: last.status === 'running',
+            scope: (last.meta.scope as string | undefined) ?? 'recent',
+            startedAt: last.startedAt,
+            finishedAt: last.finishedAt,
+            status: last.status,
+            lastMessage: last.progress[last.progress.length - 1] ?? null,
+            error: last.error,
+          }
+        : null;
+      res.json({ ...coverage, ai, job });
     }),
   );
 
@@ -834,7 +849,10 @@ export function buildAdminRouter(): Router {
       // Plafond de sécurité : un job ne tourne pas indéfiniment. S'il reste du
       // travail au bout de MAX_ROUNDS, l'utilisateur relance — c'est reprenable.
       const MAX_ROUNDS = 40;
-      const job = startJob('snippets', async (progress) => {
+      const job = startJob('snippets', async (progress, setMeta) => {
+        // Portée exposée à l'interface : « 3 derniers mois » et « toute la
+        // boîte » n'ont pas le même compteur de restant.
+        setMeta({ scope: sinceDays === null ? 'all' : 'recent' });
         const results: Record<string, unknown> = {};
         for (const name of await listAccountNames()) {
           try {

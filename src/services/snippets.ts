@@ -242,6 +242,13 @@ export interface AccountCoverage {
   recent: number;
   /** Mails sans extrait de texte (dans la fenêtre de 3 mois). */
   recentWithoutSnippet: number;
+  /**
+   * Mails sans extrait sur TOUTE la boîte. C'est ce chiffre qui bouge quand
+   * le rattrapage « toute la boîte » tourne — sans lui, l'interface affichait
+   * un compteur figé à 0 (celui des 3 mois) et donnait l'impression que rien
+   * ne se passait (retour utilisateur 29/07).
+   */
+  withoutSnippet: number;
   /** Mails dont l'analyse est jugée « faible » ⇒ protégés de tout nettoyage. */
   lowConfidence: number;
   /** Part des mails porteurs d'un extrait, en % (0-100). */
@@ -281,6 +288,7 @@ export async function analysisCoverage(): Promise<{
       total,
       recent,
       recentWithoutSnippet,
+      withoutSnippet: total - withSnippet,
       lowConfidence,
       snippetCoveragePct: total === 0 ? 0 : Math.round((withSnippet / total) * 100),
     });
@@ -289,18 +297,19 @@ export async function analysisCoverage(): Promise<{
   const sum = (pick: (a: AccountCoverage) => number): number =>
     accounts.reduce((n, a) => n + pick(a), 0);
   const totalAll = sum((a) => a.total);
-  const withSnippetAll = accounts.reduce(
-    (n, a) => n + Math.round((a.snippetCoveragePct / 100) * a.total),
-    0,
-  );
+  // Somme EXACTE des sans-extrait (et non une reconstitution à partir des
+  // pourcentages arrondis, qui dérivait de quelques mails).
+  const withoutSnippetAll = sum((a) => a.withoutSnippet);
   return {
     accounts,
     totals: {
       total: totalAll,
       recent: sum((a) => a.recent),
       recentWithoutSnippet: sum((a) => a.recentWithoutSnippet),
+      withoutSnippet: withoutSnippetAll,
       lowConfidence: sum((a) => a.lowConfidence),
-      snippetCoveragePct: totalAll === 0 ? 0 : Math.round((withSnippetAll / totalAll) * 100),
+      snippetCoveragePct:
+        totalAll === 0 ? 0 : Math.round(((totalAll - withoutSnippetAll) / totalAll) * 100),
     },
   };
 }
