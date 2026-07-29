@@ -102,6 +102,41 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (session en cours)
 
+**C3c LIVRÉ + LA PAGE DE NETTOYAGE PASSE DE 40 s À 0,2 s (29/07).** Trois
+choses, toutes déclenchées par une mesure ou une capture de l'utilisateur.
+1. **Stratégie « verdict IA »** (preset `ai_archive90`, désactivé comme les
+   autres) : `RetentionPolicy.matchAiAction`. RAISON CHIFFRÉE — 3 263 mails
+   jugés « à archiver » par l'IA dont **2 026 DÉJÀ LUS**, or `promo30` et
+   `newsletter90` exigent `unseenOnly` : ces mails étaient hors d'atteinte de
+   TOUTE stratégie alors qu'ils avaient été lus un par un. L'analyse n'était
+   plus le goulot, les stratégies l'étaient. Exige `analysisConfidence='high'`
+   (la protection centrale n'écarte que `low` — sans ce test un « peut-être »
+   entrerait dans une purge). Vise 2 447 mails, 203 protégés.
+2. **PERF, en deux temps, chaque fois en MESURANT au lieu de supposer.**
+   (a) `engagedSenderClauses` rejouait PAR LIGNE et par requête un auto-join de
+   Message sur threadId filtré par (compte, expéditeur) — 364×364 opérations
+   pour Leroy Merlin seul, ×14 requêtes. Pré-calculé dans `Sender.engagedAt`
+   par `computeSenderEngagement` (appelé depuis `rebuildSenders`) → 40 s →
+   12,9 s. Sémantique identique, y compris « date inconnue = engagement
+   d'aujourd'hui ». (b) Restait 12,9 s : chronométrage PAR STRATÉGIE →
+   `newsletter90` 7,5 s, `social90` 2 s, les autres < 400 ms ; point commun =
+   `Sender.category`, indexé nulle part. Index + **ANALYZE** (que SQLite ne
+   lance jamais seul — sans statistiques son planificateur ignore les index)
+   → **178 ms**. Vérifié en prod : listPolicies 235 ms, deletableUnion 141 ms.
+   LEÇON : j'ai d'abord optimisé les clauses de protection ; elles ne
+   coûtaient que 179 ms. Chronométrer avant de coder.
+   ⚠️ `Sender.engagedAt` DOIT être backfillé après déploiement, sinon la
+   protection graduée disparaît (fait : 1 155 / 3 676 expéditeurs engagés).
+3. **Aperçu de stratégie lisible** (« pas de possibilité de lire le détail en
+   cas de doute, pas de date de la réception, mail de 2020 pas traité pareil
+   que 07/2026 »). La date ÉTAIT renvoyée par l'API — la table débordait du
+   cadre et la colonne se retrouvait coupée à droite. `modal-wide`, colonne
+   « Reçu le » remontée en 2e position, sujets ouvrables via `under-reader`
+   (le lecteur s'ouvre AU-DESSUS de l'aperçu).
+Récupérable : 7 050 → **8 225**. Test : 16 asserts (contre-cas compris :
+confiance moyenne écartée, verdict « à lire » écarté, trop récent écarté,
+protection graduée vérifiée dans les deux sens).
+
 **C4 LIVRÉ (29/07) : les trois règles tirées de la passe, codées dans le
 moteur.** Choix assumé : les règles vont dans `categorizeSender`, PAS dans un
 écran de suggestions — c'est là qu'elles servent aux ~31 000 mails que l'IA
