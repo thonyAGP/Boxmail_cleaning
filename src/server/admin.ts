@@ -106,6 +106,7 @@ import {
   type SenderCategory,
   type SenderPriority,
 } from '../services/categorize.js';
+import { analysisCoverage, backfillSnippets } from '../services/snippets.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import {
   listPolicies,
@@ -797,6 +798,59 @@ export function buildAdminRouter(): Router {
         for (const name of await listAccountNames()) {
           try {
             results[name] = await categorizeAccount(name, progress);
+          } catch (err) {
+            results[name] = { error: (err as Error).message };
+            progress(`⚠️ ${name} en échec (${(err as Error).message}) — on continue.`);
+          }
+        }
+        return results;
+      });
+      res.status(202).json({ jobId: job.id });
+    }),
+  );
+
+  // --- Extraits de texte (C1) --------------------------------------------------
+
+  // Photographie de l'état de l'analyse (C0) : la mesure « avant ».
+  router.get(
+    '/analysis/coverage',
+    guard(async (_req, res) => {
+      res.json(await analysisCoverage());
+    }),
+  );
+
+  // Rattrapage des extraits : relance des lots jusqu'à épuisement (job).
+  // scope=all pour toute la boîte, sinon les 3 derniers mois.
+  router.post(
+    '/snippets/backfill',
+    guard(async (req, res) => {
+      if (hasRunningJob('snippets')) {
+        res.status(409).json({ error: 'Une récupération des extraits est déjà en cours.' });
+        return;
+      }
+      const sinceDays = req.body?.scope === 'all' ? null : undefined;
+      // Plafond de sécurité : un job ne tourne pas indéfiniment. S'il reste du
+      // travail au bout de MAX_ROUNDS, l'utilisateur relance — c'est reprenable.
+      const MAX_ROUNDS = 40;
+      const job = startJob('snippets', async (progress) => {
+        const results: Record<string, unknown> = {};
+        for (const name of await listAccountNames()) {
+          try {
+            const rec = await resolveAccount(name);
+            let filled = 0;
+            let empty = 0;
+            let intents = 0;
+            let remaining = 0;
+            for (let round = 0; round < MAX_ROUNDS; round++) {
+              progress(`[${name}] lecture des mails — lot ${round + 1}…`);
+              const r = await backfillSnippets(rec, { sinceDays, onProgress: progress });
+              filled += r.filled;
+              empty += r.empty;
+              intents += r.intentsImproved;
+              remaining = r.remaining;
+              if (r.scanned === 0 || remaining === 0) break;
+            }
+            results[name] = { filled, empty, intentsImproved: intents, remaining };
           } catch (err) {
             results[name] = { error: (err as Error).message };
             progress(`⚠️ ${name} en échec (${(err as Error).message}) — on continue.`);

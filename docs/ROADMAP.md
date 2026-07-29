@@ -1182,6 +1182,154 @@ par le forfait, seulement quand on la sollicite.
 
 ---
 
+## Série C — Comprendre le CONTENU des mails (plan, 29/07/2026)
+
+**Déclencheur (retour utilisateur)** : « je ne suis pas du tout satisfait du
+résultat » du tri, + « il faut que j'aie vraiment du nettoyage et un rattrapage
+important, cela devient urgent », + « avec l'analyse IA tu vas trouver de
+nouvelles règles à implémenter ».
+
+### Diagnostic (vérifié dans le code, pas supposé)
+
+Tout le classement repose sur DEUX signaux, et rien d'autre :
+
+1. `categorizeSender` (categorize.ts:81) — des listes de marques françaises
+   écrites en dur. Hors listes ⇒ `company`, dont la raison affichée est
+   « entreprise / service (par défaut) » (ligne 111). C'est la case
+   « je ne sais pas ».
+2. `detectIntent` (categorize.ts:203) — des regex **sur le sujet seul**.
+   Sans motif ⇒ `info`, « aucun motif particulier ».
+
+L'engrenage qui produit l'insatisfaction : `computeConfidence` traite
+explicitement `company` comme NON-signal (ligne 282), donc expéditeur inconnu
++ intention `info` ⇒ **confiance faible** (ligne 305). Et `protectionClauses`
+(retention.ts:188) dit `analysisConfidence != 'low'` ⇒ **jamais supprimable**.
+
+> Tout mail que les regex ne reconnaissent pas est à la fois mal analysé ET
+> exclu du nettoyage. Le moteur est muet là où il devrait travailler.
+
+Même chose sur l'accueil : `NOISE_BUCKET_CASE` (today.ts:29) ne connaît que
+newsletter/notification/social/ad ; tout ce qui est tombé sur `company`
+atterrit dans « peut attendre » — d'où la boîte qui ne se vide jamais.
+
+**Racine** : le modèle `Message` ne stocke AUCUN texte (sujet, expéditeur,
+dates, drapeaux, taille — pas une ligne de contenu). Ni les heuristiques ni une
+IA ne peuvent juger un mail qu'elles ne lisent pas. C'est le vrai plafond, et
+l'IA seule ne le franchit pas : il faut d'abord capturer le texte.
+
+### Décisions utilisateur actées (29/07)
+
+- **Les deux moteurs** : rattrapage massif des vieux mails **sur le forfait**
+  (piloté par Claude via MCP, gratuit), et **Haiku côté serveur** pour le flux
+  courant (automatique, quelques centimes/mois). Revient sur la décision du
+  10/07 « pas de clé API » — assumé : cette décision visait l'analyse
+  interactive, pas un traitement de masse.
+- **Plan validé avant tout code.**
+
+### C0 — Mesurer avant d'agir (30 min)
+
+Compter, par boîte : mails des 3 derniers mois, mails totaux, et combien sont
+en `analysisConfidence='low'` aujourd'hui. Sans ce chiffre on dimensionne à
+l'aveugle. Exposé dans ⚙️ Paramètres. Sert de référence « avant ».
+
+### C1 — L'extrait de texte (le pré-requis, ZÉRO IA)
+
+- **Migration `message_snippet`** : `Message.snippet String?` (≈500 car.),
+  `Message.snippetAt DateTime?`.
+- **imap.ts — `fetchSnippets(rec, folder, uids)`** : UN seul `getMailboxLock`,
+  un `client.fetch(uidRange(uids), {uid, bodyStructure})` puis, par mail,
+  `client.download(textNode.part)` — **la partie texte UNIQUEMENT**, jamais les
+  pièces jointes. Réutilise `findTextNode` / `decodeText` / `htmlToText` /
+  `streamToBuffer` (imap.ts:724-767, écrits pour la perf de lecture) et
+  `stripQuotedText` (attention.ts, B3) pour jeter le texte cité. Plages `a:b`,
+  jamais de longues listes d'UIDs (limite Outlook).
+- **services/snippets.ts** : `backfillSnippets(account, {sinceDays, limit})`
+  — REPRENABLE (curseur), plus anciens d'abord, erreurs par dossier sans
+  arrêter, job `snippets:<slug>` avec progression. Hook post-sync : petite
+  passe sur les nouveaux mails, pour que le flux courant ait toujours son
+  extrait.
+- **Gain immédiat, avant toute IA** : l'extrait s'affiche sous le sujet dans
+  l'inbox, le nettoyage et « Aujourd'hui » — tu vois enfin de quoi parle un
+  mail sans l'ouvrir. Et `detectIntent` accepte un `snippet` optionnel,
+  consulté SEULEMENT quand le sujet ne donne rien (priorité au sujet : aucune
+  régression sur les cas déjà bons).
+- **Poids** : 500 car. × 20 000 mails ≈ 10 Mo. Négligeable.
+- Tests : extraction sur bodyStructure simulé, texte cité jeté, idempotence,
+  et l'assertion qui compte — **aucune pièce jointe téléchargée**.
+
+### C2 — Le verdict IA (le cœur)
+
+- **Migration `ai_verdict`** : `Message.aiSummary` (1 ligne FR), `aiAction`
+  (`reply|pay|read|archive|none`), `aiVerdictAt`, `aiModel`,
+  `Message.intentSource String @default("auto")`.
+- **Choix structurant : l'IA ÉCRIT DANS LES CHAMPS EXISTANTS** (`m.intent`,
+  `s.category`, `m.analysisConfidence`) avec une source `'ai'`, au lieu de
+  champs parallèles. Conséquence : `today.ts`, `retention.ts` et
+  `importance.ts` en profitent **sans être modifiés**. Précédence stricte
+  **manual > ai > auto** ; `rebuildSenders` ne respecte aujourd'hui que
+  `manual` — une ligne à corriger, avec son test.
+- **C'est le mécanisme qui débloque le nettoyage** : en remontant
+  `analysisConfidence` de `low` à `medium/high` sur un verdict argumenté, les
+  mails sortent de la clause de protection retention.ts:188 et redeviennent
+  candidats.
+- **Garde-fous inchangés** : l'IA ne supprime JAMAIS, elle classe. Garantie
+  « 0 mail personnel » (`s.category != 'person'`, retention.ts:213) conservée.
+  Soft delete, aperçu obligatoire, lots de 200, journal complet : rien ne
+  bouge. Un verdict IA n'écrase jamais une correction manuelle.
+- **Sortie stricte** : JSON schéma imposé, catégorie prise dans
+  `SENDER_CATEGORIES`, intention dans `MESSAGE_INTENTS` — pas de vocabulaire
+  inventé. Une réponse hors schéma est rejetée, le mail reste non analysé.
+- **⚠️ À valider par l'utilisateur** : dans les deux modes, des EXTRAITS de
+  mails sortent de la machine vers l'API Anthropic. Les jetons OAuth, eux, ne
+  circulent toujours pas. C'est un changement réel par rapport à aujourd'hui.
+
+### C3 — Deux moteurs, un seul chemin d'écriture
+
+Les deux passent par la même fonction `applyVerdicts()` : une seule logique de
+précédence, un seul format de journal.
+
+- **C3a — Piloté depuis Claude (forfait) → LE RATTRAPAGE.** 2 tools MCP :
+  `next_analysis_batch({limit, account, oldestFirst})` sert le lot compact
+  suivant (expéditeur, sujet, extrait, date, drapeaux) ;
+  `submit_analysis_batch({verdicts})` écrit les verdicts. Curseur serveur ⇒
+  reprenable d'une session à l'autre, progression visible
+  (« 12 400 / 18 000 analysés »).
+  **Honnêteté** : ça consomme le forfait, donc ça exige une session Claude
+  ouverte — ce n'est pas un cron. Les tools rendent l'ordre unique
+  (« analyse mes 5 000 plus vieux mails ») et Claude boucle jusqu'au bout ;
+  si la session s'arrête, on reprend où on en était.
+- **C3b — Haiku côté serveur → LE FLUX COURANT.** `services/ai.ts`
+  (`@anthropic-ai/sdk`, modèle `claude-haiku-4-5`), déclenché post-sync sur les
+  NOUVEAUX mails uniquement. Lots de 50, **prompt caching** sur le bloc
+  d'instructions fixe, **Batch API** (−50 %) pour toute passe de masse.
+  Config : `ANTHROPIC_API_KEY`, `AI_ENABLED`, `AI_MAX_MAILS_PER_DAY`
+  (garde-fou de coût). Ordre de grandeur mesuré : **≈ 0,35 $ / 1 000 mails**,
+  **≈ 0,87 $ pour 5 000** via Batch API.
+
+### C4 — Les règles découvertes (demande explicite de l'utilisateur)
+
+`services/discover.ts` agrège les verdicts d'une passe et propose :
+expéditeurs dont TOUS les mails sont classés pub/newsletter et jamais ouverts
+⇒ stratégie de rétention ou désinscription (P2.2) ; expéditeurs récurrents
+⇒ règle de classement L7 avec dossier cible ; `action=pay` récurrent
+⇒ échéances/tâches. **Rien de neuf à apprendre** : ça sort dans les écrans
+existants 💡 Suggestions (A6) et Règles (L7), et **rien ne s'applique sans
+validation**.
+
+### C5 — Mesurer le gain, pas le ressentir
+
+Écran « 🔬 Vérifier l'analyse » (B2) : nouveau moteur `ai`, échantillon de 50,
+% de précision heuristique vs IA. Plus une ligne dashboard : mails analysés,
+% de la boîte couverte, dépense du mois.
+
+### Ordre de livraison
+
+**C0 → C1 → C2+C3a → C3b → C4 → C5.** Le rattrapage gratuit (C3a) passe avant
+le moteur payant : c'est l'urgence exprimée, et il ne coûte rien. C4 vient
+après une vraie passe, sinon il n'y a rien à découvrir.
+
+---
+
 ## Annexe : squelette de seed de test (à adapter par livraison)
 
 ```ts

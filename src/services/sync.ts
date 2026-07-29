@@ -433,6 +433,27 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   progress('Calcul des statistiques expéditeurs…');
   report.sendersUpdated = await rebuildSenders(rec.account);
 
+  // Extraits de texte (C1) des mails les plus RÉCENTS d'abord : le flux
+  // courant doit toujours avoir son extrait. Placé AVANT le calcul de
+  // confiance, parce qu'un extrait peut préciser l'intention du mail — et la
+  // confiance découle de l'intention. `recomputeConfidence: false` : la passe
+  // ci-dessous s'en charge (les nouveaux mails n'ont pas encore de confiance).
+  // Le rattrapage des VIEUX mails, lui, se lance à la main depuis Paramètres.
+  try {
+    const { backfillSnippets } = await import('./snippets.js');
+    const snip = await backfillSnippets(rec, {
+      limit: 150,
+      order: 'newest',
+      recomputeConfidence: false,
+    });
+    if (snip.filled > 0) progress(`Extraits : ${snip.filled} mail(s) lus.`);
+  } catch (err) {
+    logger.warn('extraits post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Confiance de l'analyse (B4) : posée sur les mails qui n'en ont pas encore
   // — AVANT les automatismes, pour que « confiance faible ⇒ protégé » tienne.
   try {

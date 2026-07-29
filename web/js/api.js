@@ -69,6 +69,8 @@ export const api = {
   senderSetPriority: (slug, email, priority) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}/senders`, { email, priority }),
   categorizeAll: () => request('POST', '/categorize'),
+  analysisCoverage: () => request('GET', '/analysis/coverage'),
+  snippetsBackfill: (scope = 'recent') => request('POST', '/snippets/backfill', { scope }),
   cleanup: (slug) => request('GET', `/accounts/${encodeURIComponent(slug)}/cleanup`),
   cleanupPreview: (slug, sender, folder = 'INBOX') =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/cleanup/preview`, { sender, folder }),

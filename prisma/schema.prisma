@@ -84,6 +84,14 @@ model Message {
   // resynchronisés à neuf (l'info n'est pas rejouée sur l'existant).
   hasAttachments     Boolean   @default(false)
   attachmentCount    Int       @default(0)
+  // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
+  // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
+  // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le
+  // pré-requis de toute analyse de CONTENU : sans lui, ni les heuristiques ni
+  // l'IA ne voient autre chose que le sujet.
+  // null = jamais capturé (mails indexés avant cette version).
+  snippet            String?
+  snippetAt          DateTime?
   // Intention détectée (A1 — pourquoi ce mail ? otp/invoice/shipping/…),
   // calculée à la sync sur les entrants, backfill via le job « categorize ».
   intent             String?

@@ -7,6 +7,22 @@ import { db, ensureDbReady } from '../db/client.js';
  * imapService.readEmail (route dédiée), jamais par un LLM.
  */
 
+/** Longueur de l'extrait renvoyé aux listes (le stockage en garde ~500). */
+const SNIPPET_PREVIEW_CHARS = 160;
+
+/**
+ * Tronque l'extrait pour l'affichage : une liste peut compter 500 lignes, et
+ * envoyer l'extrait complet de chacune gonflerait la réponse sans rien
+ * apporter à l'œil. Une chaîne vide (mail sans texte exploitable) devient null.
+ */
+function previewSnippet(snippet: string | null | undefined): string | null {
+  const s = (snippet ?? '').trim();
+  if (!s) return null;
+  return s.length > SNIPPET_PREVIEW_CHARS
+    ? `${s.slice(0, SNIPPET_PREVIEW_CHARS).trimEnd()}…`
+    : s;
+}
+
 export interface SearchOptions {
   /** Texte libre : OR sur sujet, adresse et nom d'expéditeur. */
   q?: string;
@@ -49,6 +65,12 @@ export interface SearchResultItem {
   hasAttachments: boolean;
   attachmentCount: number;
   sizeBytes: number;
+  /**
+   * Début du texte du mail (C1), tronqué pour l'affichage en liste ; null si
+   * le texte n'a pas encore été capturé. L'extrait complet reste en base pour
+   * l'analyse — inutile d'envoyer 500 caractères × 500 lignes au navigateur.
+   */
+  snippet: string | null;
 }
 
 export interface SearchResult {
@@ -122,6 +144,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         hasAttachments: true,
         attachmentCount: true,
         sizeBytes: true,
+        snippet: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -149,6 +172,7 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
+      snippet: previewSnippet(m.snippet),
     })),
   };
 }
@@ -249,6 +273,7 @@ export async function listUnifiedInbox(
         hasAttachments: true,
         attachmentCount: true,
         sizeBytes: true,
+        snippet: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -277,6 +302,7 @@ export async function listUnifiedInbox(
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
+      snippet: previewSnippet(m.snippet),
     })),
   };
 }
@@ -330,6 +356,7 @@ export async function listFolderMessages(
         hasAttachments: true,
         attachmentCount: true,
         sizeBytes: true,
+        snippet: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -358,6 +385,7 @@ export async function listFolderMessages(
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
+      snippet: previewSnippet(m.snippet),
     })),
   };
 }

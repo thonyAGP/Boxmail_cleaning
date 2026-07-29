@@ -505,6 +505,79 @@ class ImapService {
   }
 
   /**
+   * Texte brut d'un LOT de mails d'un dossier (C1 — pré-requis de l'analyse
+   * de contenu). Un seul verrouillage de boîte, une plage `a:b` pour la
+   * structure (jamais de longue liste d'UIDs : limite de commande Outlook),
+   * puis, mail par mail, le téléchargement de LA SEULE partie texte.
+   *
+   * Les pièces jointes ne sont JAMAIS téléchargées : contrairement à
+   * `readEmail`, il n'y a pas de repli sur le mail complet — sur un rattrapage
+   * de plusieurs milliers de mails, ce repli aspirerait toute la boîte. Un mail
+   * dont la structure n'expose pas de partie texte est simplement absent de la
+   * Map ; l'appelant le marquera comme traité pour ne pas le reproposer.
+   *
+   * Retourne uid → texte brut décodé (HTML aplati), borné à 4000 caractères ;
+   * le nettoyage fin (texte cité, espaces) appartient à services/snippets.ts.
+   */
+  async fetchSnippets(
+    rec: AccountRecord,
+    folder: string,
+    uids: number[],
+  ): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    if (uids.length === 0) return out;
+    const RAW_MAX_CHARS = 4000;
+    const wanted = new Set(uids);
+    const sorted = [...uids].sort((a, b) => a - b);
+
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      // 1. Structures seules : rapide, et on ne descend que ce qui a du texte.
+      const targets: { uid: number; part: string; charset?: string; isHtml: boolean }[] = [];
+      for await (const msg of client.fetch(
+        `${sorted[0]}:${sorted[sorted.length - 1]}`,
+        { uid: true, bodyStructure: true },
+        { uid: true },
+      )) {
+        if (!wanted.has(msg.uid)) continue; // la plage peut couvrir des mails non demandés
+        const node = findTextNode((msg.bodyStructure ?? null) as BodyNode | null);
+        if (!node?.part) continue;
+        targets.push({
+          uid: msg.uid,
+          part: node.part,
+          charset: node.parameters?.charset,
+          isHtml: (node.type ?? '').toLowerCase() === 'text/html',
+        });
+      }
+
+      // 2. Une descente par mail, sur la partie texte uniquement. Un échec
+      //    isolé (mail supprimé entre-temps, partie illisible) n'arrête pas
+      //    le lot : le rattrapage doit pouvoir avancer sur des milliers de mails.
+      for (const t of targets) {
+        try {
+          const dl = await client.download(String(t.uid), t.part, { uid: true });
+          const raw = await streamToBuffer(dl.content);
+          let text = decodeText(raw, t.charset);
+          if (t.isHtml) text = htmlToText(text);
+          if (text.length > RAW_MAX_CHARS) text = text.slice(0, RAW_MAX_CHARS);
+          out.set(t.uid, text);
+        } catch (err) {
+          logger.warn('extrait : téléchargement de la partie texte en échec', {
+            account: rec.account,
+            folder,
+            uid: t.uid,
+            message: (err as Error).message,
+          });
+        }
+      }
+    } finally {
+      lock.release();
+    }
+    return out;
+  }
+
+  /**
    * Quota de stockage de la boîte (RFC 2087 — supporté par Outlook.com).
    * Retourne null si le serveur ne l'expose pas.
    */

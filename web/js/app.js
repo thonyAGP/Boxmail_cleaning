@@ -4624,6 +4624,28 @@ function renderSettingsBody() {
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h2>🔎 Compréhension des mails</h2></div>
+      <div class="panel-body">
+        <div class="muted" style="font-size:12.5px; margin-bottom:12px">
+          Jusqu'ici l'assistant ne lisait que le <strong>sujet</strong> et l'expéditeur — d'où
+          beaucoup de mails classés « je ne sais pas », donc ni triés ni nettoyables.
+          Il garde maintenant un <strong>extrait du texte</strong> de chaque mail
+          (~500 caractères, réponses citées retirées).
+          Les pièces jointes ne sont <strong>jamais</strong> téléchargées.</div>
+        <div id="snip-coverage"><span class="spinner"></span>Chargement…</div>
+        <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
+          <span><strong>Lire le texte des mails</strong><br>
+            <span class="muted" style="font-size:12px">Long : chaque mail est ouvert une fois.
+            Tu peux fermer la page, ça continue côté serveur.</span></span>
+          <span>
+            <button class="btn btn-sm" id="snip-recent" title="Les mails des 3 derniers mois qui n'ont pas encore d'extrait">📖 3 derniers mois</button>
+            <button class="btn btn-sm" id="snip-all" title="Toute la boîte — beaucoup plus long">📚 Toute la boîte</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>📦 Transférer mes boîtes</h2></div>
       <div class="panel-body">
         <div class="muted" style="font-size:12.5px; margin-bottom:12px">
@@ -4828,6 +4850,40 @@ function renderSettingsBody() {
     btn.disabled = false;
     btn.textContent = '💾 Sauvegarder maintenant';
   });
+
+  const loadCoverage = async () => {
+    const el = $('#snip-coverage');
+    if (!el) return;
+    try {
+      const { totals: t } = await api.analysisCoverage();
+      el.innerHTML = `
+        <div class="set-line"><span class="muted">Mails dont le texte est connu</span>
+          <span><strong>${t.snippetCoveragePct} %</strong> de ${fmtNum(t.total)} mails</span></div>
+        <div class="set-line"><span class="muted">3 derniers mois restant à lire</span>
+          <span>${fmtNum(t.recentWithoutSnippet)} sur ${fmtNum(t.recent)}</span></div>
+        <div class="set-line"><span class="muted">Analyse jugée incertaine</span>
+          <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>`;
+    } catch (err) {
+      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    }
+  };
+  loadCoverage();
+
+  const startSnippets = async (scope, btn) => {
+    btn.disabled = true;
+    try {
+      await api.snippetsBackfill(scope);
+      notice(`<div class="notice">📖 Lecture du texte des mails lancée
+        (${scope === 'all' ? 'toute la boîte' : 'les 3 derniers mois'}) —
+        suis l'avancement via la pastille d'activité en bas de la barre latérale.
+        Reviens ici pour voir le compteur progresser.</div>`);
+    } catch (err) {
+      btn.disabled = false;
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+  };
+  $('#snip-recent')?.addEventListener('click', (e) => startSnippets('recent', e.currentTarget));
+  $('#snip-all')?.addEventListener('click', (e) => startSnippets('all', e.currentTarget));
 
   $('#set-categorize')?.addEventListener('click', async () => {
     const btn = $('#set-categorize');
@@ -5575,7 +5631,8 @@ function renderInboxBody() {
               ${isUnifiedInbox() ? `<td>${accountChip(i.account)}</td>` : ''}
               <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px"
                 title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</td>
-              <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span></td>
+              <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span>
+                ${i.snippet ? `<div class="row-snippet" title="${esc(i.snippet)}">${esc(i.snippet)}</div>` : ''}</td>
               <td style="white-space:nowrap"><span class="star" data-star="${k}"
                   title="${i.isFlagged ? 'Ne plus suivre ce mail' : 'Suivre ce mail (⭐)'}">${i.isFlagged ? '⭐' : '☆'}</span>
                 ${isUnifiedInbox() && inboxState.role === 'flagged' ? folderBadge(i) : ''}

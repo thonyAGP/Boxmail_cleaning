@@ -196,6 +196,11 @@ export interface IntentSignals {
   subject: string | null | undefined;
   hasListUnsubscribe: boolean;
   fromEmail?: string | null;
+  /**
+   * Extrait du texte du mail (C1), quand il a été capturé. Consulté UNIQUEMENT
+   * en dernier recours, si le sujet n'a rien donné — voir detectIntent.
+   */
+  snippet?: string | null;
 }
 
 export interface IntentResult {
@@ -218,6 +223,27 @@ export function detectIntent(s: IntentSignals): IntentResult {
     if (m) return { intent: rule.intent, reason: `${rule.label} (« ${m[0].trim()} »)` };
   }
   if (isQuestion) return { intent: 'reply_expected', reason: 'le sujet pose une question' };
+
+  // Dernier recours (C1) : le sujet n'a rien donné, on regarde l'extrait du
+  // texte s'il a été capturé. UNIQUEMENT les motifs FORTS (code, facture,
+  // livraison, rendez-vous, rappel) : ceux-là sont peu ambigus même hors
+  // contexte. Les motifs faibles (« confirmation », « document », « promo »)
+  // sont volontairement écartés — ces mots apparaissent dans presque tous les
+  // courriers commerciaux et classeraient la moitié de la boîte de travers.
+  const snippet = (s.snippet ?? '').trim();
+  if (snippet) {
+    for (const rule of INTENT_RULES) {
+      if (!STRONG_INTENTS.includes(rule.intent)) continue;
+      const m = rule.re.exec(snippet);
+      if (m) {
+        return {
+          intent: rule.intent,
+          reason: `${rule.label} (« ${m[0].trim()} » — dans le texte du mail)`,
+        };
+      }
+    }
+  }
+
   return { intent: 'info', reason: 'aucun motif particulier — mail d’information' };
 }
 
@@ -536,6 +562,9 @@ export async function categorizeAccount(
         hasListUnsubscribe: true,
         intent: true,
         intentReason: true,
+        // C1 : le backfill 🏷️ profite des extraits déjà capturés (detectIntent
+        // ne les consulte qu'en dernier recours, si le sujet n'a rien donné).
+        snippet: true,
       },
     });
     if (batch.length === 0) break;
