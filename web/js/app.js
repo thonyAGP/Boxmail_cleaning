@@ -883,7 +883,8 @@ async function openNoiseModal(bucket) {
       <tbody>${data.items.map((m, i) => `<tr>
         <td style="white-space:nowrap">${accountChip(m.account)}</td>
         <td style="max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
-          <span class="openable" data-noise-open="${i}" title="Lire le mail">${esc(m.subject)}</span></td>
+          <span class="openable" data-noise-open="${i}" title="Lire le mail">${esc(m.subject)}</span>
+          ${m.snippet ? `<span class="mail-snip"> — ${esc(m.snippet)}</span>` : ''}</td>
         <td class="muted" style="font-size:12px; white-space:nowrap">${esc(m.fromName || m.fromEmail)}</td>
         <td class="num" style="font-size:12px; white-space:nowrap">${fmtDate(m.date)}</td>
       </tr>`).join('')}</tbody></table>
@@ -2198,7 +2199,9 @@ async function openCleanupModal(account, sender, senderName) {
         <label class="mail-row ${m.kind}">
           <input type="checkbox" data-uid="${m.uid}" data-kind="${m.kind}" ${m.kind === 'auto' ? 'checked' : ''}>
           <span class="mail-date">${fmtDate(m.date)}</span>
-          <span class="mail-subject" title="${esc(m.signals.join(' · '))}">${esc(m.subject)}</span>
+          <span class="mail-subject" title="${esc(m.signals.join(' · '))}">${esc(m.subject)}${
+            m.snippet ? `<span class="mail-snip"> — ${esc(m.snippet)}</span>` : ''
+          }</span>
           <span class="badge ${m.kind === 'auto' ? 'gray' : m.kind === 'document' ? 'green' : 'blue'}"
             title="${esc(m.signals.join(' · '))}">${
               m.kind === 'auto' ? '🤖 auto' : m.kind === 'document' ? '📄 à conserver' : '👤 perso'

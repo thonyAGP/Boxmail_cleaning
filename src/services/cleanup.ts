@@ -2,6 +2,7 @@ import { db, ensureDbReady } from '../db/client.js';
 import { imapService } from './imap.js';
 import { rebuildSenders } from './sync.js';
 import { recordOperation } from './oplog.js';
+import { previewSnippet } from './search.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -186,6 +187,11 @@ export interface CleanupMessage {
   kind: 'auto' | 'personal' | 'document';
   /** Pourquoi ce classement (affiché dans l'interface). */
   signals: string[];
+  /**
+   * Début du texte du mail (C1) — décider de supprimer sur le seul sujet
+   * demandait de deviner. null si le texte n'a pas encore été capturé.
+   */
+  snippet: string | null;
 }
 
 /**
@@ -254,6 +260,7 @@ export async function listCleanupMessages(
       hasAttachments: true,
       attachmentCount: true,
       intent: true,
+      snippet: true,
     },
   });
 
@@ -297,6 +304,7 @@ export async function listCleanupMessages(
       sizeBytes: m.sizeBytes,
       kind: isDocument ? 'document' : auto ? 'auto' : 'personal',
       signals,
+      snippet: previewSnippet(m.snippet),
     };
   });
 

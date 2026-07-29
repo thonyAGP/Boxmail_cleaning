@@ -4,6 +4,7 @@ import { getUnansweredEmails, type ReplyItem } from './attention.js';
 import { getFollowupsDue, type FollowupItem } from './followups.js';
 import { getImportantEmails, type ImportantItem } from './importance.js';
 import { listDeadlines, type DeadlineItem } from './deadlines.js';
+import { previewSnippet } from './search.js';
 import { logger } from '../logger.js';
 
 /**
@@ -250,6 +251,8 @@ export interface NoisePreview {
     fromName: string | null;
     date: string | null;
     isSeen: boolean;
+    /** Début du texte du mail (C1) — null s'il n'a pas encore été capturé. */
+    snippet: string | null;
   }[];
 }
 
@@ -272,6 +275,7 @@ export async function listNoiseMessages(bucket: NoiseBucket): Promise<NoisePrevi
     fromName: string | null;
     date: string | number | bigint | null;
     isSeen: number;
+    snippet: string | null;
   };
   // Même garde-fou que les compteurs : jamais un mail des NOISE_MIN_AGE_DAYS
   // derniers jours. Tri ASC : le lot (cap 500) traite les PLUS ANCIENS
@@ -287,7 +291,7 @@ export async function listNoiseMessages(bucket: NoiseBucket): Promise<NoisePrevi
     db.$queryRawUnsafe<{ cnt: bigint }[]>(`SELECT COUNT(*) AS cnt ${base}`, noiseCutoff, bucket),
     db.$queryRawUnsafe<Row[]>(
       `SELECT m.accountSlug AS account, f.path AS folder, m.uid, m.subject,
-              m.fromEmail, m.fromName, m.date, m.isSeen
+              m.fromEmail, m.fromName, m.date, m.isSeen, m.snippet
        ${base} ORDER BY m.date ASC LIMIT ${PREVIEW_CAP}`,
       noiseCutoff,
       bucket,
@@ -307,6 +311,7 @@ export async function listNoiseMessages(bucket: NoiseBucket): Promise<NoisePrevi
       fromName: r.fromName,
       date: rawDate(r.date),
       isSeen: r.isSeen === 1,
+      snippet: previewSnippet(r.snippet),
     })),
   };
 }

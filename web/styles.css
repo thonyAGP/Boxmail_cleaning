@@ -355,6 +355,9 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .mail-row.personal { background: #fffdf5; }
 .mail-date { color: var(--muted); font-size: 11.5px; white-space: nowrap; min-width: 82px; }
 .mail-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Extrait du texte, en gris à la suite du sujet (C1) : décider de supprimer
+   sur le seul sujet demandait de deviner. Partage la ligne et son ellipse. */
+.mail-snip { color: var(--muted); font-weight: 400; }
 .op-details summary {
   cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 4px;
   user-select: none;

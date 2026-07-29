@@ -15,7 +15,7 @@ const SNIPPET_PREVIEW_CHARS = 160;
  * envoyer l'extrait complet de chacune gonflerait la réponse sans rien
  * apporter à l'œil. Une chaîne vide (mail sans texte exploitable) devient null.
  */
-function previewSnippet(snippet: string | null | undefined): string | null {
+export function previewSnippet(snippet: string | null | undefined): string | null {
   const s = (snippet ?? '').trim();
   if (!s) return null;
   return s.length > SNIPPET_PREVIEW_CHARS
