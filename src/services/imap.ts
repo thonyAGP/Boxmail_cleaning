@@ -557,6 +557,11 @@ class ImapService {
       for (const t of targets) {
         try {
           const dl = await client.download(String(t.uid), t.part, { uid: true });
+          // imapflow renvoie un objet SANS `content` quand la partie n'existe
+          // plus (mail supprimé entre le fetch et le download). Sans ce garde,
+          // streamToBuffer(undefined) lançait « Cannot read properties of
+          // undefined (Symbol.asyncIterator) » en boucle — constaté en réel.
+          if (!dl?.content) continue;
           const raw = await streamToBuffer(dl.content);
           let text = decodeText(raw, t.charset);
           if (t.isHtml) text = htmlToText(text);

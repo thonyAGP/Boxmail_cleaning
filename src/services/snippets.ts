@@ -28,6 +28,8 @@ export const SNIPPET_WINDOW_DAYS = 90;
 
 const DEFAULT_LIMIT = 300;
 const MAX_LIMIT = 2000;
+/** Délai avant de réessayer un mail dont la lecture a échoué (anti-boucle). */
+const RETRY_AFTER_MS = 60 * 60_000;
 
 /**
  * Transforme le texte brut d'un mail en extrait lisible : texte cité retiré
@@ -77,6 +79,8 @@ export interface BackfillResult {
   empty: number;
   /** Mails dont l'intention s'est précisée grâce à l'extrait. */
   intentsImproved: number;
+  /** Mails d'un dossier en panne, remis à plus tard (pas perdus). */
+  deferred: number;
   /** Reste-t-il des mails sans extrait dans la fenêtre ? (pour reprendre) */
   remaining: number;
 }
@@ -108,8 +112,19 @@ export async function backfillSnippets(
       : {}),
   };
 
+  // ANTI-BOUCLE (constaté en réel le 29/07) : quand un dossier échoue (socket
+  // IMAP qui expire, boîte injoignable), ses mails restent sans extrait et
+  // repartaient dans le lot suivant — le rattrapage tournait en rond sans
+  // jamais avancer. On note donc la TENTATIVE (`snippetAt`) même en échec, et
+  // on ne réessaie ces mails qu'après un délai. Rien n'est perdu : ils
+  // restent comptés dans `remaining` et seront repris plus tard.
+  const selectWhere = {
+    ...where,
+    OR: [{ snippetAt: null }, { snippetAt: { lt: new Date(Date.now() - RETRY_AFTER_MS) } }],
+  };
+
   const pending = await db.message.findMany({
-    where,
+    where: selectWhere,
     orderBy: { date: order === 'oldest' ? 'asc' : 'desc' },
     take: limit,
     select: {
@@ -128,9 +143,15 @@ export async function backfillSnippets(
     filled: 0,
     empty: 0,
     intentsImproved: 0,
+    deferred: 0,
     remaining: 0,
   };
-  if (pending.length === 0) return result;
+  if (pending.length === 0) {
+    // Rien de sélectionnable : soit tout est lu, soit les mails restants sont
+    // en attente de réessai (dossier en panne). `remaining` dit la vérité.
+    result.remaining = await db.message.count({ where });
+    return result;
+  }
 
   // Regroupé par dossier : un seul verrouillage de boîte par dossier.
   const byFolder = new Map<string, typeof pending>();
@@ -145,6 +166,8 @@ export async function backfillSnippets(
 
   const updates: { id: number; snippet: string }[] = [];
   const intentUpdates: { id: number; intent: string; reason: string }[] = [];
+  /** Mails d'un dossier en panne : tentative datée, extrait laissé vide. */
+  const failed: number[] = [];
 
   for (const [folderPath, messages] of byFolder) {
     try {
@@ -187,7 +210,13 @@ export async function backfillSnippets(
         folder: folderPath,
         error: (err as Error).message,
       });
-      progress(`⚠️ ${folderPath} ignoré (${(err as Error).message}) — on continue.`);
+      // Tentative datée sans extrait : ces mails ne reviendront pas au tour
+      // suivant (sinon le rattrapage boucle sur le dossier en panne), mais
+      // restent à faire et seront réessayés après RETRY_AFTER_MS.
+      failed.push(...messages.map((m) => m.id));
+      progress(
+        `⚠️ ${folderPath} ignoré (${(err as Error).message}) — ${messages.length} mail(s) réessayés plus tard.`,
+      );
     }
   }
 
@@ -203,6 +232,13 @@ export async function backfillSnippets(
         }),
       ),
     );
+  }
+  // Dossiers en panne : on date la tentative sans poser d'extrait.
+  for (let i = 0; i < failed.length; i += 200) {
+    await db.message.updateMany({
+      where: { id: { in: failed.slice(i, i + 200) } },
+      data: { snippetAt: now },
+    });
   }
   for (let i = 0; i < intentUpdates.length; i += 100) {
     await db.$transaction(
@@ -228,9 +264,11 @@ export async function backfillSnippets(
     await computeConfidenceForAccount(rec.account, {}, progress);
   }
 
+  result.deferred = failed.length;
   result.remaining = await db.message.count({ where });
   progress(
     `${rec.account} : ${result.filled} extrait(s) capturé(s), ${result.empty} sans texte, ` +
+      (result.deferred ? `${result.deferred} remis à plus tard, ` : '') +
       `${result.intentsImproved} intention(s) précisée(s) — reste ${result.remaining}.`,
   );
   return result;
