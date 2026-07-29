@@ -102,6 +102,31 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (fin de session précédente)
 
+**LA MISE À JOUR DEPUIS L'INTERFACE NE POUVAIT PAS FONCTIONNER SOUS LINUX
+(29/07) — corrigé.** Symptôme : serveur bloqué sur `01fbb4e` (23h03), 5
+commits de retard, avec « ⚠️ dernier passage 06:00 : échec — npm run build
+a échoué (code 2) : error TS2688 ». CAUSE, reproduite en local : pm2 lance
+l'app avec `NODE_ENV=production` (ecosystem.config.cjs), donc tout
+`npm install` lancé PAR l'app hérite de cet environnement et npm écarte les
+devDependencies — `@types/node` disparaît (`typescript` survit, d'où un tsc
+qui démarre puis meurt sur `TS2688: Cannot find type definition file for
+'node'`, à cause de `"types": ["node"]` dans tsconfig). Le déploiement
+initial passait, lui, par SSH — shell normal, devDependencies installées :
+**le bouton de mise à jour n'avait donc jamais réussi sous Linux**.
+CORRECTIF : `npm install --include=dev` dans update.ts ET autoupdate.ts
+(vérifié : sans le flag `@types/node` disparaît et le build meurt ; avec, il
+passe, à `NODE_ENV=production` inchangé). DEUX DÉFAUTS RÉVÉLÉS AU PASSAGE,
+corrigés aussi : (1) `cachedVersion` n'était vidé qu'en fin de mise à jour
+réussie — après un échec, l'interface affichait l'ANCIEN commit tout en
+annonçant « ✅ à jour » (le dépôt, lui, était en avance après le pull) ;
+c'est ce qui rendait la panne illisible. Le cache est maintenant vidé juste
+après le pull. (2) `applyUpdate` (bouton) n'avait AUCUN retour arrière,
+contrairement à `runAutoUpdate` — un échec laissait le dépôt en avance sur
+le binaire en service. Retour arrière ajouté, symétrique.
+**AMORÇAGE** : le correctif ne peut pas s'appliquer tout seul (le code qui
+tourne est l'ancien, il relancera l'ancienne commande) — une intervention
+SSH unique était nécessaire, cf. la commande donnée à l'utilisateur.
+
 **SÉRIE C LANCÉE — C0 + C1 LIVRÉS : l'assistant lit enfin le TEXTE des
 mails (29/07).** Déclencheur : « je ne suis pas du tout satisfait du
 résultat […] rajoute un peu d'IA, au moins sur les 3 derniers mois ».

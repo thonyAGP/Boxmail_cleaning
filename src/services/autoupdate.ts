@@ -105,7 +105,15 @@ export async function runAutoUpdate(): Promise<{
 
     const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
     await run(`git pull --ff-only origin ${branch}`);
-    await run('npm install --no-audit --no-fund');
+    // `--include=dev` EST OBLIGATOIRE ici, ce n'est pas une précaution.
+    // pm2 lance l'app avec NODE_ENV=production (ecosystem.config.cjs) ; tout
+    // npm lancé PAR l'app hérite de cet environnement, et npm écarte alors les
+    // devDependencies — dont typescript et @types/node. Le build suivant meurt
+    // sur « TS2688: Cannot find type definition file for 'node' ».
+    // Constaté en réel le 29/07 : la mise à jour depuis le serveur n'avait
+    // jamais pu aboutir sous Linux, le déploiement initial se faisant en SSH
+    // (shell normal, donc devDependencies installées).
+    await run('npm install --include=dev --no-audit --no-fund');
     // Aucune migration ici : l'app tourne et tient la base (« database is
     // locked »). On régénère seulement le client Prisma ; les migrations sont
     // appliquées au redémarrage, base libre — voir src/db/migrate.ts.

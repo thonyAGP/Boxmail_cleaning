@@ -98,23 +98,51 @@ export async function applyUpdate(progress: (m: string) => void): Promise<{ rest
   }
 
   const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
+  const previous = await git('rev-parse', 'HEAD');
   await runStep(`git pull --ff-only origin ${branch}`, progress);
+  // Le dépôt vient de bouger : la version en cache est périmée DÈS
+  // MAINTENANT, avant même de savoir si la suite réussit. Sans cette ligne,
+  // un échec plus bas laissait l'interface afficher l'ancien commit tout en
+  // annonçant « ✅ à jour » (le dépôt, lui, était en avance) — constaté en
+  // réel le 29/07, et c'est ce qui rendait la panne illisible.
+  cachedVersion = null;
 
-  if (process.platform === 'win32') {
-    // Windows verrouille les fichiers natifs (.dll/.node) chargés par le
-    // processus : `prisma generate` échouerait (EPERM) tant que le serveur
-    // tourne. On délègue install + db:setup + build à MailAssistant.bat,
-    // qui les exécute après l'arrêt du serveur, juste avant de le relancer.
-    progress('Code récupéré — installation et compilation au redémarrage (MailAssistant.bat)…');
-  } else {
-    await runStep('npm install --no-audit --no-fund', progress);
-    // PAS de migration ici : le serveur tourne et tient le fichier SQLite —
-    // `prisma migrate deploy` échouerait sur « database is locked » (constaté
-    // en réel sur le serveur le 28/07). On ne fait que régénérer le client
-    // (aucun accès à la base) ; les migrations passent au redémarrage, via
-    // ensureMigrationsApplied() — voir src/db/migrate.ts.
-    await runStep('npm run db:generate', progress);
-    await runStep('npm run build', progress);
+  try {
+    if (process.platform === 'win32') {
+      // Windows verrouille les fichiers natifs (.dll/.node) chargés par le
+      // processus : `prisma generate` échouerait (EPERM) tant que le serveur
+      // tourne. On délègue install + db:setup + build à MailAssistant.bat,
+      // qui les exécute après l'arrêt du serveur, juste avant de le relancer.
+      progress('Code récupéré — installation et compilation au redémarrage (MailAssistant.bat)…');
+    } else {
+      // `--include=dev` OBLIGATOIRE : pm2 lance l'app avec NODE_ENV=production,
+      // npm écarte alors les devDependencies (typescript, @types/node) et le
+      // build meurt sur « TS2688 ». Voir le commentaire jumeau dans
+      // autoupdate.ts — c'est la panne du 29/07.
+      await runStep('npm install --include=dev --no-audit --no-fund', progress);
+      // PAS de migration ici : le serveur tourne et tient le fichier SQLite —
+      // `prisma migrate deploy` échouerait sur « database is locked » (constaté
+      // en réel sur le serveur le 28/07). On ne fait que régénérer le client
+      // (aucun accès à la base) ; les migrations passent au redémarrage, via
+      // ensureMigrationsApplied() — voir src/db/migrate.ts.
+      await runStep('npm run db:generate', progress);
+      await runStep('npm run build', progress);
+    }
+  } catch (err) {
+    // Même principe que la mise à jour automatique : mieux vaut la version
+    // d'hier qui marche. Sans ce retour, le dépôt restait EN AVANCE sur le
+    // binaire réellement en service — état trompeur et difficile à diagnostiquer.
+    progress(`⚠️ ${(err as Error).message}`);
+    progress('↩️ Retour à la version précédente…');
+    try {
+      await git('reset', '--hard', previous);
+      if (process.platform !== 'win32') await runStep('npm run build', progress);
+      progress(`↩️ Revenu sur ${previous.slice(0, 7)} — le serveur continue de tourner.`);
+    } catch (rollbackErr) {
+      progress(`⛔ Retour en arrière impossible : ${(rollbackErr as Error).message}`);
+    }
+    cachedVersion = null;
+    throw err;
   }
 
   cachedVersion = null;
