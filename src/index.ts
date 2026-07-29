@@ -51,11 +51,21 @@ const EXPECTED_TOKEN = Buffer.from(config.auth.bearerToken, 'utf8');
 function checkBearer(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization ?? '';
   const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match) {
+
+  // Repli : jeton passé dans l'URL (`?token=…`).
+  // POURQUOI : les « connecteurs personnalisés » de Claude ne savent envoyer
+  // qu'un OAuth (identifiant + secret client) — leurs réglages avancés n'ont
+  // aucun champ pour un en-tête Bearer. Sans ce repli, brancher le connecteur
+  // imposerait d'implémenter un serveur OAuth complet (constaté le 29/07).
+  // La liaison est chiffrée (HTTPS), mais le jeton apparaît dans les logs
+  // d'accès nginx du serveur : il se change via MCP_BEARER_TOKEN dans .env.
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : null;
+  const supplied = match ? match[1] : queryToken;
+  if (!supplied) {
     res.status(401).json(jsonRpcError(-32001, 'Authentification requise (Bearer token).'));
     return;
   }
-  const provided = Buffer.from(match[1], 'utf8');
+  const provided = Buffer.from(supplied, 'utf8');
   const ok =
     provided.length === EXPECTED_TOKEN.length && timingSafeEqual(provided, EXPECTED_TOKEN);
   if (!ok) {
