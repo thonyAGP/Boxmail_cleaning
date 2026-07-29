@@ -92,6 +92,17 @@ model Message {
   // null = jamais capturé (mails indexés avant cette version).
   snippet            String?
   snippetAt          DateTime?
+  // Verdict de l'analyse IA (C2). CHOIX STRUCTURANT : l'IA n'écrit pas dans un
+  // monde parallèle — elle renseigne AUSSI les champs existants (intent,
+  // analysisConfidence, et la catégorie de l'expéditeur), pour que « Aujourd'hui »,
+  // le nettoyage et l'importance en profitent SANS être modifiés.
+  // `intentSource` porte la précédence : manual > ai > auto. Un recalcul
+  // heuristique (backfill 🏷️) n'écrase jamais un intent posé par l'IA.
+  aiSummary          String?
+  aiAction           String?   // reply | pay | read | archive | none
+  aiVerdictAt        DateTime?
+  aiModel            String?
+  intentSource       String    @default("auto")
   // Intention détectée (A1 — pourquoi ce mail ? otp/invoice/shipping/…),
   // calculée à la sync sur les entrants, backfill via le job « categorize ».
   intent             String?

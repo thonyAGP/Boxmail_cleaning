@@ -4867,14 +4867,17 @@ function renderSettingsBody() {
     const el = $('#snip-coverage');
     if (!el) return;
     try {
-      const { totals: t } = await api.analysisCoverage();
+      const { totals: t, ai } = await api.analysisCoverage();
       el.innerHTML = `
         <div class="set-line"><span class="muted">Mails dont le texte est connu</span>
           <span><strong>${t.snippetCoveragePct} %</strong> de ${fmtNum(t.total)} mails</span></div>
         <div class="set-line"><span class="muted">3 derniers mois restant à lire</span>
           <span>${fmtNum(t.recentWithoutSnippet)} sur ${fmtNum(t.recent)}</span></div>
         <div class="set-line"><span class="muted">Analyse jugée incertaine</span>
-          <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>`;
+          <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>
+        ${ai ? `<div class="set-line"><span class="muted">Analysés par l'IA</span>
+          <span><strong>${ai.pct} %</strong> · ${fmtNum(ai.analysed)} sur ${fmtNum(ai.withText)} lisibles
+          ${ai.remainingUncertain ? `<br><span class="muted" style="font-size:12px">${fmtNum(ai.remainingUncertain)} cas douteux à reprendre</span>` : ''}</span></div>` : ''}`;
     } catch (err) {
       el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     }

@@ -779,11 +779,13 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
   `;
   const conversational = new Set(conversationalRows.map((r) => r.fromEmail));
 
-  // Catégories corrigées à la main (A1) : jamais écrasées par le recalcul.
+  // Catégories posées à la main (A1) ou par l'analyse IA (C2) : jamais
+  // écrasées par le recalcul heuristique. Précédence manual > ai > auto — sans
+  // 'ai' ici, la sync suivante effacerait le travail du rattrapage.
   const manual = new Set(
     (
       await db.sender.findMany({
-        where: { accountSlug, categorySource: 'manual' },
+        where: { accountSlug, categorySource: { in: ['manual', 'ai'] } },
         select: { email: true },
       })
     ).map((s) => s.email),

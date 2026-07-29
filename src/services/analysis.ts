@@ -1,0 +1,372 @@
+import { db, ensureDbReady } from '../db/client.js';
+import { logger } from '../logger.js';
+import { recordOperation } from './oplog.js';
+import {
+  MESSAGE_INTENTS,
+  SENDER_CATEGORIES,
+  CONFIDENCE_LEVELS,
+  type MessageIntent,
+  type SenderCategory,
+  type ConfidenceLevel,
+} from './categorize.js';
+
+/**
+ * Analyse fine par l'IA (C2 — Série C).
+ *
+ * L'assistant ne lisait que le sujet : tout mail non reconnu tombait en
+ * « confiance faible », donc ni trié ni nettoyable. Maintenant que chaque mail
+ * porte un extrait de son texte (C1), une IA peut juger — et son verdict
+ * DÉBLOQUE le nettoyage en remontant la confiance.
+ *
+ * CHOIX STRUCTURANT : le verdict s'écrit dans les champs EXISTANTS
+ * (`Message.intent`, `Message.analysisConfidence`, `Sender.category`), avec une
+ * source `'ai'`. Conséquence : « Aujourd'hui », les stratégies de rétention et
+ * le score d'importance en profitent SANS une ligne de changement. Précédence
+ * stricte : **manual > ai > auto**.
+ *
+ * GARDE-FOUS : l'IA ne supprime JAMAIS rien, elle classe. Elle n'écrase jamais
+ * une correction manuelle. Un verdict hors énumération est refusé (le mail
+ * reste simplement non analysé). Tout est journalisé et réversible.
+ *
+ * Deux moteurs se branchent sur `applyVerdicts`, un seul chemin d'écriture :
+ *  - C3a : piloté depuis Claude via MCP (sur le forfait) — le rattrapage ;
+ *  - C3b : Haiku côté serveur, sur le flux courant (à venir).
+ */
+
+export const AI_ACTIONS = ['reply', 'pay', 'read', 'archive', 'none'] as const;
+export type AiAction = (typeof AI_ACTIONS)[number];
+
+export const AI_ACTION_LABELS: Record<AiAction, string> = {
+  reply: 'à répondre',
+  pay: 'à payer',
+  read: 'à lire',
+  archive: 'à archiver',
+  none: 'rien à faire',
+};
+
+/** Portée du lot : les cas douteux d'abord, ou tout ce qui a un texte. */
+export type AnalysisScope = 'uncertain' | 'all';
+
+export interface AnalysisCandidate {
+  /** Identifiant à renvoyer tel quel dans le verdict. */
+  id: number;
+  account: string;
+  from: string;
+  subject: string;
+  date: string | null;
+  isSeen: boolean;
+  snippet: string;
+  /** Ce que les heuristiques croient aujourd'hui — à corriger si c'est faux. */
+  guess: { intent: string | null; senderCategory: string | null; confidence: string | null };
+}
+
+export interface AnalysisBatch {
+  scope: AnalysisScope;
+  items: AnalysisCandidate[];
+  /** Mails restant à analyser APRÈS ce lot (pour savoir s'il faut continuer). */
+  remaining: number;
+}
+
+const MAX_BATCH = 100;
+
+/** Mails analysables : un texte capturé, pas encore de verdict, hors rebut. */
+function candidateWhere(scope: AnalysisScope, account?: string) {
+  return {
+    isDeleted: false,
+    isOutbound: false,
+    folder: { is: { role: { notIn: ['trash', 'spam'] } } },
+    snippet: { not: null },
+    NOT: { snippet: '' },
+    aiVerdictAt: null,
+    ...(account ? { accountSlug: account } : {}),
+    // « uncertain » vise ce qui bloque réellement : analyse faible/moyenne, ou
+    // intention absente/générique. C'est là que l'IA change quelque chose.
+    ...(scope === 'uncertain'
+      ? {
+          OR: [
+            { analysisConfidence: { in: ['low', 'medium'] } },
+            { intent: null },
+            { intent: 'info' },
+          ],
+        }
+      : {}),
+  };
+}
+
+/**
+ * Lot suivant à analyser. Charge utile VOLONTAIREMENT compacte : c'est le
+ * forfait de l'utilisateur qui paie ces jetons (C3a). Les plus ANCIENS d'abord :
+ * ce sont eux qui encombrent la boîte et que le rattrapage vise.
+ */
+export async function nextAnalysisBatch(
+  opts: { account?: string; limit?: number; scope?: AnalysisScope } = {},
+): Promise<AnalysisBatch> {
+  await ensureDbReady();
+  const scope = opts.scope ?? 'uncertain';
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), MAX_BATCH);
+  const where = candidateWhere(scope, opts.account);
+
+  const [rows, total] = await Promise.all([
+    db.message.findMany({
+      where,
+      orderBy: { date: 'asc' },
+      take: limit,
+      select: {
+        id: true,
+        accountSlug: true,
+        subject: true,
+        fromName: true,
+        fromEmail: true,
+        date: true,
+        isSeen: true,
+        snippet: true,
+        intent: true,
+        analysisConfidence: true,
+      },
+    }),
+    db.message.count({ where }),
+  ]);
+
+  // Catégorie actuelle des expéditeurs concernés (contexte du jugement).
+  const keys = [...new Set(rows.map((r) => `${r.accountSlug}|${r.fromEmail ?? ''}`))];
+  const senders = new Map<string, string | null>();
+  if (keys.length) {
+    const emails = [...new Set(rows.map((r) => r.fromEmail).filter((e): e is string => !!e))];
+    for (const s of await db.sender.findMany({
+      where: { email: { in: emails } },
+      select: { accountSlug: true, email: true, category: true },
+    })) {
+      senders.set(`${s.accountSlug}|${s.email}`, s.category);
+    }
+  }
+
+  return {
+    scope,
+    remaining: Math.max(0, total - rows.length),
+    items: rows.map((r) => ({
+      id: r.id,
+      account: r.accountSlug,
+      from: r.fromName ? `${r.fromName} <${r.fromEmail ?? ''}>` : (r.fromEmail ?? ''),
+      subject: r.subject ?? '(sans sujet)',
+      date: r.date ? r.date.toISOString().slice(0, 10) : null,
+      isSeen: r.isSeen,
+      snippet: r.snippet ?? '',
+      guess: {
+        intent: r.intent,
+        senderCategory: senders.get(`${r.accountSlug}|${r.fromEmail ?? ''}`) ?? null,
+        confidence: r.analysisConfidence,
+      },
+    })),
+  };
+}
+
+export interface Verdict {
+  id: number;
+  intent?: string;
+  /** Catégorie de l'EXPÉDITEUR (pas du mail) — facultative. */
+  senderCategory?: string | null;
+  action?: string;
+  /** Une ligne en français, ce que dit ce mail. */
+  summary?: string;
+  confidence?: string;
+  /** Pourquoi — affiché tel quel à l'utilisateur. */
+  reason?: string;
+}
+
+export interface ApplyResult {
+  applied: number;
+  skipped: number;
+  sendersUpdated: number;
+  /** Motif de chaque verdict écarté, pour que l'appelant corrige son tir. */
+  rejections: { id: number; why: string }[];
+}
+
+const isIntent = (v: unknown): v is MessageIntent =>
+  typeof v === 'string' && (MESSAGE_INTENTS as readonly string[]).includes(v);
+const isCategory = (v: unknown): v is SenderCategory =>
+  typeof v === 'string' && (SENDER_CATEGORIES as readonly string[]).includes(v);
+const isConfidence = (v: unknown): v is ConfidenceLevel =>
+  typeof v === 'string' && (CONFIDENCE_LEVELS as readonly string[]).includes(v);
+const isAction = (v: unknown): v is AiAction =>
+  typeof v === 'string' && (AI_ACTIONS as readonly string[]).includes(v);
+
+/**
+ * Applique des verdicts. CHEMIN D'ÉCRITURE UNIQUE des deux moteurs (MCP et
+ * Haiku) : une seule logique de précédence, un seul format de journal.
+ *
+ * Un verdict invalide n'annule pas le lot : il est écarté avec son motif, et le
+ * mail reste candidat pour plus tard. Mieux vaut un mail non analysé qu'un mail
+ * mal classé — c'est la confiance qui décide s'il devient supprimable.
+ */
+export async function applyVerdicts(
+  verdicts: Verdict[],
+  opts: { model?: string } = {},
+): Promise<ApplyResult> {
+  await ensureDbReady();
+  const model = opts.model ?? 'claude (session MCP)';
+  const now = new Date();
+  const out: ApplyResult = { applied: 0, skipped: 0, sendersUpdated: 0, rejections: [] };
+  if (verdicts.length === 0) return out;
+
+  const ids = verdicts.map((v) => v.id).filter((n) => Number.isInteger(n));
+  const messages = new Map(
+    (
+      await db.message.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          accountSlug: true,
+          fromEmail: true,
+          subject: true,
+          date: true,
+          intentSource: true,
+        },
+      })
+    ).map((m) => [m.id, m]),
+  );
+
+  const journal = new Map<string, { subject: string; date: string | null }[]>();
+
+  for (const v of verdicts) {
+    const msg = messages.get(v.id);
+    if (!msg) {
+      out.skipped++;
+      out.rejections.push({ id: v.id, why: 'mail introuvable (supprimé ou déplacé depuis)' });
+      continue;
+    }
+    if (msg.intentSource === 'manual') {
+      out.skipped++;
+      out.rejections.push({ id: v.id, why: 'corrigé à la main — une correction manuelle prime' });
+      continue;
+    }
+    if (v.intent !== undefined && !isIntent(v.intent)) {
+      out.skipped++;
+      out.rejections.push({ id: v.id, why: `intention inconnue : « ${String(v.intent)} »` });
+      continue;
+    }
+    if (v.confidence !== undefined && !isConfidence(v.confidence)) {
+      out.skipped++;
+      out.rejections.push({ id: v.id, why: `confiance inconnue : « ${String(v.confidence)}»` });
+      continue;
+    }
+    if (v.action !== undefined && !isAction(v.action)) {
+      out.skipped++;
+      out.rejections.push({ id: v.id, why: `action inconnue : « ${String(v.action)} »` });
+      continue;
+    }
+
+    const reason = (v.reason ?? '').trim().slice(0, 300);
+    await db.message.update({
+      where: { id: v.id },
+      data: {
+        ...(v.intent !== undefined
+          ? {
+              intent: v.intent,
+              intentReason: reason ? `analyse IA : ${reason}` : 'analyse IA',
+              intentSource: 'ai',
+            }
+          : {}),
+        ...(v.confidence !== undefined
+          ? {
+              analysisConfidence: v.confidence,
+              analysisConfidenceReason: reason ? `analyse IA : ${reason}` : 'analyse IA',
+            }
+          : {}),
+        aiSummary: (v.summary ?? '').trim().slice(0, 300) || null,
+        aiAction: v.action ?? null,
+        aiVerdictAt: now,
+        aiModel: model,
+      },
+    });
+    out.applied++;
+
+    const arr = journal.get(msg.accountSlug) ?? [];
+    if (arr.length < 200) {
+      arr.push({ subject: msg.subject ?? '(sans sujet)', date: msg.date?.toISOString() ?? null });
+    }
+    journal.set(msg.accountSlug, arr);
+
+    // Catégorie d'expéditeur : on ne remplit QUE la case « je ne sais pas »
+    // (company / vide) et seulement sur un verdict sûr. L'IA complète les
+    // heuristiques, elle ne rejuge pas une marque déjà reconnue — sinon la
+    // catégorie d'un expéditeur changerait au gré des mails.
+    if (v.senderCategory !== undefined && v.senderCategory !== null && msg.fromEmail) {
+      if (!isCategory(v.senderCategory)) {
+        out.rejections.push({ id: v.id, why: `catégorie inconnue : « ${String(v.senderCategory)} »` });
+      } else if (v.confidence === 'high') {
+        const sender = await db.sender.findUnique({
+          where: { accountSlug_email: { accountSlug: msg.accountSlug, email: msg.fromEmail } },
+          select: { id: true, category: true, categorySource: true },
+        });
+        if (
+          sender &&
+          sender.categorySource === 'auto' &&
+          (sender.category === null || sender.category === 'company')
+        ) {
+          await db.sender.update({
+            where: { id: sender.id },
+            data: {
+              category: v.senderCategory,
+              categorySource: 'ai',
+              categoryReason: reason ? `analyse IA : ${reason}` : 'analyse IA',
+            },
+          });
+          out.sendersUpdated++;
+        }
+      }
+    }
+  }
+
+  for (const [account, items] of journal) {
+    await recordOperation({
+      account,
+      tool: 'ai_analysis',
+      params: { model, verdicts: items.length },
+      result: `${items.length} mail(s) analysés par l'IA`,
+      items,
+    });
+  }
+  logger.info('verdicts IA appliqués', {
+    applied: out.applied,
+    skipped: out.skipped,
+    senders: out.sendersUpdated,
+  });
+  return out;
+}
+
+export interface AnalysisProgress {
+  /** Mails porteurs d'un texte exploitable (matière première de l'analyse). */
+  withText: number;
+  analysed: number;
+  /** Restant dans la portée « cas douteux ». */
+  remainingUncertain: number;
+  /** Restant si on analyse TOUT ce qui a un texte. */
+  remainingAll: number;
+  pct: number;
+}
+
+/** Avancement de l'analyse IA, pour l'interface et pour piloter le rattrapage. */
+export async function analysisProgress(account?: string): Promise<AnalysisProgress> {
+  await ensureDbReady();
+  const base = {
+    isDeleted: false,
+    isOutbound: false,
+    folder: { is: { role: { notIn: ['trash', 'spam'] } } },
+    snippet: { not: null },
+    NOT: { snippet: '' },
+    ...(account ? { accountSlug: account } : {}),
+  };
+  const [withText, analysed, remainingUncertain, remainingAll] = await Promise.all([
+    db.message.count({ where: base }),
+    db.message.count({ where: { ...base, aiVerdictAt: { not: null } } }),
+    db.message.count({ where: candidateWhere('uncertain', account) }),
+    db.message.count({ where: candidateWhere('all', account) }),
+  ]);
+  return {
+    withText,
+    analysed,
+    remainingUncertain,
+    remainingAll,
+    pct: withText === 0 ? 0 : Math.round((analysed / withText) * 100),
+  };
+}

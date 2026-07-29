@@ -100,6 +100,28 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   (public, app « boxmail-mcp », comptes perso uniquement, flux publics activés,
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
+## État (session en cours)
+
+**C2 + C3a LIVRÉS (29/07) : l'IA peut enfin juger, et son verdict DÉBLOQUE le
+nettoyage.** Migration `ai_verdict` (Message.aiSummary/aiAction/aiVerdictAt/
+aiModel/intentSource). `services/analysis.ts` : `nextAnalysisBatch` (lot
+compact — c'est le forfait qui paie ces jetons), `applyVerdicts` (CHEMIN
+D'ÉCRITURE UNIQUE des deux moteurs), `analysisProgress`. 2 tools MCP
+(`next_analysis_batch`, `submit_analysis_batch`) : la session Claude boucle
+jusqu'à `remaining=0`. LE CHOIX QUI FAIT TOUT : l'IA écrit dans les champs
+EXISTANTS avec `source='ai'` → aucun moteur à modifier. TROIS PROTECTIONS
+indispensables, sans lesquelles la sync suivante effacerait le rattrapage :
+`categorizeAccount` saute `intentSource='ai'`, `computeConfidenceForAccount`
+saute `aiVerdictAt != null`, `rebuildSenders` traite `categorySource='ai'`
+comme `'manual'`. L'IA ne remplit la catégorie d'un expéditeur que si elle vaut
+`company`/vide ET si le verdict est sûr (sinon elle changerait au gré des
+mails). Tests : 35 asserts, dont la preuve de bout en bout — `deletableUnion()`
+passe de 0 à 1 quand le verdict remonte la confiance, et retombe à 0 si on la
+rebaisse. **PRÉ-REQUIS UTILISATEUR pour le rattrapage : brancher le connecteur
+MCP** (`https://boxmail.lb2i.com/mcp` + bearer) sur une session Claude, puis
+demander « analyse mes mails ». RESTE : C3b (Haiku serveur, flux courant),
+C4 (règles découvertes), C5 (mesure du gain).
+
 ## Accès au serveur de production (à ne plus rechercher)
 
 - VM Oracle : `ubuntu@51.170.60.55` (hôte `instance-20260728-1911`), dépôt

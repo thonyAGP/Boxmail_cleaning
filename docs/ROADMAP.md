@@ -1267,7 +1267,25 @@ base pour l'analyse. Tests : 38 asserts.
 - Tests : extraction sur bodyStructure simulé, texte cité jeté, idempotence,
   et l'assertion qui compte — **aucune pièce jointe téléchargée**.
 
-### C2 — Le verdict IA (le cœur)
+### ✅ C2 — Le verdict IA — LIVRÉ (29/07)
+
+**Livré conforme au plan**, y compris le choix structurant : le verdict écrit
+dans `Message.intent` / `Message.analysisConfidence` / `Sender.category` avec
+une source `'ai'`, donc « Aujourd'hui », la rétention et l'importance en
+profitent sans une ligne de changement. Trois protections ajoutées pour que la
+précédence **manual > ai > auto** tienne vraiment : `categorizeAccount` saute
+les mails `intentSource='ai'`, `computeConfidenceForAccount` saute les mails
+déjà jugés par l'IA, et `rebuildSenders` traite `categorySource='ai'` comme
+`'manual'`. Sans ces trois clauses, la sync suivante ou le backfill 🏷️
+effaçaient tout le rattrapage.
+Affinage non prévu au plan mais nécessaire : l'IA ne remplit la catégorie d'un
+expéditeur QUE si elle vaut `company`/vide (la case « je ne sais pas ») ET si
+le verdict est sûr — sinon la catégorie d'un expéditeur changerait au gré de
+ses mails. **Preuve de bout en bout dans les tests** : `deletableUnion()` passe
+de 0 à 1 quand le verdict remonte la confiance, et retombe à 0 si on la
+rebaisse. Tests : 35 asserts.
+
+### C2 — Le verdict IA (plan d'origine)
 
 - **Migration `ai_verdict`** : `Message.aiSummary` (1 ligne FR), `aiAction`
   (`reply|pay|read|archive|none`), `aiVerdictAt`, `aiModel`,
@@ -1298,7 +1316,16 @@ base pour l'analyse. Tests : 38 asserts.
 Les deux passent par la même fonction `applyVerdicts()` : une seule logique de
 précédence, un seul format de journal.
 
-- **C3a — Piloté depuis Claude (forfait) → LE RATTRAPAGE.** 2 tools MCP :
+- **✅ C3a — LIVRÉ (29/07).** `next_analysis_batch` (lot compact : expéditeur,
+  sujet, date, extrait, + la croyance actuelle des heuristiques, pour que
+  Claude sache quoi corriger) et `submit_analysis_batch` (verdicts →
+  `applyVerdicts`, le chemin d'écriture unique). Reprenable : un mail analysé
+  ne revient jamais dans un lot (`aiVerdictAt`), et `progress` accompagne
+  chaque réponse pour piloter la boucle. Un verdict invalide est écarté SEUL,
+  avec son motif dans `rejections` — un mauvais champ ne fait pas perdre le
+  lot. **PRÉ-REQUIS UTILISATEUR : le connecteur MCP doit être branché** sur une
+  session Claude (URL `https://boxmail.lb2i.com/mcp` + bearer).
+- **C3a — description d'origine.** 2 tools MCP :
   `next_analysis_batch({limit, account, oldestFirst})` sert le lot compact
   suivant (expéditeur, sujet, extrait, date, drapeaux) ;
   `submit_analysis_batch({verdicts})` écrit les verdicts. Curseur serveur ⇒

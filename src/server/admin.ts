@@ -107,6 +107,7 @@ import {
   type SenderPriority,
 } from '../services/categorize.js';
 import { analysisCoverage, backfillSnippets } from '../services/snippets.js';
+import { analysisProgress } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import {
   listPolicies,
@@ -815,7 +816,8 @@ export function buildAdminRouter(): Router {
   router.get(
     '/analysis/coverage',
     guard(async (_req, res) => {
-      res.json(await analysisCoverage());
+      const [coverage, ai] = await Promise.all([analysisCoverage(), analysisProgress()]);
+      res.json({ ...coverage, ai });
     }),
   );
 

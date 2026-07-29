@@ -373,6 +373,11 @@ export async function computeConfidenceForAccount(
         isDeleted: false,
         isOutbound: false,
         id: { gt: cursor },
+        // La confiance posée par l'IA (C2) prime sur le calcul heuristique :
+        // elle vient d'une lecture du texte, pas d'une correspondance de motif.
+        // Les verdicts de « Vérifier l'analyse » (B2) restent prioritaires, ils
+        // écrivent la confiance directement.
+        aiVerdictAt: null,
         ...(opts.onlyMissing ? { analysisConfidence: null } : {}),
       },
       orderBy: { id: 'asc' },
@@ -552,7 +557,16 @@ export async function categorizeAccount(
   let updated = 0;
   for (;;) {
     const batch = await db.message.findMany({
-      where: { accountSlug, isDeleted: false, isOutbound: false, id: { gt: cursor } },
+      where: {
+        accountSlug,
+        isDeleted: false,
+        isOutbound: false,
+        id: { gt: cursor },
+        // Précédence manual > ai > auto (C2) : un intent posé par l'analyse IA
+        // n'est JAMAIS réécrit par les regex. Sans cette clause, le backfill 🏷️
+        // effacerait tout le travail du rattrapage.
+        intentSource: { not: 'ai' },
+      },
       orderBy: { id: 'asc' },
       take: BATCH,
       select: {

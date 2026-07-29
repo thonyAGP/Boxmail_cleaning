@@ -13,6 +13,14 @@ import {
   setSenderCategory,
   setSenderPriority,
 } from '../../services/categorize.js';
+import {
+  AI_ACTIONS,
+  analysisProgress,
+  applyVerdicts,
+  nextAnalysisBatch,
+  type Verdict,
+} from '../../services/analysis.js';
+import { MESSAGE_INTENTS } from '../../services/categorize.js';
 import { resolveAccount } from '../../services/accounts.js';
 import { recordOperation } from '../../services/oplog.js';
 import { accountParam, guard, jsonResult } from '../util.js';
@@ -237,6 +245,102 @@ export function registerAssistTools(server: McpServer): void {
         result: `priorité ${result.priority}`,
       });
       return jsonResult({ account: rec.account, ...result });
+    }),
+  );
+
+  // --- next_analysis_batch (C3a : le rattrapage sur le forfait) -------------
+  server.registerTool(
+    'next_analysis_batch',
+    {
+      title: 'Lot de mails à analyser',
+      description:
+        'LE RATTRAGE DE MASSE. Renvoie le prochain lot de mails à analyser, ' +
+        'avec pour chacun un EXTRAIT DE SON TEXTE — c’est ce que les ' +
+        'heuristiques n’ont jamais pu lire, d’où des milliers de mails classés ' +
+        '« je ne sais pas », ni triés ni nettoyables. ' +
+        'MODE D’EMPLOI : appeler ce tool, juger chaque mail à partir de son ' +
+        'extrait, renvoyer les verdicts avec submit_analysis_batch, puis ' +
+        'RECOMMENCER tant que `remaining` est supérieur à 0 — sans redemander ' +
+        'l’autorisation entre deux lots, l’utilisateur a lancé le rattrapage. ' +
+        'Les plus ANCIENS d’abord (ce sont eux qui encombrent la boîte). ' +
+        'scope=uncertain (défaut) ne vise que les cas douteux ; scope=all ' +
+        'reprend tout mail porteur d’un texte. ' +
+        'Annonce l’avancement de temps en temps, pas à chaque lot.',
+      inputSchema: {
+        ...accountParam,
+        scope: z
+          .enum(['uncertain', 'all'])
+          .default('uncertain')
+          .describe('uncertain = les cas que les heuristiques ratent (défaut) ; all = tout.'),
+        limit: z.number().int().min(1).max(100).default(50).describe('Mails par lot (cap 100).'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(async (args: { account?: string; scope: 'uncertain' | 'all'; limit: number }) => {
+      const account = args.account ? (await resolveAccount(args.account)).account : undefined;
+      const [batch, progress] = await Promise.all([
+        nextAnalysisBatch({ account, scope: args.scope, limit: args.limit }),
+        analysisProgress(account),
+      ]);
+      return jsonResult({ ...batch, progress });
+    }),
+  );
+
+  // --- submit_analysis_batch -----------------------------------------------
+  server.registerTool(
+    'submit_analysis_batch',
+    {
+      title: 'Renvoyer les verdicts d’analyse',
+      description:
+        'Enregistre ton jugement sur les mails d’un lot. Renvoyer l’`id` reçu ' +
+        'tel quel. Le verdict remplit les champs que TOUS les moteurs lisent ' +
+        'déjà (intention, confiance, catégorie de l’expéditeur) : une ' +
+        'confiance passée de « faible » à « forte » REND le mail nettoyable, ' +
+        'c’est tout l’enjeu du rattrapage. ' +
+        'RÈGLES : ne juger que d’après l’extrait fourni ; dans le doute mettre ' +
+        'confidence=low (le mail reste alors protégé de tout nettoyage — c’est ' +
+        'le comportement sûr) ; ne poser senderCategory que si l’expéditeur est ' +
+        'clairement identifiable, et « person » uniquement pour un vrai humain. ' +
+        'L’IA ne supprime RIEN ici : elle classe. Une correction manuelle de ' +
+        'l’utilisateur n’est jamais écrasée. Tout est journalisé et réversible. ' +
+        'Les verdicts hors énumération sont refusés un par un et renvoyés dans ' +
+        '`rejections` : corriger et renvoyer ceux-là seulement.',
+      inputSchema: {
+        verdicts: z
+          .array(
+            z.object({
+              id: z.number().int().describe('L’`id` du mail, repris du lot.'),
+              intent: z
+                .enum(MESSAGE_INTENTS)
+                .optional()
+                .describe('Pourquoi ce mail a été envoyé.'),
+              senderCategory: z
+                .enum(SENDER_CATEGORIES)
+                .nullable()
+                .optional()
+                .describe('Catégorie de l’EXPÉDITEUR, seulement si évidente.'),
+              action: z
+                .enum(AI_ACTIONS)
+                .optional()
+                .describe('Ce que l’utilisateur doit en faire.'),
+              summary: z.string().max(300).optional().describe('Une ligne en français.'),
+              confidence: z
+                .enum(CONFIDENCE_LEVELS)
+                .optional()
+                .describe('Ta sûreté. low = le mail reste protégé.'),
+              reason: z.string().max(300).optional().describe('Pourquoi, en français.'),
+            }),
+          )
+          .min(1)
+          .max(100)
+          .describe('Un verdict par mail jugé.'),
+      },
+      annotations: { destructiveHint: false, idempotentHint: false },
+    },
+    guard(async (args: { verdicts: Verdict[] }) => {
+      const result = await applyVerdicts(args.verdicts, { model: 'claude (session MCP)' });
+      const progress = await analysisProgress();
+      return jsonResult({ ...result, progress });
     }),
   );
 }
