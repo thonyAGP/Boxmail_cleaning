@@ -1345,6 +1345,40 @@ précédence, un seul format de journal.
 
 ### C4 — Les règles découvertes (demande explicite de l'utilisateur)
 
+**MATIÈRE BRUTE DISPONIBLE (première passe du 29/07 : 3 389 mails jugés,
+677 expéditeurs corrigés sur 7 boîtes).** Trois règles sortent des faits, pas
+d'une intuition — chacune est adossée à des exemples réels :
+
+1. **Nom affiché humain + adresse de service ⇒ jamais `person`.** C'est
+   l'erreur n°1, présente dans les 7 boîtes, et la plus coûteuse : un
+   expéditeur classé `person` est protégé à VIE par la garantie « 0 mail
+   personnel », donc innettoyable. Signature à détecter : la partie locale de
+   l'adresse est un mot de service (`no-reply`, `noreply`, `member`,
+   `notification`, `notif`, `first_reminder`, `alerte`, `service.`,
+   `ne-pas-repondre`, `postmaster`) OU le domaine est celui d'une plateforme,
+   ALORS que le nom affiché ressemble à un prénom+nom. Exemples relevés :
+   `Yao Eve <member@hi5.com>`, `alexandre oudot <noreply@fr.facebox.com>`,
+   `Morgane Mahe <first_reminder@whereareyounow.net>`, `Elise YOUINOU
+   <service.copainsdavant@…>`, « Florian de Meilleurtaux », « Valentine
+   d'Indy », « Marc De Diego Ferrer » (MCA Andorra, ~30 mails), « Alerte
+   PERCHE David », « Emilie de Youse », « Tibot de Indy », « Operator de
+   Pennylane ». Et `postmaster@outlook.com` / `postmaster@mail.hotmail.com`
+   DANS CHAQUE BOÎTE — cas trivial à traiter en dur.
+2. **Ne jamais déduire `bank` du seul nom affiché.** Un faux PayPal
+   (`Paymentconfirmation @paypalservice <team_execsales@accountant.com>`)
+   était classé `bank` en confiance HAUTE : l'hameçonnage héritait de la
+   protection réservée aux mails bancaires. La catégorie `bank` doit exiger
+   un domaine connu, pas une chaîne dans le nom affiché.
+3. **Un expéditeur bancaire réel ne doit pas tomber en `newsletter`.** Le
+   Crédit Agricole Morbihan l'était sur Econom : ~60 mails « Vos documents
+   Banque, Assurance » traités comme du bruit, dont un « Avis Tiers
+   Détenteur » (procédure de saisie sur compte). Le motif `unsubscribe` seul
+   ne suffit pas à déclasser un domaine bancaire.
+
+Symétriquement, l'IA a aussi **rétabli** de vraies personnes classées
+`company` et un interlocuteur professionnel (« Mes primes Travaux », primes
+CEE de 1 943 €) classé `social` : la règle doit valoir dans les deux sens.
+
 `services/discover.ts` agrège les verdicts d'une passe et propose :
 expéditeurs dont TOUS les mails sont classés pub/newsletter et jamais ouverts
 ⇒ stratégie de rétention ou désinscription (P2.2) ; expéditeurs récurrents
@@ -1361,14 +1395,28 @@ validation**.
 
 ### Ordre de livraison
 
-**C0 ✅ → C1 ✅ → C2+C3a → C3b → C4 → C5.** Le rattrapage gratuit (C3a) passe
-avant le moteur payant : c'est l'urgence exprimée, et il ne coûte rien. C4
-vient après une vraie passe, sinon il n'y a rien à découvrir.
+**C0 ✅ → C1 ✅ → C2 ✅ → C3a ✅ → C3b → C4 → C5.** Le rattrapage gratuit
+(C3a) est passé avant le moteur payant : c'était l'urgence exprimée, et il ne
+coûte rien. C4 vient après une vraie passe, sinon il n'y a rien à découvrir —
+c'est fait, la matière est ci-dessus.
 
-**Prochaine étape : C2 + C3a.** Le socle est posé — les mails ont enfin un
-texte. Reste à écrire le verdict IA dans les champs EXISTANTS
-(`m.intent`, `s.category`, `m.analysisConfidence`, source `'ai'`, précédence
-manual > ai > auto) et les 2 tools MCP du rattrapage sur le forfait.
+**Première passe réelle exécutée le 29/07** : 7 agents dédiés, un PAR BOÎTE
+(les scopes doivent être disjoints — `next_analysis_batch` n'a aucun
+mécanisme de réservation, deux agents sur la même boîte tireraient les mêmes
+mails), 5 lots de 100 chacun. 3 389 mails jugés, 3 389 appliqués, **0 rejet**,
+677 expéditeurs corrigés, Econom entièrement bouclée. Confiance faible :
+4 071 → 3 405.
+
+**Prochaine étape : C3b, puis C4.** Le reliquat de thony56_gtr (10 115
+douteux, 4 % fait) demanderait ~20 tours de session ; c'est précisément ce
+que C3b règle. Coût estimé du reliquat complet : ~4,70 $, ~2,35 $ en Batch
+API — **clé API Anthropic à demander à l'utilisateur**, elle n'a pas encore
+été réclamée.
+
+⚠️ **Mesure manquante pour C5** : le « récupérable » a été relevé APRÈS la
+passe (6 746) mais PAS avant. Prendre `deletableUnion()` AVANT le prochain
+tour — c'est la métrique qui prouve le gain, et sans le point de départ elle
+ne prouve rien.
 
 ---
 

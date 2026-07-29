@@ -102,6 +102,68 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (session en cours)
 
+**PREMIER RATTRAPAGE MASSIF EXÉCUTÉ (29/07) : 3 389 mails jugés, 677
+expéditeurs corrigés.** Demande utilisateur : « répare les extraits et lance
+ici par blocs de 500 les analyses de mails. Tu peux le donner à un agent
+dédié. » Méthode : **un agent par boîte** (les scopes doivent être DISJOINTS
+— `next_analysis_batch` n'a AUCUN mécanisme de réservation, deux agents sur
+la même boîte recevraient les mêmes mails), 5 lots de 100 chacun, via la
+recette PowerShell MCP (initialize → capturer `mcp-session-id` → tools/call ;
+réponses en SSE, JSON dans `.result.content[0].text`). Résultat : 3 389
+appliqués, **0 rejet**, Econom entièrement bouclée. Confiance faible :
+4 071 → 3 405. Récupérable mesuré APRÈS : 6 746 (je n'avais pas pris la
+mesure AVANT — à faire au prochain tour, c'est LA métrique de C5).
+Actions proposées : archive 2 023 / read 1 162 / reply 74 / pay 44.
+
+**CE QUE L'ANALYSE DE CONTENU A RÉVÉLÉ — matière brute pour C4.** Un motif
+domine, confirmé sur les 7 boîtes : **les robots dont le nom affiché est un
+nom humain étaient classés `person`**, donc protégés à vie par la garantie
+« 0 mail personnel » et INNETTOYABLES. Exemples réels : `Yao Eve
+<member@hi5.com>`, `Morgane Mahe <first_reminder@whereareyounow.net>`,
+« Florian de Meilleurtaux », « Marc De Diego Ferrer » (MCA Andorra, ~30
+mails), « Alerte PERCHE David » (agences immo), et `postmaster@outlook.com`
+DANS CHAQUE BOÎTE. Règle à coder : nom affiché humain + adresse de service
+(no-reply/member/notification/first_reminder/alerte) ⇒ jamais `person`.
+Deux erreurs symétriques, plus graves que le bruit : **un faux PayPal
+(`team_execsales@accountant.com`) était classé `bank` en confiance haute** —
+l'hameçonnage héritait de la protection bancaire ; et **le Crédit Agricole
+Morbihan était classé `newsletter`** sur Econom — ~60 mails de documents
+bancaires traités comme du bruit, dont un « Avis Tiers Détenteur » (saisie
+sur compte). Les heuristiques se trompaient dans les DEUX sens sur ce qui
+compte le plus. Erreur inverse aussi : « Mes primes Travaux » classé
+`social` alors que c'est un interlocuteur réel (primes CEE, 1 943 €).
+
+**GARDE-FOU « DATABASE IS LOCKED » : JAMAIS INSTALLÉ (trouvé et corrigé).**
+Découvert en lançant une mesure : chaque démarrage loggait « SQLite : PRAGMA
+non appliqués — Execute returned results, which is not allowed in SQLite »,
+jamais lu. CAUSE : `PRAGMA busy_timeout = 5000` RENVOIE une ligne, ce que
+Prisma refuse sur `$executeRawUnsafe` ; les trois PRAGMA partageant un seul
+`try`, l'exception emportait les deux derniers. En production : WAL était
+bien posé (premier, et via `$queryRawUnsafe`), mais **busy_timeout restait à
+0 et synchronous au défaut** — la protection P0.1, celle-là même dont
+l'absence avait fait échouer une mise à jour, n'existait pas. Correctif :
+tout par `$queryRawUnsafe`, un `try` PAR pragma, et RELECTURE des valeurs
+journalisée (sans relecture une perte reste invisible — c'est exactement ce
+qui s'est produit). Vérifié en production : `wal / 5000 / 1`, zéro
+avertissement. Test : 4 asserts ; busy_timeout et synchronous étant des
+réglages PAR CONNEXION, les voir posés prouve que c'est le code qui les met.
+
+**Sur le contenu des boîtes (à ne plus redécouvrir).** `Colocar` n'est PAS
+de la colocation immobilière malgré son nom : c'est la SASU de location et
+négoce de VÉHICULES (salles des ventes, cartes grises, Getaround).
+`Au-marais` est une location saisonnière parisienne (Airbnb puis
+HomeExchange, Smoobu, Stripe). `Brimmo` tourne quasi entièrement autour du
+rachat/réhabilitation du 46 rue de la République à Brest. `thony56_gtr` : le
+plus ancien fond est de 2006-2008 (eBay, Assedic, réseaux sociaux morts).
+
+**RESTE À FAIRE.** thony56_gtr = 10 115 douteux (4 % fait) — à ce rythme 20
+tours ; c'est l'argument pour C3b (Haiku serveur, ~4,70 $ le reliquat,
+~2,35 $ en Batch API — clé API Anthropic requise, PAS ENCORE DEMANDÉE à
+l'utilisateur). Autres restes : Brimmo 1 126, Au-marais 859,
+Location_Brest 822, Altoen 294, Colocar 184. La lecture des extraits n'est
+pas finie sur thony56_gtr (15 333 / 20 220) : le nombre de douteux MONTERA
+encore à mesure qu'elle avance. Puis C4 (coder les règles ci-dessus) et C5.
+
 **C2 + C3a LIVRÉS (29/07) : l'IA peut enfin juger, et son verdict DÉBLOQUE le
 nettoyage.** Migration `ai_verdict` (Message.aiSummary/aiAction/aiVerdictAt/
 aiModel/intentSource). `services/analysis.ts` : `nextAnalysisBatch` (lot
