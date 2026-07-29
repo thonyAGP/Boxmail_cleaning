@@ -47,19 +47,46 @@ export const db = new PrismaClient();
  */
 let pragmasApplied = false;
 
+/**
+ * PIÈGE : plusieurs PRAGMA d'affectation RENVOIENT une ligne (`journal_mode`
+ * renvoie le mode retenu, `busy_timeout` la valeur appliquée). Prisma refuse
+ * cela sur `$executeRawUnsafe` — « Execute returned results, which is not
+ * allowed in SQLite ». On passe donc TOUT par `$queryRawUnsafe`, qui accepte
+ * aussi bien zéro ligne qu'une ligne.
+ *
+ * Et chaque PRAGMA a son propre try : groupés, la première exception faisait
+ * sauter les suivantes. C'est ce qui s'est réellement produit en production —
+ * WAL était bien posé (premier de la liste), mais `busy_timeout` levait, donc
+ * ni lui ni `synchronous` n'étaient appliqués, et la seule trace était un
+ * avertissement au démarrage.
+ */
+async function applyPragma(sql: string): Promise<void> {
+  try {
+    await db.$queryRawUnsafe(sql);
+  } catch (err) {
+    logger.warn('SQLite : PRAGMA refusé', { sql, error: (err as Error).message });
+  }
+}
+
 export async function applySqlitePragmas(): Promise<void> {
   if (pragmasApplied) return;
   pragmasApplied = true;
+  await applyPragma('PRAGMA journal_mode = WAL');
+  await applyPragma('PRAGMA busy_timeout = 5000');
+  await applyPragma('PRAGMA synchronous = NORMAL');
+  // On RELIT les valeurs plutôt que de supposer qu'elles ont pris : c'est le
+  // seul moyen de voir dans les logs qu'un réglage a été silencieusement perdu.
   try {
-    const rows = await db.$queryRawUnsafe<{ journal_mode?: string }[]>(
-      'PRAGMA journal_mode = WAL',
-    );
-    await db.$executeRawUnsafe('PRAGMA busy_timeout = 5000');
-    await db.$executeRawUnsafe('PRAGMA synchronous = NORMAL');
-    logger.info('SQLite prêt', { journalMode: rows?.[0]?.journal_mode ?? 'inconnu' });
-  } catch (err) {
-    // Non bloquant : la base fonctionne sans (mode journal par défaut).
-    logger.warn('SQLite : PRAGMA non appliqués', { error: (err as Error).message });
+    const [j] = await db.$queryRawUnsafe<{ journal_mode?: string }[]>('PRAGMA journal_mode');
+    const [b] = await db.$queryRawUnsafe<{ timeout?: number }[]>('PRAGMA busy_timeout');
+    const [s] = await db.$queryRawUnsafe<{ synchronous?: number }[]>('PRAGMA synchronous');
+    logger.info('SQLite prêt', {
+      journalMode: j?.journal_mode ?? 'inconnu',
+      busyTimeout: b?.timeout ?? 'inconnu',
+      synchronous: s?.synchronous ?? 'inconnu',
+    });
+  } catch {
+    /* la relecture est un confort de diagnostic, jamais un motif d'échec */
   }
 }
 
