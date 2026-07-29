@@ -1226,13 +1226,23 @@ l'IA seule ne le franchit pas : il faut d'abord capturer le texte.
   interactive, pas un traitement de masse.
 - **Plan validé avant tout code.**
 
-### C0 — Mesurer avant d'agir (30 min)
+### ✅ C0 — Mesurer avant d'agir — LIVRÉ (29/07)
 
 Compter, par boîte : mails des 3 derniers mois, mails totaux, et combien sont
 en `analysisConfidence='low'` aujourd'hui. Sans ce chiffre on dimensionne à
 l'aveugle. Exposé dans ⚙️ Paramètres. Sert de référence « avant ».
 
-### C1 — L'extrait de texte (le pré-requis, ZÉRO IA)
+### ✅ C1 — L'extrait de texte (le pré-requis, ZÉRO IA) — LIVRÉ (29/07)
+
+**Livré conforme au plan.** `analysisCoverage()` (C0) vit dans snippets.ts et
+alimente le panneau « 🔎 Compréhension des mails » des Paramètres. Deux écarts
+assumés par rapport au plan : (1) `fetchSnippets` renvoie le texte BRUT et le
+nettoyage (`cleanSnippet`) reste dans snippets.ts — imap.ts garde son rôle de
+pure couche transport et on évite un import croisé avec attention.ts ;
+(2) l'extrait renvoyé aux listes est tronqué à 160 caractères
+(`previewSnippet`, search.ts) — une liste fait jusqu'à 500 lignes, envoyer
+500 caractères par ligne gonflerait la réponse pour rien ; les 500 restent en
+base pour l'analyse. Tests : 38 asserts.
 
 - **Migration `message_snippet`** : `Message.snippet String?` (≈500 car.),
   `Message.snippetAt DateTime?`.
@@ -1324,9 +1334,14 @@ validation**.
 
 ### Ordre de livraison
 
-**C0 → C1 → C2+C3a → C3b → C4 → C5.** Le rattrapage gratuit (C3a) passe avant
-le moteur payant : c'est l'urgence exprimée, et il ne coûte rien. C4 vient
-après une vraie passe, sinon il n'y a rien à découvrir.
+**C0 ✅ → C1 ✅ → C2+C3a → C3b → C4 → C5.** Le rattrapage gratuit (C3a) passe
+avant le moteur payant : c'est l'urgence exprimée, et il ne coûte rien. C4
+vient après une vraie passe, sinon il n'y a rien à découvrir.
+
+**Prochaine étape : C2 + C3a.** Le socle est posé — les mails ont enfin un
+texte. Reste à écrire le verdict IA dans les champs EXISTANTS
+(`m.intent`, `s.category`, `m.analysisConfidence`, source `'ai'`, précédence
+manual > ai > auto) et les 2 tools MCP du rattrapage sur le forfait.
 
 ---
 

@@ -64,7 +64,10 @@ ordre = fondation → interface → intelligence (Phase 4) → déploiement Orac
     `rules.ts` (règles de classement L7 : suggest/preview/apply/auto —
     jamais d'application sans validation, hook runAutoRules post-sync),
     `smtp.ts` (envoi XOAUTH2 ACTIF par défaut : RFC822 composé une fois,
-    In-Reply-To/References, copie Envoyés via imapService.appendToSent)
+    In-Reply-To/References, copie Envoyés via imapService.appendToSent),
+    `snippets.ts` (C1 : extraits de texte ~500 car. — backfillSnippets
+    reprenable + analysisCoverage ; imapService.fetchSnippets ne télécharge
+    QUE la partie texte, jamais les pièces jointes ni le mail complet)
 - `prisma/schema.prisma` — Account, Folder, Message, Thread, Sender (SQLite,
   `connection_limit=1` forcé dans `db/client.ts`)
 - `web/` — SPA vanilla (AUCUN framework/build) : `js/app.js` (routing hash,
@@ -98,6 +101,46 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
   redirect URI `http://localhost:8787/api/enroll/callback` déclarée).
 
 ## État (fin de session précédente)
+
+**SÉRIE C LANCÉE — C0 + C1 LIVRÉS : l'assistant lit enfin le TEXTE des
+mails (29/07).** Déclencheur : « je ne suis pas du tout satisfait du
+résultat […] rajoute un peu d'IA, au moins sur les 3 derniers mois ».
+DIAGNOSTIC (vérifié dans le code) : tout le classement tenait sur deux
+signaux — des listes de marques en dur (`categorizeSender`, hors listes ⇒
+`company`, la case « je ne sais pas ») et des regex **sur le sujet seul**
+(`detectIntent`, sans motif ⇒ `info`). Engrenage : `computeConfidence`
+traite `company` comme non-signal, donc inconnu + `info` ⇒ **confiance
+faible**, et `protectionClauses` (retention.ts) exclut la confiance faible
+de tout nettoyage. **Tout mail non reconnu était donc à la fois mal analysé
+ET non nettoyable** — le moteur était muet là où il devait travailler.
+RACINE : l'index ne stockait AUCUN texte. Livré : `Message.snippet` /
+`snippetAt` (migration), `imapService.fetchSnippets` (un verrou, plage
+`a:b`, download de la SEULE partie texte — **aucun repli sur le mail
+complet**, il aspirerait la boîte sur un rattrapage), `services/snippets.ts`
+(backfill reprenable via job « extraits », passe post-sync limite 150 sur
+les plus RÉCENTS, `analysisCoverage` = la mesure « avant » de C0),
+`detectIntent` accepte l'extrait — consulté en DERNIER recours et sur les
+seuls motifs FORTS (les motifs faibles « confirmation / document / promo »
+classeraient la moitié de la boîte de travers). PIÈGE TRAITÉ : après
+correction d'une intention on recalcule la confiance EN ENTIER — jamais de
+remise à `null` pour forcer un « onlyMissing », parce qu'une confiance
+nulle n'est pas « faible » et ne déclenche donc PAS la protection (une
+rétention auto lancée entre-temps viserait ces mails). Interface : panneau
+« 🔎 Compréhension des mails » dans Paramètres (couverture + boutons
+3 mois / toute la boîte) et extrait sous le sujet dans la liste
+(`SearchResultItem.snippet`, tronqué à 160 car. côté API — le stockage en
+garde 500 pour l'analyse). Tests : 38 asserts, dont « la pièce jointe n'est
+JAMAIS téléchargée » (client IMAP stubbé), l'idempotence du rattrapage et
+« aucun mail laissé sans confiance ». Le test a aussi rattrapé une donnée
+de test irréaliste : le sujet « Bulletin du mois » déclenche la règle
+`document` par le SUJET — on aurait cru à tort que l'extrait servait.
+**À FAIRE PAR L'UTILISATEUR** : lancer « 📖 3 derniers mois » dans
+⚙️ Paramètres (long : chaque mail est ouvert une fois), puis regarder si le
+tri s'améliore. **SUITE : C2 + C3a** (verdict IA écrit dans les champs
+EXISTANTS `intent`/`category`/`analysisConfidence` avec source `'ai'`,
+précédence manual > ai > auto, + 2 tools MCP `next_analysis_batch` /
+`submit_analysis_batch` pour le rattrapage massif sur le forfait) — plan
+détaillé dans ROADMAP.md § « Série C ».
 
 **P2.3 — PROTECTION PAR LA NATURE DU MAIL (29/07).** Retour utilisateur
 avec capture : la fenêtre proposait 364 mails de `no_reply@leroymerlin.fr`
