@@ -128,6 +128,8 @@ model Message {
   @@index([accountSlug, normalizedSubject])
   @@index([threadId])
   @@index([accountSlug, isDeleted, date])
+  @@index([accountSlug, intent])
+  @@index([aiAction])
 }
 
 model Thread {
@@ -232,6 +234,8 @@ model Task {
   doneAt      DateTime?
 
   @@index([status, dueDate])
+  // La protection centrale cherche « une tâche sur ce mail » à chaque ligne.
+  @@index([messageId])
 }
 
 // Règle de classement (L7 — SPEC V2 Rule Engine). Cycle de vie :
@@ -402,4 +406,7 @@ model Sender {
 
   @@unique([accountSlug, email])
   @@index([accountSlug, messageCount])
+  // Les stratégies de rétention filtrent sur la catégorie : sans cet index,
+  // l'aperçu « newsletters » prenait 7,5 s sur 35 000 mails, 65 ms avec.
+  @@index([accountSlug, category])
 }
