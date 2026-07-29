@@ -250,6 +250,15 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .unread-row td { background: #fbfcff; }
 .unread-subject { font-weight: 700; }
 /* Extrait du texte du mail sous le sujet (C1) : une ligne, jamais gênante. */
+/* Message de la dernière mise à jour : lisible EN ENTIER (erreurs de build
+   comprises). Monospace + retour à la ligne — jamais de troncature. */
+.update-msg {
+  margin-top: 4px; max-width: 640px; color: var(--muted); font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px;
+}
 .row-snippet {
   margin-top: 2px; max-width: 520px; color: var(--muted);
   font-size: 12px; font-weight: 400; line-height: 1.35;

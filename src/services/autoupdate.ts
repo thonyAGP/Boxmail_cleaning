@@ -1,4 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -35,6 +37,12 @@ export interface AutoUpdateState {
   lastResult: 'à jour' | 'mis à jour' | 'échec' | null;
   lastMessage: string | null;
   nextRunAt: string | null;
+  /**
+   * true = la mise à jour est gérée par le minuteur systemd, DEHORS de
+   * l'application (deploy/update.sh). C'est le mode recommandé : un updater
+   * qui vit dans le binaire qu'il remplace ne peut pas se réparer lui-même.
+   */
+  external: boolean;
 }
 
 const state: AutoUpdateState = {
@@ -44,10 +52,49 @@ const state: AutoUpdateState = {
   lastResult: null,
   lastMessage: null,
   nextRunAt: null,
+  external: false,
 };
 
+/** Fichier écrit par deploy/update.sh à chaque passage du minuteur système. */
+const EXTERNAL_STATUS = () => resolve(process.cwd(), 'logs', 'update-status.json');
+
+const RESULTS: Record<string, AutoUpdateState['lastResult']> = {
+  'à jour': 'à jour',
+  'mis à jour': 'mis à jour',
+  'échec': 'échec',
+};
+
+/**
+ * Résultat du dernier passage du minuteur système, s'il y en a un. Sa présence
+ * signifie que la mise à jour est gérée dehors — l'interface doit alors montrer
+ * CE résultat, pas l'état interne (qui, lui, ne tourne plus).
+ */
+function readExternalStatus(): AutoUpdateState | null {
+  try {
+    const path = EXTERNAL_STATUS();
+    if (!existsSync(path)) return null;
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+      ranAt?: string;
+      result?: string;
+      message?: string;
+    };
+    return {
+      enabled: true,
+      external: true,
+      hour: -1,
+      lastRunAt: raw.ranAt ?? null,
+      lastResult: RESULTS[raw.result ?? ''] ?? null,
+      lastMessage: raw.message ?? null,
+      nextRunAt: null,
+    };
+  } catch (err) {
+    logger.warn('état de mise à jour externe illisible', { error: (err as Error).message });
+    return null;
+  }
+}
+
 export function autoUpdateStatus(): AutoUpdateState {
-  return { ...state };
+  return readExternalStatus() ?? { ...state };
 }
 
 async function git(...args: string[]): Promise<string> {

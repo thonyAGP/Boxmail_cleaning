@@ -1,4 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { logger } from '../logger.js';
 
@@ -86,6 +88,38 @@ function runStep(command: string, progress: (m: string) => void): Promise<void> 
 }
 
 export async function applyUpdate(progress: (m: string) => void): Promise<{ restarted: boolean }> {
+  // Chemin PRÉFÉRÉ sous Linux : déléguer au script système, hors application.
+  // Un updater qui vit dans le binaire qu'il remplace ne peut pas se réparer
+  // lui-même — c'est ce qui a imposé deux interventions SSH en trois mises à
+  // jour (29/07). Le script, lui, récupère sa propre dernière version avant de
+  // s'exécuter et revient en arrière tout seul en cas d'échec.
+  const bootScript = resolve(process.cwd(), 'deploy', 'update-boot.sh');
+  if (process.platform !== 'win32' && existsSync(bootScript)) {
+    progress('Mise à jour confiée au script système (hors application)…');
+    progress('Le serveur va redémarrer seul ; recharge la page dans une minute.');
+    // Détaché : le script survit au redémarrage de pm2 qu'il déclenchera.
+    const child = spawn('bash', [bootScript], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+    cachedVersion = null;
+    logger.info('mise à jour déléguée au script système');
+    return { restarted: true };
+  }
+
+  return applyUpdateInProcess(progress);
+}
+
+/**
+ * Ancien chemin : la mise à jour faite PAR l'application. Conservé pour
+ * Windows (MailAssistant.bat prend le relais après l'arrêt) et comme repli si
+ * le script système n'est pas encore déployé.
+ */
+async function applyUpdateInProcess(
+  progress: (m: string) => void,
+): Promise<{ restarted: boolean }> {
   // Filet de sécurité (P0.3) : une mise à jour peut faire évoluer la base
   // (migrations). On sauvegarde AVANT, jamais après — non bloquant : une
   // sauvegarde impossible ne doit pas empêcher la mise à jour.

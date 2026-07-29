@@ -4534,12 +4534,21 @@ function autoUpdateLabel(a) {
   if (!a || !a.enabled) {
     return '<span class="muted">✕ désactivée — ici, la mise à jour se fait au lancement</span>';
   }
-  const quand = `chaque nuit à ${String(a.hour).padStart(2, '0')} h`;
+  const quand = a.external
+    ? 'gérée par le minuteur du serveur (hors application)'
+    : `chaque nuit à ${String(a.hour).padStart(2, '0')} h`;
   if (!a.lastResult) return `✅ ${quand} · <span class="muted">aucun passage encore</span>`;
   const emoji = a.lastResult === 'échec' ? '⚠️' : '✅';
   const detail = a.lastRunAt ? ` le ${fmtDateTime(a.lastRunAt)}` : '';
-  return `${emoji} ${quand}<div class="muted" style="font-size:11.5px">dernier passage${detail} :
-    ${esc(a.lastResult)}${a.lastMessage ? ` — ${esc(a.lastMessage.slice(0, 120))}` : ''}</div>`;
+  const head = `${emoji} ${quand}<div class="muted" style="font-size:11.5px">dernier passage${detail} : ${esc(a.lastResult)}</div>`;
+  if (!a.lastMessage) return head;
+  // Message COMPLET (retour utilisateur 29/07 : « le message est coupé, donc
+  // on n'a pas la fin »). Un diagnostic tronqué au milieu d'une erreur de
+  // compilation ne sert à rien. Replié quand il est long, jamais amputé.
+  const msg = a.lastMessage;
+  if (msg.length <= 90) return `${head}<div class="update-msg">${esc(msg)}</div>`;
+  return `${head}<details class="op-details"><summary>Voir le détail complet</summary>
+    <div class="update-msg">${esc(msg)}</div></details>`;
 }
 
 // Libellé de l'auto-sync (L5.11) pour le panneau Serveur des Paramètres.
