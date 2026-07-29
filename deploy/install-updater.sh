@@ -16,6 +16,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # L'utilisateur propriétaire du dépôt : c'est lui qui a le droit git, npm et
 # pm2. Lancer la mise à jour en root casserait les permissions de node_modules.
 OWNER="$(stat -c '%U' "$ROOT")"
+# pm2 range son état dans $HOME/.pm2 : sans HOME, `pm2 restart` depuis systemd
+# ne trouverait pas le process et la mise à jour finirait sans redémarrage.
+OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
 HOUR="${BOXMAIL_UPDATE_HOUR:-04}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -42,6 +45,8 @@ WorkingDirectory=$ROOT
 # PATH explicite : systemd ne charge pas le profil de l'utilisateur, donc ni
 # node, ni npm, ni pm2 ne seraient trouves sans ca.
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$ROOT/node_modules/.bin
+Environment=HOME=$OWNER_HOME
+Environment=PM2_HOME=$OWNER_HOME/.pm2
 ExecStart=/usr/bin/env bash $ROOT/deploy/update-boot.sh
 TimeoutStartSec=1800
 EOF

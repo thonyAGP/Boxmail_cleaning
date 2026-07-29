@@ -1,0 +1,6 @@
+# Les scripts shell DOIVENT être stockés et livrés en LF : un script à fins de
+# ligne CRLF est inexécutable sous Linux (« $'\r': command not found »), et
+# c'est précisément le genre de panne qui oblige à ressortir le SSH.
+# Ne dépend d'aucun réglage local (core.autocrlf) : la règle est dans le dépôt.
+* text=auto
+*.sh text eol=lf
