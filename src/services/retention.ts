@@ -25,9 +25,23 @@ const PRESETS: {
   label: string;
   matchIntent?: string;
   matchCategory?: string;
+  matchAiAction?: string;
   unseenOnly?: boolean;
   ageDays: number;
 }[] = [
+  // C3c — la stratégie que le rattrapage IA rendait possible et que rien ne
+  // branchait. Mesuré le 29/07 : 3 263 mails jugés « à archiver » par l'IA,
+  // dont 2 026 DÉJÀ LUS. Or `promo30` et `newsletter90` exigent un mail jamais
+  // ouvert : ces 2 026-là étaient hors d'atteinte de toute stratégie, alors
+  // qu'ils avaient été lus un par un et jugés bons à jeter.
+  // Ne vise que les verdicts SÛRS (confidence high) : un « peut-être » ne doit
+  // pas alimenter une suppression de masse. Désactivée comme tous les presets.
+  {
+    key: 'ai_archive90',
+    label: "Ce que l'analyse IA a lu et jugé bon à archiver (plus de 90 jours)",
+    matchAiAction: 'archive',
+    ageDays: 90,
+  },
   { key: 'otp7', label: 'Codes de connexion (OTP) de plus de 7 jours', matchIntent: 'otp', ageDays: 7 },
   { key: 'shipping30', label: 'Suivis de livraison de plus de 30 jours (hors litige/remboursement/garantie)', matchIntent: 'shipping', ageDays: 30 },
   { key: 'notif90', label: 'Notifications automatiques de plus de 90 jours (hors sécurité/banque)', matchCategory: 'notification', ageDays: 90 },
@@ -87,22 +101,59 @@ export const ENGAGEMENT_HORIZON_DAYS = 730;
 // il y a six ans ne doit plus sanctuariser ses newsletters.
 function engagedSenderClauses(now = Date.now()): { clauses: string[]; params: unknown[] } {
   const cutoff = now - ENGAGEMENT_HORIZON_DAYS * 86_400_000;
+  // Sémantique INCHANGÉE, coût divisé : `Sender.engagedAt` porte la date du
+  // dernier signe d'engagement (mail sortant dans un de ses fils, mail étoilé
+  // ou répondu, tâche), calculée une fois par `computeSenderEngagement` au
+  // lieu d'être redérivée par LIGNE et par requête.
+  //
+  // Ce que coûtait la version précédente, mesuré sur la vraie base : 40 s pour
+  // la simulation de la page « Nettoyage conseillé », parce que la première
+  // clause rejouait un auto-join de Message sur threadId pour chaque candidat —
+  // soit 364 × 364 opérations pour Leroy Merlin, et cela dans chacune des
+  // 14 requêtes de la page.
+  //
+  // null = aucun engagement connu ⇒ non protégé (identique à l'ancien
+  // NOT EXISTS qui ne trouvait rien).
   return {
-    clauses: [
-      `NOT EXISTS (SELECT 1 FROM Message ms JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
-         WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0
-         AND (mo.date IS NULL OR mo.date >= ?))`,
-      `NOT EXISTS (SELECT 1 FROM Message ms WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail
-         AND ms.isDeleted = 0 AND (ms.isFlagged = 1 OR ms.isAnswered = 1)
-         AND (ms.date IS NULL OR ms.date >= ?))`,
-      // Une tâche encore À FAIRE compte quelle que soit son ancienneté ;
-      // une tâche déjà réglée ne compte que si elle est récente.
-      `NOT EXISTS (SELECT 1 FROM Message ms JOIN Task t ON t.messageId = ms.id
-         WHERE ms.accountSlug = m.accountSlug AND ms.fromEmail = m.fromEmail AND ms.isDeleted = 0
-         AND (t.status = 'todo' OR t.createdAt >= ?))`,
-    ],
-    params: [cutoff, cutoff, cutoff],
+    clauses: [`(s.engagedAt IS NULL OR s.engagedAt < ?)`],
+    params: [cutoff],
   };
+}
+
+/**
+ * Recalcule `Sender.engagedAt` pour un compte. Appelé par `rebuildSenders`
+ * (donc après chaque sync et à chaque backfill 🏷️).
+ *
+ * Une date d'engagement INCONNUE compte comme un engagement d'aujourd'hui :
+ * c'est le comportement protecteur de l'ancienne version, où
+ * `(mo.date IS NULL OR mo.date >= cutoff)` était vrai dès que la date manquait.
+ * Idem pour une tâche encore à faire, qui protège quelle que soit son âge.
+ */
+export async function computeSenderEngagement(accountSlug: string): Promise<void> {
+  const now = Date.now();
+  await db.$executeRawUnsafe(
+    `UPDATE Sender SET engagedAt = (
+       SELECT MAX(e) FROM (
+         SELECT CASE WHEN mo.date IS NULL THEN ? ELSE mo.date END AS e
+           FROM Message ms
+           JOIN Message mo ON mo.threadId = ms.threadId AND mo.isOutbound = 1 AND mo.isDeleted = 0
+          WHERE ms.accountSlug = Sender.accountSlug AND ms.fromEmail = Sender.email AND ms.isDeleted = 0
+         UNION ALL
+         SELECT CASE WHEN ms.date IS NULL THEN ? ELSE ms.date END
+           FROM Message ms
+          WHERE ms.accountSlug = Sender.accountSlug AND ms.fromEmail = Sender.email AND ms.isDeleted = 0
+            AND (ms.isFlagged = 1 OR ms.isAnswered = 1)
+         UNION ALL
+         SELECT CASE WHEN t.status = 'todo' THEN ? ELSE t.createdAt END
+           FROM Message ms JOIN Task t ON t.messageId = ms.id
+          WHERE ms.accountSlug = Sender.accountSlug AND ms.fromEmail = Sender.email AND ms.isDeleted = 0
+       )
+     ) WHERE accountSlug = ?`,
+    now,
+    now,
+    now,
+    accountSlug,
+  );
 }
 
 function refinementClauses(p: { matchIntent: string | null; matchCategory: string | null }): {
@@ -138,11 +189,14 @@ async function ensurePresets(): Promise<void> {
         label: p.label,
         matchIntent: p.matchIntent ?? null,
         matchCategory: p.matchCategory ?? null,
+        matchAiAction: p.matchAiAction ?? null,
         unseenOnly: p.unseenOnly ?? false,
         ageDays: p.ageDays,
       },
       // Libellé rafraîchi si on l'améliore ; les choix utilisateur restent.
-      update: { label: p.label },
+      // `matchAiAction` est réaffirmé pour que la stratégie IA se branche aussi
+      // sur les installations où la ligne existait déjà (colonne ajoutée après).
+      update: { label: p.label, matchAiAction: p.matchAiAction ?? null },
     });
   }
 }
@@ -244,6 +298,13 @@ function policyWhere(
     targets.push(`s.category = ?`);
     params.push(p.matchCategory);
   }
+  // Cible « verdict IA » (C3c). On exige un verdict RÉELLEMENT posé et SÛR :
+  // la protection centrale n'écarte que la confiance faible, donc sans le test
+  // « high » un simple « peut-être » entrerait dans une suppression de masse.
+  if (p.matchAiAction) {
+    targets.push(`(m.aiAction = ? AND m.aiVerdictAt IS NOT NULL AND m.analysisConfidence = 'high')`);
+    params.push(p.matchAiAction);
+  }
   // Intent ET catégorie posés → l'un OU l'autre suffit (cible élargie).
   if (targets.length) clauses.push(`(${targets.join(' OR ')})`);
   if (accountSlug) {
@@ -263,6 +324,7 @@ export interface PolicyWithCount {
   label: string;
   matchIntent: string | null;
   matchCategory: string | null;
+  matchAiAction: string | null;
   unseenOnly: boolean;
   ageDays: number;
   action: string;
@@ -302,6 +364,7 @@ export async function listPolicies(): Promise<PolicyWithCount[]> {
       label: p.label,
       matchIntent: p.matchIntent,
       matchCategory: p.matchCategory,
+      matchAiAction: p.matchAiAction,
       unseenOnly: p.unseenOnly,
       ageDays: p.ageDays,
       action: p.action,

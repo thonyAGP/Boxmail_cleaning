@@ -276,6 +276,12 @@ model RetentionPolicy {
   // l'expéditeur (Sender.category). Au moins l'un des deux.
   matchIntent   String?
   matchCategory String?
+  // Cible fondée sur le VERDICT de l'analyse IA (C3c) : 'archive' vise les
+  // mails que l'IA a lus un par un et jugés bons à archiver. Sans cela, ces
+  // mails restaient hors d'atteinte : les stratégies « promo » et
+  // « newsletter » exigent qu'un mail n'ait JAMAIS été ouvert, or 2 026 des
+  // 3 263 mails jugés « à archiver » avaient été lus à l'époque.
+  matchAiAction String?
   // true = ne vise que les mails JAMAIS lus (newsletters, promos).
   unseenOnly    Boolean   @default(false)
   ageDays       Int
@@ -367,6 +373,14 @@ model Sender {
   category         String?
   categorySource   String    @default("auto")
   categoryReason   String?
+  // Date du dernier signe d'ENGAGEMENT avec cet expéditeur (P2.1) : un mail
+  // sortant dans un de ses fils, un de ses mails étoilé ou répondu, une tâche.
+  // Recalculé par rebuildSenders. PRÉ-CALCULÉ ICI POUR UNE RAISON DE PERF :
+  // la même chose exprimée en sous-requête corrélée coûtait 40 s par
+  // simulation (elle rejouait un auto-join de Message par LIGNE, soit 364²
+  // opérations pour un expéditeur à 364 mails). Ici c'est une comparaison de
+  // colonne. null = jamais d'engagement.
+  engagedAt        DateTime?
   // Priorité par relation (A5) : normal | always_important | never_urgent.
   // Choix de l'utilisateur, jamais recalculée.
   priority         String    @default("normal")

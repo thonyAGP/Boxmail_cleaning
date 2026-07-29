@@ -4235,8 +4235,10 @@ async function loadBigClean() {
 async function openRetentionPreview(id) {
   closeModal();
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
+  // under-reader : le panneau de lecture s'ouvre AU-DESSUS de cette modale, pour
+  // qu'on puisse vérifier un mail douteux sans fermer l'aperçu.
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
     <div class="modal-head"><h2>👀 Aperçu de la stratégie</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
@@ -4252,20 +4254,39 @@ async function openRetentionPreview(id) {
     $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     return;
   }
+  // La date est la colonne qui décide : un mail de 2020 et un de ce mois-ci ne
+  // se traitent pas pareil. Elle passe donc en 2e position, jamais en bout de
+  // ligne où le débordement horizontal la coupait (retour utilisateur 29/07).
   $('#modal-body').innerHTML = `
     <p><strong>${esc(data.policy)}</strong> — ${fmtNum(data.total)} mail(s) visé(s) aujourd'hui.
-    ${data.truncated ? `<br><span class="muted">Aperçu limité aux ${fmtNum(data.items.length)} plus anciens.</span>` : ''}</p>
-    <div style="max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px">
-      <table><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
-      <tbody>${data.items.map((m) => `<tr>
+    ${data.truncated ? `<br><span class="muted">Aperçu limité aux ${fmtNum(data.items.length)} plus anciens.</span>` : ''}
+    <br><span class="muted">Clique un sujet pour lire le mail avant de décider.</span></p>
+    <div style="max-height:52vh; overflow:auto; border:1px solid var(--border); border-radius:8px">
+      <table class="table-compact"><thead><tr>
+        <th style="width:96px">Boîte</th><th style="width:104px">Reçu le</th>
+        <th>Sujet</th><th style="width:210px">Expéditeur</th>
+      </tr></thead>
+      <tbody>${data.items.map((m, i) => `<tr>
         <td>${accountChip(m.account)}</td>
-        <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(m.subject)}</td>
-        <td class="muted" style="font-size:12px">${esc(m.fromName || m.fromEmail)}</td>
-        <td class="num" style="font-size:12px">${fmtDate(m.date)}</td>
+        <td class="muted" style="font-size:12px; white-space:nowrap">${fmtDate(m.date)}</td>
+        <td style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
+          ${m.folder && m.uid
+            ? `<span class="openable" data-prev-open="${i}">${esc(m.subject || '(sans sujet)')}</span>`
+            : esc(m.subject || '(sans sujet)')}</td>
+        <td class="muted" style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(m.fromName || m.fromEmail)}</td>
       </tr>`).join('')}</tbody></table>
     </div>
     <p class="muted" style="font-size:12.5px">Rien n'est touché depuis cet aperçu — l'application se
     fait depuis l'écran, avec confirmation.</p>`;
+
+  // Écouteur délégué : le corps de la modale est réécrit d'un bloc ci-dessus,
+  // des écouteurs posés ligne par ligne seraient perdus.
+  $('#modal-body').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-prev-open]');
+    if (!a) return;
+    e.preventDefault();
+    openReaderFor(data.items[Number(a.dataset.prevOpen)]);
+  });
 }
 
 async function loadCleanupGlobal() {

@@ -845,5 +845,19 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
     data: { messageCount: 0, unseenCount: 0, unsubscribeCount: 0, totalSizeBytes: 0 },
   });
 
+  // Engagement pré-calculé (P2.1) : c'est ICI qu'on paie le coût, une fois,
+  // plutôt que dans chaque simulation de stratégie. Non bloquant — une base
+  // sans `engagedAt` protège moins mais ne casse rien, et la protection
+  // absolue (étoilé, tâche, échéance) reste posée par ailleurs.
+  try {
+    const { computeSenderEngagement } = await import('./retention.js');
+    await computeSenderEngagement(accountSlug);
+  } catch (err) {
+    logger.warn('engagement des expéditeurs non recalculé', {
+      accountSlug,
+      error: (err as Error).message,
+    });
+  }
+
   return rows.length;
 }
