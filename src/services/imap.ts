@@ -826,6 +826,16 @@ function findTextNode(node: BodyNode | null | undefined): BodyNode | null {
  *  - du latin-1 étiqueté UTF-8 → on obtient le caractère de remplacement « � ».
  * Dans les deux cas on tente l'autre lecture et on la garde si elle est propre.
  */
+/** Le texte porte-t-il la signature « UTF-8 lu comme du latin-1 » ? */
+function looksLikeMojibake(text: string): boolean {
+  for (let i = 0; i < text.length - 1; i++) {
+    const c = text.charCodeAt(i);
+    const next = text.charCodeAt(i + 1);
+    if ((c === 0xc2 || c === 0xc3) && next >= 0x80 && next <= 0xbf) return true;
+  }
+  return false;
+}
+
 function decodeText(buf: Buffer, charset: string | undefined): string {
   const attempt = (cs: string): string | null => {
     try {
@@ -836,15 +846,16 @@ function decodeText(buf: Buffer, charset: string | undefined): string {
   };
   const declared = attempt(charset || 'utf-8') ?? buf.toString('utf8');
 
-  // Signature de l'UTF-8 lu comme du latin-1 : un Ã/Â suivi d'un octet haut.
-  if (/[ÂÃ][-¿]/.test(declared)) {
+  // De l'UTF-8 étiqueté latin-1 : on lit « Ã© » là où il y a « é ».
+  if (looksLikeMojibake(declared)) {
     const asUtf8 = attempt('utf-8');
-    if (asUtf8 && !asUtf8.includes('�')) return asUtf8;
+    if (asUtf8 && !asUtf8.includes('\uFFFD')) return asUtf8;
   }
-  // Caractère de remplacement : le charset annoncé était faux dans l'autre sens.
-  if (declared.includes('�')) {
+  // U+FFFD : le charset annoncé était faux dans l'autre sens (latin-1 lu
+  // comme de l'UTF-8). On retente en windows-1252.
+  if (declared.includes('\uFFFD')) {
     const asLatin = attempt('windows-1252');
-    if (asLatin && !asLatin.includes('�')) return asLatin;
+    if (asLatin && !asLatin.includes('\uFFFD')) return asLatin;
   }
   return declared;
 }

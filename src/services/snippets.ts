@@ -274,6 +274,85 @@ export async function backfillSnippets(
   return result;
 }
 
+// ----------------------------------------- Réparation des extraits en charabia
+
+/**
+ * Répare un extrait victime du classique « UTF-8 lu comme du latin-1 » :
+ * « voilÃ  » au lieu de « voilà », « Ã© » au lieu de « é ». Fréquent sur les
+ * mails d'avant 2010, qui déclarent souvent un jeu de caractères faux.
+ *
+ * Retourne null quand il n'y a rien à faire — le texte est déjà propre, la
+ * réparation ne change rien, ou elle produit des caractères de remplacement
+ * (signe qu'on s'est trompé de piste). Dans le doute, on ne touche pas.
+ *
+ * Le décodage IMAP est corrigé à la source (decodeText), mais les extraits
+ * DÉJÀ capturés gardent leur charabia : cette réparation les rattrape sans
+ * avoir à relire les boîtes.
+ */
+export function repairMojibake(text: string): string | null {
+  if (!text) return null;
+  // Signature du charabia : un octet 0xC2/0xC3 suivi d'un octet de
+  // continuation UTF-8 (0x80-0xBF). Comparaison de CODES et non plage
+  // littérale : écrits en clair, ces caractères se font manger à la copie et
+  // la plage devient fausse sans que rien ne le signale (constaté).
+  let looksMangled = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    // Un vrai caractère hors latin-1 prouve que le texte n'est PAS une suite
+    // d'octets mal lus : le repasser en latin-1 le détruirait.
+    if (c > 0xff) return null;
+    const next = i + 1 < text.length ? text.charCodeAt(i + 1) : -1;
+    if ((c === 0xc2 || c === 0xc3) && next >= 0x80 && next <= 0xbf) looksMangled = true;
+  }
+  if (!looksMangled) return null;
+  const repaired = Buffer.from(text, 'latin1').toString('utf8');
+  // U+FFFD = la relecture a produit des caractères de remplacement : on s'est
+  // trompé de piste, on ne touche à rien.
+  if (repaired.includes('\uFFFD') || repaired === text) return null;
+  return repaired;
+}
+
+/**
+ * Passe de réparation sur TOUS les extraits déjà en base. Aucune connexion
+ * IMAP : c'est une relecture des octets, pas des mails.
+ */
+export async function repairSnippets(
+  progress: (m: string) => void = () => {},
+): Promise<{ scanned: number; repaired: number }> {
+  await ensureDbReady();
+  let cursor = 0;
+  let scanned = 0;
+  let repaired = 0;
+  for (;;) {
+    const batch = await db.message.findMany({
+      where: { snippet: { not: null }, id: { gt: cursor } },
+      orderBy: { id: 'asc' },
+      take: 1000,
+      select: { id: true, snippet: true },
+    });
+    if (batch.length === 0) break;
+    cursor = batch[batch.length - 1].id;
+    scanned += batch.length;
+
+    const fixes: { id: number; snippet: string }[] = [];
+    for (const m of batch) {
+      const fixed = repairMojibake(m.snippet ?? '');
+      if (fixed) fixes.push({ id: m.id, snippet: fixed });
+    }
+    for (let i = 0; i < fixes.length; i += 100) {
+      await db.$transaction(
+        fixes.slice(i, i + 100).map((f) =>
+          db.message.update({ where: { id: f.id }, data: { snippet: f.snippet } }),
+        ),
+      );
+    }
+    repaired += fixes.length;
+    if (scanned % 5000 === 0) progress(`${scanned} extraits examinés, ${repaired} réparés…`);
+  }
+  progress(`Réparation terminée : ${repaired} extrait(s) remis d'aplomb sur ${scanned}.`);
+  return { scanned, repaired };
+}
+
 // ------------------------------------------- Rattrapage repris après redémarrage
 
 export type BackfillScope = 'recent' | 'all';
