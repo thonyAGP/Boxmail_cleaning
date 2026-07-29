@@ -42,8 +42,42 @@ export const SENDER_CATEGORY_LABELS: Record<SenderCategory, string> = {
 
 // Mêmes précautions que IMPORTANT_SENDER_RE (attention.ts) : tokens explicites,
 // frontières de mots sur les mots courts, pas de domaines grand public.
+//
+// C4 — les banques régionales manquaient. Relevé en base : `e-releve@
+// ca-morbihan.fr` tombait en « entreprise », `nepasrepondre@e-ca-morbihan.fr`
+// en « newsletter » (100 % de liens de désinscription), `notification@
+// notif.cmb.fr` en « notification ». Conséquence réelle sur la boîte Econom :
+// une soixantaine de documents bancaires traités comme du bruit, dont un
+// « Avis Tiers Détenteur » — une saisie sur compte. Les caisses régionales du
+// Crédit Agricole utilisent `ca-<region>.fr` sans jamais écrire « crédit
+// agricole » dans l'adresse : sans ce motif, elles sont invisibles.
 const BANK_RE =
-  /(\bbanque\b|\bbank(ing)?\b|banquepostale|labanquepostale|boursorama|boursobank|fortuneo|\bbnp\b|societe ?generale|socgen|credit[- ]?(agricole|mutuel|lyonnais)|\blcl\b|caisse[- ]?d?'?epargne|hellobank|\bn26\b|revolut|\bnickel\b|qonto|paypal|\bvisa\b|mastercard|\bdgfip.*paiement\b)/i;
+  /(\bbanque\b|\bbank(ing)?\b|banquepostale|labanquepostale|boursorama|boursobank|fortuneo|\bbnp\b|societe ?generale|socgen|credit[- ]?(agricole|mutuel|lyonnais)|\blcl\b|caisse[- ]?d?'?epargne|hellobank|\bn26\b|revolut|\bnickel\b|qonto|paypal|\bvisa\b|mastercard|\bdgfip.*paiement\b|@([a-z0-9-]+\.)*ca-[a-z]+\.(fr|com)|@([a-z0-9-]+\.)*e-ca-[a-z]+\.fr|@([a-z0-9-]+\.)*cmb\.fr|@([a-z0-9-]+\.)*(monabanq|oney|floabank|cofidis|younited|bpp|banquepopulaire|labanquepostale|axabanque)\.(fr|com))/i;
+
+/**
+ * Adresses dont AUCUN humain ne relève la boîte — C4, défaut n°1.
+ *
+ * Trouvé en base : 860 des 1 084 expéditeurs classés « personne » l'étaient
+ * pour la raison « vous avez déjà échangé (conversation) », et parmi eux
+ * `postmaster@outlook.com`, `no-reply@cs.adidas.com`, `noreply@enedis.fr`,
+ * `ne-pas-repondre@pacifica.fr`. Le mécanisme : un accusé de non-remise ou une
+ * confirmation atterrit dans un fil qui contient ton propre envoi, donc le
+ * moteur conclut « conversation », donc « personne » — et « personne » est la
+ * catégorie la PLUS protégée (garantie « 0 mail personnel »), ce qui rendait
+ * ces expéditeurs innettoyables à vie.
+ *
+ * Volontairement restreint aux marqueurs sans ambiguïté : on ne met NI
+ * `info@`, NI `contact@`, NI `service@`, qui sont les adresses ordinaires des
+ * petites entreprises avec lesquelles on correspond vraiment.
+ */
+const SERVICE_ADDRESS_RE =
+  /^(no[-_.]?reply|ne[-_.]?pas[-_.]?repondre|nepasrepondre|do[-_.]?not[-_.]?reply|donotreply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notif|no[-_.]?responder|first[-_.]?reminder|unsubscribe|abuse|member|members|invitations?|automat)/i;
+
+/** true si la partie locale de l'adresse est une boîte de service. */
+function isServiceAddress(email: string): boolean {
+  const local = email.split('@')[0] ?? '';
+  return SERVICE_ADDRESS_RE.test(local) || /(^|[.-])no-?reply([.-]|$)/i.test(local);
+}
 
 const INSURANCE_RE =
   /(assurance|assureur|mutuelle|prevoyance|\bmaif\b|\bmacif\b|\bmatmut\b|\baxa\b|allianz|groupama|\bgmf\b|\bmaaf\b|harmonie|malakoff|\bapril\b|generali|swisslife|alan\.com)/i;
@@ -51,8 +85,13 @@ const INSURANCE_RE =
 const ADMIN_RE =
   /(impot|impots|dgfip|finances ?publiques|tresor ?public|urssaf|ameli|\bcpam\b|\bmsa\b|\bcaf\b|gouv\.fr|prefecture|mairie|pole-?emploi|francetravail|service-?public|\bants\b|carsat|retraite|\bcnav\b|academie|education ?nationale)/i;
 
+// C4 — les réseaux des années 2000 manquaient, et c'est le fond le plus
+// volumineux de la boîte personnelle (2006-2008). Leurs robots signent du nom
+// d'un vrai contact (`Yao Eve <member@hi5.com>`, `Elise YOUINOU
+// <service.copainsdavant@…>`, `Morgane Mahe <first_reminder@whereareyounow.net>`),
+// ce qui les faisait passer pour des personnes — donc protégés à vie.
 const SOCIAL_RE =
-  /(facebook|facebookmail|instagram|twitter|\bx\.com$|linkedin|tiktok|snapchat|pinterest|whatsapp|\bmeta\b|youtube|discord|reddit|twitch|strava)/i;
+  /(facebook|facebookmail|instagram|twitter|\bx\.com$|linkedin|tiktok|snapchat|pinterest|whatsapp|\bmeta\b|youtube|discord|reddit|twitch|strava|\bhi5\b|meetic|badoo|skyrock|copainsdavant|copains ?d'avant|whereareyounow|\bwayn\b|facebox|viadeo|myspace|netlog|trombi)/i;
 
 const MARKETPLACE_RE =
   /(amazon|\bebay\b|leboncoin|vinted|cdiscount|aliexpress|\bfnac\b|darty|boulanger|booking|airbnb|abritel|zalando|\btemu\b|shein|rakuten|\betsy\b|veepee|showroomprive|ManoMano|leroymerlin|castorama|ikea|decathlon|sncf|ouigo|trainline|blablacar|uber|deliveroo)/i;
@@ -82,20 +121,43 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
   const text = `${s.email} ${s.displayName ?? ''}`;
   let m: RegExpExecArray | null;
 
-  // Marques identifiables d'abord (même conversationnelles : ta banque reste
-  // ta banque — l'importance tient déjà compte de la conversation à part).
-  if ((m = ADMIN_RE.exec(text))) return { category: 'admin', reason: `administration (« ${m[0]} »)` };
-  if ((m = BANK_RE.exec(text))) return { category: 'bank', reason: `banque / argent (« ${m[0]} »)` };
-  if ((m = INSURANCE_RE.exec(text)))
+  // C4 — défaut n°3 : les catégories PROTÉGÉES (banque, assurance,
+  // administration) sont reconnues sur l'ADRESSE seule, jamais sur le nom
+  // affiché. Un nom affiché est choisi librement par l'expéditeur, y compris
+  // par un hameçonneur : relevé en base, `Paymentconfirmation @paypalservice
+  // <team_execsales@accountant.com>` était classé « banque » en confiance
+  // haute et héritait ainsi de la protection réservée aux vrais mails
+  // bancaires. C'est une propriété de sûreté, pas une préférence de réglage.
+  if ((m = ADMIN_RE.exec(s.email))) return { category: 'admin', reason: `administration (« ${m[0]} »)` };
+  if ((m = BANK_RE.exec(s.email))) return { category: 'bank', reason: `banque / argent (« ${m[0]} »)` };
+  if ((m = INSURANCE_RE.exec(s.email)))
     return { category: 'insurance', reason: `assurance / mutuelle (« ${m[0]} »)` };
+
+  // Réseaux sociaux et boutiques restent reconnus sur le texte entier : ce
+  // sont des catégories NETTOYABLES, donc une marque usurpée dans le nom
+  // affiché ne protège rien — le risque est inverse et acceptable.
   if ((m = SOCIAL_RE.exec(text))) return { category: 'social', reason: `réseau social (« ${m[0]} »)` };
   if ((m = MARKETPLACE_RE.exec(text)))
     return { category: 'marketplace', reason: `boutique / plateforme (« ${m[0]} »)` };
 
+  // C4 — défaut n°1, le plus coûteux : ce test passait APRÈS `conversational`,
+  // donc il n'était jamais atteint pour un robot dont un fil contenait un de
+  // tes envois (accusé de non-remise, confirmation…). On ne peut pas « avoir
+  // échangé » avec une boîte que personne ne relève : le garde-fou passe
+  // devant.
+  const newsletterRatio = s.messageCount > 0 ? s.unsubscribeCount / s.messageCount : 0;
+  if (isServiceAddress(s.email)) {
+    if (newsletterRatio >= 0.8)
+      return {
+        category: 'newsletter',
+        reason: `adresse automatique, désinscription sur ${Math.round(newsletterRatio * 100)} % des mails`,
+      };
+    return { category: 'notification', reason: 'adresse automatique (personne ne relève cette boîte)' };
+  }
+
   // Un humain : vraie conversation, ou adresse de messagerie grand public
   // qui n'est ni un robot ni une liste de diffusion.
   if (s.conversational) return { category: 'person', reason: 'vous avez déjà échangé (conversation)' };
-  const newsletterRatio = s.messageCount > 0 ? s.unsubscribeCount / s.messageCount : 0;
   if (PERSONAL_DOMAIN_RE.test(s.email) && !AUTO_SENDER_RE.test(s.email) && newsletterRatio < 0.5) {
     return { category: 'person', reason: 'adresse de messagerie personnelle' };
   }
