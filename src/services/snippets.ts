@@ -84,6 +84,47 @@ function ressembleAduHtml(s: string): boolean {
   return balises >= 5 && balises * 40 > t.length;
 }
 
+/**
+ * Coupe le BLOC DE SIGNATURE et les pieds de page.
+ *
+ * Constat du tour d'analyse du 30/07, sur les derniers mails qui résistaient :
+ * « les signatures HTML lourdes — logos, liens Facebook/LinkedIn, bouton
+ * "Planifier un RDV" — noyaient le texte utile ». Concrètement, une relance de
+ * bilan de deux lignes suivie de 800 caractères de signature donnait un extrait
+ * de 500 caractères ne contenant QUE la signature : l'expéditeur passait pour
+ * une newsletter et le moteur lisait « rendez-vous » là où il y avait une
+ * relance.
+ *
+ * On coupe donc à la première marque de fin de message. Le texte utile est
+ * TOUJOURS avant : couper ne perd rien et fait remonter l'essentiel.
+ *
+ * GARDE-FOU : si la coupe ne laisse presque rien (message réduit à sa formule
+ * de politesse, ou marqueur en tout début), on rend le texte d'origine — un
+ * extrait bavard vaut mieux qu'un extrait vide.
+ */
+const FIN_DE_MESSAGE_RE = new RegExp(
+  [
+    '^\\s*--\\s*$', // délimiteur de signature normalisé (RFC 3676)
+    '^\\s*(bien\\s+)?(cordialement|sinc[èe]rement|amicalement|salutations|cdl?t|respectueusement)\\b',
+    '^\\s*(bien\\s+[àa]\\s+vous|bonne\\s+(journ[ée]e|r[ée]ception|soir[ée]e)|[àa]\\s+bient[ôo]t)\\b',
+    '^\\s*(envoy[ée]\\s+de\\s+mon|sent\\s+from\\s+my)\\b',
+    'ce\\s+(message|courriel|e-?mail).{0,120}(confidentiel|destinataire)',
+    'this\\s+(message|e-?mail).{0,120}(confidential|intended\\s+recipient)',
+    '(se\\s+d[ée]sinscrire|se\\s+d[ée]sabonner|unsubscribe|g[ée]rer\\s+(mes|vos)\\s+pr[ée]f[ée]rences)',
+    '(voir|afficher)\\s+(ce\\s+mail\\s+)?dans\\s+(le\\s+navigateur|votre\\s+navigateur)',
+    '(suivez[- ]nous|planifier\\s+un\\s+rdv|prendre\\s+rendez[- ]vous\\s+en\\s+ligne)',
+  ].join('|'),
+  'im',
+);
+
+export function stripSignature(text: string): string {
+  const m = FIN_DE_MESSAGE_RE.exec(text);
+  if (!m) return text;
+  const coupe = text.slice(0, m.index).trim();
+  // Moins de 25 caractères utiles : la coupe a tout emporté, on garde l'original.
+  return coupe.length >= 25 ? coupe : text;
+}
+
 export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string {
   const flatten = (s: string): string =>
     s
@@ -95,7 +136,10 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
       .trim();
 
   const source = ressembleAduHtml(raw) ? htmlEnTexte(raw) : raw;
-  let text = flatten(stripQuotedText(source));
+  // Ordre voulu : d'abord la citation (le fil recopié dessous), puis la
+  // signature (le bloc de fin). Chacun a son propre repli si la coupe vide tout.
+  let text = flatten(stripSignature(stripQuotedText(source)));
+  if (!text) text = flatten(stripSignature(source));
   if (!text) text = flatten(source);
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars).trimEnd()}…`;
