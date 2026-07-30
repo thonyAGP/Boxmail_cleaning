@@ -530,7 +530,18 @@ async function auditDynamique(): Promise<Finding[]> {
           mk({
             key: `D:service:${s.nom}:scan-${table}${parIndex ? '-idx' : ''}`,
             family: 'D',
-            severity: parIndex ? 'faible' : n > 20000 ? 'grave' : 'moyen',
+            // La gravité tient compte du CHRONO, pas du seul plan. Un balayage
+            // de 35 000 lignes qui rend en 60 ms n'est pas un problème
+            // aujourd'hui — c'en devient un quand la boîte triple. Le signaler
+            // « grave » alors que l'écran est instantané ferait perdre toute
+            // valeur d'alerte au rapport.
+            severity: parIndex
+              ? 'faible'
+              : ms >= 1000
+                ? 'grave'
+                : ms >= 300
+                  ? 'moyen'
+                  : 'faible',
             file: 'src/services',
             fn: s.nom,
             title: parIndex
@@ -547,7 +558,7 @@ async function auditDynamique(): Promise<Finding[]> {
               `\n\n\`\`\`sql\n${q.sql.slice(0, 600)}\n\`\`\``,
             detectedBy: 'script',
             confidence: 'confirmé',
-            metric: `${n} lignes`,
+            metric: `${n.toLocaleString('fr-FR')} lignes · écran à ${ms} ms`,
           }),
         );
       }
