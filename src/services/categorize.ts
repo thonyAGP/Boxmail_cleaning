@@ -185,7 +185,18 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
 
   // Une boîte de FONCTION ne peut pas être une personne, même si un fil contient
   // un échange : derrière `compta@` il y a un service, pas un correspondant.
+  //
+  // Mais une liste de diffusion l'emporte : la simulation a montré que
+  // `service.client@mails.totalenergies.fr`, qui n'envoie QUE des newsletters,
+  // devenait « entreprise » et sortait ainsi de la stratégie de nettoyage des
+  // newsletters. Le but de cette règle est d'empêcher « personne », pas de
+  // rendre un expéditeur moins nettoyable.
   if (isFunctionMailbox(s.email)) {
+    if (newsletterRatio >= 0.8)
+      return {
+        category: 'newsletter',
+        reason: `boîte de fonction, mais désinscription sur ${Math.round(newsletterRatio * 100)} % des mails`,
+      };
     return { category: 'company', reason: 'boîte de fonction (service, pas une personne)' };
   }
 
@@ -300,7 +311,12 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
     // les voyait donc pas. Les sujets réels n'emploient jamais le mot
     // « promo » : « ⏳ 72H Flash », « on vide les caisses », « 💸On baisse le
     // prix », « 17 500 € d'économie ». Motifs ajoutés d'après ces relevés.
-    re: /(\bpromo(tion)?s?\b|\bsoldes?\b|r[ée]duction|remise|% (de remise|off)|-\s?\d{1,2}\s?%|vente (flash|priv[ée]e)|black friday|bons? plans?|offre (sp[ée]ciale|exclusive|limit[ée]e|de remboursement)|derni[èe]re chance|d[ée]stockage|code promo|\bexclusif\b|\bgratuit\b|jours? fous|\d{1,3}\s?h\s?flash|prix cass[ée]s?|(on |nous )?baisse[a-z]*( de| le| les)? prix|prix en baisse|derni[èe]res? heures|[àa] saisir|on vide les caisses|\bcashback\b|\d[\d\s]*(€|euros?)\s*(offerts?|de r[ée]duction|d'[ée]conomies?|gagn[ée]s?|vous attendent|[àa] r[ée]cup[ée]rer|de cagnotte)|[ée]conomies? (de|sur)|\d+ mois offerts?|\bparrainage\b|\bcadeau\b)/i,
+    re: /(\bpromo(tion)?s?\b|\bsoldes?\b|r[ée]duction|remise|% (de remise|off)|-\s?\d{1,2}\s?%|vente (flash|priv[ée]e)|black friday|bons? plans?|offre (sp[ée]ciale|exclusive|limit[ée]e|de remboursement)|derni[èe]re chance|d[ée]stockage|code promo|\bexclusif\b|\bgratuit\b|jours? fous|\d{1,3}\s?h\s?flash|prix cass[ée]s?|(on |nous )?baisse[a-z]*( de| le| les)? prix|prix en baisse|derni[èe]res? heures|on vide les caisses|\bcashback\b|\d[\d\s]*(€|euros?)\s*(offerts?|de r[ée]duction|d'[ée]conomies?|gagn[ée]s?|vous attendent|[àa] r[ée]cup[ée]rer|de cagnotte)|[ée]conomies? (de|sur)|\d+ mois offerts?|\bparrainage\b)/i,
+    // NOTE : « cadeau » et « à saisir » ont été essayés puis RETIRÉS — la
+    // simulation sur les 21 167 mails réels les a pris en flagrant délit.
+    // « Re: cadeau pour noah » est un mail de famille, et « Pensez à saisir vos
+    // réponses » veut dire renseigner, pas « bonne affaire à saisir ». Deux mots
+    // trop faibles pour un signal commercial.
     label: 'offre commerciale',
   },
 ];
