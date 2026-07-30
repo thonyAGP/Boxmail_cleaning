@@ -620,9 +620,11 @@ function fusion(anciens: Finding[], nouveaux: Finding[]): { all: Finding[]; neuf
   for (const n of nouveaux) {
     const a = par.get(n.key);
     if (a) {
-      // On NE TOUCHE JAMAIS au statut ni à la note : ce sont les décisions
-      // humaines, tout l'intérêt du magasin est qu'elles survivent.
-      par.set(n.key, { ...a, line: n.line, detail: n.detail, metric: n.metric, lastSeen: t });
+      // Tout ce qui est CALCULÉ est rafraîchi (gravité, titre, détail, mesure,
+      // ligne) — sinon un constat garde éternellement la gravité d'un ancien
+      // barème. Ne survivent que les trois champs qui relèvent d'une DÉCISION
+      // humaine : le statut, la note, et la date de première apparition.
+      par.set(n.key, { ...n, status: a.status, note: a.note, firstSeen: a.firstSeen, lastSeen: t });
     } else {
       par.set(n.key, n);
       neufs++;
