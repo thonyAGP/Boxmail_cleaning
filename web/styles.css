@@ -353,12 +353,16 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 }
 .mail-list {
   margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;
-  max-height: 280px; overflow-y: auto;
+  max-height: 42vh; overflow-y: auto;
 }
+/* La ligne était un <label> englobant : cliquer le sujet cochait la case au
+   lieu d'ouvrir le mail. C'est un <div> désormais, et seule `.mail-pick`
+   (la case) reste cliquable comme une case — d'où le curseur par défaut ici. */
 .mail-row {
   display: flex; gap: 8px; align-items: center; padding: 6px 10px;
-  border-bottom: 1px solid #f0f2f7; font-size: 12.5px; cursor: pointer;
+  border-bottom: 1px solid #f0f2f7; font-size: 12.5px;
 }
+.mail-pick { cursor: pointer; display: flex; align-items: center; }
 .mail-row:last-child { border-bottom: none; }
 .mail-row:hover { background: #fafbfe; }
 .mail-row.personal { background: #fffdf5; }

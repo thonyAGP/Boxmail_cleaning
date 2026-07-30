@@ -120,7 +120,10 @@ export interface SenderCleanupPreview {
   totalSizeBytes: number;
   oldestMessageAt: string | null;
   newestMessageAt: string | null;
-  sampleSubjects: string[];
+  // `sampleSubjects: string[]` a été retiré : personne ne l'affichait. L'audit
+  // l'avait classé critique en le prenant pour l'échantillon de confirmation
+  // avant suppression — vérification faite, cette liste-là vient de
+  // `listCleanupMessages`. Un champ mort valait mieux supprimé que « corrigé ».
 }
 
 /** Aperçu instantané depuis l'index : ce qui SERAIT déplacé en corbeille. */
@@ -137,19 +140,13 @@ export async function previewSenderCleanup(
   if (!f) throw new Error(`Dossier "${folder}" absent de l'index.`);
 
   const where = { folderId: f.id, isDeleted: false, fromEmail: sender.toLowerCase() };
-  const [agg, samples] = await Promise.all([
+  const [agg] = await Promise.all([
     db.message.aggregate({
       where,
       _count: { _all: true },
       _sum: { sizeBytes: true },
       _min: { date: true },
       _max: { date: true },
-    }),
-    db.message.findMany({
-      where,
-      orderBy: { date: 'desc' },
-      take: 10,
-      select: { subject: true },
     }),
   ]);
 
@@ -160,7 +157,6 @@ export async function previewSenderCleanup(
     totalSizeBytes: agg._sum.sizeBytes ?? 0,
     oldestMessageAt: agg._min.date?.toISOString() ?? null,
     newestMessageAt: agg._max.date?.toISOString() ?? null,
-    sampleSubjects: samples.map((s) => s.subject ?? '(sans sujet)'),
   };
 }
 
@@ -175,6 +171,15 @@ const AUTO_SENDER_RE =
   /(no-?reply|nepasrepondre|ne-pas-repondre|donotreply|do-not-reply|notification|mailer-daemon|newsletter|automat)/i;
 
 export interface CleanupMessage {
+  /**
+   * `account` + `folder` + `uid` = les trois coordonnées qu'exige
+   * `openReaderFor` côté interface. Sans elles, la liste que l'utilisateur
+   * relit JUSTE AVANT d'envoyer des mails à la corbeille n'ouvrait aucun mail :
+   * il devait décider sur un sujet tronqué. La route connaissait pourtant le
+   * dossier — c'est le service qui ne le transmettait pas.
+   */
+  account: string;
+  folder: string;
   uid: number;
   subject: string;
   date: string | null;
@@ -297,6 +302,8 @@ export async function listCleanupMessages(
     if (!personal && !isDocument && !auto) signals.push("aucun marqueur d'automatisation");
 
     return {
+      account,
+      folder,
       uid: m.uid,
       subject: m.subject ?? '(sans sujet)',
       date: m.date?.toISOString() ?? null,

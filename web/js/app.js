@@ -2135,8 +2135,11 @@ function closeModal() {
 async function openCleanupModal(account, sender, senderName) {
   closeModal();
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
+  // under-reader : le panneau de lecture s'ouvre AU-DESSUS de cette modale.
+  // Sans cette classe, rendre un sujet cliquable ne servirait à rien — le
+  // lecteur (z 96) passerait derrière l'overlay (z 100).
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
     <div class="modal-head"><h2>🧹 Nettoyer « ${esc(senderName)} » ${accountChip(account)}</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
@@ -2195,19 +2198,19 @@ async function openCleanupModal(account, sender, senderName) {
     <button class="btn btn-sm" id="toggle-list">📋 Voir la liste complète (${fmtNum(list.messages.length)})</button>
     ${list.truncated ? `<span class="muted" style="font-size:12px"> (${fmtNum(list.total)} au total, affichage limité à ${fmtNum(list.messages.length)})</span>` : ''}
     <div class="mail-list hidden" id="mail-list">
-      ${list.messages.map((m) => `
-        <label class="mail-row ${m.kind}">
-          <input type="checkbox" data-uid="${m.uid}" data-kind="${m.kind}" ${m.kind === 'auto' ? 'checked' : ''}>
+      ${list.messages.map((m, i) => `
+        <div class="mail-row ${m.kind}">
+          <label class="mail-pick"><input type="checkbox" data-uid="${m.uid}" data-kind="${m.kind}" ${m.kind === 'auto' ? 'checked' : ''}></label>
           <span class="mail-date">${fmtDate(m.date)}</span>
-          <span class="mail-subject" title="${esc(m.signals.join(' · '))}">${esc(m.subject)}${
-            m.snippet ? `<span class="mail-snip"> — ${esc(m.snippet)}</span>` : ''
+          <span class="mail-subject openable" data-clean-open="${i}" title="${esc(m.subject)}">${esc(m.subject)}${
+            m.snippet ? `<span class="mail-snip" title="${esc(m.snippet)}"> — ${esc(m.snippet)}</span>` : ''
           }</span>
           <span class="badge ${m.kind === 'auto' ? 'gray' : m.kind === 'document' ? 'green' : 'blue'}"
             title="${esc(m.signals.join(' · '))}">${
               m.kind === 'auto' ? '🤖 auto' : m.kind === 'document' ? '📄 à conserver' : '👤 perso'
             }</span>
           ${m.isSeen ? '' : '<span class="badge orange">non lu</span>'}
-        </label>`).join('')}
+        </div>`).join('')}
     </div>
     <div class="trash-note">🛟 Soft delete uniquement : les mails cochés vont dans la corbeille Outlook et restent
       récupérables ~30 jours. Lots de 200, chaque lot journalisé avec la liste exacte des mails.</div>`;
@@ -2228,6 +2231,23 @@ async function openCleanupModal(account, sender, senderName) {
   updateConfirm();
 
   $('#toggle-list').addEventListener('click', () => $('#mail-list').classList.toggle('hidden'));
+
+  // Lire un mail avant de le supprimer. La ligne était un <label> englobant :
+  // cliquer le sujet COCHAIT la case au lieu d'ouvrir. Elle est devenue un
+  // <div>, et seule la case reste dans un <label>. Écouteur délégué parce que
+  // la liste est écrite d'un bloc dans innerHTML.
+  $('#mail-list').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-clean-open]');
+    if (!el) return;
+    e.preventDefault();
+    const m = list.messages[Number(el.dataset.cleanOpen)];
+    if (!m) return;
+    openReaderFor(m, {
+      // Le mail vient d'être lu : on rafraîchit le badge « non lu » sans
+      // recharger toute la modale (la sélection en cours serait perdue).
+      onSeen: () => el.closest('.mail-row')?.querySelector('.badge.orange')?.remove(),
+    });
+  });
 
   const rowBoxes = [...overlay.querySelectorAll('.mail-row input[type=checkbox]')];
   const syncCategoryBox = (kind) => {
