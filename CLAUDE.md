@@ -102,6 +102,63 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (session en cours)
 
+**TOUR 3 D'ANALYSE + 4 RÈGLES CONVERGENTES CODÉES (30/07).** 1 809 mails jugés,
+221 expéditeurs corrigés, 0 rejet. **Quatre boîtes bouclées** (Altoen, Brimmo,
+Au-marais, Location_Brest — 0 douteux) ; Colocar 4, Econom 3 ; thony56_gtr
+8 982 restants (13 % de couverture, mais lecture des extraits à 100 %).
+
+**MÉTHODE : ne coder qu'une règle qui CONVERGE sur plusieurs boîtes.** Les
+agents en ont proposé 23 ; 4 retenues. Une règle vraie sur une seule boîte est
+une coïncidence.
+
+1. **LE PLUS GROS TROU DU MOTEUR ÉTAIT LA PUBLICITÉ.** Sur Location_Brest,
+   165 mails sur 323 (51 %) étaient de la pub classée `info` — donc invisible
+   pour `promo30`. Les sujets réels n'emploient JAMAIS le mot « promo » :
+   « ⏳ 72H Flash », « on vide les caisses », « 💸On baisse le prix »,
+   « 17 500 € d'économie », « vos 10€ vous attendent ». Motifs élargis, et
+   surtout la pub est désormais cherchée **dans l'extrait** — seul motif faible
+   admis là, sous DEUX conditions : enveloppe marketing (`hasListUnsubscribe`,
+   ce qui la distingue d'un contrat mentionnant « -20 % ») et aucun marqueur
+   d'obligation. Mesure : +147 mails reconnus.
+2. **VETO D'OBLIGATION** (`OBLIGATION_RE`) : `bonjour@comptastar.fr` envoie le
+   parrainage ET « [ACTION REQUISE] – Mise en conformité », dont l'enjeu est la
+   dissolution. Sans ce veto la règle 1 aurait balayé le second avec le premier.
+3. **BOÎTE DE FONCTION ⇒ `company`, jamais `person`** (`compta@`, `agence-…@`,
+   `recouvrement@`, `sav@`, `tcs@`). ~20 expéditeurs Brimmo étaient `person` —
+   la catégorie la plus protégée — donc soustraits au nettoyage ET à l'analyse.
+   Périmètre étroit EXPRÈS : ni `contact@`, ni `info@`, ni `service@` (adresses
+   ordinaires des artisans, testées en contre-cas) ; aucune tentative de
+   reconnaître les boîtes nommées d'après une ville — rien ne les distingue
+   mécaniquement d'un surnom.
+4. **DEUX MOTIFS PROTECTEURS** : « appel de fonds » était classé RENDEZ-VOUS à
+   cause de la date (ni facture ni protection) ; les avis de versement (« Un
+   versement de 1 629,58 € a été envoyé ») deviennent `document`, le montant en
+   € étant exigé pour ne pas attraper « 500 GuestPoints offerts ».
+
+**DÉFAUT DE CAPTURE CORRIGÉ** : sans partie `text/plain`, l'extrait stocké était
+du balisage brut — les heuristiques le lisaient COMME DU TEXTE (elles pouvaient
+s'accrocher à n'importe quel mot du HTML) et l'IA le jugeait inexploitable, donc
+~110 mails de la boîte perso restaient protégés à vie. `cleanSnippet` dégage
+maintenant le texte (détagage sans dépendance + décodage des entités : le
+courrier français en est truffé, sans quoi « n&deg;2281 » devenait « n 2281 »).
+
+**LA SIMULATION A ENCORE SAUVÉ LA MISE — 2e fois de la série.** Passage à blanc
+sur les 21 167 mails réels AVANT d'appliquer : (a) « cadeau » attrapait « Re:
+cadeau pour noah », un mail de famille ; (b) « à saisir » attrapait « Pensez à
+saisir vos réponses » (saisir = renseigner) ; (c) ma règle de boîte de fonction
+passait DEVANT la détection de newsletter, si bien que
+`service.client@mails.totalenergies.fr` sortait de `newsletter90` — la règle
+devait empêcher `person`, pas rendre un expéditeur MOINS nettoyable. Les trois
+sont devenus des contre-cas du test (43 assertions).
+**RÈGLE DE TRAVAIL : toujours simuler sur les données réelles avant d'appliquer
+une règle de classement. Un test unitaire ne peut pas voir ces cas.**
+
+**MÊME BUTÉE QU'AVANT, CONFIRMÉE** : +147 promos reconnues → +45 récupérables
+seulement, parce que `promo30` exige `unseenOnly`. La classification n'est plus
+le goulot, **les stratégies le sont**. D'où le preset **`promo365`** (« plus d'un
+an, même déjà ouvertes », désactivé) : **1 979 visés, 105 protégés**.
+Récupérable : 8 542 → **8 762 mails / 1,3 Go**.
+
 **`npm run audit` LIVRÉ + 20 DÉFAUTS CORRIGÉS (30/07).** Déclencheur : « ce que
 tu as découvert là doit se produire partout ailleurs » — chaque défaut trouvé
 jusque-là avait demandé une capture d'écran de l'utilisateur.
