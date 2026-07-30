@@ -49,6 +49,21 @@ const PRESETS: {
   { key: 'confirm180', label: 'Confirmations (commandes, inscriptions…) de plus de 6 mois (hors résiliation/assurance/contrat)', matchIntent: 'confirmation', ageDays: 180 },
   { key: 'newsletter90', label: 'Newsletters JAMAIS ouvertes de plus de 90 jours (jamais si tu as déjà échangé)', matchCategory: 'newsletter', unseenOnly: true, ageDays: 90 },
   { key: 'promo30', label: 'Promotions JAMAIS ouvertes de plus de 30 jours (jamais si tu as déjà échangé)', matchIntent: 'promo', unseenOnly: true, ageDays: 30 },
+  // Mesuré le 30/07 : l'élargissement de la détection publicitaire a reconnu
+  // 147 mails de plus… pour seulement 45 récupérables. La cause n'est pas la
+  // détection mais `promo30`, qui exige un mail JAMAIS OUVERT — or une pub d'il
+  // y a des années a souvent été ouverte à l'époque. C'est la même butée que
+  // pour le verdict IA (2 026 mails lus hors d'atteinte de toute stratégie).
+  //
+  // Un an, et toutes les protections continuent de s'appliquer : pièce jointe,
+  // intention facture/document, confiance faible, expéditeur engagé, catégorie
+  // « personne ». Désactivé comme tous les presets.
+  {
+    key: 'promo365',
+    label: 'Promotions de plus d’un an, même déjà ouvertes',
+    matchIntent: 'promo',
+    ageDays: 365,
+  },
 ];
 
 // ---------------------------------------------------------------------------
