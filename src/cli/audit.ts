@@ -123,7 +123,13 @@ function auditFront(): Finding[] {
   // plusieurs lignes dans ce fichier, et un title= voisin suffit à disculper.
   const lines = app.split('\n');
   lines.forEach((raw, i) => {
-    const tronque = /text-overflow\s*:\s*ellipsis|white-space\s*:\s*nowrap/.test(raw);
+    // `nowrap` SEUL ne tronque pas : il empêche le retour à la ligne. Couper du
+    // texte demande `text-overflow: ellipsis`, ou `nowrap` AVEC
+    // `overflow: hidden`. La première version signalait chaque date en nowrap —
+    // dont une que je venais d'ajouter, ce qui a mis le doigt sur l'erreur.
+    const tronque =
+      /text-overflow\s*:\s*ellipsis/.test(raw) ||
+      (/white-space\s*:\s*nowrap/.test(raw) && /overflow\s*:\s*hidden/.test(raw));
     if (!tronque) return;
     // Fenêtre de 2 lignes : le title= est parfois sur l'attribut précédent.
     const fenetre = [lines[i - 1] ?? '', raw, lines[i + 1] ?? ''].join(' ');
@@ -613,7 +619,17 @@ async function auditDynamique(): Promise<Finding[]> {
 
 // ------------------------------------------------------------- fusion
 
-function fusion(anciens: Finding[], nouveaux: Finding[]): { all: Finding[]; neufs: number; disparus: number } {
+/**
+ * `statique` = la base n'a pas été interrogée à ce passage. Sans cette
+ * distinction, un `--static` faisait passer TOUS les constats mesurés pour
+ * « disparus » — on aurait cru avoir corrigé des balayages qu'on n'avait
+ * simplement pas cherchés. Un audit ne doit jamais laisser croire cela.
+ */
+function fusion(
+  anciens: Finding[],
+  nouveaux: Finding[],
+  statique = false,
+): { all: Finding[]; neufs: number; disparus: number } {
   const par = new Map(anciens.map((f) => [f.key, f]));
   const t = now();
   let neufs = 0;
@@ -633,7 +649,10 @@ function fusion(anciens: Finding[], nouveaux: Finding[]): { all: Finding[]; neuf
   const vus = new Set(nouveaux.map((f) => f.key));
   let disparus = 0;
   for (const f of par.values()) {
-    if (f.detectedBy === 'script' && f.status === 'todo' && !vus.has(f.key)) disparus++;
+    if (f.detectedBy !== 'script' || f.status !== 'todo' || vus.has(f.key)) continue;
+    // Un constat mesuré ne « disparaît » que si on l'a réellement re-cherché.
+    if (statique && f.file.startsWith('src/services')) continue;
+    disparus++;
   }
   return { all: [...par.values()], neufs, disparus };
 }
@@ -732,7 +751,11 @@ async function run(): Promise<void> {
       console.log(`     ⚠️ magasin illisible (${(err as Error).message}) — on repart de zéro.`);
     }
   }
-  const { all, neufs, disparus } = fusion(anciens, [...statiques, ...dynamiques]);
+  const { all, neufs, disparus } = fusion(
+    anciens,
+    [...statiques, ...dynamiques],
+    Boolean(values.static),
+  );
   const ouverts = all.filter((f) => f.status === 'todo').length;
   console.log(`     ${all.length} constat(s) au total, ${ouverts} ouvert(s), ${neufs} nouveau(x).`);
 

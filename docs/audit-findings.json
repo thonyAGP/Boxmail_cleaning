@@ -2,13 +2,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:loadBigClean:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "loadBigClean",
-    "line": 4151,
+    "line": 4211,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -17,13 +17,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:loadBigClean:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
     "file": "web/js/app.js",
     "fn": "loadBigClean",
-    "line": 4176,
+    "line": 4236,
     "title": "Liste coupée à 8 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
     "detectedBy": "script",
@@ -32,13 +32,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:loadUnsubscribe:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "loadUnsubscribe",
-    "line": 3606,
+    "line": 3666,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -70,20 +70,21 @@
     "detail": "Le `title` vaut `m.signals.join(\" · \")`. Le sujet, tronqué par `.mail-subject` (ellipsis), est donc irrécupérable : ni lisible en entier, ni ouvrable. Deux défauts qui se referment l’un sur l’autre.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "title = le sujet ; les signaux restent sur le badge. Vérifié : un sujet de 157 caractères est récupérable par l’infobulle."
   },
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:openNoiseModal:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "openNoiseModal",
-    "line": 889,
+    "line": 911,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -100,20 +101,21 @@
     "detail": "La cellule est tronquée (`max-width:520px`, ellipsis) et le `title` porte un libellé d’action. Le sujet complet reste inaccessible.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "title = le sujet, au lieu du libellé « Lire le mail »."
   },
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:openRetentionPreview:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "openRetentionPreview",
-    "line": 4276,
+    "line": 4336,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -137,7 +139,7 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:pollJobs:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
@@ -152,7 +154,7 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:quotaCell:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
@@ -182,13 +184,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:renderBrief:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
     "file": "web/js/app.js",
     "fn": "renderBrief",
-    "line": 1452,
+    "line": 1479,
     "title": "Liste coupée à 3 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
     "detectedBy": "script",
@@ -197,13 +199,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:renderCalendarBody:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
     "file": "web/js/app.js",
     "fn": "renderCalendarBody",
-    "line": 5129,
+    "line": 5189,
     "title": "Liste coupée à 3 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
     "detectedBy": "script",
@@ -212,13 +214,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:renderDashboard:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
     "file": "web/js/app.js",
     "fn": "renderDashboard",
-    "line": 1297,
+    "line": 1324,
     "title": "Liste coupée à 3 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
     "detectedBy": "script",
@@ -227,13 +229,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:renderInboxBody:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "renderInboxBody",
-    "line": 5705,
+    "line": 5765,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -242,13 +244,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:renderSettingsBody:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "renderSettingsBody",
-    "line": 4621,
+    "line": 4681,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
@@ -257,13 +259,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "A:web/js/app.js:renderSettingsBody:slice-sans-indicateur",
     "family": "A",
     "severity": "faible",
     "file": "web/js/app.js",
     "fn": "renderSettingsBody",
-    "line": 4782,
+    "line": 4842,
     "title": "Liste coupée à 10 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
     "detectedBy": "script",
@@ -272,20 +274,20 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:35:25",
     "key": "A:web/js/app.js:renderStatsTable:ellipsis-sans-title",
     "family": "A",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "renderStatsTable",
-    "line": 1920,
+    "line": 1947,
     "title": "Texte coupé sans infobulle",
     "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
     "confidence": "à vérifier"
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "A:web/js/app.js:renderToday:slice-sans-indicateur",
@@ -296,6 +298,22 @@
     "line": 783,
     "title": "Liste coupée à 2 sans indiquer le reste",
     "detail": "Un .slice() tronque l’affichage sans « … », sans « et N autre(s) » et sans title : rien ne signale à l’utilisateur qu’il manque des éléments.",
+    "detectedBy": "script",
+    "confidence": "à vérifier",
+    "note": "title avec toutes les raisons + « … » quand il y en a plus de 2 — comme le faisait déjà renderReaderAnalysis."
+  },
+  {
+    "status": "todo",
+    "firstSeen": "2026-07-30 09:35:25",
+    "lastSeen": "2026-07-30 09:35:25",
+    "key": "A:web/js/app.js:todayRow:ellipsis-sans-title",
+    "family": "A",
+    "severity": "moyen",
+    "file": "web/js/app.js",
+    "fn": "todayRow",
+    "line": 689,
+    "title": "Texte coupé sans infobulle",
+    "detail": "Cellule tronquée (ellipsis/nowrap) sans attribut title à proximité : le texte complet est irrécupérable pour l’utilisateur.",
     "detectedBy": "script",
     "confidence": "à vérifier"
   },
@@ -310,9 +328,10 @@
     "detail": "`CleanupMessage` porte `uid` et `date` mais ni `account` ni `folder`, et l’enveloppe de réponse ne les ajoute pas — alors que la route les connaît (`admin.ts` lit `req.query.folder ?? \"INBOX\"`). `openReaderFor` refuse donc d’ouvrir. L’utilisateur ne peut vérifier aucun mail avant de confirmer.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "account + folder émis ; la liste est ouvrable. Test navigateur : 14 vérifications."
   },
   {
     "key": "B:src/services/cleanup.ts:previewSenderCleanup:echantillon-chaines-nues",
@@ -325,9 +344,10 @@
     "detail": "Le service fait `select: { subject: true }` puis `samples.map(s => s.subject)` : l’aperçu de confirmation est un `string[]`. Ni ouvrable, ni daté, ni traçable — or c’est précisément l’écran où l’utilisateur valide l’envoi de centaines de mails à la corbeille. C’est le cas le plus grave de tout l’audit au vu de l’enjeu.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "CORRECTION DE MON ANALYSE : ce champ n’était affiché nulle part (la liste de confirmation vient de listCleanupMessages). C’était du code mort — supprimé plutôt que « corrigé ». Le classement « critique » était une erreur de ma part."
   },
   {
     "key": "B:src/services/rules.ts:previewRule:sans-coordonnees",
@@ -340,12 +360,13 @@
     "detail": "`select: { uid, subject, fromEmail, date }` — ni `account` ni `folder`. Conséquence visible : la modale voisine (aperçu de rétention) est ouvrable, celle-ci non. Même écran, deux traitements, parce que l’API ne fournit pas la même chose. On valide un déplacement de N mails sans en vérifier un seul.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "account + folder.path joints ; l’aperçu de règle est ouvrable."
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "B:web/js/app.js:openCleanupModal:overlay-sans-under-reader",
@@ -357,7 +378,8 @@
     "title": "Modale listant des mails sans « under-reader »",
     "detail": "L’overlay n’a pas la classe under-reader : le panneau de lecture s’ouvrirait DERRIÈRE la modale. Rendre un sujet cliquable ne suffit donc pas — il faut aussi changer la classe de l’overlay.",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "under-reader posé — sans quoi rendre le sujet cliquable n’aurait rien changé."
   },
   {
     "key": "B:web/js/app.js:openCleanupModal:sujet-non-ouvrable",
@@ -370,42 +392,45 @@
     "detail": "Le sujet est un `<span class=\"mail-subject\">` sans `openable` ni écouteur, enveloppé dans un `<label class=\"mail-row\">` : le clic est capté par le label et bascule la case. C’est le même défaut que celui corrigé le 29/07 sur l’aperçu de rétention, mais sur l’écran qui supprime réellement.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "La ligne est un <div>, seule la case reste dans un <label> (.mail-pick). Contre-cas vérifié au navigateur : cliquer le sujet n’a pas bougé la case."
   },
   {
-    "status": "todo",
+    "status": "accepted",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "B:web/js/app.js:openComposeModal:overlay-sans-under-reader",
     "family": "B",
     "severity": "grave",
     "file": "web/js/app.js",
     "fn": "openComposeModal",
-    "line": 6381,
+    "line": 6441,
     "title": "Modale listant des mails sans « under-reader »",
     "detail": "L’overlay n’a pas la classe under-reader : le panneau de lecture s’ouvrirait DERRIÈRE la modale. Rendre un sujet cliquable ne suffit donc pas — il faut aussi changer la classe de l’overlay.",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "FAUX POSITIF assumé. C'est le formulaire de rédaction, pas une liste de mails — la règle s'est déclenchée sur le champ « Objet ». Et la fenêtre de rédaction DOIT passer au-dessus du lecteur : on écrit une réponse depuis le mail ouvert."
   },
   {
-    "status": "todo",
+    "status": "accepted",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "B:web/js/app.js:openRuleModal:overlay-sans-under-reader",
     "family": "B",
     "severity": "grave",
     "file": "web/js/app.js",
     "fn": "openRuleModal",
-    "line": 3462,
+    "line": 3522,
     "title": "Modale listant des mails sans « under-reader »",
     "detail": "L’overlay n’a pas la classe under-reader : le panneau de lecture s’ouvrirait DERRIÈRE la modale. Rendre un sujet cliquable ne suffit donc pas — il faut aussi changer la classe de l’overlay.",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "FAUX POSITIF assumé. Formulaire de création de règle, aucune liste de mails à ouvrir."
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "B:web/js/app.js:openRulePreview:overlay-sans-under-reader",
@@ -417,7 +442,8 @@
     "title": "Modale listant des mails sans « under-reader »",
     "detail": "L’overlay n’a pas la classe under-reader : le panneau de lecture s’ouvrirait DERRIÈRE la modale. Rendre un sujet cliquable ne suffit donc pas — il faut aussi changer la classe de l’overlay.",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "under-reader + modal-wide, sujets ouvrables, expéditeur affiché."
   },
   {
     "key": "B:web/js/app.js:renderCalendarSide:tache-non-ouvrable",
@@ -445,9 +471,10 @@
     "detail": "Le mail n’est ouvrable que via le bouton « 📖 Lire ». Le sujet lui-même n’est jamais cliquable, contrairement à TOUS les autres écrans. Incohérence d’affordance sur la page vue le plus souvent.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "Le corps de la ligne est ouvrable ; le bouton 📖 reste pour la découvrabilité."
   },
   {
     "key": "C:src/services/learning.ts:listSuggestions:cul-de-sac",
@@ -535,9 +562,10 @@
     "detail": "Réponses et relances n’ont qu’un délai relatif (`daysAgo`) ; factures et importants n’ont RIEN. La ligne « échéances » affiche `d.date` (la date d’échéance) alors que `d.msgDate` est disponible et utilisé ailleurs. Un mail de 2020 se présente exactement comme un mail de ce mois-ci.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "Date de réception ajoutée dans todayRow, donc sur les 4 listes d’un coup. Pour une échéance c’est bien msgDate (le mail), pas la date d’échéance."
   },
   {
     "key": "D:prisma/migrations:ANALYZE:jamais-rejoue",
@@ -549,9 +577,10 @@
     "detail": "SQLite ne collecte JAMAIS de statistiques de lui-même. Sans elles, son planificateur ignore quels index valent la peine et retombe sur des balayages. Le commentaire de la migration dit lui-même que c’est « la moitié du gain » des 40 s → 178 ms. Après quelques dizaines de milliers de mails de plus, les statistiques seront périmées — et rien ne le signalera. `PRAGMA optimize` dans `applySqlitePragmas` réglerait cela à coût nul.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "PRAGMA optimize au démarrage : SQLite décide lui-même si une table a assez changé, donc c’est quasi gratuit et les statistiques ne périment plus."
   },
   {
     "key": "D:prisma/schema.prisma:AnalysisFeedback:index-messageId-absent",
@@ -563,9 +592,10 @@
     "detail": "`AnalysisFeedback(engine, messageId)` est inutilisable quand on ne filtre que sur `messageId` — ce que font `quality.ts` et la réconciliation des déplacements. Même remarque pour `AttentionState`. Tables minuscules aujourd’hui, index quasi gratuit.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "Index sur messageId ajouté, idem AttentionState."
   },
   {
     "key": "D:prisma/schema.prisma:Deadline:index-messageId-absent",
@@ -577,9 +607,10 @@
     "detail": "La protection centrale exécute `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id …)` POUR CHAQUE LIGNE candidate. Les deux index existants commencent par `accountSlug`, absent de la sonde : dans SQLite un index (a, b) ne sert pas une recherche sur b seul. La table ne contient que 6 lignes aujourd’hui, donc l’impact est nul — mais `detectDeadlines` tourne après CHAQUE sync sans plafond. Une ligne de schéma neutralise une régression certaine : c’est le meilleur rapport coût/bénéfice de tout l’audit.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "Index (messageId, status) ajouté. Table de 6 lignes : le bénéfice est d’empêcher la régression quadratique, pas de gagner du temps aujourd’hui."
   },
   {
     "status": "todo",
@@ -747,7 +778,7 @@
     "metric": "34 877 lignes · écran à 59 ms"
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "D:src/services/categorize.ts::octet-nul",
@@ -759,7 +790,8 @@
     "detail": "Octet nul à l’offset 29791. Ripgrep classe le fichier comme binaire et le saute SANS RIEN DIRE : toute recherche, tout outil de la chaîne appuyé sur grep ignore ce fichier en silence.",
     "detectedBy": "script",
     "confidence": "confirmé",
-    "metric": "offset 29791"
+    "metric": "offset 29791",
+    "note": "Idem retention.ts."
   },
   {
     "key": "D:src/services/learning.ts:listSuggestions:auto-jointure-par-ligne",
@@ -792,7 +824,7 @@
     "lastSeen": "2026-07-30 09:14:02"
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "D:src/services/retention.ts::octet-nul",
@@ -804,7 +836,8 @@
     "detail": "Octet nul à l’offset 23797. Ripgrep classe le fichier comme binaire et le saute SANS RIEN DIRE : toute recherche, tout outil de la chaîne appuyé sur grep ignore ce fichier en silence.",
     "detectedBy": "script",
     "confidence": "confirmé",
-    "metric": "offset 23797"
+    "metric": "offset 23797",
+    "note": "Séparateur de clé remplacé par l’échappement \\u0000 : chaîne IDENTIQUE à l’exécution, source redevenue lisible par grep."
   },
   {
     "key": "D:src/services/rules.ts:toView:n-plus-1-imbrique",
@@ -869,13 +902,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:att-dl:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"att-dl\"",
-    "line": 6074,
+    "line": 6134,
     "title": "Classe CSS « att-dl » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
@@ -884,13 +917,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:att-view:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"att-view\"",
-    "line": 6073,
+    "line": 6133,
     "title": "Classe CSS « att-view » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
@@ -899,13 +932,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:cal-side:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"cal-side\"",
-    "line": 5162,
+    "line": 5222,
     "title": "Classe CSS « cal-side » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
@@ -914,13 +947,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:openable-btn:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"openable-btn\"",
-    "line": 2613,
+    "line": 2660,
     "title": "Classe CSS « openable-btn » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
@@ -937,12 +970,13 @@
     "detail": "Conteneur `class=\"modal\"` (560 px) au lieu de `modal-wide` (1100 px) : l’ellipse est garantie sur toutes les lignes. `modal-wide` existe déjà.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "modal-wide + under-reader. Vérifié : lecteur z=96 au-dessus de l’overlay z=94."
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "D:web/js/app.js:openNoiseModal:date-en-derniere-colonne",
@@ -954,7 +988,8 @@
     "title": "Colonne de date en bout de ligne",
     "detail": "La date est la dernière colonne : c’est la position d’où elle sortait du cadre le 29/07 dès qu’une cellule voisine s’élargissait. La remonter et fixer les largeurs des <th>.",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "Date remontée en 2e position, largeurs fixes sur les <th>."
   },
   {
     "key": "D:web/js/app.js:openNoiseModal:expediteur-sans-plafond",
@@ -967,12 +1002,13 @@
     "detail": "Un nom long élargit la table au-delà du conteneur et pousse la dernière colonne — la date — hors du cadre. C’est le mécanisme exact du bug du 29/07.",
     "detectedBy": "exploration",
     "confidence": "confirmé",
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:14:02",
-    "lastSeen": "2026-07-30 09:14:02"
+    "lastSeen": "2026-07-30 09:14:02",
+    "note": "max-width + ellipsis + title sur la cellule expéditeur : elle ne peut plus élargir la table et pousser la date hors du cadre."
   },
   {
-    "status": "todo",
+    "status": "fixed",
     "firstSeen": "2026-07-30 09:00:35",
     "lastSeen": "2026-07-30 09:14:10",
     "key": "D:web/js/app.js:tablewrap:classe-css-inexistante",
@@ -984,18 +1020,19 @@
     "title": "Classe CSS « tablewrap » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
-    "confidence": "à vérifier"
+    "confidence": "à vérifier",
+    "note": "Règle .tablewrap ajoutée (overflow-x auto)."
   },
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:today-row:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"today-row\"",
-    "line": 681,
+    "line": 697,
     "title": "Classe CSS « today-row » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",
@@ -1004,13 +1041,13 @@
   {
     "status": "todo",
     "firstSeen": "2026-07-30 09:00:35",
-    "lastSeen": "2026-07-30 09:14:10",
+    "lastSeen": "2026-07-30 09:38:33",
     "key": "D:web/js/app.js:verify-zone:classe-css-inexistante",
     "family": "D",
     "severity": "moyen",
     "file": "web/js/app.js",
     "fn": "class=\"verify-zone\"",
-    "line": 4009,
+    "line": 4069,
     "title": "Classe CSS « verify-zone » utilisée mais jamais définie",
     "detail": "Le style attendu n’est jamais appliqué. Sur un conteneur de table, cela signifie un overflow:auto absent, donc une table qui déborde sans barre de défilement (cas réel : .tablewrap).",
     "detectedBy": "script",

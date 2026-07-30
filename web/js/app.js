@@ -673,13 +673,30 @@ let todayReaderRefs = [];
 
 function todayRow(html, readerItem, badge = '') {
   const readable = readerItem && readerItem.folder && readerItem.uid;
+  let idx = -1;
   let readBtn = '';
   if (readable) {
     todayReaderRefs.push(readerItem);
-    readBtn = `<button class="btn btn-sm today-read" data-idx="${todayReaderRefs.length - 1}">📖 Lire</button>`;
+    idx = todayReaderRefs.length - 1;
+    readBtn = `<button class="btn btn-sm today-read" data-idx="${idx}">📖 Lire</button>`;
   }
+  // DATE DE RÉCEPTION. Aucune des quatre listes de l'accueil n'en affichait :
+  // un mail de 2020 se présentait exactement comme un mail de ce mois-ci, alors
+  // que c'est le premier critère pour décider quoi traiter. Pour une échéance,
+  // l'appelant passe déjà `date: d.msgDate` — c'est donc bien la date du MAIL,
+  // pas celle de l'échéance (elle reste affichée dans la phrase).
+  const recu = readerItem?.date
+    ? `<span class="muted" style="font-size:11.5px; white-space:nowrap">${fmtDate(readerItem.date)}</span>`
+    : '';
+  // Le sujet devient cliquable comme partout ailleurs : sur cet écran, seul le
+  // bouton « 📖 Lire » ouvrait le mail — incohérence d'affordance sur la page
+  // la plus consultée. Le bouton reste, pour rester découvrable.
+  const corps = readable
+    ? `<span class="openable" data-today-open="${idx}">${html}</span>`
+    : html;
   return `<div class="today-row" style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border)">
-    <div style="flex:1; min-width:0">${html}</div>
+    <div style="flex:1; min-width:0">${corps}</div>
+    ${recu}
     ${badge}
     ${readerItem?.account ? accountChip(readerItem.account) : ''}
     ${readBtn}
@@ -687,11 +704,15 @@ function todayRow(html, readerItem, badge = '') {
 }
 
 function bindTodayRows(root) {
+  const ouvrir = (idx) => {
+    const item = todayReaderRefs[Number(idx)];
+    if (item) openReaderFor(item, { onRemoved: () => renderToday() });
+  };
   root.querySelectorAll('.today-read').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const item = todayReaderRefs[Number(btn.dataset.idx)];
-      if (item) openReaderFor(item, { onRemoved: () => renderToday() });
-    });
+    btn.addEventListener('click', () => ouvrir(btn.dataset.idx));
+  });
+  root.querySelectorAll('[data-today-open]').forEach((el) => {
+    el.addEventListener('click', () => ouvrir(el.dataset.todayOpen));
   });
 }
 
@@ -780,7 +801,9 @@ async function renderToday() {
   const importantRows = t.important.map((m) => todayRow(
     `<span class="score-pill ${m.level === 'high' ? 'high' : 'medium'}">${m.score}</span>
      <strong>${esc(m.fromName || m.fromEmail)}</strong> — « ${esc(m.subject)} »
-     <span class="muted" style="font-size:12px">· ${m.reasons.slice(0, 2).map(esc).join(' · ')}</span>`,
+     <span class="muted" style="font-size:12px" title="${esc(m.reasons.join(' · '))}">· ${
+       m.reasons.slice(0, 2).map(esc).join(' · ')
+     }${m.reasons.length > 2 ? ' …' : ''}</span>`,
     m,
   ));
 
