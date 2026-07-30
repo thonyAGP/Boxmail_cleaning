@@ -19,6 +19,7 @@
     "check": "tsx src/cli/check.ts",
     "stats": "tsx src/cli/stats.ts",
     "sync": "tsx src/cli/sync.ts",
+    "audit": "tsx src/cli/audit.ts",
     "db:setup": "node scripts/db-setup.mjs",
     "db:generate": "node scripts/db-setup.mjs generate",
     "db:migrate": "node scripts/db-setup.mjs migrate",

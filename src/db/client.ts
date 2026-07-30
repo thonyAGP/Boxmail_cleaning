@@ -30,7 +30,22 @@ try {
   /* ignore */
 }
 
-export const db = new PrismaClient();
+/**
+ * Traçage du SQL — éteint par défaut, activé par `BOXMAIL_SQL_TRACE=1`.
+ *
+ * Sert à `npm run audit`, qui a besoin du SQL RÉELLEMENT émis pour le passer à
+ * `EXPLAIN QUERY PLAN` : c'est la seule façon fiable de repérer un balayage de
+ * table, une analyse statique ne voit rien (le 29/07, la requête coûteuse et
+ * la requête rapide s'écrivaient exactement pareil).
+ *
+ * Conditionnel exprès : sans la variable, Prisma n'émet aucun événement et ne
+ * sérialise donc jamais les requêtes pour rien.
+ */
+export const SQL_TRACE = process.env.BOXMAIL_SQL_TRACE === '1';
+
+export const db = new PrismaClient(
+  SQL_TRACE ? { log: [{ emit: 'event', level: 'query' }] } : undefined,
+);
 
 /**
  * Vérifie que la base est migrée. À appeler avant les opérations d'index ;
