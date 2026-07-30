@@ -743,12 +743,22 @@ async function run(): Promise<void> {
   }
 
   console.log('3/4  Fusion avec les constats déjà connus…');
+  // Les STATUTS font autorité depuis le magasin VERSIONNÉ (`docs/`), jamais
+  // depuis le dossier de sortie. Sinon un passage sur le serveur (`--out logs`)
+  // repartait d'un magasin local vierge et rouvrait des constats déjà marqués
+  // « corrigé » ou « faux positif » — le rapport aurait annoncé du travail déjà
+  // fait. Le dossier de sortie ne reçoit que le rendu.
   let anciens: Finding[] = [];
-  if (existsSync(store())) {
+  const sources = [join(ROOT, 'docs', 'audit-findings.json'), store()];
+  for (const src of [...new Set(sources)]) {
+    if (!existsSync(src)) continue;
     try {
-      anciens = JSON.parse(readFileSync(store(), 'utf8')) as Finding[];
+      const lot = JSON.parse(readFileSync(src, 'utf8')) as Finding[];
+      const par = new Map(anciens.map((f) => [f.key, f]));
+      for (const f of lot) par.set(f.key, f);
+      anciens = [...par.values()];
     } catch (err) {
-      console.log(`     ⚠️ magasin illisible (${(err as Error).message}) — on repart de zéro.`);
+      console.log(`     ⚠️ magasin illisible (${src}) : ${(err as Error).message}`);
     }
   }
   const { all, neufs, disparus } = fusion(
