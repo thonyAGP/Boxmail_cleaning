@@ -339,6 +339,31 @@ interface Sonde {
   run: () => Promise<unknown>;
 }
 
+/** Mots qui suivent une table sans en être l'alias. */
+const PAS_UN_ALIAS = new Set([
+  'ON', 'WHERE', 'GROUP', 'ORDER', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'JOIN',
+  'LIMIT', 'HAVING', 'UNION', 'AS', 'SET', 'VALUES', 'USING', 'CROSS', 'NATURAL',
+]);
+
+/**
+ * Alias → table réelle, lu dans le SQL.
+ *
+ * Indispensable : `EXPLAIN QUERY PLAN` répond « SCAN f », pas « SCAN Folder ».
+ * Sans cette table de correspondance, impossible de savoir si le balayage porte
+ * sur 73 lignes (Folder) ou 34 877 (Message).
+ */
+function aliasMap(sql: string): Map<string, string> {
+  const m = new Map<string, string>();
+  const re = /(?:FROM|JOIN)\s+(?:"?main"?\.)?"?([A-Za-z_]\w*)"?(?:\s+(?:AS\s+)?"?([A-Za-z_]\w*)"?)?/gi;
+  for (const x of sql.matchAll(re)) {
+    const table = x[1];
+    const al = x[2];
+    if (al && !PAS_UN_ALIAS.has(al.toUpperCase())) m.set(al, table);
+    m.set(table, table);
+  }
+  return m;
+}
+
 async function auditDynamique(): Promise<Finding[]> {
   const out: Finding[] = [];
   process.env.BOXMAIL_SQL_TRACE = '1';
@@ -480,27 +505,46 @@ async function auditDynamique(): Promise<Finding[]> {
       } catch {
         continue; // requête non rejouable telle quelle : on n'invente rien
       }
+      // PIÈGE MAJEUR, trouvé en vérifiant l'outil sur les vraies données :
+      // le planificateur désigne les tables par leur ALIAS (« SCAN f ») et
+      // préfixe parfois le schéma (« SCAN main.AttentionState »). La première
+      // version extrayait donc « f » et « main », ne les trouvait pas dans les
+      // tailles, et les écartait EN SILENCE — un « SCAN m » sur les 34 877
+      // lignes de Message serait passé inaperçu. C'est le faux feu vert qu'un
+      // audit ne doit jamais donner.
+      const alias = aliasMap(q.sql);
       for (const p of plan) {
-        const m = /^SCAN (?:TABLE )?([A-Za-z_][\w]*)/.exec(p.detail ?? '');
+        const m = /^SCAN (?:TABLE )?(?:"?main"?\.)?"?([A-Za-z_]\w*)"?(.*)$/.exec(p.detail ?? '');
         if (!m) continue;
-        const table = m[1];
+        const brut = m[1];
+        const table = tailles.has(brut) ? brut : (alias.get(brut) ?? brut);
         const n = tailles.get(table) ?? 0;
         if (n < 1000) continue; // balayer 6 lignes ne coûte rien
-        const cle = `${s.nom}:${table}`;
+        // « USING (COVERING) INDEX » = parcours d'index, pas de table : bien
+        // moins cher, on le signale mais sans crier au feu.
+        const parIndex = /USING\s+(COVERING\s+)?INDEX/i.test(m[2] ?? '');
+        const cle = `${s.nom}:${table}:${parIndex ? 'idx' : 'table'}`;
         if (dejaVu.has(cle)) continue;
         dejaVu.add(cle);
         out.push(
           mk({
-            key: `D:service:${s.nom}:scan-${table}`,
+            key: `D:service:${s.nom}:scan-${table}${parIndex ? '-idx' : ''}`,
             family: 'D',
-            severity: n > 20000 ? 'grave' : 'moyen',
+            severity: parIndex ? 'faible' : n > 20000 ? 'grave' : 'moyen',
             file: 'src/services',
             fn: s.nom,
-            title: `Balayage complet de ${table} (${n.toLocaleString('fr-FR')} lignes)`,
+            title: parIndex
+              ? `Parcours d’index complet sur ${table} (${n.toLocaleString('fr-FR')} lignes)`
+              : `Balayage complet de ${table} (${n.toLocaleString('fr-FR')} lignes)`,
             detail:
-              `Le planificateur SQLite annonce « ${p.detail} » : aucun index ne sert ` +
-              'cette requête. Vérifier les colonnes du WHERE et du ORDER BY — ' +
-              'attention, un index (a, b) ne sert PAS une requête qui ne filtre que sur b.',
+              `Le planificateur SQLite annonce « ${p.detail} »` +
+              (parIndex
+                ? ' : il parcourt tout un index au lieu de cibler des lignes. ' +
+                  'Bien moins coûteux qu’un balayage de table, mais reste linéaire.'
+                : ' : aucun index ne sert cette requête. Vérifier les colonnes du ' +
+                  'WHERE et du ORDER BY — attention, un index (a, b) ne sert PAS une ' +
+                  'requête qui ne filtre que sur b.') +
+              `\n\n\`\`\`sql\n${q.sql.slice(0, 600)}\n\`\`\``,
             detectedBy: 'script',
             confidence: 'confirmé',
             metric: `${n} lignes`,
