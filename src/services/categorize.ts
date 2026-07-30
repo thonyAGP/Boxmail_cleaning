@@ -183,6 +183,12 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
     return { category: 'notification', reason: 'adresse automatique (personne ne relève cette boîte)' };
   }
 
+  // Une boîte de FONCTION ne peut pas être une personne, même si un fil contient
+  // un échange : derrière `compta@` il y a un service, pas un correspondant.
+  if (isFunctionMailbox(s.email)) {
+    return { category: 'company', reason: 'boîte de fonction (service, pas une personne)' };
+  }
+
   // Un humain : vraie conversation, ou adresse de messagerie grand public
   // qui n'est ni un robot ni une liste de diffusion.
   if (s.conversational) return { category: 'person', reason: 'vous avez déjà échangé (conversation)' };
@@ -243,7 +249,13 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
   },
   {
     intent: 'invoice',
-    re: /(factur|invoice|[àa] r[ée]gler|[ée]ch[ée]ance de paiement|avis d'[ée]ch[ée]ance|pr[ée]l[èe]vement|montant d[ûu]|paiement (refus[ée]|rejet[ée]|en attente|requis)|impay[ée]|votre abonnement.*(paiement|renouvel)|mise en demeure)/i,
+    // « appel de fonds » ajouté (relevé sur Location_Brest) : les heuristiques
+    // le classaient RENDEZ-VOUS à cause de la date dans le sujet — donc ni
+    // facture, ni protection, alors que c'est un appel à payer des charges de
+    // copropriété. L'expression n'apparaît que sur de vrais appels.
+    // « paiement … a échoué » ajouté : un prélèvement en échec est un impayé,
+    // contrairement à « prochain paiement », qui n'est qu'une pré-notification.
+    re: /(factur|invoice|[àa] r[ée]gler|[ée]ch[ée]ance de paiement|avis d'[ée]ch[ée]ance|appel de fonds|pr[ée]l[èe]vement|montant d[ûu]|paiement (refus[ée]|rejet[ée]|en attente|requis)|paiement.{0,20}a [ée]chou[ée]|impay[ée]|votre abonnement.*(paiement|renouvel)|mise en demeure)/i,
     label: 'facture ou paiement demandé',
   },
   {
@@ -272,15 +284,74 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
     // un magasin envoie depuis la MÊME adresse no_reply ses pubs et tes
     // tickets — sans ce motif, « Votre ticket 378 » tombait en « info » et se
     // retrouvait coché pour la corbeille avec les soldes.
-    re: /(attestation|contrat|devis|justificatif|bulletin|relev[ée]|document (disponible|[àa] signer)|votre document|signature (requise|[ée]lectronique)|pi[èe]ce jointe|(votre|vos|ton) ticket|ticket de caisse|ticket n[°o]|votre re[çc]u|bon d'achat|bon de commande|garantie|duplicata|certificat)/i,
+    // AVIS DE VERSEMENT ajoutés (relevés sur Au-marais : 23 mails « Un versement
+    // de 1 629,58 € a été envoyé », « Votre virement de 773,75 € est en cours »).
+    // Ce sont des pièces comptables — de l'argent REÇU, pas une facture à payer.
+    // Le montant en euros est exigé pour ne pas attraper les unités de fidélité
+    // (« 500 GuestPoints offerts » n'est pas un virement).
+    re: /(attestation|contrat|devis|justificatif|bulletin|relev[ée]|document (disponible|[àa] signer)|votre document|signature (requise|[ée]lectronique)|pi[èe]ce jointe|(votre|vos|ton) ticket|ticket de caisse|ticket n[°o]|votre re[çc]u|re[çc]u n[°o]|bon d'achat|bon de commande|garantie|duplicata|certificat|(versement|virement|remboursement)[^.]{0,40}\d[\d\s.,]*\s?(€|EUR)|\d[\d\s.,]*\s?(€|EUR)[^.]{0,30}(vers[ée]|envoy[ée]|re[çc]u|pay[ée]))/i,
     label: 'document transmis ou à signer (facture, ticket, attestation…)',
   },
   {
     intent: 'promo',
-    re: /(\bpromo(tion)?s?\b|\bsoldes?\b|r[ée]duction|remise|% (de remise|off)|-\s?\d{1,2}\s?%|vente (flash|priv[ée]e)|black friday|bon plan|offre (sp[ée]ciale|exclusive|limit[ée]e)|derni[èe]re chance|d[ée]stockage|code promo|\bexclusif\b|\bgratuit\b)/i,
+    // ÉLARGI d'après le tour d'analyse du 30/07, qui a montré le plus gros trou
+    // du moteur : sur Location_Brest, 165 mails sur 323 (51 %) étaient de la
+    // publicité classée « info » — la stratégie de rétention « promotions » ne
+    // les voyait donc pas. Les sujets réels n'emploient jamais le mot
+    // « promo » : « ⏳ 72H Flash », « on vide les caisses », « 💸On baisse le
+    // prix », « 17 500 € d'économie ». Motifs ajoutés d'après ces relevés.
+    re: /(\bpromo(tion)?s?\b|\bsoldes?\b|r[ée]duction|remise|% (de remise|off)|-\s?\d{1,2}\s?%|vente (flash|priv[ée]e)|black friday|bons? plans?|offre (sp[ée]ciale|exclusive|limit[ée]e|de remboursement)|derni[èe]re chance|d[ée]stockage|code promo|\bexclusif\b|\bgratuit\b|jours? fous|\d{1,3}\s?h\s?flash|prix cass[ée]s?|(on |nous )?baisse[a-z]*( de| le| les)? prix|prix en baisse|derni[èe]res? heures|[àa] saisir|on vide les caisses|\bcashback\b|\d[\d\s]*(€|euros?)\s*(offerts?|de r[ée]duction|d'[ée]conomies?|gagn[ée]s?|vous attendent|[àa] r[ée]cup[ée]rer|de cagnotte)|[ée]conomies? (de|sur)|\d+ mois offerts?|\bparrainage\b|\bcadeau\b)/i,
     label: 'offre commerciale',
   },
 ];
+
+/**
+ * Marqueurs d'OBLIGATION qui interdisent le classement « promotion ».
+ *
+ * Trouvé sur Brimmo : `bonjour@comptastar.fr` sert à la fois au parrainage ET à
+ * « [ACTION REQUISE] – Mise en conformité de votre société », un mail dont
+ * l'enjeu est la dissolution de plein droit. Une règle « adresse de diffusion +
+ * marqueur commercial ⇒ promo » aurait balayé le second avec le premier.
+ */
+const OBLIGATION_RE =
+  /(\[?action requise\]?|mise en (demeure|conformit[ée])|dissolution|p[ée]nalit[ée]s|obligation l[ée]gale|sous peine|d[ée]lai l[ée]gal|greffe|tribunal|huissier|recouvrement|saisie|avis tiers d[ée]tenteur|appel de fonds)/i;
+
+/**
+ * Boîtes de FONCTION : un service, pas une personne.
+ *
+ * Relevé sur Brimmo : ~20 expéditeurs comme `compta@secoba-bet.fr`,
+ * `agence-cs.brest@partedis.com`, `tcs@urmet.fr`, `recouvrement@…` étaient
+ * classés « personne » — la catégorie la PLUS protégée — parce qu'un fil
+ * contenait un échange. Ils échappaient donc à la fois au nettoyage ET à
+ * l'analyse. « entreprise » est le bon classement : il n'ouvre aucune stratégie
+ * de suppression (aucun preset ne cible `company`), il lève seulement la
+ * sur-protection.
+ *
+ * PÉRIMÈTRE VOLONTAIREMENT ÉTROIT : uniquement des noms de FONCTION sans
+ * ambiguïté. On n'y met ni `contact@`, ni `info@`, ni `service@` (adresses
+ * ordinaires des artisans avec qui on correspond vraiment), et on ne cherche
+ * PAS à reconnaître les boîtes nommées d'après une ville (`brest@resilians.fr`)
+ * — rien ne les distingue mécaniquement d'un surnom.
+ */
+const FUNCTION_MAILBOX_RE = new RegExp(
+  '^(' +
+    // Mots COURTS ou ambigus : exigent une frontière derrière (séparateur ou fin
+    // de la partie locale), sinon « sav » attraperait « savoie » et « rh »
+    // « rhodes ». `agence-cs.brest@partedis.com` passe par ici.
+    '(compta|agence|adv|sav|rh|tcs|devis|gestion|syndic|accueil|direction|planning|booking|commandes?)([-_.]|$)' +
+    '|' +
+    // Mots LONGS sans ambiguïté : le préfixe suffit.
+    '(comptabilit[ée]|facturation|factures?|recouvrement|juridique|secr[ée]tariat|' +
+    'r[ée]clamations?|litiges?|recrutement|logistique|exp[ée]dition|copropri[ée]t[ée]|' +
+    'assistance|helpdesk|hotline|service[-_.]?client|ressources[-_.]?humaines|r[ée]servations?)' +
+    ')',
+  'i',
+);
+
+/** true si la partie locale désigne une fonction ou un service, pas un humain. */
+function isFunctionMailbox(email: string): boolean {
+  return FUNCTION_MAILBOX_RE.test(email.split('@')[0] ?? '');
+}
 
 export interface IntentSignals {
   subject: string | null | undefined;
@@ -307,8 +378,15 @@ export function detectIntent(s: IntentSignals): IntentResult {
     !s.hasListUnsubscribe &&
     !(s.fromEmail && AUTO_SENDER_RE.test(s.fromEmail));
 
+  // Un mail porteur d'une OBLIGATION n'est jamais une promotion, même quand il
+  // arrive par la même adresse de diffusion que le démarchage (relevé sur
+  // Brimmo : `bonjour@comptastar.fr` envoie le parrainage ET
+  // « [ACTION REQUISE] – Mise en conformité », dont l'enjeu est la dissolution).
+  const obligation = OBLIGATION_RE.exec(subject) ?? OBLIGATION_RE.exec((s.snippet ?? '').slice(0, 400));
+
   for (const rule of INTENT_RULES) {
     if (isQuestion && !STRONG_INTENTS.includes(rule.intent)) break;
+    if (rule.intent === 'promo' && obligation) continue;
     const m = rule.re.exec(subject);
     if (m) return { intent: rule.intent, reason: `${rule.label} (« ${m[0].trim()} »)` };
   }
@@ -329,6 +407,24 @@ export function detectIntent(s: IntentSignals): IntentResult {
         return {
           intent: rule.intent,
           reason: `${rule.label} (« ${m[0].trim()} » — dans le texte du mail)`,
+        };
+      }
+    }
+
+    // EXCEPTION pour « promotion », seul motif faible admis dans l'extrait —
+    // et seulement sous DEUX conditions, qui sont tout l'intérêt de la règle :
+    //  1. le mail porte une enveloppe marketing (lien de désinscription) : c'est
+    //     ce qui distingue une pub d'un contrat qui mentionnerait « -20 % » ;
+    //  2. aucun marqueur d'obligation.
+    // Sans cette exception, 51 % des mails d'une boîte restaient en « info » et
+    // aucune stratégie de nettoyage ne pouvait les atteindre.
+    if (s.hasListUnsubscribe && !obligation) {
+      const promo = INTENT_RULES.find((r) => r.intent === 'promo');
+      const m = promo?.re.exec(snippet);
+      if (m) {
+        return {
+          intent: 'promo',
+          reason: `offre commerciale (« ${m[0].trim()} » — dans le texte, mail de diffusion)`,
         };
       }
     }

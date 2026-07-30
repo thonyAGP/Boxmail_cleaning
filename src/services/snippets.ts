@@ -40,6 +40,50 @@ const RETRY_AFTER_MS = 60 * 60_000;
  * citation ne laisserait rien. Dans ce cas on garde le texte d'origine : un
  * extrait avec citation vaut mieux que pas d'extrait.
  */
+/**
+ * Certains mails n'ont AUCUNE partie `text/plain` : l'extrait capturé commence
+ * alors par `<!doctype html>` et n'est que du balisage. Deux conséquences
+ * mesurées lors du tour d'analyse du 30/07 : les heuristiques lisaient ce
+ * balisage COMME DU TEXTE et pouvaient s'accrocher à n'importe quel mot trouvé
+ * dedans, et l'IA jugeait ces mails inexploitables — donc ~110 mails sur la
+ * seule boîte personnelle restaient protégés à vie faute de contenu lisible.
+ *
+ * On dégage donc le texte du balisage. Volontairement minimal et sans
+ * dépendance : on retire ce qui ne s'affiche jamais (style, script, head), on
+ * transforme les fins de bloc en sauts de ligne, on enlève les balises, puis on
+ * décode les entités les plus courantes.
+ */
+function htmlEnTexte(raw: string): string {
+  // Le courrier français est truffé d'entités accentuées : sans elles, « n°2281 »
+  // devient « n 2281 » et « 840 € » perd son symbole. Les entités NUMÉRIQUES
+  // sont décodées génériquement, ce qui couvre tout le reste.
+  const entites: Record<string, string> = {
+    lt: '<', gt: '>', quot: '"', apos: "'", amp: '&', nbsp: ' ',
+    deg: '°', euro: '€', laquo: '«', raquo: '»', hellip: '…',
+    rsquo: '’', lsquo: '‘', ndash: '–', mdash: '—', times: '×',
+    copy: '©', reg: '®', trade: '™', eacute: 'é', egrave: 'è', ecirc: 'ê',
+    agrave: 'à', acirc: 'â', ugrave: 'ù', ucirc: 'û', ccedil: 'ç',
+    icirc: 'î', iuml: 'ï', ocirc: 'ô', euml: 'ë', uuml: 'ü', oelig: 'œ',
+  };
+  return raw
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/?(p|div|br|tr|td|th|li|h[1-6]|table)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);?/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&([a-z]+);?/gi, (_m, e: string) => entites[e.toLowerCase()] ?? ' ');
+}
+
+/** true si la chaîne est du balisage plutôt que du texte lisible. */
+function ressembleAduHtml(s: string): boolean {
+  const t = s.slice(0, 2000);
+  if (/^\s*<(!doctype|html|head|table|meta|\?xml)/i.test(t)) return true;
+  // Sinon : beaucoup de balises rapportées à la longueur du texte.
+  const balises = (t.match(/<[a-z!/][^>]*>/gi) ?? []).length;
+  return balises >= 5 && balises * 40 > t.length;
+}
+
 export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string {
   const flatten = (s: string): string =>
     s
@@ -50,8 +94,9 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
       .join(' ')
       .trim();
 
-  let text = flatten(stripQuotedText(raw));
-  if (!text) text = flatten(raw);
+  const source = ressembleAduHtml(raw) ? htmlEnTexte(raw) : raw;
+  let text = flatten(stripQuotedText(source));
+  if (!text) text = flatten(source);
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars).trimEnd()}…`;
 }
