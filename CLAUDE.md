@@ -102,6 +102,75 @@ les tokens ne transitent JAMAIS par Claude ni par le navigateur.
 
 ## État (session en cours)
 
+**`npm run audit` LIVRÉ + 20 DÉFAUTS CORRIGÉS (30/07).** Déclencheur : « ce que
+tu as découvert là doit se produire partout ailleurs » — chaque défaut trouvé
+jusque-là avait demandé une capture d'écran de l'utilisateur.
+
+**L'OUTIL** (`src/cli/audit.ts`, 6 familles A→G). Ce qui a de la valeur est la
+partie DYNAMIQUE : on exécute les vrais services sur la vraie base, on capture
+le SQL réellement émis (événements Prisma, activés par `BOXMAIL_SQL_TRACE=1`
+pour ne rien coûter en prod) et on le passe à `EXPLAIN QUERY PLAN`. Les règles
+statiques sont des regex sur 7 000 lignes de JS : marquées « à vérifier »,
+JAMAIS « confirmé ». Persistance : `docs/audit-findings.json`, clé STABLE
+`famille:fichier:fonction:règle` (jamais le n° de ligne) ; le script rafraîchit
+tout ce qui est CALCULÉ (gravité, titre, mesure) et ne touche jamais aux trois
+champs DÉCIDÉS (`status`, `note`, `firstSeen`). `docs/AUDIT.md` est régénéré.
+⚠️ Sur le serveur : **`npm run audit -- --out logs`** — écrire dans `docs/`
+salirait l'arbre Git et ferait échouer le `git merge --ff-only` de la mise à
+jour. Les statuts sont toujours lus dans `docs/` (versionné).
+
+**QUATRE DÉFAUTS DE L'OUTIL, tous trouvés en l'exécutant** — à relire avant
+d'ajouter une règle : (1) la regex `class="…"` avalait les gabarits
+`${x ? 'a' : 'b'}` → 103 faux positifs ; (2) beaucoup de classes n'ont
+VOLONTAIREMENT aucun style, ce sont des crochets `querySelector` → 44 faux
+positifs ; ne reste signalée que la classe ni stylée NI interrogée (c'est ainsi
+qu'on trouve `.tablewrap`) ; (3) **`EXPLAIN QUERY PLAN` désigne les tables par
+leur ALIAS** (« SCAN f », « SCAN main.AttentionState ») : la 1re version
+extrayait « f » et « main », ne les trouvait pas, et les écartait EN SILENCE —
+un « SCAN m » sur 34 877 lignes serait passé inaperçu, le faux feu vert qu'un
+audit ne doit jamais donner ; (4) un passage `--static` faisait passer tous les
+constats mesurés pour « disparus ». Et `nowrap` SEUL ne tronque pas : il faut
+`ellipsis`, ou `nowrap` AVEC `overflow:hidden`.
+
+**LE DÉFAUT CENTRAL CORRIGÉ : `openCleanupModal`**, jumeau exact du bug du
+29/07 mais sur l'écran qui SUPPRIME. Quatre défauts imbriqués : le sujet était
+dans un `<label>` englobant (cliquer COCHAIT la case), son `title` portait les
+signaux et non le sujet (donc le sujet tronqué était irrécupérable), modale de
+560 px, pas de `under-reader`. Cause racine côté API : `CleanupMessage` n'avait
+ni `account` ni `folder` alors que la route connaissait le dossier. Corrigé
+aux deux niveaux ; 14 vérifications navigateur dont le contre-cas « cliquer le
+sujet ne bouge pas la case » et « lecteur z 96 au-dessus de l'overlay z 94 ».
+
+**UNE CORRECTION DE MON PROPRE AUDIT** : j'avais classé « critique » le
+`sampleSubjects: string[]` de `previewSenderCleanup` en le prenant pour
+l'échantillon affiché avant suppression. Il n'était affiché NULLE PART — code
+mort, supprimé. Vérifier qu'un constat atteint l'écran avant de le juger grave.
+
+**AUTRES CORRECTIFS** : `openNoiseModal` (date en dernière colonne + expéditeur
+`nowrap` sans plafond = le mécanisme d'hier), `openRulePreview` + `rules.ts`
+(coordonnées jointes, sujets ouvrables), `renderToday` (date de réception et
+ouverture au clic posées dans `todayRow`, donc les 4 listes d'un coup ; pour une
+échéance c'est `msgDate`, la date du MAIL), `.tablewrap` (classe morte → règle
+ajoutée), index `Deadline(messageId,status)` / `AnalysisFeedback(messageId)` /
+`AttentionState(messageId)`, **`PRAGMA optimize`** au démarrage (l'`ANALYZE`
+d'une migration ne joue qu'UNE fois — il fournissait la moitié du gain
+40 s → 178 ms, et les statistiques auraient péri sans signal).
+
+**OCTETS NULS dans `retention.ts` et `categorize.ts`** : ils étaient
+INTENTIONNELS (séparateur de clé composite `` `${a}\0${b}` ``, bon choix) mais
+ripgrep classait les fichiers « binaires » et les SAUTAIT en silence. Remplacés
+par l'échappement ` ` — chaîne identique à l'exécution, source lisible.
+
+**BILAN : 70 constats, 22 clos (20 corrigés + 2 faux positifs assumés),
+48 ouverts — aucun critique, aucun grave.** Restent (dans `docs/AUDIT.md`,
+`status: todo`) : les culs-de-sac analytiques (`report`/`learning`/
+`unsubscribe` n'exposent aucun mail cliquable), `tasks.ts` sans `msgDate`,
+`learning.ts` qui conserve l'auto-jointure par ligne que `Sender.engagedAt` a
+éliminée ailleurs, les N+1 en écriture (`rebuildSenders` 3 677 upserts,
+`linkThreads`, `unsubscribe` ×1000), `ORDER BY RANDOM()` ×10 dans `quality.ts`,
+et 7 balayages de table mesurés — tous sous 700 ms aujourd'hui, donc classés
+faible avec leur chrono : **un audit qui crie au loup ne sert à rien.**
+
 **C3c LIVRÉ + LA PAGE DE NETTOYAGE PASSE DE 40 s À 0,2 s (29/07).** Trois
 choses, toutes déclenchées par une mesure ou une capture de l'utilisateur.
 1. **Stratégie « verdict IA »** (preset `ai_archive90`, désactivé comme les
