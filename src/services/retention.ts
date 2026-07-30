@@ -580,7 +580,7 @@ export async function applyPolicy(
   // Groupe par boîte + dossier.
   const groups = new Map<string, { account: string; folder: string; rows: Row[] }>();
   for (const r of rows) {
-    const key = `${r.account} ${r.folder}`;
+    const key = `${r.account}\u0000${r.folder}`;
     const g = groups.get(key) ?? { account: r.account, folder: r.folder, rows: [] };
     g.rows.push(r);
     groups.set(key, g);

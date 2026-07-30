@@ -173,6 +173,9 @@ model AttentionState {
   account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
 
   @@unique([accountSlug, threadId, kind])
+  // Recherché par `messageId` seul quand un mail change de dossier
+  // (`relinkMessageReferences`) : l'unique ci-dessus commence par `accountSlug`.
+  @@index([messageId])
 }
 
 // Échéance détectée dans un mail (Phase 4, brique 4 — L2). Cycle de vie :
@@ -338,6 +341,10 @@ model AnalysisFeedback {
   updatedAt   DateTime @updatedAt
 
   @@unique([engine, messageId])
+  // Recherché par `messageId` seul (échantillon de contrôle qualité,
+  // réconciliation des mails déplacés) : l'unique ci-dessus commence par
+  // `engine` et ne peut donc pas servir.
+  @@index([messageId])
   @@index([engine, verdict])
 }
 

@@ -89,6 +89,17 @@ export async function applySqlitePragmas(): Promise<void> {
   await applyPragma('PRAGMA journal_mode = WAL');
   await applyPragma('PRAGMA busy_timeout = 5000');
   await applyPragma('PRAGMA synchronous = NORMAL');
+  // `PRAGMA optimize` rafraîchit les statistiques du planificateur, et LUI SEUL
+  // décide si une table a assez changé pour valoir un ANALYZE — c'est donc
+  // quasi gratuit au démarrage.
+  //
+  // POURQUOI C'EST NÉCESSAIRE : SQLite ne collecte jamais ces statistiques de
+  // lui-même. Sans elles il ignore quels index valent la peine et retombe sur
+  // des balayages. Le 29/07, l'ANALYZE d'une migration a fourni la MOITIÉ du
+  // gain 40 s → 178 ms sur la page de nettoyage. Mais un ANALYZE de migration
+  // ne joue qu'une fois : après quelques dizaines de milliers de mails de plus,
+  // les statistiques seraient périmées et rien ne le signalerait.
+  await applyPragma('PRAGMA optimize');
   // On RELIT les valeurs plutôt que de supposer qu'elles ont pris : c'est le
   // seul moyen de voir dans les logs qu'un réglage a été silencieusement perdu.
   try {

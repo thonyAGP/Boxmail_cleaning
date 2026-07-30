@@ -680,7 +680,7 @@ export async function categorizeAccount(
     for (const msg of batch) {
       const r = detectIntent(msg);
       if (msg.intent === r.intent && msg.intentReason === r.reason) continue;
-      const key = `${r.intent} ${r.reason}`;
+      const key = `${r.intent}\u0000${r.reason}`;
       const g = groups.get(key) ?? { intent: r.intent, reason: r.reason, ids: [] };
       g.ids.push(msg.id);
       groups.set(key, g);

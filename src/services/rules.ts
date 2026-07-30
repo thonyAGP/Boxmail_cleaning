@@ -188,7 +188,21 @@ export async function previewRule(
 ): Promise<{
   rule: MailRuleView;
   total: number;
-  items: { uid: number; subject: string; fromEmail: string; date: string | null }[];
+  /**
+   * `account` + `folder` + `uid` : les trois coordonnées qu'exige
+   * `openReaderFor`. Sans elles, l'aperçu d'une règle affichait du texte inerte
+   * — on validait le déplacement de N mails sans pouvoir en vérifier un seul,
+   * alors que la modale voisine (aperçu de rétention) est ouvrable. Même écran,
+   * deux traitements, parce que l'API ne fournissait pas la même chose.
+   */
+  items: {
+    account: string;
+    folder: string;
+    uid: number;
+    subject: string;
+    fromEmail: string;
+    date: string | null;
+  }[];
 }> {
   await ensureDbReady();
   const rule = await db.mailRule.findFirst({ where: { id: ruleId, accountSlug: account } });
@@ -200,13 +214,23 @@ export async function previewRule(
       where,
       orderBy: { date: 'desc' },
       take: 500,
-      select: { uid: true, subject: true, fromEmail: true, date: true },
+      // `folder.path` est joint pour rendre chaque ligne ouvrable : `ruleWhere`
+      // cible l'INBOX, mais le chemin exact n'était jamais transmis.
+      select: {
+        uid: true,
+        subject: true,
+        fromEmail: true,
+        date: true,
+        folder: { select: { path: true } },
+      },
     }),
   ]);
   return {
     rule: await toView(rule),
     total,
     items: rows.map((m) => ({
+      account,
+      folder: m.folder?.path ?? 'INBOX',
       uid: m.uid,
       subject: m.subject ?? '(sans sujet)',
       fromEmail: m.fromEmail ?? '',

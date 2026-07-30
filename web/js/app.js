@@ -879,14 +879,18 @@ async function openNoiseModal(bucket) {
     ${data.truncated ? `<br><span class="muted">Par prudence, on traite <strong>${fmtNum(data.items.length)}</strong> mails à la fois (les plus anciens d'abord) — relance l'opération pour continuer.</span>` : ''}
     <span class="muted" style="font-size:12px">Clique un sujet pour lire le mail avant de décider.</span></p>
     <div style="max-height:55vh; overflow:auto; border:1px solid var(--border); border-radius:8px">
-      <table class="table-compact"><thead><tr><th>Boîte</th><th>Sujet</th><th>Expéditeur</th><th class="num">Date</th></tr></thead>
+      <table class="table-compact"><thead><tr>
+        <th style="width:96px">Boîte</th><th style="width:104px">Reçu le</th>
+        <th>Sujet</th><th style="width:210px">Expéditeur</th>
+      </tr></thead>
       <tbody>${data.items.map((m, i) => `<tr>
         <td style="white-space:nowrap">${accountChip(m.account)}</td>
+        <td class="muted" style="font-size:12px; white-space:nowrap">${fmtDate(m.date)}</td>
         <td style="max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
-          <span class="openable" data-noise-open="${i}" title="Lire le mail">${esc(m.subject)}</span>
-          ${m.snippet ? `<span class="mail-snip"> — ${esc(m.snippet)}</span>` : ''}</td>
-        <td class="muted" style="font-size:12px; white-space:nowrap">${esc(m.fromName || m.fromEmail)}</td>
-        <td class="num" style="font-size:12px; white-space:nowrap">${fmtDate(m.date)}</td>
+          <span class="openable" data-noise-open="${i}" title="${esc(m.subject)}">${esc(m.subject)}</span>
+          ${m.snippet ? `<span class="mail-snip" title="${esc(m.snippet)}"> — ${esc(m.snippet)}</span>` : ''}</td>
+        <td class="muted" style="font-size:12px; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+          title="${esc(m.fromEmail ?? '')}">${esc(m.fromName || m.fromEmail)}</td>
       </tr>`).join('')}</tbody></table>
     </div>`;
   // Lecture avant décision : le panneau s'ouvre au-dessus de la modale ;
@@ -3431,8 +3435,10 @@ function renderRulesBody() {
 async function openRulePreview(slug, id) {
   closeModal();
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal" style="width:640px">
+  // under-reader : on doit pouvoir ouvrir un mail sans fermer l'aperçu, avant
+  // de valider un déplacement de masse.
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
     <div class="modal-head"><h2>👁️ Aperçu de la règle</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
@@ -3448,11 +3454,22 @@ async function openRulePreview(slug, id) {
         <span class="muted">${esc(p.rule.reason)}</span></div>
       ${p.total === 0
         ? '<div class="empty">Rien à ranger en ce moment — la règle attendra les prochains mails.</div>'
-        : `<div class="muted" style="font-size:12.5px; margin-bottom:6px"><strong>${fmtNum(p.total)}</strong> mail(s) seraient déplacés${p.total > p.items.length ? ` (les ${fmtNum(p.items.length)} plus récents affichés)` : ''} :</div>
-      <div style="max-height:320px; overflow-y:auto">
-        ${p.items.map((m) => `<div class="op-line"><span class="op-time">${fmtDate(m.date)}</span>
-          <span style="flex:1">${esc(m.subject)}</span></div>`).join('')}
+        : `<div class="muted" style="font-size:12.5px; margin-bottom:6px"><strong>${fmtNum(p.total)}</strong> mail(s) seraient déplacés${p.total > p.items.length ? ` (les ${fmtNum(p.items.length)} plus récents affichés)` : ''} —
+          <span class="muted">clique un sujet pour lire le mail avant de valider.</span></div>
+      <div style="max-height:52vh; overflow-y:auto">
+        ${p.items.map((m, i) => `<div class="op-line"><span class="op-time">${fmtDate(m.date)}</span>
+          <span class="openable" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+            data-rule-open="${i}" title="${esc(m.subject)}">${esc(m.subject)}</span>
+          <span class="muted" style="font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+            title="${esc(m.fromEmail)}">${esc(m.fromEmail)}</span></div>`).join('')}
       </div>`}`;
+    // Écouteur délégué : le corps de la modale est réécrit d'un bloc ci-dessus.
+    $('#modal-body').addEventListener('click', (e) => {
+      const el = e.target.closest('[data-rule-open]');
+      if (!el) return;
+      const m = p.items[Number(el.dataset.ruleOpen)];
+      if (m) openReaderFor(m);
+    });
     $('#modal-foot').innerHTML = `
       <button class="btn" id="rule-preview-close">Fermer</button>
       ${p.total > 0 ? `<button class="btn btn-primary" id="rule-preview-apply">▶️ Déplacer ${fmtNum(p.total)} mail(s) vers 📂 ${esc(p.rule.targetFolder)}</button>` : ''}`;
