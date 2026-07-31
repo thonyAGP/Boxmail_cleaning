@@ -585,16 +585,26 @@ class ImapService {
   /**
    * Quota de stockage de la boîte (RFC 2087 — supporté par Outlook.com).
    * Retourne null si le serveur ne l'expose pas.
+   *
+   * ⚠️ Champ `usage` vs `used` : le .d.ts d'imapflow declare `storage.used`,
+   * mais l'implementation JS (1.4.6, lib/commands/quota.js) ecrit
+   * `storage.usage`. Lire `used` seul — masque par le cast — donnait 0 octet
+   * utilise avec une limite correcte : la jauge aurait affiche 0 % sur une
+   * boite pleine. On lit les DEUX pour survivre a une future correction de
+   * la lib dans un sens ou l'autre.
    */
   async fetchQuota(
     rec: AccountRecord,
   ): Promise<{ usedBytes: number; limitBytes: number } | null> {
     const client = await this.getClient(rec);
     const quota = (await client.getQuota()) as
-      | { storage?: { used?: number; limit?: number } }
+      | { storage?: { usage?: number; used?: number; limit?: number } }
       | false;
     if (!quota || !quota.storage?.limit) return null;
-    return { usedBytes: quota.storage.used ?? 0, limitBytes: quota.storage.limit };
+    return {
+      usedBytes: quota.storage.usage ?? quota.storage.used ?? 0,
+      limitBytes: quota.storage.limit,
+    };
   }
 
   // --- Fil de discussion ----------------------------------------------------

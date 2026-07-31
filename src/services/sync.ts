@@ -519,8 +519,19 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   let quota: { usedBytes: number; limitBytes: number } | null = null;
   try {
     quota = await imapService.fetchQuota(rec);
-  } catch {
-    /* QUOTA indisponible : on garde les dernières valeurs connues */
+    if (!quota) {
+      // Sans trace, un quota jamais renseigné est indiagnosticable : la
+      // colonne « Espace utilisé » disait « inconnu » sans qu'aucun log ne
+      // dise pourquoi (capacité QUOTA absente ? commande en échec ?).
+      logger.warn('quota non expose par le serveur (capacite QUOTA absente ?)', {
+        account: rec.account,
+      });
+    }
+  } catch (err) {
+    logger.warn('lecture du quota en échec (valeurs précédentes conservées)', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
   }
 
   await db.account.update({
