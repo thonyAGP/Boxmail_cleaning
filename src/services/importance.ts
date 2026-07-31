@@ -3,6 +3,7 @@ import {
   AUTO_SENDER_RE,
   IMPORTANT_SENDER_RE,
   URGENT_SUBJECT_RE,
+  autoNoticeMuted,
   chunk,
 } from './attention.js';
 
@@ -146,7 +147,13 @@ export function scoreMessage(
   if (amountMatch) {
     add(10, `montant dans le sujet (« ${amountMatch[0].trim()} »)`);
   }
-  if (ctx.awaitingReply) {
+  // Règle utilisateur (31/07/2026) : un avis « relevé/document à disposition »
+  // n'attend JAMAIS de traitement, et un avis « message dans ton espace » est
+  // périmé après 60 jours. Dans les deux cas : pas de bonus d'attente ni de
+  // relance (la banque « relance » chaque mois toute seule), et un malus type
+  // notification pour le sortir de la liste des importants.
+  const noticeMuted = autoNoticeMuted(m.subject, m.date, ctx.now);
+  if (ctx.awaitingReply && !noticeMuted) {
     add(10, 'attend une réponse (dernier message du fil, rien envoyé depuis)');
     // B3 : plus un mail attend, plus il compte — « jours sans traitement ».
     const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
@@ -156,8 +163,11 @@ export function scoreMessage(
   if (ctx.deadlineLinked) {
     add(10, 'une échéance est liée à ce mail');
   }
-  if (ctx.senderReminded) {
+  if (ctx.senderReminded && !noticeMuted) {
     add(10, "l'expéditeur a relancé (plusieurs mails sans réponse de ta part)");
+  }
+  if (noticeMuted) {
+    add(-40, noticeMuted);
   }
   if (m.hasListUnsubscribe || ctx.senderKind === 'newsletter' || ctx.senderKind === 'notification') {
     add(-40, 'newsletter ou notification automatique (rarement important)');
@@ -243,6 +253,12 @@ function buildItem(
     },
     ctx,
   );
+  // Un avis auto muté (règle utilisateur) n'est jamais « non traité » :
+  // il n'y a rien à traiter — il ne doit pas nourrir la pile des oublis.
+  const treatState =
+    treat.treatState === 'untreated' && autoNoticeMuted(m.subject, m.date, ctx.now)
+      ? 'treated'
+      : treat.treatState;
   return {
     account,
     threadId: m.threadId,
@@ -258,7 +274,7 @@ function buildItem(
     score,
     level,
     reasons,
-    treatState: treat.treatState,
+    treatState,
     daysSinceReceived: treat.daysSinceReceived,
   };
 }

@@ -100,6 +100,51 @@ export const IMPORTANT_SENDER_RE =
   /(banque|bank|cr[ée]dit|boursorama|fortuneo|\bbnp\b|societe ?generale|banquepostale|impot|finances|dgfip|tresor|urssaf|ameli|cpam|\bmsa\b|\bcaf\b|assurance|mutuelle|notaire|avocat|huissier|comptab|prefecture|mairie|gouv\.fr|pole-?emploi|francetravail|syndic|foncia)/i;
 
 // ---------------------------------------------------------------------------
+// Avis automatiques (règle utilisateur du 31/07/2026) — deux familles à ne
+// PAS confondre :
+//  · « relevé / documents à disposition » : la banque annonce la génération
+//    d'un relevé mensuel. Il n'y a JAMAIS rien à traiter — ni réponse à
+//    attendre, ni « non traité » à afficher, quel que soit l'âge du mail.
+//  · « un message dans votre espace » : là il y a bien quelque chose à lire,
+//    mais le message ne reste consultable que ~60 jours côté banque — passé
+//    ce délai, l'avis est périmé et ne doit plus compter nulle part.
+// Les avis d'espace de MOINS de 60 jours gardent le comportement normal.
+// ---------------------------------------------------------------------------
+
+/** Mise à disposition automatique d'un relevé/document (génération mensuelle). */
+export const DOCUMENT_NOTICE_RE =
+  /(relev[ée]s?[^\n]{0,40}\b(est |sont )?disponibles?\b|(relev[ée]s?|documents?)[^\n]{0,60}[àa] disposition\b|mise [àa] disposition[^\n]{0,40}(relev[ée]s?|documents?))/i;
+
+/** Avis « un (nouveau) message t'attend dans ton espace / ta messagerie ». */
+export const ESPACE_MESSAGE_RE =
+  /((nouveaux?\s+)?messages?[^\n]{0,30}(dans|sur)\s+(votre|ton)\s+(espace|messagerie)|vous avez\s+(re[çc]u\s+)?(un|\d+)\s+(nouveaux?\s+)?messages?|messages? vous attend)/i;
+
+/** Durée de vie d'un avis « message dans ton espace » avant péremption. */
+export const ESPACE_MESSAGE_TTL_DAYS = 60;
+
+/**
+ * Si ce mail est un avis automatique qui ne réclame (plus) aucun traitement,
+ * renvoie la raison en français ; sinon null. Sujet seul (index-only).
+ */
+export function autoNoticeMuted(
+  subject: string | null | undefined,
+  date: Date | null,
+  now: number,
+): string | null {
+  const s = (subject ?? '').replace(/’/g, "'");
+  if (DOCUMENT_NOTICE_RE.test(s)) {
+    return 'avis automatique de mise à disposition d’un relevé/document — rien à traiter (ta règle)';
+  }
+  if (ESPACE_MESSAGE_RE.test(s)) {
+    const ageDays = date ? (now - date.getTime()) / 86_400_000 : 0;
+    if (ageDays > ESPACE_MESSAGE_TTL_DAYS) {
+      return `avis « message dans ton espace » périmé (plus de ${ESPACE_MESSAGE_TTL_DAYS} jours) — plus rien à consulter (ta règle)`;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Réponse attendue v2 (B3) : TYPE DE DEMANDE. Beaucoup de mails réclament une
 // réponse SANS poser de question (« merci de me transmettre », « dans
 // l'attente de votre retour ») — motifs français explicites, appliqués au
@@ -253,6 +298,9 @@ export async function getUnansweredEmails(
   for (const m of raw) {
     if (m.threadId === null || m.date === null || !m.fromEmail) continue;
     if (AUTO_SENDER_RE.test(m.fromEmail)) continue;
+    // Règle utilisateur : les avis « relevé à disposition » et les avis
+    // d'espace périmés (> 60 j) n'attendent aucune réponse — jamais listés.
+    if (autoNoticeMuted(m.subject, m.date, now)) continue;
     if (!byThread.has(m.threadId)) byThread.set(m.threadId, m);
   }
   const threadIds = [...byThread.keys()];
