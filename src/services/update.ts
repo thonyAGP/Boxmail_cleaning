@@ -147,7 +147,10 @@ async function applyUpdateInProcess(
       // processus : `prisma generate` échouerait (EPERM) tant que le serveur
       // tourne. On délègue install + db:setup + build à MailAssistant.bat,
       // qui les exécute après l'arrêt du serveur, juste avant de le relancer.
-      progress('Code récupéré — installation et compilation au redémarrage (MailAssistant.bat)…');
+      progress(
+        'Code récupéré — le superviseur ne refera au redémarrage que le nécessaire ' +
+          '(dépendances/compilation seulement si elles ont changé)…',
+      );
     } else {
       // `--include=dev` OBLIGATOIRE : pm2 lance l'app avec NODE_ENV=production,
       // npm écarte alors les devDependencies (typescript, @types/node) et le
