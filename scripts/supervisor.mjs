@@ -120,7 +120,7 @@ for (;;) {
     console.log('[Mail Assistant] Code serveur inchangé — compilation sautée.');
   }
 
-  console.log('\n[Mail Assistant] Démarrage : http://localhost:8787/admin');
+  console.log(`\n[Mail Assistant] Démarrage : http://localhost:${process.env.PORT || 8787}/admin`);
   console.log('[Mail Assistant] (Laisser cette fenêtre ouverte.)\n');
   const child = spawn('node', ['dist/index.js'], {
     stdio: 'inherit',
