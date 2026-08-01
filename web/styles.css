@@ -445,8 +445,9 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .reader-head h2 { font-size: 16px; line-height: 1.35; word-break: break-word; }
 .reader-meta { padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .reader-meta div { margin: 2px 0; word-break: break-word; }
+/* Le bloc d'analyse vit désormais SOUS le contenu du mail (le contenu d'abord). */
 .reader-analysis {
-  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  padding: 10px 20px; border-top: 1px solid var(--border);
   background: #f8faff; font-size: 12.5px;
 }
 .reader-analysis .ra-title { font-weight: 600; margin-bottom: 6px; }

@@ -6574,10 +6574,10 @@ async function openReader(item, row, opts = {}) {
         ${item.isSeen ? '' : ' · <span class="badge orange">non lu</span>'}</div>
       <div class="muted" id="reader-to"></div>
     </div>
-    <div class="reader-analysis hidden" id="reader-analysis"></div>
     <div class="reader-body" id="reader-body"><div class="empty"><span class="spinner"></span>
       Téléchargement du mail depuis la boîte…</div></div>
     <div class="reader-attachments hidden" id="reader-attachments"></div>
+    <div class="reader-analysis hidden" id="reader-analysis"></div>
     <div class="reader-actions" id="reader-actions">
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
@@ -6677,7 +6677,7 @@ async function openReader(item, row, opts = {}) {
       <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
       injoignable ou mail déplacé). Les infos ci-dessus viennent des mails synchronisés.
       Si le mail existe toujours dans Outlook, une <a href="#/account/${esc(item.account)}">synchronisation
-      de la boîte</a> remettra l'index d'aplomb.</div>`;
+      de la boîte</a> remettra tout d'aplomb.</div>`;
     loadAnalysis(''); // l'analyse marche quand même (index + sujet)
   });
 
@@ -6950,16 +6950,39 @@ function renderReaderAnalysis(a, item) {
       </div>` : ''}`
     : '';
 
+  // Résumé en une ligne (verdict en mots + raison principale) ; le score
+  // numérique et les signaux détaillés restent derrière « Voir le détail ».
+  const levelWord = a.importance
+    ? a.importance.level === 'high' ? 'Prioritaire' : a.importance.level === 'medium' ? 'À regarder' : 'Peut attendre'
+    : 'Analyse';
+  // Les raisons serveur commencent par leur poids (« +15 non lu… ») : le
+  // chiffre reste dans le détail, pas dans le résumé.
+  const mainReason = (a.reply.kind === 'awaiting'
+    ? a.reply.label
+    : (a.importance?.reasons?.[0] ?? a.reply.label)).replace(/^[+-]\d+\s*/, '');
   el.innerHTML = `
-    <div class="ra-title">🤖 Analyse Mail Assistant <span class="muted" style="font-size:11px">(règles locales — rien n'est envoyé à un service externe)</span></div>
-    ${impLine}
-    <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
-    ${requestLine}
-    ${confidenceLine}
+    <div class="ra-line">
+      <span><strong>${esc(levelWord)}</strong>${a.confidence ? ` · confiance ${esc(a.confidence.label)}` : ''}
+        <span class="muted" style="font-size:11.5px">— ${esc(mainReason)}</span></span>
+      <button class="btn btn-sm" id="ra-toggle" style="margin-left:auto">Voir le détail</button>
+    </div>
+    <div id="ra-detail" class="hidden">
+      ${impLine}
+      <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
+      ${requestLine}
+      ${confidenceLine}
+      <div class="ra-line muted" style="font-size:11px">Règles locales — rien n'est envoyé à un service externe.</div>
+    </div>
     ${classLine}
     ${existing || detected
       ? `<div class="ra-line"><span>Dates :</span> ${existing} ${detected}</div>`
       : ''}`;
+  $('#ra-toggle')?.addEventListener('click', () => {
+    const d = $('#ra-detail');
+    if (!d) return;
+    d.classList.toggle('hidden');
+    $('#ra-toggle').textContent = d.classList.contains('hidden') ? 'Voir le détail' : 'Masquer le détail';
+  });
 
   const note = (msg) => {
     const n = $('#ra-class-note');
