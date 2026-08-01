@@ -596,14 +596,37 @@ class ImapService {
   async fetchQuota(
     rec: AccountRecord,
   ): Promise<{ usedBytes: number; limitBytes: number } | null> {
+    return (await this.fetchQuotaDiagnostic(rec)).quota;
+  }
+
+  /**
+   * Comme fetchQuota, mais dit POURQUOI quand la capacité reste inconnue —
+   * la note est stockée sur le compte et affichée dans l'interface, sinon
+   * « quota inconnu » est indiagnosticable pour l'utilisateur.
+   */
+  async fetchQuotaDiagnostic(
+    rec: AccountRecord,
+  ): Promise<{ quota: { usedBytes: number; limitBytes: number } | null; note: string | null }> {
     const client = await this.getClient(rec);
+    const caps = (client as unknown as { capabilities?: Map<string, unknown> }).capabilities;
+    if (caps && !caps.has('QUOTA')) {
+      return { quota: null, note: "le serveur n'annonce pas la capacité QUOTA en IMAP" };
+    }
     const quota = (await client.getQuota()) as
       | { storage?: { usage?: number; used?: number; limit?: number } }
-      | false;
-    if (!quota || !quota.storage?.limit) return null;
+      | false
+      | undefined;
+    if (!quota) return { quota: null, note: 'réponse QUOTA vide (commande refusée ou dossier introuvable)' };
+    if (!quota.storage) return { quota: null, note: 'réponse QUOTA sans volet stockage' };
+    if (!quota.storage.limit) {
+      return { quota: null, note: 'le serveur ne fournit pas la limite de stockage' };
+    }
     return {
-      usedBytes: quota.storage.usage ?? quota.storage.used ?? 0,
-      limitBytes: quota.storage.limit,
+      quota: {
+        usedBytes: quota.storage.usage ?? quota.storage.used ?? 0,
+        limitBytes: quota.storage.limit,
+      },
+      note: null,
     };
   }
 

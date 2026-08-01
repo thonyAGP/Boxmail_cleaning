@@ -25,6 +25,15 @@ model Account {
   // null si le serveur ne l'expose pas.
   quotaUsedBytes  BigInt?
   quotaLimitBytes BigInt?
+  // Diagnostic quota : date de la dernière tentative de lecture, et raison
+  // en français quand la capacité reste inconnue (capacité QUOTA absente,
+  // commande en échec…). Sans cela, « quota inconnu » était indiagnosticable
+  // depuis l'interface (retour utilisateur 01/08).
+  quotaCheckedAt DateTime?
+  quotaNote      String?
+  // Ordre d'affichage choisi par l'utilisateur (0 = premier). Les listes de
+  // comptes (barre latérale, tableaux, sélecteurs) suivent cet ordre.
+  sortOrder    Int       @default(0)
   lastSyncAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

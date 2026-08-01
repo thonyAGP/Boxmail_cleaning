@@ -631,9 +631,11 @@ function quotaColor(pct) {
   return 'var(--accent)';
 }
 
-function quotaCell(q) {
+// `note` : pourquoi le quota est inconnu (diagnostic stocké côté serveur) —
+// affiché en clair, sinon l'utilisateur ne peut rien en conclure.
+function quotaCell(q, note) {
   if (!q) {
-    return '<span class="muted" style="font-size:12px">inconnu — lance une synchronisation</span>';
+    return `<span class="muted" style="font-size:12px" title="${esc(note || '')}">inconnu — ${esc(note || 'lance une synchronisation (ou 📏 Quota dans Paramètres)')}</span>`;
   }
   const color = quotaColor(q.pct);
   return `<div class="quota-cell" title="${fmtSize(q.usedBytes)} utilisés sur ${fmtSize(q.limitBytes)}">
@@ -1072,7 +1074,7 @@ async function renderDashboard() {
                 <td><strong>${esc(a.account)}</strong><br><span class="muted" style="font-size:12px">${esc(a.emailAddress)}</span></td>
                 <td class="num">${fmtNum(a.inbox?.messages ?? 0)}</td>
                 <td class="num">${fmtNum(a.inbox?.unseen ?? 0)}</td>
-                <td>${quotaCell(a.quota)}</td>
+                <td>${quotaCell(a.quota, a.quotaNote)}</td>
                 <td><a class="btn btn-sm" href="#/account/${esc(a.account)}">Ouvrir</a></td>
               </tr>`,
             )
@@ -1094,7 +1096,8 @@ async function renderDashboard() {
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
             <td><button class="btn btn-sm cleanup-btn" data-account="${esc(c.account)}"
-              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
+              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}"
+              title="Ouvre l'aperçu détaillé des mails de cet expéditeur — rien n'est supprimé sans ta confirmation (corbeille, récupérable ~30 j)">🧹 Nettoyer</button></td>
           </tr>`).join('')}</tbody></table>
           <div class="panel-body muted" style="font-size:12.5px">« Nettoyer » = aperçu détaillé puis, après TA
           confirmation, déplacement vers la corbeille (récupérable ~30 jours). Rien n'est supprimé définitivement.</div>`}
@@ -1812,9 +1815,9 @@ async function renderAccount(slug) {
       <div class="kpi"><div class="kpi-label">💾 Espace boîte</div>
         <div class="kpi-value" style="font-size:20px; ${ov.quota && ov.quota.pct >= 90 ? `color:${quotaColor(ov.quota.pct)}` : ''}">
           ${ov.quota ? `${ov.quota.pct}%` : fmtSize(ov.inbox?.totalSizeBytes)}</div>
-        <div class="kpi-sub">${ov.quota
+        <div class="kpi-sub" ${ov.quota ? '' : `title="${esc(ov.quotaNote || '')}"`}>${ov.quota
           ? `${fmtSize(ov.quota.usedBytes)} / ${fmtSize(ov.quota.limitBytes)} · libre : ${fmtSize(ov.quota.freeBytes)}`
-          : 'quota inconnu — synchronise la boîte'}</div></div>
+          : `quota inconnu — ${esc(ov.quotaNote || 'synchronise la boîte (ou 📏 Quota dans Paramètres)')}`}</div></div>
       <div class="kpi"><div class="kpi-label">👥 Expéditeurs</div>
         <div class="kpi-value">${fmtNum(ov.senderCount)}</div>
         <div class="kpi-sub">dernière sync : ${fmtDateTime(ov.lastSyncAt)}</div></div>
@@ -4669,18 +4672,28 @@ function renderSettingsBody() {
   const enrolled = overviewCache?.enrolled ?? [];
   const byAccount = new Map((overviewCache?.accounts ?? []).map((a) => [a.account, a]));
 
-  const rows = enrolled.map((e) => {
+  const rows = enrolled.map((e, idx) => {
     const ov = byAccount.get(e.account);
+    const quotaInfo = ov?.quota
+      ? `<span title="${esc(fmtSize(ov.quota.usedBytes))} utilisés sur ${esc(fmtSize(ov.quota.limitBytes))} — relu ${esc(fmtDateTime(ov.quotaCheckedAt))}">${ov.quota.pct} % · libre ${esc(fmtSize(ov.quota.freeBytes))}</span>`
+      : `<span title="${esc(ov?.quotaNote || 'jamais lu — lance une synchronisation ou clique 📏')}">quota inconnu ⓘ</span>`;
     return `<tr>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm set-order-up" data-index="${idx}" ${idx === 0 ? 'disabled' : ''}
+          title="Monter cette boîte dans l'ordre d'affichage (barre latérale, tableaux, listes)">↑</button>
+        <button class="btn btn-sm set-order-down" data-index="${idx}" ${idx === enrolled.length - 1 ? 'disabled' : ''}
+          title="Descendre cette boîte dans l'ordre d'affichage">↓</button></td>
       <td><input type="color" class="set-color" data-account="${esc(e.account)}"
         value="${esc(accountColor(e.account))}" title="Choisir la couleur de cette boîte">
         ${e.color ? `<button class="btn btn-sm set-color-reset" data-account="${esc(e.account)}" title="Revenir à la couleur automatique">auto</button>` : ''}</td>
       <td><strong>${esc(e.account)}</strong></td>
       <td class="muted">${esc(e.username)}</td>
-      <td class="muted" style="white-space:nowrap">${ov ? `${fmtNum(ov.indexedMessages)} mails · sync ${fmtDateTime(ov.lastSyncAt)}` : 'jamais synchronisée'}</td>
+      <td class="muted" style="white-space:nowrap">${ov ? `${fmtNum(ov.indexedMessages)} mails · sync ${fmtDateTime(ov.lastSyncAt)}` : 'jamais synchronisée'}<br>${quotaInfo}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm set-rename" data-account="${esc(e.account)}">✏️ Renommer</button>
-        <button class="btn btn-sm set-remove" data-account="${esc(e.account)}" style="color:var(--red)">🗑️ Supprimer</button>
+        <button class="btn btn-sm set-quota" data-account="${esc(e.account)}"
+          title="Relire tout de suite la capacité de la boîte (utilisé / maximum) auprès du serveur Microsoft">📏 Quota</button>
+        <button class="btn btn-sm set-rename" data-account="${esc(e.account)}" title="Change uniquement le nom affiché ici — l'accès à la boîte est conservé">✏️ Renommer</button>
+        <button class="btn btn-sm set-remove" data-account="${esc(e.account)}" style="color:var(--red)" title="Retire la boîte de Mail Assistant — tes mails chez Microsoft ne bougent pas">🗑️ Supprimer</button>
       </td>
     </tr>`;
   }).join('');
@@ -4692,7 +4705,7 @@ function renderSettingsBody() {
       <div class="panel-body tight">
         ${enrolled.length === 0
           ? '<div class="empty">Aucune boîte enrôlée.</div>'
-          : `<table><thead><tr><th style="width:90px">Couleur</th><th>Nom</th><th>Adresse</th><th>Index</th><th></th></tr></thead>
+          : `<table><thead><tr><th style="width:76px" title="Ordre d'affichage des boîtes partout dans l'interface">Ordre</th><th style="width:90px">Couleur</th><th>Nom</th><th>Adresse</th><th>Index · Espace</th><th></th></tr></thead>
              <tbody>${rows}</tbody></table>`}
       </div>
       <div class="panel-body muted" style="font-size:12.5px; padding-top:0">
@@ -4959,9 +4972,45 @@ function renderSettingsBody() {
       return;
     }
     try {
-      const { totals: t, ai, job } = await api.analysisCoverage();
+      const { accounts: covAccounts, totals: t, ai, aiAccounts, job } = await api.analysisCoverage();
       const running = Boolean(job && job.running);
       const scopeLabel = job && job.scope === 'all' ? 'toute la boîte' : '3 derniers mois';
+
+      // Tableau PAR BOÎTE : réconcilie « il reste N mails » (annoncé par
+      // Claude pendant le rattrapage = colonne Douteux) et « X % analysés »
+      // (= verdicts / mails lisibles). Avant, ces deux chiffres coexistaient
+      // sans explication (retour utilisateur 01/08).
+      const aiBySlug = new Map((aiAccounts ?? []).map((a) => [a.account, a]));
+      const perBox = (covAccounts ?? []).filter((c) => c.total > 0);
+      const boxTable = perBox.length === 0 ? '' : `
+        <table style="margin:10px 0">
+          <thead><tr>
+            <th>Boîte</th>
+            <th class="num" title="Mails indexés (hors corbeille/spam/envoyés)">Mails</th>
+            <th class="num" title="Part des mails dont le texte a été capturé — pré-requis de toute analyse">Texte connu</th>
+            <th class="num" title="Verdict IA posé, en % des mails dont le texte est connu">Analysés IA</th>
+            <th class="num" title="Cas douteux restants : c'est CE chiffre que Claude annonce pendant le rattrapage (« il reste N mails »)">Douteux restants</th>
+            <th class="num" title="Tous les mails lisibles encore sans verdict IA (douteux inclus)">Sans verdict</th>
+          </tr></thead>
+          <tbody>${perBox.map((c) => {
+            const a = aiBySlug.get(c.account);
+            return `<tr>
+              <td>${accountChip(c.account)}</td>
+              <td class="num">${fmtNum(c.total)}</td>
+              <td class="num">${c.snippetCoveragePct} %</td>
+              <td class="num">${a ? `<strong>${a.pct} %</strong> <span class="muted" style="font-size:11px">(${fmtNum(a.analysed)})</span>` : '—'}</td>
+              <td class="num">${a ? (a.remainingUncertain ? fmtNum(a.remainingUncertain) : '<span class="badge green">✓ 0</span>') : '—'}</td>
+              <td class="num muted">${a ? fmtNum(a.remainingAll) : '—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+        <div class="muted" style="font-size:12px; margin-bottom:10px">
+          💡 Deux compteurs différents, deux questions différentes :
+          <strong>« Douteux restants »</strong> = les mails que le rattrapage (Claude/Cowork) traite en
+          priorité — c'est le « il reste N mails » qu'il t'annonce.
+          <strong>« Analysés IA »</strong> = la part des mails lisibles qui ont déjà un verdict.
+          Un mail sans texte connu n'est pas analysable : lis d'abord le texte (boutons ci-dessous).</div>`;
+
       el.innerHTML = `
         ${running ? `<div class="notice" style="margin-bottom:10px">
           <span class="spinner"></span><strong>Lecture en cours</strong> — ${scopeLabel}
@@ -4978,9 +5027,10 @@ function renderSettingsBody() {
           <span${running && job.scope !== 'all' ? ' style="font-weight:600"' : ''}>${fmtNum(t.recentWithoutSnippet)} sur ${fmtNum(t.recent)}</span></div>
         <div class="set-line"><span class="muted">Analyse jugée incertaine</span>
           <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>
-        ${ai ? `<div class="set-line"><span class="muted">Analysés par l'IA</span>
+        ${ai ? `<div class="set-line"><span class="muted">Analysés par l'IA (toutes boîtes)</span>
           <span><strong>${ai.pct} %</strong> · ${fmtNum(ai.analysed)} sur ${fmtNum(ai.withText)} lisibles
-          ${ai.remainingUncertain ? `<br><span class="muted" style="font-size:12px">${fmtNum(ai.remainingUncertain)} cas douteux à reprendre</span>` : ''}</span></div>` : ''}`;
+          ${ai.remainingUncertain ? `<br><span class="muted" style="font-size:12px">${fmtNum(ai.remainingUncertain)} cas douteux à reprendre</span>` : ''}</span></div>` : ''}
+        ${boxTable}`;
 
       const br = $('#snip-recent');
       const ba = $('#snip-all');
@@ -5054,6 +5104,51 @@ function renderSettingsBody() {
         renderSettingsBody();
         notice(`<div class="notice">🎨 <strong>${esc(btn.dataset.account)}</strong> repasse en couleur automatique.</div>`);
       } catch (err) {
+        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      }
+    });
+  });
+
+  // Ordre d'affichage : ↑/↓ échangent deux positions puis envoient la liste
+  // complète — le serveur mémorise, tous les écrans suivent.
+  const reorder = async (idx, delta) => {
+    const order = enrolled.map((e) => e.account);
+    const j = idx + delta;
+    if (j < 0 || j >= order.length) return;
+    [order[idx], order[j]] = [order[j], order[idx]];
+    try {
+      await api.accountsReorder(order);
+      await refreshOverview();
+      renderSettingsBody();
+      notice(`<div class="notice">↕️ Ordre des boîtes mis à jour : ${order.map(esc).join(' → ')}.</div>`);
+    } catch (err) {
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+  };
+  body.querySelectorAll('.set-order-up').forEach((btn) => {
+    btn.addEventListener('click', () => reorder(Number(btn.dataset.index), -1));
+  });
+  body.querySelectorAll('.set-order-down').forEach((btn) => {
+    btn.addEventListener('click', () => reorder(Number(btn.dataset.index), +1));
+  });
+
+  // Relecture du quota à la demande : montre le résultat OU la raison de
+  // l'échec (avant, « quota inconnu » restait muet).
+  body.querySelectorAll('.set-quota').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const slug = btn.dataset.account;
+      btn.disabled = true;
+      btn.textContent = '⏳';
+      try {
+        const r = await api.accountQuotaRefresh(slug);
+        await refreshOverview();
+        renderSettingsBody();
+        notice(r.ok
+          ? `<div class="notice">📏 Quota de <strong>${esc(slug)}</strong> : ${esc(fmtSize(r.quota.usedBytes))} utilisés sur ${esc(fmtSize(r.quota.limitBytes))}.</div>`
+          : `<div class="notice warn">📏 Quota de <strong>${esc(slug)}</strong> toujours inconnu — ${esc(r.note || 'raison inconnue')}.</div>`);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '📏 Quota';
         notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
       }
     });
@@ -5578,8 +5673,8 @@ async function renderInbox(slugFromHash) {
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
         title="Seuls les mails indexés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
         <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> 📎 avec PJ</label>
-      <button class="btn" id="inbox-refresh">↻ Actualiser</button>
-      <button class="btn btn-primary" id="inbox-compose">✉️ Nouveau mail</button>
+      <button class="btn" id="inbox-refresh" title="Recharge la liste depuis l'index local (pour interroger le serveur Microsoft, lance une synchronisation depuis la vue de la boîte)">↻ Actualiser</button>
+      <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">✉️ Nouveau mail</button>
     </div></div>
     <div id="inbox-notice"></div>
     <div id="inbox-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -5737,7 +5832,20 @@ function renderInboxBody() {
   const sel = inboxState.selected;
   const pageEnd = Math.min(d.offset + d.items.length, d.total);
 
+  // Légende de provenance (vue unifiée uniquement) : chaque boîte avec sa
+  // couleur, cliquable pour filtrer — on identifie d'un coup d'œil d'où vient
+  // chaque mail (retour utilisateur 01/08).
+  const legend = isUnifiedInbox() && (overviewCache?.enrolled?.length ?? 0) > 1
+    ? `<div class="muted" style="font-size:12px; margin:0 0 8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+        <span>Provenance :</span>
+        ${overviewCache.enrolled.map((e) =>
+          `<span class="openable" data-legend-account="${esc(e.account)}"
+            title="Ne montrer que les mails de ${esc(e.account)}">${accountChip(e.account)}</span>`).join('')}
+        <span>— clique une boîte pour la voir seule</span></div>`
+    : '';
+
   body.innerHTML = `
+    ${legend}
     <div id="inbox-bulkbar" class="export-bar ${sel.size ? '' : 'hidden'}"></div>
     <div class="panel"><div class="panel-body tight">
       ${d.items.length === 0
@@ -5786,6 +5894,21 @@ function renderInboxBody() {
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
       🛟 Les actions en masse passent par la corbeille (soft delete, récupérable ~30 j), par lots
       de 200, et sont journalisées avec la liste exacte des mails.</div>`;
+
+  body.querySelectorAll('[data-legend-account]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      inboxState.account = el.dataset.legendAccount;
+      localStorage.setItem('bm.inboxAccount', inboxState.account);
+      inboxState.folder = '';
+      inboxState.role = 'inbox';
+      inboxState.offset = 0;
+      inboxState.selected.clear();
+      const sel2 = $('#inbox-account');
+      if (sel2) sel2.value = inboxState.account;
+      await loadInboxFolders();
+      loadInbox();
+    });
+  });
 
   body.querySelectorAll('[data-open]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -5875,12 +5998,12 @@ function renderInboxBulkbar() {
         (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
       );
   bar.innerHTML = `✅ <strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
-    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)">🗑️ Corbeille</button>
+    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)" title="Met les mails cochés à la corbeille après confirmation — récupérables ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
     ${isUnifiedInbox() ? '' : `<select id="bulk-move"><option value="">📦 Déplacer vers…</option>
       ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>`}
-    <button class="btn btn-sm" id="bulk-seen">Marquer lus</button>
-    <button class="btn btn-sm" id="bulk-unseen">Marquer non lus</button>
-    <button class="btn btn-sm" id="bulk-clear">Tout décocher</button>
+    <button class="btn btn-sm" id="bulk-seen" title="Marque les mails cochés comme lus (aussi côté Microsoft)">Marquer lus</button>
+    <button class="btn btn-sm" id="bulk-unseen" title="Marque les mails cochés comme non lus (aussi côté Microsoft)">Marquer non lus</button>
+    <button class="btn btn-sm" id="bulk-clear" title="Vide la sélection — aucune action sur les mails">Tout décocher</button>
     ${isUnifiedInbox() ? '<span class="muted" style="font-size:12px">(déplacement : choisir une boîte précise — les dossiers diffèrent selon les comptes)</span>' : ''}`;
 
   const run = async (action, destination) => {
@@ -6260,9 +6383,9 @@ async function openReader(item, row, opts = {}) {
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
       <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « ⭐ Mails suivis »">${item.isFlagged ? '⭐ Suivi' : '☆ Suivre'}</button>
-      <button class="btn btn-sm" id="reader-toggle-seen">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
-      <select id="reader-move"><option value="">📦 Déplacer vers…</option></select>
-      <button class="btn btn-sm" id="reader-delete" style="color:var(--red)">🗑️ Corbeille</button>
+      <button class="btn btn-sm" id="reader-toggle-seen" title="Change l'état lu/non lu de ce mail (aussi côté Microsoft)">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
+      <select id="reader-move" title="Déplace ce mail vers un autre dossier de la même boîte"><option value="">📦 Déplacer vers…</option></select>
+      <button class="btn btn-sm" id="reader-delete" style="color:var(--red)" title="Met ce mail à la corbeille — récupérable ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
       <span class="muted" style="font-size:11.5px; margin-left:auto">soft delete — récupérable ~30 j</span>
     </div>`;
   document.body.appendChild(overlay);

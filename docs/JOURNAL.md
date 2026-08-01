@@ -5,6 +5,47 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 01/08 — Clarté de l'interface : ordre des boîtes, quota expliqué, compteurs IA par boîte
+
+Retour utilisateur : « tout est un peu noyé » — actions pas claires, comptes non
+triables, quota jamais affiché malgré une synchro totale, et deux compteurs
+d'analyse contradictoires (« il reste 4 500 » vs « 42 % analysés »).
+
+1. **Ordre des boîtes choisi par l'utilisateur** : `Account.sortOrder`
+   (migration `20260801090000`), boutons ↑/↓ dans Paramètres, route
+   `PUT /api/accounts/order`. `globalOverview` et la route `/overview` trient
+   par `(sortOrder, slug)` → barre latérale, tableaux, sélecteurs et MCP
+   suivent tous le même ordre.
+2. **Quota enfin diagnosticable** : `fetchQuotaDiagnostic` (imap.ts) dit
+   POURQUOI la capacité est inconnue (capacité QUOTA non annoncée, réponse
+   sans limite, commande en échec…) ; stocké dans `Account.quotaNote` +
+   `quotaCheckedAt` à chaque sync ; bouton « 📏 Quota » dans Paramètres pour
+   relire à la demande (`POST /api/accounts/:slug/quota/refresh`). Partout où
+   l'interface disait « quota inconnu », elle affiche maintenant la raison.
+   À VALIDER EN RÉEL par l'utilisateur : si Outlook n'annonce pas QUOTA, la
+   note le dira noir sur blanc.
+3. **Compteurs d'analyse réconciliés** : `analysisProgressByAccount()`
+   (4 requêtes groupBy) → `/api/analysis/coverage` renvoie `aiAccounts` ;
+   Paramètres affiche un tableau PAR BOÎTE (mails, texte connu, analysés IA,
+   douteux restants, sans verdict) avec la légende : « douteux restants » =
+   le « il reste N » annoncé par Cowork (portée uncertain), « analysés IA » =
+   verdicts / mails lisibles. Les deux chiffres étaient vrais, personne ne
+   pouvait les rapprocher.
+4. **Provenance des mails** : légende cliquable « Provenance : [boîte]… » en
+   tête de la vue unifiée (clic = filtre sur la boîte) ; les pastilles de
+   compte existaient déjà sur les lignes.
+5. **Tooltips explicites** sur les actions sensibles (corbeille en masse,
+   lecteur, nettoyage, actualiser…) : chaque bouton dit ce qu'il fait et
+   rappelle le garde-fou (corbeille récupérable ~30 j, confirmation).
+6. **Piège évité** : le chantier mojibake non commité avait un OCTET NUL
+   littéral dans `snippets.ts` (classe de caractères de contrôle) — ripgrep
+   classait le fichier binaire et le sautait en silence. Remplacé par les
+   échappements `\u0000-\u001F`. Le chantier reste non commité.
+
+Testé : typecheck, node --check, migration sur base locale, serveur 8799,
+seeds synthétiques (compteurs exacts : 3 lisibles / 1 analysé / 1 douteux),
+captures Playwright des écrans Paramètres et boîte unifiée.
+
 ## État (session en cours)
 
 **TOUR 3 D'ANALYSE + 4 RÈGLES CONVERGENTES CODÉES (30/07).** 1 809 mails jugés,
@@ -121,7 +162,7 @@ d'une migration ne joue qu'UNE fois — il fournissait la moitié du gain
 **OCTETS NULS dans `retention.ts` et `categorize.ts`** : ils étaient
 INTENTIONNELS (séparateur de clé composite `` `${a}\0${b}` ``, bon choix) mais
 ripgrep classait les fichiers « binaires » et les SAUTAIT en silence. Remplacés
-par l'échappement ` ` — chaîne identique à l'exécution, source lisible.
+par l'échappement `\u0000` — chaîne identique à l'exécution, source lisible.
 
 **BILAN : 70 constats, 22 clos (20 corrigés + 2 faux positifs assumés),
 48 ouverts — aucun critique, aucun grave.** Restent (dans `docs/AUDIT.md`,

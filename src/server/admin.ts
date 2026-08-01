@@ -112,7 +112,7 @@ import {
   runBackfillAllAccounts,
   type BackfillScope,
 } from '../services/snippets.js';
-import { analysisProgress } from '../services/analysis.js';
+import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import {
   listPolicies,
@@ -301,13 +301,17 @@ export function buildAdminRouter(): Router {
         totals: { accounts: 0, indexedMessages: 0, unseenInbox: 0 },
       };
       const colors = new Map<string, string | null>();
+      const orders = new Map<string, number>();
       // Nouveaux mails reçus (INBOX, par date du mail) : aujourd'hui vs hier.
       let newMails = { today: 0, yesterday: 0 };
       try {
         await ensureDbReady();
         overview = await globalOverview();
-        for (const a of await db.account.findMany({ select: { slug: true, color: true } })) {
+        for (const a of await db.account.findMany({
+          select: { slug: true, color: true, sortOrder: true },
+        })) {
           colors.set(a.slug, a.color);
+          orders.set(a.slug, a.sortOrder);
         }
         const startToday = new Date();
         startToday.setHours(0, 0, 0, 0);
@@ -328,6 +332,12 @@ export function buildAdminRouter(): Router {
         if (rec)
           enrolledInfo.push({ account: name, username: rec.username, color: colors.get(name) ?? null });
       }
+      // Ordre de préférence choisi dans Paramètres (jamais synchronisé = à la fin).
+      enrolledInfo.sort(
+        (a, b) =>
+          (orders.get(a.account) ?? 999) - (orders.get(b.account) ?? 999) ||
+          a.account.localeCompare(b.account),
+      );
       const indexed = new Set(overview.accounts.map((a) => a.account));
       res.json({
         ...overview,
@@ -444,6 +454,83 @@ export function buildAdminRouter(): Router {
         result: color ? `couleur ${color}` : 'couleur automatique',
       });
       res.json({ ok: true, color });
+    }),
+  );
+
+  // Ordre d'affichage des comptes (retour utilisateur 01/08) : la liste
+  // complète des slugs dans l'ordre voulu — chaque compte reçoit sa position.
+  // Toutes les listes (barre latérale, tableaux, sélecteurs) suivent cet ordre.
+  router.put(
+    '/accounts/order',
+    guard(async (req, res) => {
+      const order = Array.isArray(req.body?.order) ? req.body.order.map(String) : null;
+      if (!order || order.length === 0) {
+        res.status(400).json({ error: 'Liste de comptes attendue : { order: ["slug1", …] }.' });
+        return;
+      }
+      await ensureDbReady();
+      for (let i = 0; i < order.length; i++) {
+        const slug = order[i];
+        const rec = await getAccountRecord(slug);
+        if (!rec) continue; // slug inconnu : ignoré plutôt que tout refuser
+        await db.account.upsert({
+          where: { slug },
+          create: { slug, emailAddress: rec.username, sortOrder: i },
+          update: { sortOrder: i },
+        });
+      }
+      await recordOperation({
+        account: '*',
+        tool: 'ui_accounts_order',
+        params: { order },
+        result: `ordre d'affichage : ${order.join(' → ')}`,
+      });
+      res.json({ ok: true, order });
+    }),
+  );
+
+  // Relecture du quota à la demande (retour utilisateur 01/08) : va interroger
+  // le serveur IMAP MAINTENANT et stocke le résultat — ou la raison de l'échec
+  // (quotaNote), pour que « quota inconnu » soit enfin explicable.
+  router.post(
+    '/accounts/:slug/quota/refresh',
+    guard(async (req, res) => {
+      const rec = await resolveAccount(req.params.slug);
+      let quota: { usedBytes: number; limitBytes: number } | null = null;
+      let note: string | null = null;
+      try {
+        const diag = await imapService.fetchQuotaDiagnostic(rec);
+        quota = diag.quota;
+        note = diag.note;
+      } catch (err) {
+        note = `lecture du quota en échec : ${(err as Error).message}`;
+      }
+      await ensureDbReady();
+      await db.account.upsert({
+        where: { slug: rec.account },
+        create: {
+          slug: rec.account,
+          emailAddress: rec.username,
+          quotaCheckedAt: new Date(),
+          quotaNote: note,
+          ...(quota
+            ? { quotaUsedBytes: BigInt(quota.usedBytes), quotaLimitBytes: BigInt(quota.limitBytes) }
+            : {}),
+        },
+        update: {
+          quotaCheckedAt: new Date(),
+          quotaNote: note,
+          ...(quota
+            ? { quotaUsedBytes: BigInt(quota.usedBytes), quotaLimitBytes: BigInt(quota.limitBytes) }
+            : {}),
+        },
+      });
+      res.json({
+        ok: quota !== null,
+        quota,
+        note,
+        checkedAt: new Date().toISOString(),
+      });
     }),
   );
 
@@ -821,7 +908,11 @@ export function buildAdminRouter(): Router {
   router.get(
     '/analysis/coverage',
     guard(async (_req, res) => {
-      const [coverage, ai] = await Promise.all([analysisCoverage(), analysisProgress()]);
+      const [coverage, ai, aiAccounts] = await Promise.all([
+        analysisCoverage(),
+        analysisProgress(),
+        analysisProgressByAccount(),
+      ]);
       // État du rattrapage EN COURS : sans ça, l'interface affichait des
       // compteurs figés et rien n'indiquait qu'un travail tournait
       // (retour utilisateur 29/07).
@@ -837,7 +928,7 @@ export function buildAdminRouter(): Router {
             error: last.error,
           }
         : null;
-      res.json({ ...coverage, ai, job });
+      res.json({ ...coverage, ai, aiAccounts, job });
     }),
   );
 

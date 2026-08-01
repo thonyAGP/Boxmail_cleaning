@@ -376,3 +376,52 @@ export async function analysisProgress(account?: string): Promise<AnalysisProgre
     pct: withText === 0 ? 0 : Math.round((analysed / withText) * 100),
   };
 }
+
+export interface AccountAnalysisProgress extends AnalysisProgress {
+  account: string;
+}
+
+/**
+ * Avancement de l'analyse IA PAR BOÎTE (retour utilisateur 01/08) : le
+ * rattrapage annonçait « il reste 4 500 mails » (portée « cas douteux » d'une
+ * boîte) pendant que Paramètres affichait « 42 % analysés » (global) — deux
+ * vérités, aucun moyen de les rapprocher. Ici, les quatre compteurs par boîte,
+ * en 4 requêtes groupBy au total (et non 4 × N boîtes).
+ */
+export async function analysisProgressByAccount(): Promise<AccountAnalysisProgress[]> {
+  await ensureDbReady();
+  const base = {
+    isDeleted: false,
+    isOutbound: false,
+    folder: { is: { role: { notIn: ['trash', 'spam'] } } },
+    snippet: { not: null },
+    NOT: { snippet: '' },
+  };
+  const group = (where: object) =>
+    db.message.groupBy({ by: ['accountSlug'], where, _count: { _all: true } });
+  const [withText, analysed, remUncertain, remAll] = await Promise.all([
+    group(base),
+    group({ ...base, aiVerdictAt: { not: null } }),
+    group(candidateWhere('uncertain')),
+    group(candidateWhere('all')),
+  ]);
+  const toMap = (rows: { accountSlug: string; _count: { _all: number } }[]) =>
+    new Map(rows.map((r) => [r.accountSlug, r._count._all]));
+  const mWithText = toMap(withText);
+  const mAnalysed = toMap(analysed);
+  const mUncertain = toMap(remUncertain);
+  const mAll = toMap(remAll);
+  const slugs = new Set([...mWithText.keys(), ...mUncertain.keys(), ...mAll.keys()]);
+  return [...slugs].sort().map((account) => {
+    const wt = mWithText.get(account) ?? 0;
+    const an = mAnalysed.get(account) ?? 0;
+    return {
+      account,
+      withText: wt,
+      analysed: an,
+      remainingUncertain: mUncertain.get(account) ?? 0,
+      remainingAll: mAll.get(account) ?? 0,
+      pct: wt === 0 ? 0 : Math.round((an / wt) * 100),
+    };
+  });
+}

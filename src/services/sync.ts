@@ -515,19 +515,20 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   }
 
   // Quota de la boîte (taille max / utilisé) — non bloquant si le serveur
-  // ne l'expose pas ou si la commande échoue.
+  // ne l'expose pas ou si la commande échoue. La NOTE (pourquoi inconnu) est
+  // stockée sur le compte et affichée dans l'interface : « quota inconnu »
+  // sans explication était indiagnosticable (retour utilisateur 01/08).
   let quota: { usedBytes: number; limitBytes: number } | null = null;
+  let quotaNote: string | null = null;
   try {
-    quota = await imapService.fetchQuota(rec);
+    const diag = await imapService.fetchQuotaDiagnostic(rec);
+    quota = diag.quota;
+    quotaNote = diag.note;
     if (!quota) {
-      // Sans trace, un quota jamais renseigné est indiagnosticable : la
-      // colonne « Espace utilisé » disait « inconnu » sans qu'aucun log ne
-      // dise pourquoi (capacité QUOTA absente ? commande en échec ?).
-      logger.warn('quota non expose par le serveur (capacite QUOTA absente ?)', {
-        account: rec.account,
-      });
+      logger.warn('quota non exposé par le serveur', { account: rec.account, note: quotaNote });
     }
   } catch (err) {
+    quotaNote = `lecture du quota en échec : ${(err as Error).message}`;
     logger.warn('lecture du quota en échec (valeurs précédentes conservées)', {
       account: rec.account,
       error: (err as Error).message,
@@ -538,6 +539,8 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     where: { slug: rec.account },
     data: {
       lastSyncAt: new Date(),
+      quotaCheckedAt: new Date(),
+      quotaNote,
       ...(quota
         ? { quotaUsedBytes: BigInt(quota.usedBytes), quotaLimitBytes: BigInt(quota.limitBytes) }
         : {}),

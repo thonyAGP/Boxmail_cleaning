@@ -137,6 +137,11 @@ export interface MailboxOverview {
   } | null;
   /** Quota IMAP de la boîte (null si jamais récupéré). pct arrondi 0-100. */
   quota: { usedBytes: number; limitBytes: number; freeBytes: number; pct: number } | null;
+  /** Diagnostic quota : dernière tentative de lecture et raison si inconnu. */
+  quotaCheckedAt: string | null;
+  quotaNote: string | null;
+  /** Ordre d'affichage choisi par l'utilisateur (0 = premier). */
+  sortOrder: number;
   topSenders: { address: string; name: string; count: number; unsubscribePct: number }[];
   senderCount: number;
 }
@@ -205,6 +210,9 @@ export async function mailboxOverview(account: string): Promise<MailboxOverview>
   return {
     account,
     quota,
+    quotaCheckedAt: acc.quotaCheckedAt?.toISOString() ?? null,
+    quotaNote: acc.quotaNote ?? null,
+    sortOrder: acc.sortOrder,
     emailAddress: acc.emailAddress,
     lastSyncAt: acc.lastSyncAt?.toISOString() ?? null,
     indexedMessages,
@@ -228,7 +236,11 @@ export async function globalOverview(): Promise<{
   totals: { accounts: number; indexedMessages: number; unseenInbox: number };
 }> {
   await ensureDbReady();
-  const accounts = await db.account.findMany({ select: { slug: true } });
+  // Ordre de préférence choisi par l'utilisateur (Paramètres), puis nom.
+  const accounts = await db.account.findMany({
+    select: { slug: true },
+    orderBy: [{ sortOrder: 'asc' }, { slug: 'asc' }],
+  });
   const overviews: MailboxOverview[] = [];
   for (const a of accounts) {
     overviews.push(await mailboxOverview(a.slug));

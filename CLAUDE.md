@@ -132,15 +132,16 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Tour 3 d'analyse bouclé + 4 règles convergentes codées (30/07).** 1 809
-mails jugés, 221 expéditeurs corrigés, 0 rejet. Quatre boîtes sans douteux
-(Altoen, Brimmo, Au-marais, Location_Brest) ; Colocar 4, Econom 3 ;
-`thony56_gtr` ~8 982 restants (la lecture des extraits y progresse encore).
-Récupérable mesuré : **8 762 mails / 1,3 Go**. Preset `promo365` créé,
-désactivé (1 979 visés, 105 protégés). La classification n'est plus le
-goulot, les stratégies le sont. `npm run audit` livré (70 constats, 22 clos,
-48 ouverts — aucun grave). Reste : poursuivre le rattrapage de
-`thony56_gtr` (option C3b Haiku serveur ~4,70 $, clé API PAS ENCORE
-demandée à l'utilisateur), activer les stratégies avec lui, C5 (mesure du
-gain). Chantier en cours non commité : `src/services/mojibake.ts` +
-retouche `snippets.ts` (réparation d'extraits mal encodés).
+**Passe « clarté » livrée (01/08)** sur retour utilisateur : ordre des boîtes
+choisi (Account.sortOrder, ↑/↓ dans Paramètres, tout suit), quota expliqué
+(fetchQuotaDiagnostic + quotaNote/quotaCheckedAt, bouton 📏 Quota — À VALIDER
+en réel : la note dira pourquoi si Outlook n'expose pas QUOTA), compteurs IA
+PAR BOÎTE dans Paramètres (réconcilie « il reste 4 500 » = douteux Cowork vs
+« 42 % analysés » = verdicts/lisibles), légende Provenance cliquable sur la
+vue unifiée, tooltips sur les actions sensibles. Testé : tsc, migration,
+serveur 8799 + seeds, captures Playwright. Sinon inchangé depuis le 30/07 :
+tour 3 bouclé, récupérable 8 762 mails / 1,3 Go, `thony56_gtr` ~8 982
+restants (option C3b Haiku ~4,70 $, clé API pas encore demandée), stratégies
+à activer avec l'utilisateur, C5 à faire. Chantier NON commité :
+`src/services/mojibake.ts` + retouche `snippets.ts` (l'octet nul littéral
+qui rendait snippets.ts invisible à ripgrep a été corrigé en `\u0000`).

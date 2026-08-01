@@ -96,6 +96,9 @@ export const api = {
     ),
   accountSetColor: (slug, color) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}`, { color }),
+  accountsReorder: (order) => request('PUT', '/accounts/order', { order }),
+  accountQuotaRefresh: (slug) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/quota/refresh`),
   accountRename: (slug, to) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/rename`, { to }),
   accountRemove: (slug) =>
