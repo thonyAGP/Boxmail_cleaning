@@ -195,6 +195,44 @@ export async function listSuggestions(): Promise<Suggestions> {
     priorities.push(suggestion);
   }
 
+  // 4. Règles DÉDUITES DES VERDICTS IA (décision utilisateur 02/08 : « l'IA
+  //    lit tout et les règles en découlent »). Quand l'IA a lu ≥ 8 mails d'un
+  //    même expéditeur et jugé ≥ 90 % « à archiver » ou « rien à faire »,
+  //    elle propose 🔕 jamais urgent — preuve chiffrée à l'appui, validation
+  //    par l'utilisateur via le mécanisme existant (priorités A5).
+  const already = new Set(priorities.map((p) => `${p.account}|${p.email}`));
+  type AiRow = { account: string; email: string; n: number; na: number };
+  const aiRows = await db.$queryRawUnsafe<AiRow[]>(
+    `SELECT m.accountSlug AS account, m.fromEmail AS email,
+            COUNT(*) AS n,
+            SUM(CASE WHEN m.aiAction IN ('archive', 'none') THEN 1 ELSE 0 END) AS na
+     FROM Message m
+     WHERE m.aiVerdictAt IS NOT NULL AND m.isDeleted = 0 AND m.isOutbound = 0
+       AND m.fromEmail IS NOT NULL
+     GROUP BY m.accountSlug, m.fromEmail
+     HAVING COUNT(*) >= 8`,
+  );
+  for (const r of aiRows) {
+    if (priorities.length >= 40) break; // l'écran n'en montre que 20 — inutile d'aller plus loin
+    const n = Number(r.n);
+    const na = Number(r.na);
+    if (na / n < 0.9) continue;
+    if (already.has(`${r.account}|${r.email}`)) continue;
+    if (dismissed.has(`priority:priority:${r.account}|${r.email}|never_urgent`)) continue;
+    const s = await db.sender.findUnique({
+      where: { accountSlug_email: { accountSlug: r.account, email: r.email } },
+      select: { displayName: true, priority: true, category: true },
+    });
+    if (!s || s.priority !== 'normal' || s.category === 'person') continue;
+    priorities.push({
+      account: r.account,
+      email: r.email,
+      name: s.displayName ?? r.email,
+      priority: 'never_urgent',
+      evidence: `L'IA a lu ${n} de ses mails un par un : ${na} jugés « à archiver » ou « rien à faire » — marquer 🔕 jamais urgent ? (Ses mails deviendront aussi de meilleurs candidats au nettoyage.)`,
+    });
+  }
+
   return {
     rules,
     retentionAuto,

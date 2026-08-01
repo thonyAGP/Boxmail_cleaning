@@ -5,6 +5,22 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (4) — Décision actée : l'IA lit TOUT, les règles se déduisent de ses verdicts
+
+L'utilisateur a tranché (« fais ce que je te dis ») :
+- next_analysis_batch : quand le scope douteux est ÉPUISÉ, bascule
+  automatique sur les mails sans verdict (scope de la réponse fait foi) —
+  la boucle Cowork horaire, sans changement de prompt, mène au traitement
+  intégral. Description du tool MCP mise à jour.
+- learning.ts : suggestions 🔕 DÉDUITES DES VERDICTS IA (expéditeur dont
+  ≥ 8 mails lus par l'IA sont ≥ 90 % « à archiver »/« rien à faire », hors
+  catégorie person, preuve chiffrée) — validation via le mécanisme
+  priorités existant.
+- Pièce jointe « Reglement_Copropriete… » signalée par l'utilisateur :
+  DIAGNOSTIC = le fichier est un Apple Pages (application/x-iwork-pages-
+  sffpages), fidèlement transmis — l'expéditrice a joint son document
+  source, pas un PDF. Rien à corriger côté Boxmail.
+
 ## 02/08 (3) — Le bug des « mails sans texte » : mono-partie non lus (4 462 extraits vides)
 
 L'utilisateur a prouvé l'incohérence : le mail Outlook « name conflicts » a

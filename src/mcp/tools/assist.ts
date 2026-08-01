@@ -263,8 +263,12 @@ export function registerAssistTools(server: McpServer): void {
         'RECOMMENCER tant que `remaining` est supérieur à 0 — sans redemander ' +
         'l’autorisation entre deux lots, l’utilisateur a lancé le rattrapage. ' +
         'Les plus ANCIENS d’abord (ce sont eux qui encombrent la boîte). ' +
-        'scope=uncertain (défaut) ne vise que les cas douteux ; scope=all ' +
-        'reprend tout mail porteur d’un texte. ' +
+        'scope=uncertain (défaut) vise les cas douteux ; quand ils sont ' +
+        'ÉPUISÉS, le tool bascule TOUT SEUL sur le reste des mails sans ' +
+        'verdict (le champ `scope` de la réponse dit lequel a servi) — ' +
+        'décision de l’utilisateur : l’IA lit TOUT, les règles se déduisent ' +
+        'de ses verdicts. Un extrait « (pas de texte lisible…) » se juge sur ' +
+        'le sujet et l’expéditeur, confidence=low dans le doute. ' +
         'Annonce l’avancement de temps en temps, pas à chaque lot.',
       inputSchema: {
         ...accountParam,

@@ -106,9 +106,17 @@ export async function nextAnalysisBatch(
   opts: { account?: string; limit?: number; scope?: AnalysisScope } = {},
 ): Promise<AnalysisBatch> {
   await ensureDbReady();
-  const scope = opts.scope ?? 'uncertain';
+  let scope = opts.scope ?? 'uncertain';
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), MAX_BATCH);
-  const where = candidateWhere(scope, opts.account);
+  let where = candidateWhere(scope, opts.account);
+
+  // TRAITEMENT INTÉGRAL (décision utilisateur 02/08) : quand les cas douteux
+  // sont épuisés, la boucle continue TOUTE SEULE sur le reste des mails sans
+  // verdict — l'IA lit tout, les règles se déduisent ensuite de ses verdicts.
+  if (scope === 'uncertain' && (await db.message.count({ where })) === 0) {
+    scope = 'all';
+    where = candidateWhere(scope, opts.account);
+  }
 
   const [rows, total] = await Promise.all([
     db.message.findMany({
