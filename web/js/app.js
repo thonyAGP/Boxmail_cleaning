@@ -63,7 +63,7 @@ function refreshRulesBadge() {
     });
 }
 
-// Badge « 💡 Suggestions » (A6) : ce que l'assistant a appris de tes habitudes.
+// Badge « 💡 Règles proposées » (A6) : ce que l'assistant a appris de tes habitudes.
 function refreshSuggestionsBadge() {
   api.suggestions().then((s) => {
     const b = $('#suggestions-badge');
@@ -227,7 +227,7 @@ async function refreshTasksBadge(data) {
   }
 }
 
-// Badge « importance haute » (score ≥ 70) sur le lien ⭐ Mails importants.
+// Badge « importance haute » (score ≥ 70) sur le lien ⭐ À ne pas manquer.
 async function refreshImportantBadge(data) {
   try {
     const d = data ?? (await api.important());
@@ -257,7 +257,7 @@ async function refreshDeadlinesBadge(data) {
   }
 }
 
-// Badge « en retard » sur le lien Relances à faire de la sidebar.
+// Badge « en retard » sur le lien À relancer de la sidebar.
 async function refreshFollowupsBadge(data) {
   try {
     const d = data ?? (await api.followups());
@@ -270,7 +270,7 @@ async function refreshFollowupsBadge(data) {
   }
 }
 
-// Badge « en retard » sur le lien Réponses en attente de la sidebar.
+// Badge « en retard » sur le lien À répondre de la sidebar.
 async function refreshRepliesBadge(data) {
   try {
     const d = data ?? (await api.replies());
@@ -421,7 +421,7 @@ function sideFolderList(slug) {
     .sort((a, b) =>
       (SIDE_ROLE_ORDER[a.role] ?? 5) - (SIDE_ROLE_ORDER[b.role] ?? 5) || a.path.localeCompare(b.path));
   if (usable.length === 0) {
-    return '<div class="side-folder muted">aucun dossier indexé — synchronise la boîte</div>';
+    return '<div class="side-folder muted">aucun dossier synchronisé — synchronise la boîte</div>';
   }
   return usable
     .map(
@@ -449,14 +449,14 @@ function renderAccountsNav() {
         <a href="#/account/${esc(e.account)}" class="side-acct-link" title="${esc(e.username)}">
           <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
           <span class="account-email">${esc(e.account)}</span></a>
-        ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à sync</span>'}
+        ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à synchroniser</span>'}
       </div>
       ${open ? `<div class="side-folders">${sideFolderList(e.account)}</div>` : ''}
     </div>`;
   });
   nav.innerHTML =
     items.join('') ||
-    '<div class="side-link disabled">Aucun compte enrôlé</div>';
+    '<div class="side-link disabled">Aucune boîte connectée</div>';
 
   nav.querySelectorAll('[data-toggle]').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
@@ -780,7 +780,7 @@ async function renderToday() {
       : d.inDays === 0 ? '<span class="badge red">aujourd’hui</span>' : '';
     rows.push(todayRow(
       `📅 <strong>Échéance : ${esc(d.title)}</strong>
-       <span class="muted" style="font-size:12px">· ${fmtDate(d.date)}${d.status === 'proposed' ? ' · à confirmer dans 📅 Échéances' : ''}</span>`,
+       <span class="muted" style="font-size:12px">· ${fmtDate(d.date)}${d.status === 'proposed' ? ' · à confirmer dans 📅 Dates à confirmer' : ''}</span>`,
       d.folder && d.uid
         ? { account: d.account, folder: d.folder, uid: d.uid, subject: d.subject, fromName: d.fromName, fromEmail: d.fromEmail, date: d.msgDate, isSeen: d.isSeen }
         : { account: d.account },
@@ -821,19 +821,19 @@ async function renderToday() {
   $('#today-body').innerHTML = `
     ${t.skippedAccounts.length ? `<div class="notice warn">⚠️ Boîte(s) ignorée(s) : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
     ${!t.categorized ? `<div class="notice warn">🏷️ Les catégories n'ont pas encore été calculées : la section « Bruit » sera vide.
-      Va dans <a href="#/settings">⚙️ Paramètres</a> → « Recalculer les catégories » (une fois, quelques secondes).</div>` : ''}
+      Va dans <a href="#/settings">⚙️ Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
 
     <div class="panel">
       <div class="panel-head"><h2>🔥 À faire</h2>
         <span>
           ${t.todo.total ? `<button class="btn btn-sm btn-primary" id="todo-assist"
-            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">▶️ Traiter une par une</button>` : ''}
+            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">▶️ Commencer</button>` : ''}
           <span class="badge ${t.todo.total ? 'red' : 'green'}" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span></span></div>
       <div class="panel-body">
         ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
         <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
           <a href="#/replies">↩️ Réponses</a> · <a href="#/followups">⏰ Relances</a> ·
-          <a href="#/deadlines">📅 Échéances</a> · <a href="#/tasks">☑️ Tâches</a></div>
+          <a href="#/deadlines">📅 Dates à confirmer</a> · <a href="#/tasks">☑️ Mes tâches</a></div>
       </div>
     </div>
 
@@ -842,7 +842,7 @@ async function renderToday() {
         <span class="badge orange">${fmtNum(t.important.length)}</span></div>
       <div class="panel-body">
         ${importantRows.length ? importantRows.join('') : '<div class="empty">Rien d’important non traité cette semaine.</div>'}
-        <div class="muted" style="font-size:12.5px; padding-top:8px"><a href="#/important">⭐ Voir tous les mails importants</a></div>
+        <div class="muted" style="font-size:12.5px; padding-top:8px"><a href="#/important">⭐ Voir la liste complète</a></div>
       </div>
     </div>
 
@@ -860,14 +860,14 @@ async function renderToday() {
       <div class="panel-head"><h2>⚪ Bruit</h2>
         <span>
           ${t.noise.total ? `<button class="btn btn-sm" id="noise-tour"
-            title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides — corbeille ou passer">🧹 Ménage guidé</button>` : ''}
+            title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides — corbeille ou passer">🧹 Nettoyage guidé</button>` : ''}
           <span class="badge gray" style="margin-left:8px">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span></span></div>
       <div class="panel-body">
         ${noiseRows}
         <div class="muted" style="font-size:12.5px; padding-top:8px">
           Les mails reçus ces <strong>7 derniers jours</strong> ne sont jamais proposés — le bruit, c'est ce qui s'accumule.
           « Voir et nettoyer » montre la liste EXACTE avant toute action ; la suppression va à la corbeille
-          (récupérable ~30 jours). Nettoyage fin par expéditeur : <a href="#/cleanup">🧹 Nettoyage conseillé</a>.</div>
+          (récupérable ~30 jours). Nettoyage fin par expéditeur : <a href="#/cleanup">🧹 Nettoyage rapide</a>.</div>
       </div>
     </div>`;
 
@@ -1019,7 +1019,7 @@ function startTodoAssistant(t) {
   step();
 }
 
-// ---------------------------------------------------------------- Ménage guidé
+// ---------------------------------------------------------------- Nettoyage guidé
 // Enchaîne les familles de bruit une par une (les plus grosses d'abord) :
 // à chaque étape, la liste EXACTE, la lecture possible, et la décision —
 // corbeille ou passer. Réutilise la modale « bruit » existante.
@@ -1035,7 +1035,7 @@ function startNoiseTour(buckets) {
       openNoiseModal(steps[i].bucket, { tour: { index: i + 1, total: steps.length, onNext: advance } });
     } else {
       closeModal();
-      alert(`🧹 Ménage guidé terminé${totalDeleted ? ` : ${fmtNum(totalDeleted)} mail(s) à la corbeille (récupérables ~30 j)` : ' — rien n\'a été supprimé'}. Tout est dans le 📒 Journal d'activité.`);
+      alert(`🧹 Nettoyage guidé terminé${totalDeleted ? ` : ${fmtNum(totalDeleted)} mail(s) à la corbeille (récupérables ~30 j)` : ' — rien n\'a été supprimé'}. Tout est dans le 📒 Journal d'activité.`);
       renderToday();
     }
   };
@@ -1174,12 +1174,12 @@ async function renderDashboard() {
   const body = $('#dash-body');
 
   if (ov.enrolled.length === 0) {
-    body.innerHTML = `<div class="notice warn">Aucun compte enrôlé. Lancer
+    body.innerHTML = `<div class="notice warn">Aucune boîte connectée. Lancer
       <code>npm run enroll -- --account &lt;nom&gt;</code> sur le serveur.</div>`;
     return;
   }
 
-  // Nettoyage conseillé (tous comptes indexés, en parallèle).
+  // Nettoyage rapide (tous comptes synchronisés, en parallèle).
   const cleanups = await Promise.all(
     ov.accounts.map((a) =>
       api.cleanup(a.account).then(
@@ -1214,16 +1214,16 @@ async function renderDashboard() {
       <div class="kpi accent"><div class="kpi-label">✉️ Nouveaux mails aujourd'hui</div>
         <div class="kpi-value">${fmtNum(ov.newMails?.today ?? 0)}</div>
         <div class="kpi-sub">${newMailsDelta(ov.newMails)}</div></div>
-      <div class="kpi"><div class="kpi-label">⭐ Mails importants</div>
+      <div class="kpi"><div class="kpi-label">⭐ À ne pas manquer</div>
         <div class="kpi-value" id="kpi-important">…</div>
         <div class="kpi-sub">à traiter</div></div>
-      <div class="kpi"><div class="kpi-label">↩️ Réponses en attente</div>
+      <div class="kpi"><div class="kpi-label">↩️ À répondre</div>
         <div class="kpi-value" id="kpi-replies">…</div>
         <div class="kpi-sub" id="kpi-replies-sub">&nbsp;</div></div>
-      <div class="kpi orange"><div class="kpi-label">⏰ Relances à faire</div>
+      <div class="kpi orange"><div class="kpi-label">⏰ À relancer</div>
         <div class="kpi-value" id="kpi-followups">…</div>
         <div class="kpi-sub" id="kpi-followups-sub">&nbsp;</div></div>
-      <div class="kpi"><div class="kpi-label">📅 Échéances détectées</div>
+      <div class="kpi"><div class="kpi-label">📅 Dates détectées</div>
         <div class="kpi-value" id="kpi-deadlines">…</div>
         <div class="kpi-sub" id="kpi-deadlines-sub">&nbsp;</div></div>
       <div class="kpi green"><div class="kpi-label">🧹 Supprimables sans risque</div>
@@ -1265,7 +1265,7 @@ async function renderDashboard() {
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>🧹 Nettoyage conseillé</h2>
+        <div class="panel-head"><h2>🧹 Nettoyage rapide</h2>
           <span><span class="badge green">${fmtNum(deletable)} mails « sûrs »</span>
           <a class="btn btn-sm" href="#/cleanup" style="margin-left:8px">Voir et nettoyer</a></span></div>
         <div class="panel-body tight">
@@ -1289,19 +1289,19 @@ async function renderDashboard() {
 
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><h2>⭐ Mails importants</h2>
+        <div class="panel-head"><h2>⭐ À ne pas manquer</h2>
           <a class="btn btn-sm" href="#/important">Voir tout</a></div>
         <div class="panel-body" id="dash-important"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>↩️ Réponses en attente</h2>
+        <div class="panel-head"><h2>↩️ À répondre</h2>
           <a class="btn btn-sm" href="#/replies">Voir tout</a></div>
         <div class="panel-body" id="dash-replies"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>⏰ Relances à faire</h2>
+        <div class="panel-head"><h2>⏰ À relancer</h2>
           <a class="btn btn-sm" href="#/followups">Voir tout</a></div>
         <div class="panel-body" id="dash-followups"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>📅 Échéances à venir</h2>
+        <div class="panel-head"><h2>📅 Dates à venir</h2>
           <a class="btn btn-sm" href="#/deadlines">Voir tout</a></div>
         <div class="panel-body" id="dash-deadlines"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>☑️ Tâches à faire</h2>
+        <div class="panel-head"><h2>☑️ Mes tâches</h2>
           <a class="btn btn-sm" href="#/tasks">Voir tout</a></div>
         <div class="panel-body" id="dash-tasks"><span class="spinner"></span></div>
       </div>
@@ -1358,7 +1358,7 @@ async function renderDashboard() {
       : '<div class="empty">Aucune opération pour l\'instant.</div>';
   });
 
-  // Mails importants (top 5, score le plus haut d'abord).
+  // À ne pas manquer (top 5, score le plus haut d'abord).
   api.important().then((d) => {
     refreshImportantBadge(d);
     const kpi = $('#kpi-important');
@@ -1384,7 +1384,7 @@ async function renderDashboard() {
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
-  // Réponses en attente (top 5, les plus en retard d'abord).
+  // À répondre (top 5, les plus en retard d'abord).
   api.replies().then((d) => {
     refreshRepliesBadge(d);
     const kpi = $('#kpi-replies');
@@ -1414,7 +1414,7 @@ async function renderDashboard() {
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt — lance une synchronisation.</div>';
   });
 
-  // Relances à faire (top 3, les plus en retard d'abord).
+  // À relancer (top 3, les plus en retard d'abord).
   api.followups().then((d) => {
     refreshFollowupsBadge(d);
     const kpi = $('#kpi-followups');
@@ -1444,7 +1444,7 @@ async function renderDashboard() {
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
-  // Échéances à venir (top 5 futures, proposées + confirmées).
+  // Dates à venir (top 5 futures, proposées + confirmées).
   api.deadlines().then((d) => {
     refreshDeadlinesBadge(d);
     const kpi = $('#kpi-deadlines');
@@ -1477,7 +1477,7 @@ async function renderDashboard() {
     if (el) el.innerHTML = '<div class="empty">Index pas encore prêt.</div>';
   });
 
-  // Tâches à faire (top 5, échéances proches en tête).
+  // Mes tâches (top 5, échéances proches en tête).
   api.tasks().then((d) => {
     refreshTasksBadge(d);
     const el = $('#dash-tasks');
@@ -1608,7 +1608,7 @@ function renderBrief(b) {
   if (!b) {
     body.innerHTML = `<div class="empty">Aucun brief pour l'instant — clique sur
       <strong>☀️ Régénérer</strong> pour faire le point sur tes boîtes (instantané,
-      calculé depuis l'index local).</div>`;
+      calculé depuis les mails synchronisés).</div>`;
     return;
   }
 
@@ -1619,7 +1619,7 @@ function renderBrief(b) {
   const chips = [
     chip('📥', b.totals.newMessages, `nouveaux (${esc(b.periodLabel)})`, ''),
     chip('🔵', b.totals.unseenInbox, 'non lus au total', ''),
-    chip('⭐', b.important.high, 'importants (haute)', '#/important', b.important.high ? 'hot' : ''),
+    chip('⭐', b.important.high, 'prioritaires', '#/important', b.important.high ? 'hot' : ''),
     chip('↩️', b.replies.overdue, 'réponses en retard', '#/replies', b.replies.overdue ? 'hot' : ''),
     chip('⏰', b.followups.overdue, 'relances à faire', '#/followups', b.followups.overdue ? 'hot' : ''),
     chip('📅', b.deadlines.upcoming, 'échéances < 14 j', '#/deadlines', b.deadlines.toValidate ? 'hot' : ''),
@@ -1680,11 +1680,11 @@ function renderBrief(b) {
     <div class="brief-chips">${chips}</div>
     ${b.previousBrief ? `<div class="muted" style="font-size:12px; margin-bottom:10px">
       Depuis le brief précédent (${fmtDateTime(b.previousBrief.at)}) :
-      ${fmtNum(b.previousBrief.newMessagesSince)} nouveau(x) mail(s) indexé(s).</div>` : ''}
+      ${fmtNum(b.previousBrief.newMessagesSince)} nouveau(x) mail(s) synchronisé(s).</div>` : ''}
     <div class="grid-2">
       <div>
         ${section('⭐ À regarder en premier', importantRows)}
-        ${section('📅 Échéances proches', deadlineRows)}
+        ${section('📅 Dates proches', deadlineRows)}
       </div>
       <div>
         ${section('↩️ Réponses en retard', replyRows)}
@@ -1834,7 +1834,7 @@ function opLine(op) {
       title = `🔕 Fil ignoré <span class="muted">(pas de réponse nécessaire)</span>`;
       break;
     case 'restore_reply':
-      title = `↩️ Fil remis dans « Réponses en attente »`;
+      title = `↩️ Fil remis dans « À répondre »`;
       break;
     case 'snooze_followup':
       title = `⏰ Relance reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
@@ -1843,7 +1843,7 @@ function opLine(op) {
       title = `✓ Relance marquée traitée`;
       break;
     case 'restore_followup':
-      title = `↩️ Fil remis dans « Relances à faire »`;
+      title = `↩️ Fil remis dans « À relancer »`;
       break;
     case 'detect_deadlines':
       title = `📅 <strong>${fmtNum(p.created ?? 0)} échéance(s)</strong> détectée(s) et proposée(s)`;
@@ -2051,7 +2051,7 @@ async function renderAccount(slug) {
             .join('')}</select>
           <input type="date" id="f-since" title="Depuis le…">
           <select id="f-limit"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
-          <button class="btn btn-sm" id="f-apply">Appliquer</button>
+          <button class="btn btn-sm" id="f-apply">Filtrer</button>
         </div></div>
       <div class="panel-body tight" id="stats-table"><div class="empty"><span class="spinner"></span></div></div>
     </div>
@@ -2085,7 +2085,7 @@ async function loadAccountCleanup(slug) {
   }
   if (!data.candidates.length) return;
   el.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>🧹 Nettoyage conseillé</h2>
+    <div class="panel-head"><h2>🧹 Nettoyage rapide</h2>
       <span class="badge green">${fmtNum(data.totalDeletableEstimate)} mails « sûrs »</span></div>
     <div class="panel-body tight">
       <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Non lus</th>
@@ -2151,7 +2151,7 @@ function renderStatsTable() {
         <td>${esc(s.name || s.address)}<br><span class="muted" style="font-size:12px">${esc(s.address)}</span></td>
         <td style="white-space:nowrap">
           <select class="stats-cat" data-address="${esc(s.address)}"
-            title="${esc(s.categoryReason || 'Catégorie non calculée — lance « Recalculer les catégories » dans ⚙️ Paramètres')}">
+            title="${esc(s.categoryReason || 'Catégorie non calculée — lance « Réexaminer les expéditeurs » dans ⚙️ Paramètres')}">
             <option value="" ${s.category ? '' : 'selected'}>${s.category ? '↺ automatique' : '—'}</option>
             ${Object.entries(SENDER_CATEGORY_LABELS)
               .map(([v, l]) => `<option value="${v}" ${s.category === v ? 'selected' : ''}>${l}</option>`)
@@ -2171,7 +2171,7 @@ function renderStatsTable() {
       )
       .join('')}</tbody></table>
     <div class="panel-body muted" style="font-size:12.5px">
-      ${fmtNum(data.totalMessages)} messages analysés (index local — instantané).
+      ${fmtNum(data.totalMessages)} messages analysés (instantané).
       Coche des expéditeurs pour les exporter en contacts (.vcf/.csv). La catégorie sert à
       l'assistant (accueil, nettoyage) : corrige-la si elle est fausse — ton choix est conservé.</div>`;
 
@@ -2605,7 +2605,7 @@ function openEnrollModal() {
       <strong>${esc(r.account ?? name)}</strong>.<br>
       <span class="muted" style="font-size:12.5px">Vérifie que l'adresse ci-dessus est bien
       celle attendue.</span></div>
-      ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà enrôlée</strong>
+      ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà connectée</strong>
         sous le nom « ${esc(r.duplicateOf)} » ! Tu as probablement choisi le mauvais compte.
         Refais « Ajouter un compte » avec le même nom <strong>${esc(r.account ?? name)}</strong>
         et choisis « Utiliser un autre compte » dans la fenêtre Microsoft.</div>` : ''}
@@ -2657,7 +2657,7 @@ function openEnrollModal() {
         window.removeEventListener('message', onMessage);
         if (ev.data.ok) showEnrollSuccess(ev.data, name);
         else {
-          zone.innerHTML = `<div class="notice warn">❌ Échec de l'enrôlement : ${esc(ev.data.error ?? '')}<br>
+          zone.innerHTML = `<div class="notice warn">❌ Échec de la connexion : ${esc(ev.data.error ?? '')}<br>
             <span class="muted" style="font-size:12px">Si l'erreur mentionne « redirect URI »
             (AADSTS50011), il faut déclarer l'URL de retour dans Entra — voir le README §4bis —
             ou utiliser la méthode par code.</span></div>`;
@@ -2705,7 +2705,7 @@ function openEnrollModal() {
         if (j.status === 'done') {
           showEnrollSuccess(j.result ?? {}, name);
         } else {
-          zone.innerHTML = `<div class="notice warn">❌ Échec de l'enrôlement : ${esc(j.error ?? '')}<br>
+          zone.innerHTML = `<div class="notice warn">❌ Échec de la connexion : ${esc(j.error ?? '')}<br>
             <span class="muted" style="font-size:12px">Causes fréquentes : code expiré (15 min),
             connexion refusée, ou mauvaise boîte utilisée. Tu peux réessayer.</span></div>`;
           $('#enroll-form').classList.remove('hidden');
@@ -2715,7 +2715,7 @@ function openEnrollModal() {
   });
 }
 
-// ---------------------------------------------------------------- Réponses en attente
+// ---------------------------------------------------------------- À répondre
 const repliesState = { tab: 'active', sinceDays: 60, data: null };
 
 function waitLabel(hours) {
@@ -2733,8 +2733,8 @@ function replyCategoryBadge(i) {
 async function renderReplies() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>↩️ Réponses en attente</h1>
-      <div class="sub">Mails reçus qui attendent une réponse de ta part — détectés depuis l'index local
+    <div><h1>↩️ À répondre</h1>
+      <div class="sub">Mails reçus qui attendent une réponse de ta part — détectés depuis les mails synchronisés
       (newsletters, notifications et no-reply exclus). Synchronise tes boîtes pour des résultats à jour.</div></div>
     <div class="head-actions">
       <select id="replies-window" title="Fenêtre d'analyse">
@@ -2759,7 +2759,7 @@ async function loadReplies() {
     repliesState.data = await api.replies(repliesState.sinceDays);
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
-      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+      Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
   refreshRepliesBadge(repliesState.data);
@@ -2908,9 +2908,9 @@ function followupCategoryBadge(i) {
 async function renderFollowups() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>⏰ Relances à faire</h1>
+    <div><h1>⏰ À relancer</h1>
       <div class="sub">Mails que TU as envoyés, restés sans réponse : le correspondant à relancer est
-      indiqué. Détecté depuis l'index local (destinataires no-reply exclus) — synchronise tes boîtes
+      indiqué. Détecté depuis les mails synchronisés (destinataires no-reply exclus) — synchronise tes boîtes
       pour des résultats à jour.</div></div>
     <div class="head-actions">
       <select id="followups-window" title="Fenêtre d'analyse">
@@ -2935,7 +2935,7 @@ async function loadFollowups() {
     followupsState.data = await api.followups(followupsState.sinceDays);
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
-      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+      Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
   refreshFollowupsBadge(followupsState.data);
@@ -3097,7 +3097,7 @@ function followupRow(i, idx) {
   </div>`;
 }
 
-// ---------------------------------------------------------------- Mails importants
+// ---------------------------------------------------------------- À ne pas manquer
 // B3 : lus INCLUS par défaut — les « non traités » sont souvent déjà lus.
 const importantState = { sinceDays: 30, minScore: 40, includeRead: true, data: null, expanded: {} };
 
@@ -3110,13 +3110,13 @@ function scoreBadge(score) {
 async function renderImportant() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>⭐ Mails importants</h1>
+    <div><h1>⭐ À ne pas manquer</h1>
       <div class="sub">Chaque mail reçu est noté sur 100 par des règles simples (banque/administration,
       urgence, vraie personne, question, montant…) — les raisons sont affichées sous chaque mail.
-      Détecté depuis l'index local : synchronise tes boîtes pour des résultats à jour.</div></div>
+      Détecté depuis les mails synchronisés : synchronise tes boîtes pour des résultats à jour.</div></div>
     <div class="head-actions">
       <select id="important-minscore" title="Score minimal affiché">
-        ${[[40, 'Score ≥ 40'], [50, 'Score ≥ 50'], [70, 'Score ≥ 70 (haute importance)']]
+        ${[[40, 'Score ≥ 40'], [50, 'Score ≥ 50'], [70, 'Score ≥ 70 (prioritaire)']]
           .map(([v, l]) => `<option value="${v}" ${v === importantState.minScore ? 'selected' : ''}>${l}</option>`)
           .join('')}
       </select>
@@ -3158,7 +3158,7 @@ async function loadImportant() {
     );
   } catch (err) {
     body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
-      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+      Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
   importantState.expanded = {};
@@ -3197,9 +3197,9 @@ function renderImportantBody() {
 
   body.innerHTML = `
     <div class="cards">
-      <div class="kpi"><div class="kpi-label">🔴 Importance haute (≥ 70)</div>
+      <div class="kpi"><div class="kpi-label">🔴 Prioritaires (score ≥ 70)</div>
         <div class="kpi-value">${fmtNum(d.counts.high)}</div></div>
-      <div class="kpi orange"><div class="kpi-label">🟠 Importance moyenne (40-69)</div>
+      <div class="kpi orange"><div class="kpi-label">🟠 À regarder (score 40-69)</div>
         <div class="kpi-value">${fmtNum(d.counts.medium)}</div></div>
       <div class="kpi"><div class="kpi-label">⚪ Faible (&lt; 40)</div>
         <div class="kpi-value">${fmtNum(d.counts.low)}</div>
@@ -3246,10 +3246,10 @@ function importantRow(i, idx) {
     <div class="reply-side">
       <div class="reply-date">${fmtDate(i.date)}</div>
       ${i.level === 'high'
-        ? '<span class="badge red">importance haute</span>'
+        ? '<span class="badge red">prioritaire</span>'
         : i.level === 'medium'
-          ? '<span class="badge orange">importance moyenne</span>'
-          : '<span class="badge gray">importance faible</span>'}
+          ? '<span class="badge orange">à regarder</span>'
+          : '<span class="badge gray">peut attendre</span>'}
       ${i.treatState === 'untreated' ? `<span class="badge orange">⏳ ${fmtNum(i.daysSinceReceived)} j sans traitement</span>` : ''}
       <div class="reply-actions"><button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button></div>
     </div>
@@ -3278,14 +3278,14 @@ const DEADLINE_TYPES = {
 async function renderDeadlines() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>📅 Échéances</h1>
+    <div><h1>📅 Dates à confirmer</h1>
       <div class="sub">Dates limites détectées dans tes mails (paiements, documents à fournir,
       rendez-vous…). Chaque échéance est PROPOSÉE : à toi de la confirmer ou de l'ignorer —
       rien n'est ajouté à un calendrier automatiquement.</div></div>
     <div class="head-actions">
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
         title="Lit aussi le CONTENU des mails au sujet évocateur (max 50 par boîte) — plus lent">
-        <input type="checkbox" id="deadlines-deep"> analyse approfondie</label>
+        <input type="checkbox" id="deadlines-deep"> lire aussi le contenu des mails (plus lent)</label>
       <button class="btn btn-primary" id="deadlines-detect">🔍 Analyser mes mails</button>
       <button class="btn" id="deadlines-refresh">↻ Actualiser</button>
     </div></div>
@@ -3302,7 +3302,7 @@ async function runDeadlineDetect() {
   const deep = $('#deadlines-deep').checked;
   btn.disabled = true;
   zone.innerHTML = `<div class="notice"><span class="spinner"></span>
-    Détection en cours sur toutes les boîtes${deep ? ' (analyse approfondie — lecture des contenus)' : ''}…
+    Détection en cours sur toutes les boîtes${deep ? ' (lecture des contenus — plus lent)' : ''}…
     <span class="muted" id="detect-status"></span></div>`;
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   const jobIds = [];
@@ -3480,7 +3480,7 @@ function deadlineRow(x, idx) {
   </div>`;
 }
 
-// ------------------------------------------------- Règles de classement (L7)
+// ------------------------------------------------- Classement automatique (L7)
 // Suggestion → aperçu → application VALIDÉE. Jamais de déplacement sans ton
 // accord ; l'« auto » ne concerne que les règles que tu as activées.
 const RULE_TYPE_LABELS = {
@@ -3492,7 +3492,7 @@ const RULE_TYPE_LABELS = {
 async function renderRules() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🗂️ Règles de classement</h1>
+    <div><h1>🗂️ Classement automatique</h1>
       <div class="sub">« Si expéditeur X → déplacer vers le dossier Y ». Mail Assistant te PROPOSE
       des règles (rangements que tu fais déjà à la main, grosses newsletters) — rien n'est déplacé
       sans ta validation. Une règle validée peut ensuite s'appliquer automatiquement à chaque
@@ -3520,7 +3520,7 @@ async function loadRules() {
       const { rules } = await api.rules(slug);
       if (rules.length) byAccount.push({ slug, rules });
     } catch {
-      /* boîte pas indexée */
+      /* boîte pas synchronisée */
     }
   }
   rulesState.byAccount = byAccount;
@@ -3539,7 +3539,7 @@ async function runRulesSuggest() {
       const r = await api.rulesSuggest(slug);
       created += r.created;
     } catch {
-      /* boîte pas indexée */
+      /* boîte pas synchronisée */
     }
   }
   btn.disabled = false;
@@ -3782,14 +3782,14 @@ function openRuleModal() {
   });
 }
 
-// ------------------------------------------------- Nettoyage conseillé global (L5.15)
+// ------------------------------------------------- Nettoyage rapide global (L5.15)
 // Tous les candidats de toutes les boîtes, groupés par boîte. « Nettoyer »
 // ouvre l'aperçu détaillé existant (liste cochable) — les garde-fous ne
 // changent pas : corbeille uniquement, confirmation, journal.
 async function renderCleanupGlobal() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🧹 Nettoyage conseillé</h1>
+    <div><h1>🧹 Nettoyage rapide</h1>
       <div class="sub">Les expéditeurs qui encombrent tes boîtes (newsletters, notifications…),
       toutes boîtes confondues. « Nettoyer » montre d'abord la liste exacte des mails — rien ne
       part sans ta confirmation, et tout va dans la corbeille (récupérable ~30 jours).</div></div>
@@ -3887,7 +3887,7 @@ async function loadUnsubscribe() {
         ✉️ <strong>Par mail</strong> = une demande part depuis ta boîte.
         🔗 <strong>Page web</strong> = rien n'est cliqué automatiquement, sa page s'ouvre et tu décides —
         chez un expéditeur douteux, cliquer confirmerait surtout que ton adresse est active.
-        <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">🧹 Nettoyage conseillé</a> pour le stock déjà reçu.</div>
+        <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">🧹 Nettoyage rapide</a> pour le stock déjà reçu.</div>
     </div></div>`;
 
   el.querySelectorAll('[data-unsub]').forEach((btn) => {
@@ -3975,13 +3975,13 @@ async function loadRetention() {
             <input type="checkbox" class="ret-auto" data-id="${p.id}" ${p.autoApply ? 'checked' : ''}> auto</label>
           <button class="btn btn-sm ret-preview" data-id="${p.id}" ${p.matchCount ? '' : 'disabled'}>👀 Aperçu</button>
           <button class="btn btn-sm btn-primary ret-apply" data-id="${p.id}" data-count="${p.matchCount}"
-            data-label="${esc(p.label)}" ${p.enabled && p.matchCount ? '' : 'disabled'}>🧹 Appliquer</button>
+            data-label="${esc(p.label)}" ${p.enabled && p.matchCount ? '' : 'disabled'}>🧹 Mettre à la corbeille</button>
         </div>`).join('')}
       <div class="muted" style="font-size:12.5px; padding-top:8px">
         Simulation en continu : rien n'est touché tant que tu n'appliques pas. Tout part à la
         corbeille (récupérable ~30 jours) et chaque passage est journalisé. « auto » = la stratégie
         s'applique seule après chaque synchronisation — à activer quand tu lui fais confiance.
-        Les compteurs s'appuient sur les catégories : lance « 🏷️ Recalculer » dans ⚙️ Paramètres si tout est à zéro.
+        Les compteurs s'appuient sur les catégories : lance « 🏷️ Réexaminer les expéditeurs » dans ⚙️ Paramètres si tout est à zéro.
         <br>🛡️ <strong>Ce qui est protégé :</strong> pour toujours, tes mails étoilés, ceux liés à une tâche
         ou une échéance en cours, et les expéditeurs marqués ⭐ ; et pendant <strong>2 ans</strong>, tout ce
         avec quoi tu as interagi (mail répondu, conversation où tu as écrit). Passé ce délai, un vieil échange
@@ -4020,7 +4020,7 @@ async function loadRetention() {
   el.querySelectorAll('.ret-apply').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm(
-        `Appliquer « ${btn.dataset.label} » ?\n\n≈ ${btn.dataset.count} mails partiront à la corbeille (récupérables ~30 jours). L'opération tourne en arrière-plan et est journalisée.`,
+        `Lancer « ${btn.dataset.label} » ?\n\n≈ ${btn.dataset.count} mails partiront à la corbeille (récupérables ~30 jours). L'opération tourne en arrière-plan et est journalisée.`,
       )) return;
       btn.disabled = true;
       try {
@@ -4040,7 +4040,7 @@ async function loadRetention() {
 async function renderSuggestions() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>💡 Suggestions</h1>
+    <div><h1>💡 Règles proposées</h1>
       <div class="sub">Ce que l'assistant a appris en t'observant : chaque suggestion vient avec sa preuve.
       Valider = la règle existe. Ignorer = on ne t'en reparle plus. Rien ne s'applique sans toi.</div></div>
     <div class="head-actions"><button class="btn" id="sugg-refresh">↻ Actualiser</button></div></div>
@@ -4074,7 +4074,7 @@ async function loadSuggestions() {
 
   body.innerHTML = `
     ${s.rules.length ? `<div class="panel">
-      <div class="panel-head"><h2>🗂️ Règles de classement proposées</h2><span class="badge orange">${fmtNum(s.rules.length)}</span></div>
+      <div class="panel-head"><h2>🗂️ Règles proposées</h2><span class="badge orange">${fmtNum(s.rules.length)}</span></div>
       <div class="panel-body">
         ${s.rules.map((r, i) => row(
           `Si <strong>${r.rule.matchType === 'domain' ? 'domaine' : r.rule.matchType === 'subject' ? 'sujet' : 'expéditeur'} = ${esc(r.rule.matchValue)}</strong>
@@ -4130,7 +4130,7 @@ async function loadSuggestions() {
   }));
   body.querySelectorAll('.sugg-ret-ok').forEach((btn) => btn.addEventListener('click', () => {
     const r = s.retentionAuto[Number(btn.dataset.i)];
-    if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans 🧹 Nettoyage conseillé.`)) return;
+    if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans 🧹 Nettoyage rapide.`)) return;
     act(btn, () => api.retentionUpdate(r.policyId, { autoApply: true }));
   }));
   body.querySelectorAll('.sugg-ret-no').forEach((btn) => btn.addEventListener('click', () => {
@@ -4147,7 +4147,7 @@ async function loadSuggestions() {
   }));
 }
 
-// ---------------------- Vérifier l'analyse (B2 — Série B) : #/verify
+// ---------------------- Corriger l'assistant (B2 — Série B) : #/verify
 // Contrôle qualité : échantillon réel de chaque moteur, jugé par l'utilisateur.
 // Correct / Incorrect / Ne sais pas — les corrections passent par les
 // mécanismes EXISTANTS (catégorie manuelle, priorité, dismiss), le verdict
@@ -4158,7 +4158,7 @@ let verifySample = null;
 // CORRECTION réelle (toujours confirmée avant).
 const VERIFY_REASONS = {
   reply: [
-    { label: 'Pas de réponse attendue', action: 'dismissReply', confirm: 'Retirer ce fil des « Réponses en attente » ?' },
+    { label: 'Pas de réponse attendue', action: 'dismissReply', confirm: 'Retirer ce fil de « À répondre » ?' },
     { label: "C'est un robot / une notification", action: 'catNotification', confirm: 'Classer cet expéditeur en « Notification / robot » (choix mémorisé) ?' },
     { label: 'Autre raison' },
   ],
@@ -4204,7 +4204,7 @@ const VERIFY_VERDICT_BADGES = {
 async function renderVerify() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🔬 Vérifier l'analyse</h1>
+    <div><h1>🔬 Corriger l'assistant</h1>
       <div class="sub">Contrôle qualité : quelques mails tirés AU HASARD dans chaque moteur d'analyse.
       Dis si l'assistant a bon — tes corrections améliorent les catégories, les priorités et les listes.
       Rien n'est supprimé ici.</div></div>
@@ -4354,7 +4354,7 @@ function renderVerifyZone(ei, i) {
   });
 }
 
-// -------------------------------- Grand ménage (A4 — Cap V3) : #/bigclean
+// -------------------------------- Libérer de l'espace (A4 — Cap V3) : #/bigclean
 // « Pourquoi ma boîte est pleine ? » : rapport index-only instantané +
 // lancement groupé des stratégies de rétention cochées (cocher = valider).
 function pctBar(pct, color) {
@@ -4364,11 +4364,11 @@ function pctBar(pct, color) {
 async function renderBigClean() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🧺 Grand ménage</h1>
+    <div><h1>🧺 Libérer de l'espace</h1>
       <div class="sub">Pourquoi ta boîte est pleine, et ce qu'on peut récupérer SANS RISQUE.
       L'analyse ne touche à rien : tu regardes, tu coches, tu valides.</div></div>
     <div class="head-actions"><button class="btn" id="bigclean-refresh">🔍 Ré-analyser</button></div></div>
-    <div id="bigclean-body"><div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes (index local)…</div></div>`;
+    <div id="bigclean-body"><div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes…</div></div>`;
   $('#bigclean-refresh').addEventListener('click', loadBigClean);
   await loadBigClean();
 }
@@ -4376,7 +4376,7 @@ async function renderBigClean() {
 async function loadBigClean() {
   const body = $('#bigclean-body');
   if (!body) return;
-  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes (index local)…</div>';
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes…</div>';
   let r;
   try {
     r = await api.report();
@@ -4394,7 +4394,7 @@ async function loadBigClean() {
 
   body.innerHTML = `
     ${needCategories ? `<div class="notice warn">🏷️ La plupart des mails ne sont pas encore catégorisés :
-      lance « Recalculer les catégories » dans <a href="#/settings">⚙️ Paramètres</a> puis reviens — le rapport sera bien plus précis.</div>` : ''}
+      lance « Réexaminer les expéditeurs » dans <a href="#/settings">⚙️ Paramètres</a> puis reviens — le rapport sera bien plus précis.</div>` : ''}
 
     <div class="cards">
       <div class="kpi"><div class="kpi-label">✉️ Mails analysés</div>
@@ -4402,7 +4402,7 @@ async function loadBigClean() {
         <div class="kpi-sub">${fmtNum(r.totals.accounts)} boîte(s), hors corbeille/spam</div></div>
       <div class="kpi"><div class="kpi-label">💾 Espace occupé</div>
         <div class="kpi-value">${fmtSize(r.totals.sizeBytes)}</div>
-        <div class="kpi-sub">taille des mails indexés</div></div>
+        <div class="kpi-sub">taille des mails synchronisés</div></div>
       <div class="kpi accent"><div class="kpi-label">🧺 Récupérable sans risque</div>
         <div class="kpi-value">${fmtNum(r.deletable.count)}</div>
         <div class="kpi-sub">mails · ${fmtSize(r.deletable.sizeBytes)} — 0 mail personnel, garanti</div></div>
@@ -4449,7 +4449,7 @@ async function loadBigClean() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>🧺 Lancer le grand ménage</h2>
+      <div class="panel-head"><h2>🧺 Lancer le nettoyage</h2>
         <span class="badge green">≈ ${fmtNum(r.deletable.count)} mails · ${fmtSize(r.deletable.sizeBytes)} récupérables</span></div>
       <div class="panel-body">
         ${usable.length === 0
@@ -4466,7 +4466,7 @@ async function loadBigClean() {
             <span class="muted" style="font-size:12.5px; flex:1">Tout part à la CORBEILLE (récupérable ~30 jours),
             par lots de 200, opération par opération dans le <a href="#/operations">journal</a>.
             Les mails de personnes ne sont jamais touchés.</span>
-            <button class="btn btn-primary" id="gm-launch">🧺 Lancer le grand ménage</button>
+            <button class="btn btn-primary" id="gm-launch">🧺 Lancer le nettoyage</button>
           </div>`}
       </div>
     </div>`;
@@ -4481,17 +4481,17 @@ async function loadBigClean() {
       return;
     }
     const total = checked.reduce((s, c) => s + Number(c.dataset.count), 0);
-    if (!confirm(`Grand ménage : ≈ ${fmtNum(total)} mails partiront à la corbeille (${checked.length} stratégie(s)).\n\nIls restent récupérables ~30 jours. Les stratégies cochées seront ACTIVÉES (tu peux les désactiver ensuite dans 🧹 Nettoyage conseillé). On y va ?`)) return;
+    if (!confirm(`Libérer de l'espace : ≈ ${fmtNum(total)} mails partiront à la corbeille (${checked.length} stratégie(s)).\n\nIls restent récupérables ~30 jours. Les stratégies cochées seront ACTIVÉES (tu peux les désactiver ensuite dans 🧹 Nettoyage rapide). On y va ?`)) return;
     const btn = $('#gm-launch');
     btn.disabled = true;
-    btn.textContent = 'Grand ménage lancé…';
+    btn.textContent = 'Nettoyage lancé…';
     try {
       await api.grandMenage(checked.map((c) => Number(c.dataset.id)));
       pollJobs();
-      alert('🧺 Grand ménage lancé en arrière-plan — suis l\'avancement via la pastille d\'activité, puis « 🔍 Ré-analyser » pour voir le résultat.');
+      alert('🧺 Nettoyage lancé en arrière-plan — suis l\'avancement via la pastille d\'activité, puis « 🔍 Ré-analyser » pour voir le résultat.');
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = '🧺 Lancer le grand ménage';
+      btn.textContent = '🧺 Lancer le nettoyage';
       alert(err.message);
     }
   });
@@ -4571,7 +4571,7 @@ async function loadCleanupGlobal() {
         totalCandidates += d.candidates.length;
       }
     } catch {
-      /* boîte pas encore indexée : ignorée */
+      /* boîte pas encore synchronisée : ignorée */
     }
   }
   if (!body.isConnected) return;
@@ -4619,7 +4619,7 @@ async function renderAttachments() {
   main.innerHTML = `<div class="page-head">
     <div><h1>📎 Pièces jointes</h1>
       <div class="sub">Retrouve un document reçu ou envoyé : mails avec pièces jointes, toutes boîtes
-      confondues. Ouvre le mail puis clique ⬇️ pour télécharger. NB : seuls les mails indexés depuis
+      confondues. Ouvre le mail puis clique ⬇️ pour télécharger. NB : seuls les mails synchronisés depuis
       la version « pièces jointes » portent l'info — une synchro complète la pose sur l'historique.</div></div></div>
     <form class="search-bar" id="attach-form">
       <input type="search" id="a-q" placeholder="Expéditeur, sujet… (ex. facture, notaire, EDF)"
@@ -4731,7 +4731,7 @@ function renderHelp() {
       `Ferme la fenêtre noire de MailAssistant.bat puis relance-la. Tes données (index, comptes,
       journal) sont conservées sur ton PC.`)}`)}
 
-  ${section('📧 Boîtes & enrôlement', `
+  ${section('📧 Boîtes & connexion', `
     ${qa('Ajouter une boîte',
       `Barre latérale → <strong>＋ Ajouter un compte</strong>. Une fenêtre Microsoft s'ouvre et te
       demande QUEL compte connecter : choisis le bon (ou « Utiliser un autre compte »). Répète pour
@@ -4747,14 +4747,12 @@ function renderHelp() {
       met un peu de temps à propager.`)}
     ${qa('Renommer ou retirer une boîte',
       `Écran <a href="#/settings">⚙️ Paramètres</a>. Renommer garde l'accès (il faut juste relancer
-      une synchronisation) ; retirer efface l'accès local et l'index — <strong>tes mails chez
+      une synchronisation) ; retirer efface l'accès local et la copie des mails — <strong>tes mails chez
       Microsoft ne bougent jamais</strong>.`)}`)}
 
   ${section('🔄 Synchronisation', `
     ${qa('À quoi sert la synchronisation ?',
-      `Elle copie les MÉTADONNÉES de tes mails (expéditeur, sujet, date… jamais le contenu) dans un
-      index local ultra-rapide. Recherche, statistiques, importants, relances, échéances : tout lit
-      cet index. Synchronise régulièrement pour des résultats à jour.`)}
+      `Elle copie les MÉTADONNÉES de tes mails (expéditeur, sujet, date… jamais le contenu) dans une copie locale ultra-rapide. Recherche, statistiques, importants, relances, échéances : tout lit cette copie. Synchronise régulièrement pour des résultats à jour.`)}
     ${qa('Rapide ou complète ?',
       `<strong>Rapide</strong> : boîte de réception + envoyés, nouveaux mails seulement — quelques
       secondes, à privilégier au quotidien. <strong>Complète</strong> : tous les dossiers + statuts
@@ -4782,7 +4780,7 @@ function renderHelp() {
     ${qa('Télécharger une pièce jointe',
       `Ouvre le mail : les pièces jointes sont listées en bas du panneau, clique sur ⬇️ pour
       télécharger. Limite : mails de plus de 25 Mo à ouvrir depuis Outlook. Le badge 📎 dans la
-      boîte de réception n'apparaît que sur les mails indexés récemment — une synchronisation
+      boîte de réception n'apparaît que sur les mails synchronisés récemment — une synchronisation
       complète le pose sur les nouveaux arrivages.`)}
     ${qa('Envoyer / répondre en sécurité',
       `L'envoi demande toujours une confirmation, est journalisé (destinataires + objet), et une
@@ -4903,16 +4901,15 @@ function renderSettingsBody() {
   const v = serverVersion;
   body.innerHTML = `
     <div class="panel">
-      <div class="panel-head"><h2>📧 Boîtes enrôlées</h2></div>
+      <div class="panel-head"><h2>📧 Boîtes connectées</h2></div>
       <div class="panel-body tight">
         ${enrolled.length === 0
-          ? '<div class="empty">Aucune boîte enrôlée.</div>'
-          : `<table><thead><tr><th style="width:76px" title="Ordre d'affichage des boîtes partout dans l'interface">Ordre</th><th style="width:90px">Couleur</th><th>Nom</th><th>Adresse</th><th>Index · Espace</th><th></th></tr></thead>
+          ? '<div class="empty">Aucune boîte connectée.</div>'
+          : `<table><thead><tr><th style="width:76px" title="Ordre d'affichage des boîtes partout dans l'interface">Ordre</th><th style="width:90px">Couleur</th><th>Nom</th><th>Adresse</th><th>Mails · Espace</th><th></th></tr></thead>
              <tbody>${rows}</tbody></table>`}
       </div>
       <div class="panel-body muted" style="font-size:12.5px; padding-top:0">
-        ✏️ Renommer change uniquement le nom affiché ici (l'accès est conservé) ; l'index local
-        est reconstruit à la synchronisation suivante. 🗑️ Supprimer retire la boîte de Mail
+        ✏️ Renommer change uniquement le nom affiché ici (l'accès est conservé) ; la copie locale des mails est reconstruite à la synchronisation suivante. 🗑️ Supprimer retire la boîte de Mail
         Assistant — tes mails chez Microsoft ne bougent pas.</div>
     </div>
     <div class="panel">
@@ -4929,10 +4926,10 @@ function renderSettingsBody() {
           <span>${smtpEnabled ? '✅ activé' : '✕ désactivé (ENABLE_SMTP_SEND=false)'}</span></div>
         <div class="set-line"><span class="muted">Synchronisation automatique</span>
           <span>${autoSyncLabel(v?.autoSync)}</span></div>
-        <div class="set-line"><span class="muted">Boîtes indexées</span>
+        <div class="set-line"><span class="muted">Boîtes synchronisées</span>
           <span>${fmtNum(overviewCache?.totals?.accounts ?? 0)} boîte(s) · ${fmtNum(overviewCache?.totals?.indexedMessages ?? 0)} mails</span></div>
         <div class="set-line"><span class="muted">Catégories de l'assistant</span>
-          <span><button class="btn btn-sm" id="set-categorize" title="Recalcule « qui écrit » et « pourquoi » pour tous les mails déjà indexés (index local, rapide)">🏷️ Recalculer les catégories</button></span></div>
+          <span><button class="btn btn-sm" id="set-categorize" title="Réexamine « qui écrit » et « pourquoi » pour tous les mails déjà synchronisés (rapide)">🏷️ Réexaminer les expéditeurs</button></span></div>
       </div>
     </div>
 
@@ -5079,7 +5076,7 @@ function renderSettingsBody() {
       let r = await api.accountsImport(envelope, pass, false);
       // Boîtes déjà présentes ici : on demande avant d'écraser des accès en usage.
       if (r.skipped.length && confirm(
-        `${r.skipped.length} boîte(s) sont déjà enrôlées ici :\n` +
+        `${r.skipped.length} boîte(s) sont déjà connectées ici :\n` +
         r.skipped.map((s) => `· ${s.account}`).join('\n') +
         `\n\nRemplacer leurs accès par ceux du fichier ?`)) {
         r = await api.accountsImport(envelope, pass, true);
@@ -5107,7 +5104,7 @@ function renderSettingsBody() {
       el.innerHTML = `
         <div class="set-line"><span class="muted">Couverture</span>
           <span>${HEALTH_DOT[h.level]} <strong>${h.totals.fresh}/${h.totals.accounts}</strong> boîte(s) à jour ·
-          ${fmtNum(h.totals.indexedMessages)} mails indexés</span></div>
+          ${fmtNum(h.totals.indexedMessages)} mails synchronisés</span></div>
         <div class="set-line"><span class="muted">Synchronisation automatique</span>
           <span>${h.autoSync.enabled ? `toutes les ${h.autoSync.intervalMinutes} min` : '✕ désactivée (synchro à la demande)'}</span></div>
         ${h.totals.unanalyzed > 0 ? `<div class="set-line"><span class="muted">Mails pas encore analysés</span>
@@ -5188,7 +5185,7 @@ function renderSettingsBody() {
         <table style="margin:10px 0">
           <thead><tr>
             <th>Boîte</th>
-            <th class="num" title="Mails indexés (hors corbeille/spam/envoyés)">Mails</th>
+            <th class="num" title="Mails synchronisés (hors corbeille/spam/envoyés)">Mails</th>
             <th class="num" title="Part des mails dont le texte a été capturé — pré-requis de toute analyse">Texte connu</th>
             <th class="num" title="Verdict IA posé, en % des mails dont le texte est connu">Analysés IA</th>
             <th class="num" title="Cas douteux restants : c'est CE chiffre que Claude annonce pendant le rattrapage (« il reste N mails »)">Douteux restants</th>
@@ -5366,7 +5363,7 @@ function renderSettingsBody() {
       );
       if (!to || to.trim() === slug) return;
       if (!confirm(
-        `Renommer « ${slug} » en « ${to.trim()} » ?\n\nL'accès à la boîte est conservé, mais l'index local sera vidé : il faudra relancer une synchronisation (bouton sur la vue de la boîte).`,
+        `Renommer « ${slug} » en « ${to.trim()} » ?\n\nL'accès à la boîte est conservé, mais la copie locale des mails sera vidée : il faudra relancer une synchronisation (bouton sur la vue de la boîte).`,
       )) return;
       btn.disabled = true;
       try {
@@ -5386,7 +5383,7 @@ function renderSettingsBody() {
     btn.addEventListener('click', async () => {
       const slug = btn.dataset.account;
       if (!confirm(
-        `Retirer la boîte « ${slug} » de Mail Assistant ?\n\nTes mails chez Microsoft ne sont PAS touchés. Seuls l'accès local (token) et l'index sont effacés. Tu pourras la ré-enrôler plus tard.`,
+        `Retirer la boîte « ${slug} » de Mail Assistant ?\n\nTes mails chez Microsoft ne sont PAS touchés. Seuls l'accès et la copie locale des mails sont effacés. Tu pourras la reconnecter plus tard.`,
       )) return;
       const typed = prompt(`Confirmation : tape exactement le nom de la boîte à retirer (« ${slug} »)`);
       if (typed !== slug) {
@@ -5515,7 +5512,7 @@ function renderCalendarBody() {
         </div>
         <div class="panel-body muted" style="font-size:12.5px; padding:8px 4px 0">
           🛟 Lecture seule : rien n'est créé ni modifié depuis le calendrier. Les échéances en
-          pointillé sont encore <em>proposées</em> — confirme-les depuis l'écran Échéances.</div>
+          pointillé sont encore <em>proposées</em> — confirme-les depuis l'écran Dates à confirmer.</div>
       </div>
       <div class="cal-side" id="cal-side"></div>
     </div>`;
@@ -5610,7 +5607,7 @@ const tasksState = { tab: 'todo', data: null };
 async function renderTasks() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>☑️ Tâches</h1>
+    <div><h1>☑️ Mes tâches</h1>
       <div class="sub">Ta liste à faire : ajoutée à la main, depuis un mail (panneau de lecture)
       ou depuis une échéance. Rien ici ne touche aux mails.</div></div>
     <div class="head-actions">
@@ -5836,7 +5833,7 @@ async function renderInbox(slugFromHash) {
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   if (accounts.length === 0) {
     main.innerHTML = `<div class="page-head"><div><h1>📥 Boîte de réception</h1></div></div>
-      <div class="notice warn">Aucun compte enrôlé.</div>`;
+      <div class="notice warn">Aucune boîte connectée.</div>`;
     return;
   }
   if (slugFromHash?.startsWith('@')) {
@@ -5860,7 +5857,7 @@ async function renderInbox(slugFromHash) {
 
   main.innerHTML = `<div class="page-head">
     <div><h1 id="inbox-title">📥 Boîte de réception</h1>
-      <div class="sub">Tous les mails du dossier, page par page (index local — instantané).
+      <div class="sub">Tous les mails du dossier, page par page (instantané).
       Clique un mail pour le lire ; coche pour agir en masse. Synchronise pour des résultats à jour.</div></div>
     <div class="head-actions">
       <input type="search" id="inbox-q" placeholder="🔎 Filtrer : sujet, expéditeur…"
@@ -5874,9 +5871,9 @@ async function renderInbox(slugFromHash) {
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
         <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
-        title="Seuls les mails indexés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
+        title="Seuls les mails synchronisés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
         <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> 📎 avec PJ</label>
-      <button class="btn" id="inbox-refresh" title="Recharge la liste depuis l'index local (pour interroger le serveur Microsoft, lance une synchronisation depuis la vue de la boîte)">↻ Actualiser</button>
+      <button class="btn" id="inbox-refresh" title="Recharge la liste depuis les mails synchronisés (pour interroger le serveur Microsoft, lance une synchronisation depuis la vue de la boîte)">↻ Actualiser</button>
       <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">✉️ Nouveau mail</button>
     </div></div>
     <div id="inbox-notice"></div>
@@ -6056,8 +6053,8 @@ function renderInboxBody() {
             inboxState.q
               ? `Aucun mail ne contient « ${esc(inboxState.q)} » ici. Efface le filtre (✕) ou essaie l'écran 🔎 Recherche pour chercher partout.`
               : inboxState.attachments
-              ? 'Aucun mail avec pièce jointe ici. NB : seuls les mails indexés depuis la version « pièces jointes » portent cette info — une resynchronisation complète la pose sur les nouveaux arrivages.'
-              : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore indexé).'
+              ? 'Aucun mail avec pièce jointe ici. NB : seuls les mails synchronisés depuis la version « pièces jointes » portent cette info — une resynchronisation complète la pose sur les nouveaux arrivages.'
+              : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore synchronisé).'
           }</div>`
         : `<table><thead><tr>
             <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
@@ -6292,7 +6289,7 @@ async function renderSearch() {
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   main.innerHTML = `<div class="page-head">
     <div><h1>🔎 Recherche</h1>
-      <div class="sub">Cherche dans toutes tes boîtes d'un coup (index local — instantané), puis clique un mail
+      <div class="sub">Cherche dans toutes tes boîtes d'un coup (instantané), puis clique un mail
       pour le lire ici, sans ouvrir Outlook. Synchronise tes boîtes pour des résultats à jour.</div></div></div>
     <form class="search-bar" id="search-form">
       <input type="search" id="s-q" placeholder="Sujet, expéditeur, adresse… (ex. facture, EDF, marie)"
@@ -6311,7 +6308,7 @@ async function renderSearch() {
       <label>Du <input type="date" id="s-since" value="${esc(searchState.since)}"></label>
       <label>Au <input type="date" id="s-before" value="${esc(searchState.before)}"></label>
       <label><input type="checkbox" id="s-unseen" ${searchState.unseen ? 'checked' : ''}> non lus seulement</label>
-      <label title="Info posée à la synchronisation — les mails indexés avant la version « pièces jointes » ne la portent pas encore.">
+      <label title="Info posée à la synchronisation — les mails synchronisés avant la version « pièces jointes » ne la portent pas encore.">
         <input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}> 📎 avec pièces jointes</label>
     </div>
     <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot-clé ci-dessus, ou ouvre les filtres pour chercher par expéditeur ou par date.</div>`}</div>`;
@@ -6368,7 +6365,7 @@ async function runSearch() {
     });
   } catch (err) {
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
-      Si les boîtes ne sont pas encore indexées, lance d'abord une synchronisation.</div>`;
+      Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
   renderSearchResults();
@@ -6411,7 +6408,7 @@ function renderSearchResults() {
         </div>
       </div>`).join('')}
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 La recherche lit uniquement l'index local. Ouvrir un mail le télécharge en direct depuis la
+      🛟 La recherche lit uniquement les mails synchronisés sur cet appareil. Ouvrir un mail le télécharge en direct depuis la
       boîte ; les actions (corbeille, déplacer…) sont journalisées et le soft delete reste la règle.</div>`;
 
   el.querySelectorAll('.result-row').forEach((row) => {
@@ -6678,7 +6675,7 @@ async function openReader(item, row, opts = {}) {
     if (!el) return;
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>
       <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
-      injoignable ou mail déplacé). Les infos ci-dessus viennent de l'index local.
+      injoignable ou mail déplacé). Les infos ci-dessus viennent des mails synchronisés.
       Si le mail existe toujours dans Outlook, une <a href="#/account/${esc(item.account)}">synchronisation
       de la boîte</a> remettra l'index d'aplomb.</div>`;
     loadAnalysis(''); // l'analyse marche quand même (index + sujet)
@@ -6884,7 +6881,7 @@ function renderReaderAnalysis(a, item) {
     : 'gray';
   const impLine = a.importance
     ? `<div class="ra-line">${scoreBadge(a.importance.score)}
-        <span>importance ${a.importance.level === 'high' ? 'haute' : a.importance.level === 'medium' ? 'moyenne' : 'faible'}
+        <span>${a.importance.level === 'high' ? 'prioritaire' : a.importance.level === 'medium' ? 'à regarder' : 'peut attendre'}
         <span class="muted" style="font-size:11.5px" title="${esc(a.importance.reasons.join(' · '))}">
         — ${a.importance.reasons.slice(0, 2).map(esc).join(' · ')}${a.importance.reasons.length > 2 ? ' …' : ''}</span></span></div>`
     : '';
@@ -6961,7 +6958,7 @@ function renderReaderAnalysis(a, item) {
     ${confidenceLine}
     ${classLine}
     ${existing || detected
-      ? `<div class="ra-line"><span>Échéances :</span> ${existing} ${detected}</div>`
+      ? `<div class="ra-line"><span>Dates :</span> ${existing} ${detected}</div>`
       : ''}`;
 
   const note = (msg) => {
@@ -7013,7 +7010,7 @@ function renderReaderAnalysis(a, item) {
         });
         btn.replaceWith(Object.assign(document.createElement('span'), {
           className: 'badge orange',
-          textContent: '✓ proposée — à valider dans 📅 Échéances',
+          textContent: '✓ proposée — à valider dans 📅 Dates à confirmer',
         }));
         refreshDeadlinesBadge();
       } catch (err) {

@@ -26,7 +26,7 @@ export type ReviewEngine = (typeof REVIEW_ENGINES)[number];
 
 export const REVIEW_ENGINE_LABELS: Record<ReviewEngine, string> = {
   reply: 'Réponses attendues',
-  important: 'Mails importants',
+  important: 'À ne pas manquer',
   newsletter: 'Newsletters',
   notification: 'Notifications',
   cleanup: 'Candidats au nettoyage',

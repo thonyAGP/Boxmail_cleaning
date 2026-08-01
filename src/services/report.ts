@@ -206,6 +206,6 @@ export async function runGrandMenage(
       report.policies.push({ id, label: p.label, deleted: 0, errors: [(err as Error).message] });
     }
   }
-  progress(`Grand ménage terminé : ${report.deleted} mails à la corbeille.`);
+  progress(`Nettoyage terminé : ${report.deleted} mails à la corbeille.`);
   return report;
 }
