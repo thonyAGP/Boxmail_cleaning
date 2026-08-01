@@ -5,6 +5,26 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 — « Réponses en attente » : sortir le transactionnel (81 → 34)
+
+Retour utilisateur : des FACTURES apparaissaient dans « Réponses en
+attente ». Deux causes, corrigées après SIMULATION avant/après sur les 7
+boîtes réelles (81 éléments avant, 34 après, 47 retirés — tous vérifiés à
+l'œil : factures EDF/Free/Pennylane/eau, confirmations Airbnb/Smoobu/Air
+France, OTP impots/Arlo/AXA, avis PayPal…) :
+1. AUTO_SENDER_RE ratait les variantes à underscore/point : no_reply@paypal,
+   do_not_reply@arlo, no.reply@vilogi passaient la barrière. Séparateurs
+   [-._] optionnels partout (profite aussi à categorize et followups).
+2. Nouveau filtre : mail dont l'INTENTION est transactionnelle (otp, invoice,
+   shipping, confirmation, promo, document) ET expéditeur non-« person » ⇒
+   pas de réponse attendue. Les mails de PERSONNES restent listés quoi
+   qu'ils contiennent (l'artisan qui envoie sa facture). Cas limites assumés
+   (relances de facture → écran échéances/paiement, pas « réponses »).
+
+Rappel du pipeline auto (question utilisateur) : chaque sync = extrait des
+150 mails les plus récents → intention → confiance → règles auto →
+échéances. La boucle Cowork ne voit que ce qui RESTE douteux après ça.
+
 ## 01/08 (5) — Correction d'intention par mail + état du rattrapage IA
 
 Nouveau dans le lecteur : l'intention de CE mail se corrige via un sélecteur

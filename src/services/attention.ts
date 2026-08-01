@@ -84,8 +84,11 @@ const CATEGORY_LABELS: Record<ReplyCategory, string> = {
 };
 
 /** Expéditeurs automatiques (même filtre que le nettoyage) : jamais « à répondre ». */
+// Séparateurs [-._] optionnels partout : « no_reply@paypal », « do_not_reply@arlo »
+// et « no.reply@vilogi » passaient la barrière et finissaient dans « Réponses en
+// attente » (constaté sur données réelles le 02/08).
 export const AUTO_SENDER_RE =
-  /(no-?reply|nepasrepondre|ne-pas-repondre|donotreply|do-not-reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
+  /(no[-._]?reply|nepasrepondre|ne[-._]?pas[-._]?repondre|do[-._]?not[-._]?reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
 
 /** Sujet qui réclame une réponse rapide. */
 export const URGENT_SUBJECT_RE =
@@ -289,6 +292,7 @@ export async function getUnansweredEmails(
       toEmails: true,
       date: true,
       isSeen: true,
+      intent: true,
       folder: { select: { path: true } },
     },
   });
@@ -304,6 +308,35 @@ export async function getUnansweredEmails(
     if (!byThread.has(m.threadId)) byThread.set(m.threadId, m);
   }
   const threadIds = [...byThread.keys()];
+
+  // Mail TRANSACTIONNEL d'un expéditeur qui n'est pas une personne = pas de
+  // réponse attendue : une facture se paie, un OTP se tape, une confirmation
+  // se lit. Simulé sur les 7 boîtes réelles le 02/08 : 47 des 81 « en
+  // attente » étaient de ce type (factures Amazon/Stripe, codes AXA/impots,
+  // confirmations Crédit Agricole…) — c'est ce qui minait la confiance dans
+  // l'écran. Les mails de PERSONNES restent listés quoi qu'ils contiennent :
+  // l'artisan qui envoie sa facture attend parfois bel et bien un retour.
+  const NO_REPLY_INTENTS = new Set(['otp', 'invoice', 'shipping', 'confirmation', 'promo', 'document']);
+  const senderCat = new Map<string, string | null>();
+  {
+    const emails = [...new Set([...byThread.values()].map((m) => m.fromEmail as string))];
+    for (const part of chunk(emails, 500)) {
+      const rows = await db.sender.findMany({
+        where: { accountSlug: account, email: { in: part } },
+        select: { email: true, category: true },
+      });
+      for (const r of rows) senderCat.set(r.email, r.category);
+    }
+  }
+  for (const [threadId, m] of [...byThread]) {
+    if (
+      m.intent &&
+      NO_REPLY_INTENTS.has(m.intent) &&
+      senderCat.get(m.fromEmail as string) !== 'person'
+    ) {
+      byThread.delete(threadId);
+    }
+  }
 
   // 2. Contexte des fils : dernier message toutes directions confondues et
   //    dernière réponse sortante — pour ne garder que les fils qui se
