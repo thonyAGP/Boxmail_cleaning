@@ -70,9 +70,29 @@ function htmlEnTexte(raw: string): string {
     .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<\/?(p|div|br|tr|td|th|li|h[1-6]|table)\b[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&#x([0-9a-f]+);?/gi, (_m, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);?/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, h: string) => codePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);?/g, (_m, d: string) => codePoint(Number(d)))
     .replace(/&([a-z]+);?/gi, (_m, e: string) => entites[e.toLowerCase()] ?? ' ');
+}
+
+/**
+ * Convertit un point de code d'entité en caractère, en refusant ce qui ne peut
+ * pas être écrit en base.
+ *
+ * DÉFAUT RÉEL, introduit puis corrigé le 30/07 : `String.fromCodePoint(55296)`
+ * rend un DEMI-CARACTÈRE de substitution isolé — parfaitement valide en
+ * JavaScript, mais impossible à encoder en UTF-8. Prisma refusait alors
+ * l'écriture (« unexpected end of hex escape ») et l'erreur faisait échouer la
+ * lecture des extraits de TOUTE une boîte, pas seulement du mail fautif.
+ */
+function codePoint(n: number): string {
+  if (!Number.isFinite(n) || n < 0x20 || n > 0x10ffff) return ' ';
+  if (n >= 0xd800 && n <= 0xdfff) return ' '; // demi-caractère isolé
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return ' ';
+  }
 }
 
 /** true si la chaîne est du balisage plutôt que du texte lisible. */
@@ -135,7 +155,16 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
       .join(' ')
       .trim();
 
-  const source = ressembleAduHtml(raw) ? htmlEnTexte(raw) : raw;
+  // Filet de sécurité, quelle que soit la provenance du texte : un demi-caractère
+  // de substitution isolé ou un caractère de contrôle rend la chaîne
+  // inencodable en UTF-8, et l'écriture échoue pour TOUTE la boîte, pas
+  // seulement pour le mail fautif. Un corps de mail mal formé ne doit jamais
+  // pouvoir bloquer une passe entière.
+  const sain = raw
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  const source = ressembleAduHtml(sain) ? htmlEnTexte(sain) : sain;
   // Ordre voulu : d'abord la citation (le fil recopié dessous), puis la
   // signature (le bloc de fin). Chacun a son propre repli si la coupe vide tout.
   let text = flatten(stripSignature(stripQuotedText(source)));
