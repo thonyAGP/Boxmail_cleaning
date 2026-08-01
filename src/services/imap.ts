@@ -331,6 +331,14 @@ class ImapService {
         { uid: true, envelope: true, bodyStructure: true },
         { uid: true },
       );
+      // Sans ce garde-fou, on descendait jusqu'à mailparser qui plantait sur
+      // « Input cannot be null or undefined » — incompréhensible pour
+      // l'utilisateur (constaté le 01/08 sur un mail du dossier Sent).
+      if (!info) {
+        throw new Error(
+          'mail introuvable à cet emplacement — déplacé ou supprimé depuis la dernière synchronisation',
+        );
+      }
       const bs = (info && info.bodyStructure ? info.bodyStructure : null) as BodyNode | null;
       const textNode = findTextNode(bs);
 
@@ -376,6 +384,11 @@ class ImapService {
   /** Repli : mail complet + mailparser (structure atypique ou fetch partiel KO). */
   private async readEmailFull(client: ImapFlow, uid: number): Promise<EmailBody> {
     const dl = await client.download(String(uid), undefined, { uid: true });
+    if (!dl || !dl.content) {
+      throw new Error(
+        'mail introuvable à cet emplacement — déplacé ou supprimé depuis la dernière synchronisation',
+      );
+    }
     const parsed = await simpleParser(dl.content);
     let text = parsed.text ?? '';
     if (!text && parsed.html) text = htmlToText(parsed.html);

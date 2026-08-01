@@ -5,6 +5,29 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 01/08 (4) — Lecture auto-réparante + correction du classement dans le lecteur
+
+Bug : « Lecture impossible : Input cannot be null or undefined » sur un mail
+du dossier Sent — mailparser recevait undefined quand l'UID de l'index était
+périmé (mail déplacé/re-rangé). Corrigé à trois étages :
+- imap.ts : erreur claire en français quand le mail n'est plus à cet
+  emplacement (fetchOne vide, download sans contenu) ;
+- route de lecture : AUTO-RÉPARATION — le mail est recherché par son
+  Message-ID ailleurs dans l'index, relu là-bas, l'ancienne ligne morte est
+  retirée, la réponse porte relocated=true ;
+- lecteur : suit le nouvel emplacement (actions sur le bon dossier/UID),
+  bandeau « retrouvé dans X », et le message d'échec pointe vers la
+  synchronisation.
+
+Boucle de correction (réflexion « comment je te signale une erreur ») :
+le panneau 🤖 Analyse du lecteur affiche désormais le CLASSEMENT (intention
+du mail + badge auto/IA/corrigé, catégorie et priorité de l'expéditeur) avec
+correction SUR PLACE (sélecteurs) via les API existantes — s'applique à tous
+les mails de l'expéditeur, manual > ai > auto, journalisé. Rappels : la
+lecture d'un mail ici le marque déjà lu côté Outlook (FETCH \Seen) ; l'écran
+🔬 Vérifier l'analyse reste le canal « verdict » ; 💡 Suggestions le canal
+règles.
+
 ## 01/08 (3) — Mise à jour production accélérée + patience de l'interface
 
 Le bandeau « serveur pas revenu après 3 minutes » est apparu sur

@@ -1506,11 +1506,54 @@ export function buildAdminRouter(): Router {
         // Le FETCH du corps marque le mail \Seen côté serveur : l'index suit.
         await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
         res.json({ account: rec.account, folder, ...body });
+        return;
       } catch (err) {
+        // AUTO-RÉPARATION (01/08) : l'UID de l'index peut être périmé (mail
+        // déplacé, re-rangé, resynchronisé). Avant d'abandonner, on cherche le
+        // MÊME mail (Message-ID identique) ailleurs dans l'index et on retente
+        // là-bas — l'utilisateur lit son mail au lieu d'une erreur technique.
+        try {
+          await ensureDbReady();
+          const orig = await db.message.findFirst({
+            where: { accountSlug: rec.account, uid, folder: { is: { path: folder } } },
+            select: { id: true, internetMessageId: true },
+          });
+          if (orig?.internetMessageId) {
+            const twins = await db.message.findMany({
+              where: {
+                accountSlug: rec.account,
+                internetMessageId: orig.internetMessageId,
+                isDeleted: false,
+                NOT: { id: orig.id },
+              },
+              orderBy: { date: 'desc' },
+              take: 5,
+              select: { uid: true, folder: { select: { path: true } } },
+            });
+            for (const t of twins) {
+              try {
+                const body = await imapService.readEmail(rec, t.folder.path, t.uid);
+                await reflectActionInIndex(rec.account, t.folder.path, t.uid, 'seen').catch(() => {});
+                // L'ancienne ligne pointe dans le vide : on la retire de
+                // l'index pour ne plus proposer un emplacement mort.
+                await db.message
+                  .update({ where: { id: orig.id }, data: { isDeleted: true } })
+                  .catch(() => {});
+                res.json({ account: rec.account, folder: t.folder.path, relocated: true, ...body });
+                return;
+              } catch {
+                // Cet emplacement-là non plus — on essaie le suivant.
+              }
+            }
+          }
+        } catch {
+          // Index indisponible : on retombe sur le message d'erreur classique.
+        }
         res.status(502).json({
           error:
             `Lecture impossible depuis la boîte : ${(err as Error).message}. ` +
-            'Le mail existe peut-être encore — réessaie, ou ouvre-le dans Outlook.',
+            'Si le mail existe toujours dans Outlook, une synchronisation de la boîte ' +
+            'remettra l\'index d\'aplomb.',
         });
       }
     }),
@@ -1727,6 +1770,9 @@ export function buildAdminRouter(): Router {
           hasListUnsubscribe: true,
           analysisConfidence: true,
           analysisConfidenceReason: true,
+          intent: true,
+          intentReason: true,
+          intentSource: true,
         },
       });
       if (!m) {
@@ -1811,12 +1857,43 @@ export function buildAdminRouter(): Router {
             }
           : null;
 
+      // Classement courant (01/08) : ce que l'assistant croit de ce mail et de
+      // son expéditeur — affiché dans le lecteur AVEC un moyen de corriger.
+      // C'est la boucle de retour : une correction d'expéditeur reclasse tous
+      // ses mails et n'est jamais écrasée (manual > ai > auto).
+      let sender: {
+        email: string;
+        category: string | null;
+        categorySource: string;
+        priority: string;
+      } | null = null;
+      if (!m.isOutbound && m.fromEmail) {
+        const s = await db.sender.findUnique({
+          where: { accountSlug_email: { accountSlug: slug, email: m.fromEmail } },
+          select: { category: true, categorySource: true, priority: true },
+        });
+        sender = {
+          email: m.fromEmail,
+          category: s?.category ?? null,
+          categorySource: s?.categorySource ?? 'auto',
+          priority: s?.priority ?? 'normal',
+        };
+      }
+
       res.json({
         messageId: m.id,
         importance,
         reply,
         request,
         confidence,
+        classement: m.isOutbound
+          ? null
+          : {
+              intent: m.intent,
+              intentReason: m.intentReason,
+              intentSource: m.intentSource,
+              sender,
+            },
         deadlines: {
           existing: existingRows.map((d) => ({
             id: d.id,

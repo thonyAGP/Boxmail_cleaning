@@ -6450,8 +6450,24 @@ async function openReader(item, row, opts = {}) {
   api.readMessage(item.account, item.folder, item.uid).then((body) => {
     const el = $('#reader-body');
     if (!el) return;
+    // Auto-réparation serveur : le mail avait bougé, il a été retrouvé par son
+    // identifiant dans un autre dossier — on suit, pour que les actions
+    // (déplacer, corbeille, pièces jointes) visent le BON emplacement.
+    if (body.relocated && body.folder) {
+      item.folder = body.folder;
+      item.uid = body.uid;
+      const note = document.createElement('div');
+      note.className = 'notice';
+      note.style.marginBottom = '10px';
+      note.textContent = `📦 Ce mail avait changé de place — retrouvé dans « ${body.folder} ». L'index est recalé.`;
+      el.replaceChildren(note);
+    }
     loadedText = body.text || '';
-    el.textContent = body.text || '(mail sans contenu texte)';
+    if (body.relocated) {
+      el.append(body.text || '(mail sans contenu texte)');
+    } else {
+      el.textContent = body.text || '(mail sans contenu texte)';
+    }
     if (body.truncated) {
       const note = document.createElement('div');
       note.className = 'notice warn';
@@ -6479,7 +6495,9 @@ async function openReader(item, row, opts = {}) {
     if (!el) return;
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>
       <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
-      injoignable ou mail déplacé). Les infos ci-dessus viennent de l'index local.</div>`;
+      injoignable ou mail déplacé). Les infos ci-dessus viennent de l'index local.
+      Si le mail existe toujours dans Outlook, une <a href="#/account/${esc(item.account)}">synchronisation
+      de la boîte</a> remettra l'index d'aplomb.</div>`;
     loadAnalysis(''); // l'analyse marche quand même (index + sujet)
   });
 
@@ -6656,6 +6674,20 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
   });
 }
 
+// Intentions de mail (A1) — mêmes valeurs que le serveur, libellés FR.
+const INTENT_LABELS = {
+  otp: '🔑 Code de connexion',
+  invoice: '🧾 Facture / paiement',
+  shipping: '📦 Livraison',
+  appointment: '📅 Rendez-vous',
+  reminder: '⏰ Rappel / relance',
+  confirmation: '✅ Confirmation',
+  document: '📄 Document',
+  promo: '📢 Publicité / promo',
+  reply_expected: '🗣️ Réponse attendue',
+  info: 'ℹ️ Information',
+};
+
 // Section « 🤖 Analyse » du panneau de lecture (L5.4) — heuristiques locales.
 function renderReaderAnalysis(a, item) {
   const el = $('#reader-analysis');
@@ -6702,15 +6734,65 @@ function renderReaderAnalysis(a, item) {
         <span class="muted" style="font-size:11.5px">— ${esc(a.confidence.reason)}${a.confidence.level === 'low' ? ' · protégé des nettoyages automatiques' : ''}</span></span></div>`
     : '';
 
+  // Classement courant + CORRECTION sur place (retour utilisateur 01/08 :
+  // « comment je te signale qu'un mail est mal classé ? »). Corriger la
+  // catégorie de l'expéditeur reclasse TOUS ses mails, tout de suite, et la
+  // correction n'est jamais écrasée par les recalculs (manual > ai > auto).
+  const c = a.classement;
+  const classLine = c
+    ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
+        <span class="badge gray">🏷️</span>
+        <span>Classé : <strong>${esc(INTENT_LABELS[c.intent] ?? c.intent ?? 'pas encore classé')}</strong>
+          ${c.intentReason ? `<span class="muted" style="font-size:11.5px" title="${esc(c.intentReason)}">— ${esc(c.intentReason)}</span>` : ''}
+          ${c.intentSource === 'manual' ? '<span class="badge blue" title="Posé à la main — jamais écrasé">corrigé</span>'
+            : c.intentSource === 'ai' ? '<span class="badge gray" title="Verdict de l’analyse IA">IA</span>' : ''}</span>
+      </div>
+      ${c.sender ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
+        <span class="badge gray">👤</span>
+        <span>Expéditeur <span class="muted" style="font-size:11.5px">${esc(c.sender.email)}</span> :</span>
+        <select id="ra-cat" title="Corriger « qui écrit » — s'applique à TOUS les mails de cet expéditeur, tout de suite, et n'est jamais écrasé par les recalculs">
+          <option value="">${c.sender.category ? '(revenir au calcul auto)' : 'catégorie ?'}</option>
+          ${Object.entries(SENDER_CATEGORY_LABELS)
+            .map(([v, l]) => `<option value="${v}" ${v === c.sender.category ? 'selected' : ''}>${l}${v === c.sender.category && c.sender.categorySource !== 'manual' ? ' (auto)' : ''}</option>`)
+            .join('')}</select>
+        <select id="ra-prio" title="Priorité de cet expéditeur dans le score d'importance">
+          <option value="normal" ${c.sender.priority === 'normal' ? 'selected' : ''}>priorité normale</option>
+          <option value="always_important" ${c.sender.priority === 'always_important' ? 'selected' : ''}>⭐ toujours important</option>
+          <option value="never_urgent" ${c.sender.priority === 'never_urgent' ? 'selected' : ''}>🔕 jamais urgent</option>
+        </select>
+        <span class="muted" id="ra-class-note" style="font-size:11.5px">une correction s'applique à tous ses mails</span>
+      </div>` : ''}`
+    : '';
+
   el.innerHTML = `
     <div class="ra-title">🤖 Analyse Mail Assistant <span class="muted" style="font-size:11px">(règles locales — rien n'est envoyé à un service externe)</span></div>
     ${impLine}
     <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
     ${requestLine}
     ${confidenceLine}
+    ${classLine}
     ${existing || detected
       ? `<div class="ra-line"><span>Échéances :</span> ${existing} ${detected}</div>`
       : ''}`;
+
+  const note = (msg) => {
+    const n = $('#ra-class-note');
+    if (n) { n.textContent = msg; n.style.color = 'var(--green, #16a34a)'; }
+  };
+  $('#ra-cat')?.addEventListener('change', async (e) => {
+    try {
+      await api.senderSetCategory(item.account, c.sender.email, e.target.value || null);
+      note(e.target.value
+        ? '✓ corrigé — tous les mails de cet expéditeur suivent'
+        : '✓ repassé en calcul automatique');
+    } catch (err) { alert(err.message); }
+  });
+  $('#ra-prio')?.addEventListener('change', async (e) => {
+    try {
+      await api.senderSetPriority(item.account, c.sender.email, e.target.value);
+      note('✓ priorité enregistrée — jamais recalculée');
+    } catch (err) { alert(err.message); }
+  });
 
   el.querySelectorAll('.ra-propose').forEach((btn) => {
     btn.addEventListener('click', async () => {
