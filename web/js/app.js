@@ -1582,8 +1582,13 @@ async function applyUpdateFlow(container, confirmed = false) {
           puis recharge cette page.</div>`;
         return;
       }
-      log.textContent += '\nRed\u00e9marrage du serveur\u2026 (installation + compilation, ~1 minute)';
+      log.textContent += '\nRed\u00e9marrage du serveur\u2026 (rapide si rien \u00e0 recompiler, quelques minutes sinon)';
       const startedWait = Date.now();
+      // Sur quelle machine tourne le serveur ? Le message d'aide n'est pas le
+      // m\u00eame : \u00ab fen\u00eatre MailAssistant.bat \u00bb n'a aucun sens sur le serveur
+      // en ligne (constat\u00e9 le 01/08 : bandeau Windows affich\u00e9 sur boxmail.lb2i.com).
+      const onWindows = !serverVersion?.platform || serverVersion.platform === 'win32';
+      let patienceShown = false;
       const waitUp = setInterval(async () => {
         try {
           if (await api.health()) {
@@ -1592,11 +1597,26 @@ async function applyUpdateFlow(container, confirmed = false) {
             return;
           }
         } catch { /* pas encore pr\u00eat */ }
-        if (Date.now() - startedWait > 180_000) {
+        const elapsed = Date.now() - startedWait;
+        log.textContent = log.textContent.replace(/\n\u23f3.*$/, '') +
+          `\n\u23f3 ${Math.round(elapsed / 1000)} s\u2026`;
+        log.scrollTop = log.scrollHeight;
+        // Point d'\u00e9tape \u00e0 3 min : c'est LONG mais NORMAL quand les d\u00e9pendances
+        // ou le code serveur ont chang\u00e9 \u2014 on rassure au lieu d'alarmer.
+        if (!patienceShown && elapsed > 180_000) {
+          patienceShown = true;
+          log.textContent += '\nToujours en cours \u2014 une mise \u00e0 jour avec d\u00e9pendances ou compilation peut prendre plusieurs minutes. Cette page continue de v\u00e9rifier.';
+        }
+        if (elapsed > 600_000) {
           clearInterval(waitUp);
-          container.innerHTML = `<div class="notice warn">\u23f1\ufe0f Le serveur n'est pas revenu apr\u00e8s 3 minutes.
-            V\u00e9rifie la fen\u00eatre noire <strong>MailAssistant.bat</strong> (elle affiche peut-\u00eatre une
-            erreur), relance-la si besoin, puis recharge cette page.</div>`;
+          container.innerHTML = onWindows
+            ? `<div class="notice warn">\u23f1\ufe0f Le serveur n'est pas revenu apr\u00e8s 10 minutes.
+              V\u00e9rifie la fen\u00eatre noire <strong>MailAssistant.bat</strong> (elle affiche peut-\u00eatre une
+              erreur), relance-la si besoin, puis recharge cette page.</div>`
+            : `<div class="notice warn">\u23f1\ufe0f Le serveur n'est pas revenu apr\u00e8s 10 minutes.
+              Recharge cette page dans quelques minutes ; si \u00e7a persiste, le r\u00e9sultat de la
+              mise \u00e0 jour est visible dans \u2699\ufe0f Param\u00e8tres \u2192 \u00ab Mise \u00e0 jour \u00bb une fois le
+              serveur revenu.</div>`;
         }
       }, 2000);
     }

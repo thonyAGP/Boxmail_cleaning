@@ -67,19 +67,64 @@ if [ -f data/boxmail.db ]; then
     && log "sauvegarde de la base faite" || log "sauvegarde impossible — on continue"
 fi
 
-# `--include=dev` EST OBLIGATOIRE : pm2 lance l'app avec NODE_ENV=production et
-# ce script en hérite. Sans le flag, npm écarte les devDependencies, @types/node
-# disparaît et le build meurt sur « TS2688 ». C'est LA panne du 29/07.
-if run git merge --ff-only "origin/$BRANCH" \
-  && run npm install --include=dev --no-audit --no-fund \
-  && run npm run db:generate \
-  && run npm run build; then
+# ÉTAPES CONDITIONNELLES (01/08 : « chaque mise à jour prend 3 minutes ») :
+# npm install, prisma generate et tsc ne tournent que si leurs ENTRÉES ont
+# changé — empreintes stockées dans logs/ (non suivi par git, donc sans effet
+# sur le merge --ff-only). Même logique que scripts/supervisor.mjs côté
+# Windows. Une mise à jour qui ne touche que web/ = merge + restart, ~10 s.
+#
+# `--include=dev` EST OBLIGATOIRE quand npm install tourne : pm2 lance l'app
+# avec NODE_ENV=production et ce script en hérite. Sans le flag, npm écarte
+# les devDependencies, @types/node disparaît et le build meurt sur « TS2688 ».
+# C'est LA panne du 29/07.
+hash_file() { sha1sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+OK=1
+run git merge --ff-only "origin/$BRANCH" || OK=0
+
+if [ "$OK" = 1 ]; then
+  LOCK_NEW=$(hash_file package-lock.json)
+  if [ ! -d node_modules ] || [ "$(cat logs/state-lock 2>/dev/null)" != "$LOCK_NEW" ]; then
+    if run npm install --include=dev --no-audit --no-fund; then
+      printf '%s' "$LOCK_NEW" > logs/state-lock
+    else OK=0; fi
+  else
+    log "dépendances inchangées — npm install sauté"
+  fi
+fi
+
+if [ "$OK" = 1 ]; then
+  SCHEMA_NEW=$(hash_file prisma/schema.prisma)
+  if [ ! -d node_modules/.prisma/client ] || [ "$(cat logs/state-schema 2>/dev/null)" != "$SCHEMA_NEW" ]; then
+    if run npm run db:generate; then
+      printf '%s' "$SCHEMA_NEW" > logs/state-schema
+    else OK=0; fi
+  else
+    log "schéma de base inchangé — prisma generate sauté"
+  fi
+fi
+
+if [ "$OK" = 1 ]; then
+  SRC_NEW="$(git rev-parse HEAD:src 2>/dev/null)|$(hash_file tsconfig.json)"
+  if [ ! -f dist/index.js ] || [ "$(cat logs/state-src 2>/dev/null)" != "$SRC_NEW" ]; then
+    if run npm run build; then
+      printf '%s' "$SRC_NEW" > logs/state-src
+    else OK=0; fi
+  else
+    log "code serveur inchangé — compilation sautée"
+  fi
+fi
+
+if [ "$OK" = 1 ]; then
   run pm2 restart "$PM2_APP"
   write_status "mis à jour" "$BEHIND nouveauté(s) appliquée(s)"
   exit 0
 fi
 
-# Échec : retour sur la version qui fonctionnait.
+# Échec : retour sur la version qui fonctionnait. Les empreintes sont effacées
+# pour forcer une passe COMPLÈTE au prochain passage — un état à moitié vrai
+# peut être la cause même de l'échec.
+rm -f logs/state-lock logs/state-schema logs/state-src
 TAIL=$(tail -n 12 "$LOG" | tr -d '\r')
 log "ÉCHEC — retour sur $PREV"
 run git reset --hard "$PREV"

@@ -30,6 +30,10 @@ export interface VersionInfo {
   /** true si un superviseur (MailAssistant.bat, pm2, systemd) relance le
    *  processus après un arrêt — condition du redémarrage automatique. */
   supervised: boolean;
+  /** 'win32' (PC de l'utilisateur) ou 'linux' (serveur) — l'interface adapte
+   *  ses messages de mise à jour (« fenêtre MailAssistant.bat » n'a aucun
+   *  sens sur le serveur, constaté le 01/08). */
+  platform: string;
 }
 
 let cachedVersion: VersionInfo | null = null;
@@ -37,16 +41,17 @@ let cachedVersion: VersionInfo | null = null;
 export async function version(): Promise<VersionInfo> {
   if (cachedVersion) return cachedVersion;
   const supervised = process.env.BOXMAIL_SUPERVISED === '1';
+  const platform = process.platform;
   try {
     const [commit, date, branch] = await Promise.all([
       git('log', '-1', '--format=%h'),
       git('log', '-1', '--format=%cd', '--date=format:%d/%m/%Y %H:%M'),
       git('rev-parse', '--abbrev-ref', 'HEAD'),
     ]);
-    cachedVersion = { commit, date, branch, supervised };
+    cachedVersion = { commit, date, branch, supervised, platform };
   } catch (err) {
     logger.warn('version git indisponible', { error: (err as Error).message });
-    cachedVersion = { commit: 'inconnu', date: '', branch: '', supervised };
+    cachedVersion = { commit: 'inconnu', date: '', branch: '', supervised, platform };
   }
   return cachedVersion;
 }
