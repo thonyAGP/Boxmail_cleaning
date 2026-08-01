@@ -5,6 +5,20 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 01/08 (3) — Mise à jour production accélérée + patience de l'interface
+
+Le bandeau « serveur pas revenu après 3 minutes » est apparu sur
+boxmail.lb2i.com alors que la mise à jour avait RÉUSSI : elle dépassait juste
+la patience de l'interface, et le message parlait de MailAssistant.bat sur un
+serveur Linux. Corrigé :
+- deploy/update.sh : étapes conditionnelles (mêmes empreintes que le
+  superviseur, stockées dans logs/state-*) ; échec ⇒ empreintes effacées.
+  Mesuré en réel sur la VM : mise à jour complète (install+generate+build
+  incrémental) en 13,9 s, pm2 revenu aussitôt.
+- Interface : attente 10 min (compteur de secondes), point d'étape rassurant
+  à 3 min, message final selon VersionInfo.platform (PC → MailAssistant.bat,
+  serveur → voir Paramètres → Mise à jour).
+
 ## 01/08 (2) — Mise à jour en ~10 s : superviseur à étapes conditionnelles
 
 « Chaque mise à jour prend 3 minutes » : le superviseur refaisait npm install +
