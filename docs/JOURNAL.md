@@ -5,6 +5,29 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (2) — Virage « je t'assiste » : mode Traiter + Ménage guidé
+
+Demande utilisateur : « passer de je t'affiche plein de choses à je t'assiste
+suivant ce que tu as à faire ». Première marche livrée sur Aujourd'hui :
+- « ▶️ Traiter une par une » (panneau À faire) : l'assistant présente chaque
+  action seule avec les bons boutons selon sa nature — réponse attendue
+  (répondre / pas de réponse à faire / dans 3 j), facture (c'est réglé /
+  tâche), échéance (confirmer / écarter / fait), relance (faite / dans 3 j) —
+  + « lire le mail avant de décider » (lecteur au-dessus), ⏭️ passer,
+  récapitulatif final. APIs existantes (snooze/dismiss/deadlineAction/tasks),
+  tout journalisé.
+- « 🧹 Ménage guidé » (panneau Bruit) : enchaîne les familles une par une
+  (les plus grosses d'abord), liste exacte + lecture avant décision à chaque
+  étape, corbeille ou passer, récap final.
+Testé sur seeds + captures Playwright des deux modes.
+
+Réponse aussi apportée (mail Outlook « Junk name conflict » du 01/08 sur
+thony56) : trace complète du traitement — indexé à 00:02, extrait tenté à
+00:02:44 mais VIDE (pas de partie texte lisible) donc jamais analysable par
+l'IA ; heuristiques : intent=reminder, confiance haute, expéditeur
+postmaster=notification (source ai) ; AUTO_SENDER_RE l'écarte des réponses
+attendues. Le dossier Junk est bien vu (rôle spam, 0 mails).
+
 ## 02/08 — « Réponses en attente » : sortir le transactionnel (81 → 34)
 
 Retour utilisateur : des FACTURES apparaissaient dans « Réponses en

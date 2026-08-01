@@ -825,7 +825,10 @@ async function renderToday() {
 
     <div class="panel">
       <div class="panel-head"><h2>🔥 À faire</h2>
-        <span class="badge ${t.todo.total ? 'red' : 'green'}">${fmtNum(t.todo.total)} action(s)</span></div>
+        <span>
+          ${t.todo.total ? `<button class="btn btn-sm btn-primary" id="todo-assist"
+            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">▶️ Traiter une par une</button>` : ''}
+          <span class="badge ${t.todo.total ? 'red' : 'green'}" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span></span></div>
       <div class="panel-body">
         ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
         <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
@@ -855,7 +858,10 @@ async function renderToday() {
 
     <div class="panel">
       <div class="panel-head"><h2>⚪ Bruit</h2>
-        <span class="badge gray">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span></div>
+        <span>
+          ${t.noise.total ? `<button class="btn btn-sm" id="noise-tour"
+            title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides — corbeille ou passer">🧹 Ménage guidé</button>` : ''}
+          <span class="badge gray" style="margin-left:8px">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span></span></div>
       <div class="panel-body">
         ${noiseRows}
         <div class="muted" style="font-size:12.5px; padding-top:8px">
@@ -869,11 +875,176 @@ async function renderToday() {
   $('#today-body').querySelectorAll('.noise-btn').forEach((btn) => {
     btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
   });
+  $('#todo-assist')?.addEventListener('click', () => startTodoAssistant(t));
+  $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
+}
+
+// ---------------------------------------------------------------- Mode « Traiter »
+// Demande utilisateur 02/08 : passer de « je t'affiche plein de choses » à
+// « je t'assiste ». L'assistant présente chaque action UNE PAR UNE avec les
+// bons boutons selon sa nature — répondre / reporter / confirmer / classer —
+// au lieu de laisser l'utilisateur naviguer dans des listes.
+function startTodoAssistant(t) {
+  const queue = [
+    ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
+    ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
+    ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
+    ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
+  ];
+  if (queue.length === 0) return;
+  let idx = 0;
+  let treated = 0;
+  let passed = 0;
+
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
+    <div class="modal-head"><h2 id="ta-title">▶️ On traite ensemble</h2>
+      <button class="modal-close" title="Arrêter (rien n'est perdu : les actions restantes restent listées)">✕</button></div>
+    <div class="modal-body" id="ta-body"></div>
+    <div class="modal-foot" id="ta-foot"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
+
+  const finish = () => {
+    $('#ta-title').textContent = '🎉 Terminé';
+    $('#ta-body').innerHTML = `<div class="empty" style="font-size:15px">
+      ${treated ? `<strong>${fmtNum(treated)}</strong> action(s) traitée(s)` : 'Rien de traité'}
+      ${passed ? ` · ${fmtNum(passed)} passée(s) — elles restent dans la liste « À faire »` : ''}.<br>
+      <span class="muted" style="font-size:12.5px">Tout est journalisé dans le
+      <a href="#/operations">📒 Journal d'activité</a>.</span></div>`;
+    $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">Fermer</button>';
+    $('#ta-close').addEventListener('click', () => { closeModal(); renderToday(); });
+  };
+
+  const next = (wasTreated) => {
+    if (wasTreated === true) treated += 1;
+    if (wasTreated === false) passed += 1;
+    idx += 1;
+    if (idx >= queue.length) finish();
+    else step();
+  };
+
+  // Une action réseau sur le bouton cliqué : désactive, exécute, avance.
+  const act = async (btn, fn) => {
+    btn.disabled = true;
+    try {
+      await fn();
+      next(true);
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message);
+    }
+  };
+
+  const KIND_LABELS = {
+    reply: ['↩️', 'Réponse attendue'],
+    invoice: ['💶', 'Facture à traiter'],
+    deadline: ['📅', 'Échéance'],
+    followup: ['⏰', 'Relance à faire'],
+  };
+
+  function step() {
+    const { kind, x } = queue[idx];
+    const [emoji, kindLabel] = KIND_LABELS[kind];
+    $('#ta-title').textContent = `▶️ Action ${idx + 1} sur ${queue.length}`;
+
+    const who = kind === 'followup'
+      ? (x.counterpartyName || x.counterpartyEmail || '')
+      : (x.fromName || x.fromEmail || '');
+    const title = kind === 'deadline' ? x.title : (x.subject ?? '(sans sujet)');
+    const explain =
+      kind === 'reply' ? `Ce fil se termine par un mail reçu — ${esc(x.reason ?? '')}`
+      : kind === 'invoice' ? esc(x.reason ?? 'facture détectée')
+      : kind === 'deadline' ? `${x.status === 'proposed' ? 'Échéance DÉTECTÉE (à confirmer ou écarter)' : 'Échéance confirmée'} — ${esc(x.reason ?? '')} · date : ${fmtDate(x.date)}`
+      : `Tu as écrit en dernier, sans réponse ${daysAgo(x.waitingHours)}${x.suggestion ? ` · ${esc(x.suggestion)}` : ''}`;
+
+    // Item « lecture » pour ouvrir le mail au-dessus de la modale.
+    const readerItem = kind === 'deadline'
+      ? (x.folder && x.uid ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: x.isSeen ?? true } : null)
+      : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
+
+    $('#ta-body').innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <span class="badge ${kind === 'reply' || kind === 'followup' ? 'orange' : kind === 'invoice' ? 'blue' : 'gray'}">${emoji} ${kindLabel}</span>
+        ${accountChip(x.account)}
+        ${x.overdue ? '<span class="badge red">en retard</span>' : ''}
+      </div>
+      <div style="font-size:15px; margin-bottom:4px"><strong>${esc(who)}</strong>${who ? ' — ' : ''}« ${esc(title)} »</div>
+      <div class="muted" style="font-size:12.5px; margin-bottom:12px">${explain}</div>
+      ${readerItem ? `<div style="margin-bottom:6px"><span class="openable" id="ta-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>` : ''}
+    `;
+    $('#ta-read')?.addEventListener('click', () => openReaderFor(readerItem, {}));
+
+    const buttons = [];
+    if (kind === 'reply') {
+      if (smtpEnabled && readerItem) buttons.push(['↩️ Répondre', 'btn-primary', null, () => { openReaderFor(readerItem, {}); }]);
+      buttons.push(['🚫 Pas de réponse à faire', '', () => api.replyDismiss(x.account, x.threadId)]);
+      buttons.push(['💤 Me le reproposer dans 3 j', '', () => api.replySnooze(x.account, x.threadId, 3)]);
+    } else if (kind === 'invoice') {
+      buttons.push(['✓ C\'est réglé', 'btn-primary', () => api.messageAction(x.account, { folder: x.folder, uid: x.uid, action: 'seen' })]);
+      buttons.push(['☑️ En faire une tâche', '', () => api.taskCreate({
+        title: `Payer : ${x.subject}`,
+        account: x.account,
+        messageRef: { folder: x.folder, uid: x.uid },
+      })]);
+    } else if (kind === 'deadline') {
+      if (x.status === 'proposed') {
+        buttons.push(['✓ Confirmer cette échéance', 'btn-primary', () => api.deadlineAction(x.account, x.id, 'confirm')]);
+        buttons.push(['🚫 Fausse détection, écarter', '', () => api.deadlineAction(x.account, x.id, 'dismiss')]);
+      } else {
+        buttons.push(['✓ C\'est fait', 'btn-primary', () => api.deadlineAction(x.account, x.id, 'done')]);
+      }
+    } else if (kind === 'followup') {
+      buttons.push(['✓ Relance faite / plus besoin', 'btn-primary', () => api.followupDismiss(x.account, x.threadId)]);
+      buttons.push(['💤 Me le reproposer dans 3 j', '', () => api.followupSnooze(x.account, x.threadId, 3)]);
+    }
+
+    $('#ta-foot').innerHTML = `
+      <span class="muted" style="font-size:12px; margin-right:auto">Toutes ces actions sont journalisées et réversibles.</span>
+      ${buttons.map(([label, cls], k) => `<button class="btn btn-sm ${cls}" data-ta="${k}">${label}</button>`).join('')}
+      <button class="btn btn-sm" id="ta-skip" title="Décision remise à plus tard — l'action reste dans la liste">⏭️ Passer</button>`;
+    $('#ta-foot').querySelectorAll('[data-ta]').forEach((btn) => {
+      const [, , fn, direct] = buttons[Number(btn.dataset.ta)];
+      btn.addEventListener('click', () => {
+        if (direct) { direct(); return; } // ouvre le mail (répondre) : la file attend
+        act(btn, fn);
+      });
+    });
+    $('#ta-skip').addEventListener('click', () => next(false));
+  }
+
+  step();
+}
+
+// ---------------------------------------------------------------- Ménage guidé
+// Enchaîne les familles de bruit une par une (les plus grosses d'abord) :
+// à chaque étape, la liste EXACTE, la lecture possible, et la décision —
+// corbeille ou passer. Réutilise la modale « bruit » existante.
+function startNoiseTour(buckets) {
+  const steps = buckets.filter((b) => b.count > 0).sort((a, b) => b.count - a.count);
+  if (steps.length === 0) return;
+  let i = 0;
+  let totalDeleted = 0;
+  const advance = (deleted) => {
+    totalDeleted += deleted ?? 0;
+    i += 1;
+    if (i < steps.length) {
+      openNoiseModal(steps[i].bucket, { tour: { index: i + 1, total: steps.length, onNext: advance } });
+    } else {
+      closeModal();
+      alert(`🧹 Ménage guidé terminé${totalDeleted ? ` : ${fmtNum(totalDeleted)} mail(s) à la corbeille (récupérables ~30 j)` : ' — rien n\'a été supprimé'}. Tout est dans le 📒 Journal d'activité.`);
+      renderToday();
+    }
+  };
+  openNoiseModal(steps[0].bucket, { tour: { index: 1, total: steps.length, onNext: advance } });
 }
 
 // Modale « bruit » : liste exacte (cap 500) → corbeille par lots via les
 // endpoints bulk existants (journalisés), groupés par boîte + dossier.
-async function openNoiseModal(bucket) {
+async function openNoiseModal(bucket, { tour } = {}) {
   closeModal();
   const [emoji, label] = NOISE_LABELS[bucket] ?? ['⚪', bucket];
   const overlay = document.createElement('div');
@@ -881,8 +1052,9 @@ async function openNoiseModal(bucket) {
   // (on vérifie un mail avant de valider le nettoyage).
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2>${emoji} ${esc(label)}</h2>
-      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-head"><h2>${emoji} ${esc(label)}
+      ${tour ? `<span class="badge blue" style="margin-left:8px">ménage guidé — famille ${tour.index}/${tour.total}</span>` : ''}</h2>
+      <button class="modal-close" title="${tour ? 'Arrêter le ménage guidé' : 'Fermer'}">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement de la liste…</div></div>
     <div class="modal-foot" id="modal-foot"></div>
   </div>`;
@@ -928,9 +1100,14 @@ async function openNoiseModal(bucket) {
   });
   $('#modal-foot').innerHTML = `
     <span class="muted" style="font-size:12px; margin-right:auto">Corbeille = récupérable ~30 jours, rien n'est effacé définitivement.</span>
-    <button class="btn" id="noise-cancel">Annuler</button>
+    ${tour
+      ? '<button class="btn" id="noise-cancel" title="Cette famille ne bouge pas — on passe à la suivante">⏭️ Passer cette famille</button>'
+      : '<button class="btn" id="noise-cancel">Annuler</button>'}
     <button class="btn btn-primary" id="noise-delete" ${data.items.length ? '' : 'disabled'}>🗑️ Mettre ${fmtNum(data.items.length)} mail(s) à la corbeille</button>`;
-  $('#noise-cancel').addEventListener('click', closeModal);
+  $('#noise-cancel').addEventListener('click', () => {
+    if (tour) tour.onNext(0);
+    else closeModal();
+  });
   $('#noise-delete').addEventListener('click', async () => {
     if (!confirm(`Mettre ${data.items.length} mail(s) « ${label} » à la corbeille ?\n\nIls restent récupérables ~30 jours dans la corbeille de chaque boîte, et l'opération est journalisée.`)) return;
     const btn = $('#noise-delete');
@@ -954,6 +1131,11 @@ async function openNoiseModal(bucket) {
       } catch {
         failed += g.uids.length;
       }
+    }
+    if (tour) {
+      if (failed) alert(`⚠️ ${failed} mail(s) en échec (boîte injoignable ?) — on continue le ménage.`);
+      tour.onNext(done);
+      return;
     }
     closeModal();
     alert(`🗑️ ${done} mail(s) mis à la corbeille${failed ? ` — ⚠️ ${failed} en échec (boîte injoignable ?)` : ''}.`);
