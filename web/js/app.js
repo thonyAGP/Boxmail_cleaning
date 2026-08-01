@@ -5192,7 +5192,7 @@ function renderSettingsBody() {
             <th class="num" title="Part des mails dont le texte a été capturé — pré-requis de toute analyse">Texte connu</th>
             <th class="num" title="Verdict IA posé, en % des mails dont le texte est connu">Analysés IA</th>
             <th class="num" title="Cas douteux restants : c'est CE chiffre que Claude annonce pendant le rattrapage (« il reste N mails »)">Douteux restants</th>
-            <th class="num" title="Tous les mails lisibles encore sans verdict IA (douteux inclus)">Sans verdict</th>
+            <th class="num" title="Tous les mails analysables (lecture tentée, extrait vide inclus) encore sans verdict IA">Sans verdict</th>
           </tr></thead>
           <tbody>${perBox.map((c) => {
             const a = aiBySlug.get(c.account);
@@ -5210,7 +5210,8 @@ function renderSettingsBody() {
           💡 Deux compteurs différents, deux questions différentes :
           <strong>« Douteux restants »</strong> = les mails que le rattrapage (Claude/Cowork) traite en
           priorité — c'est le « il reste N mails » qu'il t'annonce.
-          <strong>« Analysés IA »</strong> = la part des mails lisibles qui ont déjà un verdict.
+          <strong>« Analysés IA »</strong> = la part des mails analysables qui ont déjà un verdict
+          (un mail sans texte exploitable reste analysable : l'IA juge alors sur le sujet et l'expéditeur).
           Un mail sans texte connu n'est pas analysable : lis d'abord le texte (boutons ci-dessous).</div>`;
 
       el.innerHTML = `
@@ -5230,7 +5231,7 @@ function renderSettingsBody() {
         <div class="set-line"><span class="muted">Analyse jugée incertaine</span>
           <span>${fmtNum(t.lowConfidence)} mails — protégés de tout nettoyage</span></div>
         ${ai ? `<div class="set-line"><span class="muted">Analysés par l'IA (toutes boîtes)</span>
-          <span><strong>${ai.pct} %</strong> · ${fmtNum(ai.analysed)} sur ${fmtNum(ai.withText)} lisibles
+          <span><strong>${ai.pct} %</strong> · ${fmtNum(ai.analysed)} sur ${fmtNum(ai.withText)} analysables
           ${ai.remainingUncertain ? `<br><span class="muted" style="font-size:12px">${fmtNum(ai.remainingUncertain)} cas douteux à reprendre</span>` : ''}</span></div>` : ''}
         ${boxTable}`;
 

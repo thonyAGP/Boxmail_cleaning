@@ -846,6 +846,14 @@ function listAttachmentParts(node: BodyNode | null | undefined): AttachmentPart[
 
 /** Meilleure partie texte à AFFICHER (text/plain de préférence, sinon text/html). */
 function findTextNode(node: BodyNode | null | undefined): BodyNode | null {
+  // Mail MONO-PARTIE : la racine EST la partie texte, mais IMAP ne lui donne
+  // pas de numéro (`part` absent). RFC 3501 : BODY[1] désigne alors le corps.
+  // Sans ce cas, tout mail simple (postmaster, vieux mails 2004-2010…) était
+  // déclaré « sans partie texte » : 4 462 extraits vides constatés le 02/08.
+  if (node && !node.childNodes?.length && !node.part) {
+    const t = (node.type ?? '').toLowerCase();
+    if (t === 'text/plain' || t === 'text/html') return { ...node, part: '1' };
+  }
   let plain: BodyNode | null = null;
   let html: BodyNode | null = null;
   const walk = (n: BodyNode) => {

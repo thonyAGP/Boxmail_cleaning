@@ -69,14 +69,18 @@ export interface AnalysisBatch {
 
 const MAX_BATCH = 100;
 
-/** Mails analysables : un texte capturé, pas encore de verdict, hors rebut. */
+/**
+ * Mails analysables : lecture du texte TENTÉE (snippet non null), pas encore
+ * de verdict, hors rebut. Un extrait VIDE reste analysable (demande
+ * utilisateur 02/08) : l'IA juge alors sur le sujet, l'expéditeur et la date —
+ * c'est toujours mieux que de laisser ces mails hors de portée pour toujours.
+ */
 function candidateWhere(scope: AnalysisScope, account?: string) {
   return {
     isDeleted: false,
     isOutbound: false,
     folder: { is: { role: { notIn: ['trash', 'spam'] } } },
     snippet: { not: null },
-    NOT: { snippet: '' },
     aiVerdictAt: null,
     ...(account ? { accountSlug: account } : {}),
     // « uncertain » vise ce qui bloque réellement : analyse faible/moyenne, ou
@@ -150,7 +154,9 @@ export async function nextAnalysisBatch(
       subject: r.subject ?? '(sans sujet)',
       date: r.date ? r.date.toISOString().slice(0, 10) : null,
       isSeen: r.isSeen,
-      snippet: r.snippet ?? '',
+      snippet:
+        r.snippet ||
+        "(pas de texte lisible dans ce mail — juge sur le sujet, l'expéditeur et la date ; dans le doute, confidence=low)",
       guess: {
         intent: r.intent,
         senderCategory: senders.get(`${r.accountSlug}|${r.fromEmail ?? ''}`) ?? null,
@@ -354,12 +360,13 @@ export interface AnalysisProgress {
 /** Avancement de l'analyse IA, pour l'interface et pour piloter le rattrapage. */
 export async function analysisProgress(account?: string): Promise<AnalysisProgress> {
   await ensureDbReady();
+  // Même base que candidateWhere : lecture TENTÉE (extrait vide inclus) —
+  // sinon les compteurs « restants » et « analysables » divergent.
   const base = {
     isDeleted: false,
     isOutbound: false,
     folder: { is: { role: { notIn: ['trash', 'spam'] } } },
     snippet: { not: null },
-    NOT: { snippet: '' },
     ...(account ? { accountSlug: account } : {}),
   };
   const [withText, analysed, remainingUncertain, remainingAll] = await Promise.all([
@@ -390,12 +397,12 @@ export interface AccountAnalysisProgress extends AnalysisProgress {
  */
 export async function analysisProgressByAccount(): Promise<AccountAnalysisProgress[]> {
   await ensureDbReady();
+  // Même base que candidateWhere (extrait vide inclus) — voir analysisProgress.
   const base = {
     isDeleted: false,
     isOutbound: false,
     folder: { is: { role: { notIn: ['trash', 'spam'] } } },
     snippet: { not: null },
-    NOT: { snippet: '' },
   };
   const group = (where: object) =>
     db.message.groupBy({ by: ['accountSlug'], where, _count: { _all: true } });

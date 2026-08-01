@@ -5,6 +5,24 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (3) — Le bug des « mails sans texte » : mono-partie non lus (4 462 extraits vides)
+
+L'utilisateur a prouvé l'incohérence : le mail Outlook « name conflicts » a
+DU texte, mais son extrait était vide. Diagnostic sur le serveur : le mail
+est MONO-PARTIE (text/html à la racine, sans numéro de partie) ; findTextNode
+exigeait `part` → « pas de partie texte trouvée » → snippet '' définitif.
+readEmail, lui, marchait grâce à son repli « mail complet » (interdit dans le
+rattrapage de masse). 4 462 mails dans ce cas (+1 415 jamais tentés).
+
+Correctifs :
+- findTextNode : racine mono-partie text/* sans `part` → BODY[1] (RFC 3501).
+- Migration 20260802120000 : snippet '' → NULL (au boot) pour RETENTER avec
+  le correctif ; les rares vraiment sans texte reviendront à ''.
+- Demande utilisateur : un extrait VIDE reste ANALYSABLE — candidateWhere ne
+  filtre plus '', le lot envoie « (pas de texte lisible — juge sur le sujet,
+  l'expéditeur…) », compteurs alignés sur la même base (« analysables »).
+- Octet nul littéral trouvé aussi dans mojibake.ts (chantier) — corrigé.
+
 ## 02/08 (2) — Virage « je t'assiste » : mode Traiter + Ménage guidé
 
 Demande utilisateur : « passer de je t'affiche plein de choses à je t'assiste
