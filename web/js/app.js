@@ -725,7 +725,7 @@ async function renderToday() {
     <div class="sub">Voici ce qui mérite ton attention — tout le reste peut attendre.</div></div>
     <div class="head-actions">
       <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(todayDate)}</span>
-      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">🔄 Tout synchroniser</button>
+      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">Tout synchroniser</button>
       <button class="btn" id="refresh-btn">↻ Actualiser</button>
     </div></div>
     <div id="today-body"><div class="empty"><span class="spinner"></span>Analyse de tes boîtes…</div></div>`;
@@ -827,7 +827,7 @@ async function renderToday() {
       <div class="panel-head"><h2>🔥 À faire</h2>
         <span>
           ${t.todo.total ? `<button class="btn btn-sm btn-primary" id="todo-assist"
-            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">▶️ Commencer</button>` : ''}
+            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">Commencer</button>` : ''}
           ${t.todo.total ? `<span class="badge red" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span>` : ''}</span></div>
       <div class="panel-body">
         ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
@@ -1151,7 +1151,7 @@ async function renderDashboard() {
     <div class="sub">Voici ce qui se passe dans tes boîtes aujourd'hui.</div></div>
     <div class="head-actions">
       <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(today)}</span>
-      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">🔄 Tout synchroniser</button>
+      <button class="btn btn-primary" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">Tout synchroniser</button>
       <button class="btn" id="refresh-btn">↻ Actualiser</button>
     </div></div>
     <div id="dash-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -1204,7 +1204,7 @@ async function renderDashboard() {
             <option value="daily">Jour (24 h)</option>
             <option value="weekly">Semaine (7 j)</option>
           </select>
-          <button class="btn btn-sm btn-primary" id="brief-generate">☀️ Régénérer</button>
+          <button class="btn btn-sm" id="brief-generate">Régénérer</button>
         </div>
       </div>
       <div class="panel-body" id="brief-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
@@ -1312,7 +1312,7 @@ async function renderDashboard() {
         <div class="panel-head"><h2>⚡ Actions rapides</h2></div>
         <div class="panel-body quick-actions">
           <a class="btn" href="#/search">🔎 Rechercher un mail</a>
-          <button class="btn" id="qa-compose">✉️ Nouveau mail</button>
+          <button class="btn" id="qa-compose">Nouveau mail</button>
           <a class="btn" href="#/attachments">📎 Retrouver un document</a>
           <a class="btn" href="#/cleanup">🧹 Voir le nettoyage</a>
           <a class="btn" href="#/calendar">🗓️ Calendrier</a>
@@ -1969,9 +1969,9 @@ async function renderAccount(slug) {
   main.innerHTML = `<div class="page-head">
       <div><h1>📧 ${esc(slug)}</h1><div class="sub">${esc(enrolled?.username ?? '')}</div></div>
       <div class="head-actions">
-        <a class="btn" href="#/inbox/${esc(slug)}">📥 Parcourir les mails</a>
-        <button class="btn" id="sync-recent">⚡ Sync rapide</button>
-        <button class="btn btn-primary" id="sync-full">🔄 Sync complète</button>
+        <a class="btn" href="#/inbox/${esc(slug)}">Parcourir les mails</a>
+        <button class="btn btn-primary" id="sync-recent">Sync rapide</button>
+        <button class="btn" id="sync-full">Sync complète</button>
       </div></div>
     <div id="sync-zone"></div>
     <div id="account-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -2614,7 +2614,7 @@ function openEnrollModal() {
     $('.modal-foot').innerHTML = `
       <button class="btn" id="enroll-another">＋ Ajouter une autre boîte</button>
       <button class="btn" id="enroll-close">Fermer</button>
-      <button class="btn btn-primary" id="enroll-sync">🔄 Synchroniser maintenant</button>`;
+      <button class="btn btn-primary" id="enroll-sync">Synchroniser maintenant</button>`;
     $('#enroll-another').addEventListener('click', () => {
       openEnrollModal(); // repart sur une modale propre (ferme l'actuelle)
     });
@@ -3286,7 +3286,7 @@ async function renderDeadlines() {
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
         title="Lit aussi le CONTENU des mails au sujet évocateur (max 50 par boîte) — plus lent">
         <input type="checkbox" id="deadlines-deep"> lire aussi le contenu des mails (plus lent)</label>
-      <button class="btn btn-primary" id="deadlines-detect">🔍 Analyser mes mails</button>
+      <button class="btn btn-primary" id="deadlines-detect">Analyser mes mails</button>
       <button class="btn" id="deadlines-refresh">↻ Actualiser</button>
     </div></div>
     <div id="deadlines-detect-zone"></div>
@@ -3381,7 +3381,7 @@ function renderDeadlinesBody() {
   ];
   const items = d.items.filter((x) => inTab(x, deadlinesState.tab));
   const emptyMessages = {
-    proposed: 'Aucune échéance à valider. Clique « 🔍 Analyser mes mails » pour lancer une détection.',
+    proposed: 'Aucune échéance à valider. Clique « Analyser mes mails » pour lancer une détection.',
     confirmed: 'Aucune échéance confirmée à venir.',
     past: 'Aucune échéance passée.',
     dismissed: 'Aucune échéance ignorée.',
@@ -3498,8 +3498,8 @@ async function renderRules() {
       sans ta validation. Une règle validée peut ensuite s'appliquer automatiquement à chaque
       synchronisation si tu coches « auto ».</div></div>
     <div class="head-actions">
-      <button class="btn" id="rules-new">＋ Nouvelle règle</button>
-      <button class="btn btn-primary" id="rules-suggest">💡 Suggérer des règles</button>
+      <button class="btn" id="rules-suggest">Suggérer des règles</button>
+      <button class="btn btn-primary" id="rules-new">＋ Créer une règle</button>
     </div></div>
     <div id="rules-notice"></div>
     <div id="rules-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -4449,7 +4449,7 @@ async function loadBigClean() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>🧺 Lancer le nettoyage</h2>
+      <div class="panel-head"><h2>Lancer le nettoyage</h2>
         <span class="badge green">≈ ${fmtNum(r.deletable.count)} mails · ${fmtSize(r.deletable.sizeBytes)} récupérables</span></div>
       <div class="panel-body">
         ${usable.length === 0
@@ -4466,7 +4466,7 @@ async function loadBigClean() {
             <span class="muted" style="font-size:12.5px; flex:1">Tout part à la CORBEILLE (récupérable ~30 jours),
             par lots de 200, opération par opération dans le <a href="#/operations">journal</a>.
             Les mails de personnes ne sont jamais touchés.</span>
-            <button class="btn btn-primary" id="gm-launch">🧺 Lancer le nettoyage</button>
+            <button class="btn btn-primary" id="gm-launch">Lancer le nettoyage</button>
           </div>`}
       </div>
     </div>`;
@@ -4630,7 +4630,7 @@ async function renderAttachments() {
       </select>
       <label class="muted" style="display:flex; align-items:center; gap:6px; font-size:12.5px">
         depuis <input type="date" id="a-since" value="${esc(attachState.since)}"></label>
-      <button type="submit" class="btn btn-primary">📎 Chercher</button>
+      <button type="submit" class="btn btn-primary">Chercher</button>
     </form>
     <div id="attach-results"></div>`;
 
@@ -5874,7 +5874,7 @@ async function renderInbox(slugFromHash) {
         title="Seuls les mails synchronisés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
         <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> 📎 avec PJ</label>
       <button class="btn" id="inbox-refresh" title="Recharge la liste depuis les mails synchronisés (pour interroger le serveur Microsoft, lance une synchronisation depuis la vue de la boîte)">↻ Actualiser</button>
-      <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">✉️ Nouveau mail</button>
+      <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">Nouveau mail</button>
     </div></div>
     <div id="inbox-notice"></div>
     <div id="inbox-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
@@ -6294,7 +6294,7 @@ async function renderSearch() {
     <form class="search-bar" id="search-form">
       <input type="search" id="s-q" placeholder="Sujet, expéditeur, adresse… (ex. facture, EDF, marie)"
         value="${esc(searchState.q)}" autocomplete="off">
-      <button type="submit" class="btn btn-primary">🔎 Rechercher</button>
+      <button type="submit" class="btn btn-primary">Rechercher</button>
       <button type="button" class="btn" id="s-toggle-filters">${searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres'}</button>
     </form>
     <div class="search-filters ${searchState.showFilters ? '' : 'hidden'}" id="search-filters">
