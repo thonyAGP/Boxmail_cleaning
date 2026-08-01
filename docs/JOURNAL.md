@@ -5,6 +5,22 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 01/08 (5) — Correction d'intention par mail + état du rattrapage IA
+
+Nouveau dans le lecteur : l'intention de CE mail se corrige via un sélecteur
+(PATCH /messages/intent) — intentSource='manual', jamais écrasée, la
+confiance passe à « forte » (la correction lève le doute, le mail sort du
+scope douteux). intent:null = retour au calcul auto. Journalisé.
+
+MESURE DU JOUR (prod) : le rattrapage Cowork horaire a TERMINÉ le scope
+douteux — 0 restant sur les 7 boîtes (thony56_gtr : ~9 000 → 0 depuis le
+30/07). 11 298 analysés / 14 659 lisibles (77 %). Restent 3 361 « sans
+verdict » (confiance haute + intention précise — jamais visés par le scope
+douteux, gain marginal) et 5 875 sans texte exploitable (non analysables).
+Recommandation donnée à l'utilisateur : réduire la boucle Cowork horaire
+(plus rien à rattraper), « tout analyser » = ~2-3 $ via Haiku ou des heures
+de forfait pour un gain surtout côté verdicts « à archiver ».
+
 ## 01/08 (4) — Lecture auto-réparante + correction du classement dans le lecteur
 
 Bug : « Lecture impossible : Input cannot be null or undefined » sur un mail

@@ -124,6 +124,8 @@ export const api = {
   },
   analyzeMessage: (slug, { folder, uid, text }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
+  setMessageIntent: (slug, { folder, uid, intent }) =>
+    request('PATCH', `/accounts/${encodeURIComponent(slug)}/messages/intent`, { folder, uid, intent }),
   proposeDeadline: (slug, { folder, uid, date, type, sourceText }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/propose-deadline`, {
       folder,

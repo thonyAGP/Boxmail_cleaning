@@ -6742,10 +6742,16 @@ function renderReaderAnalysis(a, item) {
   const classLine = c
     ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
         <span class="badge gray">🏷️</span>
-        <span>Classé : <strong>${esc(INTENT_LABELS[c.intent] ?? c.intent ?? 'pas encore classé')}</strong>
-          ${c.intentReason ? `<span class="muted" style="font-size:11.5px" title="${esc(c.intentReason)}">— ${esc(c.intentReason)}</span>` : ''}
+        <span>Classé :</span>
+        <select id="ra-intent" title="Corriger l'intention de CE mail précis — ta correction n'est jamais écrasée, et elle lève le doute de l'analyse">
+          <option value="">${c.intent ? '(revenir au calcul auto)' : 'pas encore classé'}</option>
+          ${Object.entries(INTENT_LABELS)
+            .map(([v, l]) => `<option value="${v}" ${v === c.intent ? 'selected' : ''}>${l}</option>`)
+            .join('')}</select>
+        <span>${c.intentReason ? `<span class="muted" style="font-size:11.5px" title="${esc(c.intentReason)}">— ${esc(c.intentReason)}</span>` : ''}
           ${c.intentSource === 'manual' ? '<span class="badge blue" title="Posé à la main — jamais écrasé">corrigé</span>'
-            : c.intentSource === 'ai' ? '<span class="badge gray" title="Verdict de l’analyse IA">IA</span>' : ''}</span>
+            : c.intentSource === 'ai' ? '<span class="badge gray" title="Verdict de l’analyse IA">IA</span>' : ''}
+          <span class="muted" id="ra-intent-note" style="font-size:11.5px"></span></span>
       </div>
       ${c.sender ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
         <span class="badge gray">👤</span>
@@ -6779,6 +6785,22 @@ function renderReaderAnalysis(a, item) {
     const n = $('#ra-class-note');
     if (n) { n.textContent = msg; n.style.color = 'var(--green, #16a34a)'; }
   };
+  $('#ra-intent')?.addEventListener('change', async (e) => {
+    try {
+      await api.setMessageIntent(item.account, {
+        folder: item.folder,
+        uid: item.uid,
+        intent: e.target.value || null,
+      });
+      const n = $('#ra-intent-note');
+      if (n) {
+        n.textContent = e.target.value
+          ? '✓ corrigé pour ce mail — jamais écrasé'
+          : '✓ repassé en calcul automatique';
+        n.style.color = 'var(--green, #16a34a)';
+      }
+    } catch (err) { alert(err.message); }
+  });
   $('#ra-cat')?.addEventListener('change', async (e) => {
     try {
       await api.senderSetCategory(item.account, c.sender.email, e.target.value || null);

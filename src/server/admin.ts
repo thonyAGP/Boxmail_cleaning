@@ -103,8 +103,11 @@ import {
   setSenderPriority,
   SENDER_CATEGORIES,
   SENDER_PRIORITIES,
+  MESSAGE_INTENTS,
+  MESSAGE_INTENT_LABELS,
   type SenderCategory,
   type SenderPriority,
+  type MessageIntent,
 } from '../services/categorize.js';
 import {
   analysisCoverage,
@@ -1904,6 +1907,63 @@ export function buildAdminRouter(): Router {
           detected,
         },
       });
+    }),
+  );
+
+  // Corriger l'INTENTION d'un mail précis depuis le lecteur (01/08) — utile
+  // quand un expéditeur mixte envoie pub ET factures : corriger l'expéditeur
+  // ne suffit pas, il faut pouvoir corriger CE mail. Précédence stricte
+  // manual > ai > auto : une correction n'est jamais écrasée par les recalculs
+  // ni par l'IA. `intent: null` = revenir au calcul automatique (reposé par le
+  // backfill 🏷️ ou la prochaine sync).
+  router.patch(
+    '/accounts/:slug/messages/intent',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.body?.uid ?? ''), 10);
+      const raw = req.body?.intent;
+      const intent = raw === null || raw === '' ? null : String(raw);
+      if (!folder || !Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "uid" requis.' });
+        return;
+      }
+      if (intent !== null && !MESSAGE_INTENTS.includes(intent as MessageIntent)) {
+        res.status(400).json({ error: `Intention inconnue : ${intent}.` });
+        return;
+      }
+      await ensureDbReady();
+      const m = await db.message.findFirst({
+        where: { accountSlug: slug, uid, isDeleted: false, folder: { is: { path: folder } } },
+        select: { id: true, subject: true, fromEmail: true },
+      });
+      if (!m) {
+        res.status(404).json({ error: "Mail introuvable dans l'index — resynchronise la boîte." });
+        return;
+      }
+      await db.message.update({
+        where: { id: m.id },
+        data: intent
+          ? {
+              intent,
+              intentSource: 'manual',
+              intentReason: 'corrigé par toi',
+              // Ta correction lève le doute : le mail n'a plus à être proposé
+              // au rattrapage IA ni protégé pour cause d'analyse incertaine.
+              analysisConfidence: 'high',
+              analysisConfidenceReason: 'intention corrigée à la main',
+            }
+          : { intent: null, intentSource: 'auto', intentReason: null },
+      });
+      await recordOperation({
+        account: slug,
+        tool: 'ui_message_intent',
+        params: { folder, uid, intent, subject: m.subject ?? '', from: m.fromEmail ?? '' },
+        result: intent
+          ? `intention corrigée : ${MESSAGE_INTENT_LABELS[intent as MessageIntent]}`
+          : 'intention repassée en calcul automatique',
+      });
+      res.json({ ok: true, intent, intentSource: intent ? 'manual' : 'auto' });
     }),
   );
 
