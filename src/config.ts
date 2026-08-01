@@ -81,7 +81,10 @@ export const config = {
     // Mot de passe de l'interface web. Si absent, l'interface est désactivée
     // (le serveur MCP fonctionne normalement).
     password: process.env.ADMIN_PASSWORD?.trim() || null,
-    sessionTtlMs: int('ADMIN_SESSION_TTL_MINUTES', 24 * 60) * 60_000,
+    // 30 jours GLISSANTS par défaut (outil personnel, un seul utilisateur) :
+    // combiné à la persistance des sessions (data/sessions.json), on ne se
+    // réidentifie plus à chaque mise à jour (retour utilisateur 02/08).
+    sessionTtlMs: int('ADMIN_SESSION_TTL_MINUTES', 30 * 24 * 60) * 60_000,
     // URL publique de l'interface (sert au retour OAuth de l'enrôlement).
     // En local la valeur par défaut suffit ; sur le serveur : https://mcp.lb2i.fr
     publicBaseUrl: optional('PUBLIC_BASE_URL', `http://localhost:${int('PORT', 8787)}`),
@@ -89,6 +92,10 @@ export const config = {
   files: {
     accounts: resolve(projectRoot, optional('ACCOUNTS_FILE', 'accounts.json')),
     operationsLog: resolve(projectRoot, optional('OPERATIONS_LOG', 'logs/operations.jsonl')),
+    // Sessions de l'interface web : persistées pour survivre aux redémarrages
+    // (avant, chaque mise à jour déconnectait l'utilisateur). data/ est
+    // gitignoré ; le fichier ne contient que des jetons aléatoires + expiration.
+    sessions: resolve(projectRoot, optional('SESSIONS_FILE', 'data/sessions.json')),
   },
   sync: {
     // Synchronisation automatique (L5.11) : 0 = désactivée (défaut, usage

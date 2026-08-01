@@ -5,6 +5,16 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (5) — Les sessions survivent aux mises à jour
+
+« À chaque maj il faut que je me réidentifie » : les sessions vivaient en
+mémoire, chaque redémarrage déconnectait. Corrigé : persistance dans
+data/sessions.json (jetons + expiration, mode 600, débounce 1,5 s avec
+unref pour ne pas retenir l'arrêt), rechargées au boot ; TTL par défaut
+porté à 30 jours glissants (ADMIN_SESSION_TTL_MINUTES pour changer).
+Testé en réel : login → kill serveur → relance → toujours authentifié.
+La mise à jour qui LIVRE ce correctif déconnecte une dernière fois.
+
 ## 02/08 (4) — Décision actée : l'IA lit TOUT, les règles se déduisent de ses verdicts
 
 L'utilisateur a tranché (« fais ce que je te dis ») :

@@ -1,5 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import {
@@ -152,6 +154,40 @@ const SESSION_COOKIE = 'bm_session';
 const COOKIE_SECURE = config.admin.publicBaseUrl.startsWith('https') ? '; Secure' : '';
 const sessions = new Map<string, number>(); // token -> expiresAt
 
+// PERSISTANCE des sessions (retour utilisateur 02/08 : « à chaque mise à
+// jour, il faut que je me réidentifie »). Les sessions vivaient en mémoire :
+// chaque redémarrage — donc chaque mise à jour — déconnectait l'utilisateur.
+// Elles sont maintenant rechargées au boot depuis data/sessions.json (jetons
+// aléatoires + expiration, rien d'autre) et sauvegardées avec un léger
+// débounce (la session glissante toucherait le disque à chaque requête sinon).
+try {
+  const raw = JSON.parse(readFileSync(config.files.sessions, 'utf8')) as Record<string, number>;
+  const now = Date.now();
+  for (const [token, exp] of Object.entries(raw)) {
+    if (typeof exp === 'number' && exp > now) sessions.set(token, exp);
+  }
+} catch {
+  // Premier lancement (ou fichier illisible) : on repart de zéro.
+}
+let sessionSaveTimer: NodeJS.Timeout | null = null;
+function persistSessions(): void {
+  if (sessionSaveTimer) return;
+  sessionSaveTimer = setTimeout(() => {
+    sessionSaveTimer = null;
+    try {
+      mkdirSync(dirname(config.files.sessions), { recursive: true });
+      writeFileSync(config.files.sessions, JSON.stringify(Object.fromEntries(sessions)), {
+        mode: 0o600,
+      });
+    } catch (err) {
+      logger.warn('sessions non persistées', { error: (err as Error).message });
+    }
+  }, 1500);
+  // Un débounce encore en vol ne doit pas retenir l'arrêt du processus
+  // (l'update fait process.exit 2 s après — le flush passe, puis rien ne bloque).
+  sessionSaveTimer.unref?.();
+}
+
 // Rate limit dédié au login : 10 tentatives / 15 min / IP.
 const loginAttempts = new Map<string, number[]>();
 function loginRateLimited(ip: string): boolean {
@@ -177,11 +213,15 @@ function sessionValid(req: Request): boolean {
   if (!token) return false;
   const expiresAt = sessions.get(token);
   if (!expiresAt || expiresAt < Date.now()) {
-    if (token) sessions.delete(token);
+    if (token) {
+      sessions.delete(token);
+      persistSessions();
+    }
     return false;
   }
   // Session glissante.
   sessions.set(token, Date.now() + config.admin.sessionTtlMs);
+  persistSessions();
   return true;
 }
 
@@ -226,6 +266,7 @@ export function buildAdminRouter(): Router {
     }
     const token = randomBytes(32).toString('base64url');
     sessions.set(token, Date.now() + config.admin.sessionTtlMs);
+    persistSessions();
     res.setHeader(
       'Set-Cookie',
       `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/${COOKIE_SECURE}; Max-Age=${Math.floor(
@@ -238,7 +279,10 @@ export function buildAdminRouter(): Router {
 
   router.post('/logout', (req, res) => {
     const token = parseCookies(req)[SESSION_COOKIE];
-    if (token) sessions.delete(token);
+    if (token) {
+      sessions.delete(token);
+      persistSessions();
+    }
     res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/${COOKIE_SECURE}; Max-Age=0`);
     res.json({ ok: true });
   });
