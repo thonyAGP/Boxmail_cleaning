@@ -5,6 +5,22 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 01/08 (2) — Mise à jour en ~10 s : superviseur à étapes conditionnelles
+
+« Chaque mise à jour prend 3 minutes » : le superviseur refaisait npm install +
+prisma generate + migrate + tsc à CHAQUE tour. Désormais chaque étape ne tourne
+que si ses entrées ont changé (empreintes package-lock / schema.prisma / arbre
+`git rev-parse HEAD:src` + tsconfig, état dans
+`node_modules/.mailassistant-state.json`). Migrate retiré du superviseur (le
+boot l'applique déjà via ensureMigrationsApplied). tsc incrémental activé
+(dist/.tsbuildinfo). Modifs locales non commitées sur src/prisma/lock ⇒ passe
+complète ; échec de build ⇒ état effacé, passe complète au tour suivant.
+Testé en réel : voie rapide = pull 1,8 s + 3 « étape sautée » + serveur en
+ligne ~5 s ; relance après arrêt idem. ATTENTION : le superviseur se charge en
+mémoire au lancement — la version rapide ne prend effet qu'au prochain
+double-clic sur MailAssistant.bat (la mise à jour qui la livre passera encore
+par le chemin lent une fois).
+
 ## 01/08 — Clarté de l'interface : ordre des boîtes, quota expliqué, compteurs IA par boîte
 
 Retour utilisateur : « tout est un peu noyé » — actions pas claires, comptes non

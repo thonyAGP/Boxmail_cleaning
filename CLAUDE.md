@@ -132,7 +132,10 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Passe « clarté » livrée (01/08)** sur retour utilisateur : ordre des boîtes
+**Superviseur accéléré (01/08)** : étapes conditionnelles (install/generate/
+tsc seulement si leurs entrées changent, migrate retiré — le boot s'en charge),
+mise à jour ~10 s au lieu de ~3 min ; effectif au prochain lancement de
+MailAssistant.bat. **Passe « clarté » livrée (01/08)** sur retour utilisateur : ordre des boîtes
 choisi (Account.sortOrder, ↑/↓ dans Paramètres, tout suit), quota expliqué
 (fetchQuotaDiagnostic + quotaNote/quotaCheckedAt, bouton 📏 Quota — À VALIDER
 en réel : la note dira pourquoi si Outlook n'expose pas QUOTA), compteurs IA
