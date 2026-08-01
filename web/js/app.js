@@ -449,7 +449,7 @@ function renderAccountsNav() {
         <a href="#/account/${esc(e.account)}" class="side-acct-link" title="${esc(e.username)}">
           <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
           <span class="account-email">${esc(e.account)}</span></a>
-        ${unseen != null ? `<span class="badge blue">${fmtNum(unseen)}</span>` : '<span class="badge gray">à synchroniser</span>'}
+        ${unseen == null ? '<span class="badge gray">à synchroniser</span>' : unseen > 0 ? `<span class="badge blue">${fmtNum(unseen)}</span>` : ''}
       </div>
       ${open ? `<div class="side-folders">${sideFolderList(e.account)}</div>` : ''}
     </div>`;
@@ -828,7 +828,7 @@ async function renderToday() {
         <span>
           ${t.todo.total ? `<button class="btn btn-sm btn-primary" id="todo-assist"
             title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">▶️ Commencer</button>` : ''}
-          <span class="badge ${t.todo.total ? 'red' : 'green'}" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span></span></div>
+          ${t.todo.total ? `<span class="badge red" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span>` : ''}</span></div>
       <div class="panel-body">
         ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
         <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
@@ -839,7 +839,7 @@ async function renderToday() {
 
     <div class="panel">
       <div class="panel-head"><h2>🟠 Important</h2>
-        <span class="badge orange">${fmtNum(t.important.length)}</span></div>
+        ${t.important.length ? `<span class="badge orange">${fmtNum(t.important.length)}</span>` : ''}</div>
       <div class="panel-body">
         ${importantRows.length ? importantRows.join('') : '<div class="empty">Rien d’important non traité cette semaine.</div>'}
         <div class="muted" style="font-size:12.5px; padding-top:8px"><a href="#/important">⭐ Voir la liste complète</a></div>
@@ -861,7 +861,7 @@ async function renderToday() {
         <span>
           ${t.noise.total ? `<button class="btn btn-sm" id="noise-tour"
             title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides — corbeille ou passer">🧹 Nettoyage guidé</button>` : ''}
-          <span class="badge gray" style="margin-left:8px">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span></span></div>
+          ${t.noise.total ? `<span class="badge gray" style="margin-left:8px">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span>` : ''}</span></div>
       <div class="panel-body">
         ${noiseRows}
         <div class="muted" style="font-size:12.5px; padding-top:8px">
@@ -2792,7 +2792,7 @@ function renderRepliesBody() {
     <div class="tabs">${tabs
       .map(
         (t) => `<button class="tab ${repliesState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
-        ${t.label} <span class="badge ${t.key === 'overdue' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+        ${t.label}${t.n > 0 ? ` <span class="badge ${t.key === 'overdue' ? 'red' : 'gray'}">${fmtNum(t.n)}</span>` : ''}</button>`,
       )
       .join('')}</div>
     <div class="panel"><div class="panel-body tight">
@@ -2968,7 +2968,7 @@ function renderFollowupsBody() {
     <div class="tabs">${tabs
       .map(
         (t) => `<button class="tab ${followupsState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
-        ${t.label} <span class="badge ${t.key === 'overdue' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+        ${t.label}${t.n > 0 ? ` <span class="badge ${t.key === 'overdue' ? 'red' : 'gray'}">${fmtNum(t.n)}</span>` : ''}</button>`,
       )
       .join('')}</div>
     <div class="panel"><div class="panel-body tight">
@@ -3391,7 +3391,7 @@ function renderDeadlinesBody() {
     <div class="tabs">${tabs
       .map(
         (t) => `<button class="tab ${deadlinesState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
-        ${t.label} <span class="badge ${t.key === 'proposed' && t.n > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+        ${t.label}${t.n > 0 ? ` <span class="badge ${t.key === 'proposed' ? 'red' : 'gray'}">${fmtNum(t.n)}</span>` : ''}</button>`,
       )
       .join('')}</div>
     <div class="panel"><div class="panel-body tight">
@@ -5654,7 +5654,7 @@ function renderTasksBody() {
     <div class="tabs">${tabs
       .map(
         (t) => `<button class="tab ${tasksState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
-        ${t.label} <span class="badge ${t.key === 'todo' && d.counts.overdue > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span></button>`,
+        ${t.label}${t.n > 0 ? ` <span class="badge ${t.key === 'todo' && d.counts.overdue > 0 ? 'red' : 'gray'}">${fmtNum(t.n)}</span>` : ''}</button>`,
       )
       .join('')}</div>
     <div class="panel"><div class="panel-body tight">
