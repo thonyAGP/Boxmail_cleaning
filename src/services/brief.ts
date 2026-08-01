@@ -152,7 +152,7 @@ export async function generateBrief(opts: GenerateBriefOptions = {}): Promise<Br
   for (const name of names) {
     try {
       const acc = await db.account.findUnique({ where: { slug: name } });
-      if (!acc) throw new Error('compte non indexé — lancer une synchronisation');
+      if (!acc) throw new Error('boîte pas encore synchronisée — lance une synchronisation');
 
       // Volumétrie : boîte de réception (compteurs tenus par la sync).
       const inboxFolder = await db.folder.findFirst({

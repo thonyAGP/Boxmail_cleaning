@@ -217,9 +217,12 @@ export async function getAccessToken(record: {
 
   const account = await pca.getTokenCache().getAccountByHomeId(record.homeAccountId);
   if (!account) {
+    // Message pensé pour l'interface (utilisateur non technique) : le geste
+    // de réparation passe par Paramètres, pas par une ligne de commande.
     throw new Error(
-      'Compte introuvable dans le cache MSAL. Le compte doit être ré-enrôlé ' +
-        '(npm run enroll -- --account <nom>).',
+      'La connexion Microsoft de cette boîte est à refaire : dans ⚙️ Paramètres, ' +
+        'supprime la boîte puis « ＋ Ajouter un compte » pour la reconnecter ' +
+        '(tes mails chez Microsoft ne bougent pas).',
     );
   }
 

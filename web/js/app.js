@@ -1915,8 +1915,72 @@ function opLine(op) {
     case 'create_folder':
       title = `📁 Dossier <strong>${esc(p.path ?? '')}</strong> créé`;
       break;
+    case 'ai_analysis':
+      title = op._group && op._group.batches > 1
+        ? `🤖 <strong>${fmtNum(op._group.count)} mails</strong> analysés par l'IA <span class="muted">(${fmtNum(op._group.batches)} lots)</span>`
+        : `🤖 <strong>${fmtNum(p.verdicts ?? op.items?.length ?? 0)} mails</strong> analysés par l'IA`;
+      break;
+    case 'grand_menage':
+      title = `🧺 <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(Libérer de l'espace${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
+      break;
+    case 'retention_auto_apply':
+      title = `🧹 <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(nettoyage automatique${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
+      break;
+    case 'apply_mail_rule':
+    case 'rule_auto_apply':
+      title = `🗂️ <strong>${fmtNum(n)} mails</strong> rangés${p.targetFolder ? ` vers <strong>${esc(p.targetFolder)}</strong>` : ''}` +
+        (op.tool === 'rule_auto_apply' ? ' <span class="muted">(règle automatique)</span>' : ' <span class="muted">(règle de classement)</span>');
+      break;
+    case 'ui_message_intent':
+      title = `🏷️ Classement d'un mail corrigé${op.result ? ` <span class="muted">— ${esc(op.result)}</span>` : ''}`;
+      break;
+    case 'ui_sender_category':
+    case 'set_sender_category':
+      title = `👤 Catégorie d'un expéditeur corrigée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      break;
+    case 'ui_sender_priority':
+    case 'set_sender_priority':
+      title = `⭐ Priorité d'un expéditeur modifiée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      break;
+    case 'ui_analysis_feedback':
+      title = `🎯 ${esc(op.result ?? 'Analyse vérifiée')}`;
+      break;
+    case 'ui_suggestion_dismiss':
+      title = `💡 Règle proposée ignorée`;
+      break;
+    case 'ui_accounts_order':
+      title = `⚙️ Ordre des boîtes modifié`;
+      break;
+    case 'ui_account_color':
+      title = `🎨 Couleur d'une boîte modifiée`;
+      break;
+    case 'ui_account_rename':
+      title = `✏️ Boîte renommée${p.to ? ` <span class="muted">— ${esc(p.to)}</span>` : ''}`;
+      break;
+    case 'ui_account_remove':
+      title = `🗑️ Boîte retirée de Mail Assistant <span class="muted">(les mails chez Microsoft ne bougent pas)</span>`;
+      break;
+    case 'ui_accounts_export':
+      title = `📦 Accès des boîtes exportés`;
+      break;
+    case 'ui_accounts_import':
+      title = `📦 Accès de boîtes importés`;
+      break;
+    case 'ui_backup_create':
+      title = `💾 Sauvegarde créée`;
+      break;
+    case 'ui_unsubscribe':
+      title = `🚫 Désinscription demandée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      break;
+    case 'ui_unsubscribe_manual':
+      title = `🚫 Désinscription marquée faite${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      break;
     default:
-      title = `⚙️ ${esc(op.tool ?? 'opération')}`;
+      // Le journal serveur porte souvent une phrase de résultat en français :
+      // on la préfère toujours au nom technique de l'opération.
+      title = op.result
+        ? `${esc(op.result)} <span class="muted" style="font-size:11px" title="opération : ${esc(op.tool ?? '')}"></span>`
+        : `⚙️ ${esc(op.tool ?? 'opération')}`;
   }
 
   const meta = [op.account, op.folder].filter(Boolean).map(esc).join(' · ');
@@ -4838,7 +4902,7 @@ function autoUpdateLabel(a) {
 // Libellé de l'auto-sync (L5.11) pour le panneau Serveur des Paramètres.
 function autoSyncLabel(a) {
   if (!a || !a.intervalMinutes) {
-    return '✕ désactivée (SYNC_INTERVAL_MINUTES=0) — synchronise à la demande';
+    return '<span title="Réglage serveur : SYNC_INTERVAL_MINUTES">✕ désactivée — synchronise à la demande</span>';
   }
   const mins = a.nextRunAt
     ? Math.max(0, Math.round((new Date(a.nextRunAt).getTime() - Date.now()) / 60000))
@@ -4923,7 +4987,7 @@ function renderSettingsBody() {
         <div class="set-line"><span class="muted">Superviseur (relance auto)</span>
           <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
         <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>
-          <span>${smtpEnabled ? '✅ activé' : '✕ désactivé (ENABLE_SMTP_SEND=false)'}</span></div>
+          <span>${smtpEnabled ? '✅ activé' : '<span title="Réglage serveur : ENABLE_SMTP_SEND">✕ désactivé</span>'}</span></div>
         <div class="set-line"><span class="muted">Synchronisation automatique</span>
           <span>${autoSyncLabel(v?.autoSync)}</span></div>
         <div class="set-line"><span class="muted">Boîtes synchronisées</span>
@@ -7081,15 +7145,72 @@ function removeItemFromResults(item) {
 }
 
 // ---------------------------------------------------------------- Journal
+// Familles d'opérations pour les filtres du journal (revue UX P1.5).
+const OP_FAMILIES = {
+  mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
+    'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
+    'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual'],
+  analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback'],
+  suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
+    'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',
+    'restore_deadline', 'propose_deadline', 'create_task', 'task_from_deadline',
+    'complete_task', 'dismiss_task', 'reopen_task'],
+};
+function opFamily(tool) {
+  for (const [fam, tools] of Object.entries(OP_FAMILIES)) if (tools.includes(tool)) return fam;
+  return 'reglages';
+}
+
+// Les lots d'analyse IA consécutifs sont regroupés en une seule ligne
+// (« 240 mails analysés (5 lots) ») — le détail lot par lot reste dans
+// logs/operations.jsonl.
+function groupOps(ops) {
+  const out = [];
+  for (const op of ops) {
+    const last = out[out.length - 1];
+    const count = Number(op.params?.verdicts ?? op.items?.length ?? 0);
+    if (op.tool === 'ai_analysis' && last?.tool === 'ai_analysis') {
+      last._group = last._group ?? { count: Number(last.params?.verdicts ?? last.items?.length ?? 0), batches: 1 };
+      last._group.count += count;
+      last._group.batches += 1;
+      last.items = undefined; // la liste d'un seul lot serait trompeuse
+    } else {
+      out.push({ ...op });
+    }
+  }
+  return out;
+}
+
+const opsState = { filter: 'all', operations: [] };
 async function renderOperations() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head"><div><h1>📜 Journal d'activité</h1>
-    <div class="sub">Toutes les opérations d'écriture (Claude et interface), les plus récentes d'abord.</div></div></div>
+    <div class="sub">Tout ce qui a été fait (par toi, l'assistant ou Claude), le plus récent d'abord.</div></div></div>
+    <div class="tabs" id="ops-tabs"></div>
     <div class="panel"><div class="panel-body" id="ops-body"><span class="spinner"></span></div></div>`;
   const { operations } = await api.operations(100);
-  $('#ops-body').innerHTML = operations.length
-    ? operations.map(opLine).join('')
-    : '<div class="empty">Aucune opération journalisée pour l\'instant.</div>';
+  opsState.operations = operations;
+  renderOpsList();
+}
+
+function renderOpsList() {
+  const filters = [
+    ['all', 'Tout'], ['mails', 'Actions sur les mails'],
+    ['analyses', 'Analyses'], ['suivi', 'Suivi'], ['reglages', 'Réglages'],
+  ];
+  $('#ops-tabs').innerHTML = filters
+    .map(([key, label]) => `<button class="tab ${opsState.filter === key ? 'active' : ''}" data-ops-filter="${key}">${label}</button>`)
+    .join('');
+  document.querySelectorAll('[data-ops-filter]').forEach((b) =>
+    b.addEventListener('click', () => { opsState.filter = b.dataset.opsFilter; renderOpsList(); }));
+
+  const ops = groupOps(
+    opsState.operations.filter((op) => opsState.filter === 'all' || opFamily(op.tool) === opsState.filter),
+  );
+  $('#ops-body').innerHTML = ops.length
+    ? ops.map(opLine).join('')
+    : '<div class="empty">Rien dans le journal pour ce filtre.</div>';
 }
 
 installTopLoader();
