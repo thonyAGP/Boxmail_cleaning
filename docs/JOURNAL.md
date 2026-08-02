@@ -5,6 +5,29 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (10) — Refonte visuelle, Étape 4 : expand revu + dé-émojisation
+
+Retour utilisateur : « la gestion de l'expand n'est pas très bien
+gérée » (capture jointe illisible — corrigé sur constat propre).
+Livré (`f5c3369`) :
+
+- Expand des comptes : chevrons ▸/▾ sans cadre (comme DOSSIERS MAIL),
+  sous-arbre indenté sur ligne de rappel, dossiers en texte (plus
+  d'emoji de rôle), « + dossiers » retiré du titre COMPTES.
+- Dé-émojisation complète de app.js : 603 emojis retirés par script
+  (strip \p{Extended_Pictographic} + ↩️ + FE0F après conversion des cas
+  fonctionnels : étoile ★/☆, PJ n, « liste », ↓). PIÈGE réparé : le
+  titre de la boîte unifiée faisait `.replace(/^\S+ /,'')` pour manger
+  l'emoji de tête des labels — devenu destructeur (« Boîte » sautait).
+  Badges-emoji du bloc d'analyse supprimés (texte seul), const
+  replyBadge/FOLDER_ROLE_EMOJI mortes supprimées.
+- Tableau de bord renommé « État des comptes » (= sidebar) ; message
+  MSAL (oauth.ts) sans emojis.
+
+La refonte visuelle est donc complète (Étapes 1-4). Non fait,
+volontairement : Boîtes mail en 3 colonnes (§9) et colonne « Risque »
+du nettoyage (§10) — structurels/données, à décider séparément.
+
 ## 02/08 (9) — Refonte visuelle, Étapes 1-2 (brief « direction retenue »)
 
 Nouveau brief utilisateur : direction « outil de pilotage professionnel »
