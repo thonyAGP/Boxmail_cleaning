@@ -7137,11 +7137,69 @@ function renderReaderHtml(el, body, relocatedNote, item) {
       ${blocked ? `<div class="html-imgbar">🖼️ ${fmtNum(blocked)} image(s) bloquée(s) — les afficher peut signaler ta lecture à l'expéditeur.
         <button class="btn btn-sm" id="reader-show-images">Afficher les images</button></div>` : ''}
       ${body.htmlTruncated ? '<div class="notice warn" style="margin:8px 14px">✂️ Mail très lourd : seul le début est affiché.</div>' : ''}
-      <iframe class="reader-frame" sandbox="allow-same-origin allow-popups" title="Contenu du mail"></iframe>`;
+      ${'' /* allow-popups-to-escape-sandbox : sans lui, un lien du mail ouvre
+            un onglet SANDBOXÉ (page blanche) — les liens semblaient perdus. */}
+      <iframe class="reader-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" title="Contenu du mail"></iframe>`;
     el.querySelector('.reader-frame').setAttribute('srcdoc', html);
     $('#reader-show-images')?.addEventListener('click', () => draw(true));
   };
   draw(false);
+}
+
+// ------------------------------------------- Redimensionnement du lecteur
+// Poignée sur le bord gauche du panneau : glisser pour élargir/réduire, la
+// taille est MÉMORISÉE (localStorage) — en pixels pour le panneau superposé,
+// en % de la zone pour la colonne ancrée de la Boîte de réception.
+function applyStoredReaderSize(panel, layout) {
+  try {
+    if (layout) {
+      const pct = Number(localStorage.getItem('reader-col-pct'));
+      if (pct >= 25 && pct <= 75) {
+        layout.style.gridTemplateColumns = `minmax(0, 1fr) minmax(420px, ${pct}%)`;
+      }
+    } else {
+      const px = Number(localStorage.getItem('reader-width-px'));
+      if (px >= 480) panel.style.width = `${Math.min(px, Math.round(window.innerWidth * 0.95))}px`;
+    }
+  } catch { /* navigation privée */ }
+}
+
+function installReaderResize(panel, dock) {
+  const layout = dock ? dock.closest('.inbox-layout') : null;
+  applyStoredReaderSize(panel, layout);
+  const handle = document.createElement('div');
+  handle.className = 'reader-resize';
+  handle.title = 'Glisser pour élargir ou réduire la lecture';
+  panel.appendChild(handle);
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    // L'iframe avalerait les mouvements de souris pendant le glisser.
+    const frame = panel.querySelector('.reader-frame');
+    if (frame) frame.style.pointerEvents = 'none';
+    const move = (ev) => {
+      if (layout) {
+        const r = layout.getBoundingClientRect();
+        const pct = Math.min(75, Math.max(25, ((r.right - ev.clientX) / r.width) * 100));
+        layout.style.gridTemplateColumns = `minmax(0, 1fr) minmax(420px, ${pct}%)`;
+        layout.dataset.readerPct = String(Math.round(pct));
+      } else {
+        const w = Math.min(Math.round(window.innerWidth * 0.95), Math.max(480, Math.round(window.innerWidth - ev.clientX)));
+        panel.style.width = `${w}px`;
+      }
+    };
+    const up = () => {
+      if (frame) frame.style.pointerEvents = '';
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      try {
+        if (layout && layout.dataset.readerPct) localStorage.setItem('reader-col-pct', layout.dataset.readerPct);
+        else if (!layout) localStorage.setItem('reader-width-px', String(Number.parseInt(panel.style.width, 10) || 0));
+      } catch { /* navigation privée */ }
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
 }
 
 // Cache CLIENT des corps lus (LRU 20) : rouvrir un mail est instantané — le
@@ -7166,7 +7224,11 @@ function closeReader() {
   document.querySelector('.reader')?.remove();
   // Lecture ancrée (Boîte de réception) : on referme aussi la colonne.
   document.querySelectorAll('.inbox-dock').forEach((d) => { d.classList.add('hidden'); d.replaceChildren(); });
-  document.querySelector('.inbox-layout')?.classList.remove('with-reader');
+  const layout = document.querySelector('.inbox-layout');
+  if (layout) {
+    layout.classList.remove('with-reader');
+    layout.style.gridTemplateColumns = ''; // la largeur choisie revit à la prochaine ouverture
+  }
   document.querySelector('.result-row.selected')?.classList.remove('selected');
 }
 
@@ -7220,6 +7282,7 @@ async function openReader(item, row, opts = {}) {
     document.body.appendChild(overlay);
     document.body.appendChild(panel);
   }
+  installReaderResize(panel, dock);
   panel.querySelector('.modal-close').addEventListener('click', closeReader);
   $('#reader-flag')?.addEventListener('click', async () => {
     const btn = $('#reader-flag');
@@ -7284,8 +7347,15 @@ async function openReader(item, row, opts = {}) {
         note.textContent = relocatedNote;
         el.appendChild(note);
       }
-      // Les mails texte gardent leur rendu brut, lignes vides compactées.
-      el.append((body.text || '(mail sans contenu texte)').replace(/\n{3,}/g, '\n\n'));
+      // Les mails texte gardent leur rendu brut (lignes vides compactées),
+      // mais leurs URLs deviennent de VRAIS liens — comme dans la boîte mail.
+      const brut = (body.text || '(mail sans contenu texte)').replace(/\n{3,}/g, '\n\n');
+      const zone = document.createElement('div');
+      zone.innerHTML = esc(brut).replace(
+        /(https?:\/\/[^\s<>"«»]+?)([.,;:!?)\]]*)(?=\s|$)/g,
+        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>$2',
+      );
+      el.appendChild(zone);
       if (body.truncated) {
         const note = document.createElement('div');
         note.className = 'notice warn';

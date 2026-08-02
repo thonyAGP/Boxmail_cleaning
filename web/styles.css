@@ -573,11 +573,18 @@ a.tab { text-decoration: none; }
 .inbox-layout.with-reader { grid-template-columns: minmax(0, 1fr) minmax(480px, 54%); }
 .inbox-dock { position: sticky; top: 12px; }
 .reader.docked {
-  position: static; width: auto; max-width: none; z-index: auto;
+  position: relative; width: auto; max-width: none; z-index: auto;
   height: calc(100vh - 24px);
   border: 1px solid var(--border); border-radius: var(--radius-md);
   box-shadow: var(--shadow-1); overflow: hidden;
 }
+
+/* Poignée de redimensionnement du lecteur (bord gauche, taille mémorisée). */
+.reader-resize {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+  cursor: col-resize; z-index: 5; touch-action: none;
+}
+.reader-resize:hover, .reader-resize:active { background: var(--primary-soft); }
 @media (max-width: 1100px) {
   .inbox-layout.with-reader { grid-template-columns: 1fr; }
   .inbox-dock { position: static; }
