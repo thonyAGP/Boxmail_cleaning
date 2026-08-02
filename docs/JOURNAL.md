@@ -5,6 +5,34 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (11) — MARCHE ARRIÈRE emojis (validée) + 3 colonnes + Risque
+
+⚠️ LEÇON : la dé-émojisation complète (entrée 10) SUR-INTERPRÉTAIT la
+demande — l'utilisateur voulait réduire les CUMULS visuels, pas
+dépersonnaliser. Il a exigé (et obtenu) une liste exacte AVANT
+modification. Restauration validée puis livrée (`fc26587`) :
+- app.js restauré de c4c0bdd (tous les emojis reviennent) + seul
+  correctif ré-appliqué : chevrons ▸/▾ de l'expand ;
+- sidebar : emojis d'origine à la place des SVG, libellés connus
+  (Aujourd'hui, Boîte de réception, Nettoyage rapide, Classement
+  automatique, Journal d'activité, État des boîtes), logo 📬 ;
+  groupes + pied de statut + badges-zéro conservés ;
+- la Vue du jour reste sobre (choix validé) ; wording P1-P3 conservé.
+RÈGLE DURABLE : ne plus retirer d'emojis existants ; réduire seulement
+les accumulations (emoji + pastille + badges sur une même ligne).
+
+Chantiers livrés sur la base restaurée (même commit) :
+- Boîte de réception : lecture ANCRÉE en colonne droite (openReader
+  option `dock`, .inbox-layout.with-reader, sticky pleine hauteur ;
+  overlay conservé ailleurs et < 1100 px, closeReader referme le dock) ;
+- stratégies de nettoyage : niveau de risque (retention.ts
+  RISK_BY_KEY very_low/low/medium — dérivé de la clé, pas de
+  migration) affiché en badge dans Nettoyage rapide et Libérer de
+  l'espace ;
+- pleine largeur (.main sans max-width — le 1440 px laissait un vide à
+  droite sur grand écran, retour prod) + colonne Raison de la Vue du
+  jour bornée à 2 lignes (.clamp2, détail en infobulle).
+
 ## 02/08 (10) — Refonte visuelle, Étape 4 : expand revu + dé-émojisation
 
 Retour utilisateur : « la gestion de l'expand n'est pas très bien

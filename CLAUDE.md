@@ -142,12 +142,16 @@ par `hubTabs()` dans `route()`), bandeau de màj AUSSI sur Aujourd'hui,
 intercatégories triée par urgence + choix du temps [5/15 min], Corriger
 l'assistant en mode « une vérification à la fois » par défaut,
 Calendrier vue « À venir » par défaut (modes en localStorage).
-**Mojibake BRANCHÉ (02/08)** : réparation à la capture (cleanSnippet) +
-passe unique au boot (marqueur `data/mojibake-repair.done`, le supprimer
-relance) avec re-détection d'intention (auto seulement) + confiance —
-les 3 617 extraits réels seront réparés au premier démarrage.
-À VALIDER en réel par l'utilisateur : toute la nouvelle navigation + la
-passe mojibake au premier lancement. Sinon inchangé : tour 3 bouclé,
-récupérable 8 762 mails / 1,3 Go, `thony56_gtr` ~8 982 restants (option
-C3b Haiku ~4,70 $, clé API pas demandée), stratégies à activer avec
-l'utilisateur, C5 à faire.
+**Mojibake BRANCHÉ et VÉRIFIÉ EN PROD (02/08)** : 3 622 extraits réparés
+sur 25 561 au boot de 06:03 (marqueur `data/mojibake-repair.done`).
+**Refonte visuelle (02/08)** : palette chaude tokens + sidebar bleu nuit
+groupée + Vue du jour (bandeau 5 indicateurs, 70/30) + pleine largeur +
+lecture ANCRÉE en colonne sur la Boîte de réception + badges Risque sur
+les stratégies. ⚠️ RÈGLE ACTÉE après marche arrière validée : NE PLUS
+RETIRER d'emojis existants (la dé-émojisation totale a été annulée —
+l'utilisateur veut l'identité chaleureuse ; réduire seulement les
+cumuls emoji+pastille+badges). Toujours lister les changements AVANT
+une passe de ce type. Sinon inchangé : tour 3 bouclé, récupérable 8 762
+mails / 1,3 Go, `thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $,
+clé API pas demandée), stratégies à activer avec l'utilisateur, C5 à
+faire.
