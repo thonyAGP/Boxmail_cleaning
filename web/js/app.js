@@ -1251,6 +1251,14 @@ async function renderDashboard() {
     .sort((a, b) => b.messageCount - a.messageCount);
 
   body.innerHTML = `
+    ${'' /* Les problèmes qui faussent tout le reste s'affichent EN PREMIER
+          (revue UX) : boîtes jamais synchronisées, santé du système. */}
+    ${ov.neverSynced.length ? `<div class="notice warn">⚠️ <strong>Boîte(s) jamais synchronisée(s)</strong> :
+      ${ov.neverSynced.map((n) => `<strong>${esc(n)}</strong>`).join(', ')} —
+      les chiffres ci-dessous peuvent être incomplets.
+      <button class="btn btn-sm" id="never-sync-all" style="margin-left:8px">Tout synchroniser</button></div>` : ''}
+    <div id="health-banner"></div>
+
     <div class="panel" id="brief-panel">
       <div class="panel-head">
         <h2 id="brief-toggle" style="cursor:pointer" title="Replier / déplier le brief">
@@ -1296,11 +1304,6 @@ async function renderDashboard() {
           — pense au <a href="#/cleanup">🧹 nettoyage</a>.</div>`
         : '';
     })()}
-    ${ov.neverSynced.length ? `<div class="notice warn">⚠️ Boîte(s) jamais synchronisée(s) :
-      ${ov.neverSynced.map((n) => `<strong>${esc(n)}</strong>`).join(', ')} —
-      ouvrir la boîte dans le menu puis lancer une synchronisation.</div>` : ''}
-    <div id="health-banner"></div>
-
     <div class="grid-2">
       <div class="panel">
         <div class="panel-head"><h2>Aperçu par compte</h2>
@@ -1366,28 +1369,15 @@ async function renderDashboard() {
         <div class="panel-head"><h2>Activité récente</h2>
           <a class="btn btn-sm" href="#/operations">Voir tout</a></div>
         <div class="panel-body" id="dash-ops"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>⚡ Actions rapides</h2></div>
-        <div class="panel-body quick-actions">
-          <a class="btn" href="#/search">🔎 Rechercher un mail</a>
-          <button class="btn" id="qa-compose">Nouveau mail</button>
-          <a class="btn" href="#/attachments">📎 Retrouver un document</a>
-          <a class="btn" href="#/cleanup">🧹 Voir le nettoyage</a>
-          <a class="btn" href="#/calendar">🗓️ Calendrier</a>
-          <button class="btn" id="qa-brief">☀️ Régénérer le brief</button>
-        </div>
       </div>
     </div>`;
 
-  $('#qa-compose')?.addEventListener('click', () => {
-    if (!smtpEnabled) {
-      alert("Envoi désactivé sur ce serveur (ENABLE_SMTP_SEND=false dans le .env).");
-      return;
-    }
-    openComposeModal({ account: (overviewCache?.enrolled ?? [])[0]?.account });
-  });
-  $('#qa-brief')?.addEventListener('click', () => {
-    $('#brief-generate')?.click();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Le bouton de la bannière « jamais synchronisée » fait la même chose que
+  // « Tout synchroniser » de l'en-tête (les Actions rapides qui doublonnaient
+  // la navigation ont été retirées — revue UX).
+  $('#never-sync-all')?.addEventListener('click', (e) => {
+    e.target.disabled = true;
+    $('#syncall-btn')?.click();
   });
 
   initBriefPanel();
@@ -1404,7 +1394,12 @@ async function renderDashboard() {
       .join(' · ');
     el.innerHTML = `<div class="notice warn">
       ${h.level === 'error' ? '🚨' : '⚠️'} <strong>L'assistant ne travaille pas normalement</strong> —
-      ${lignes}. <a href="#/settings">Voir l'état du système</a></div>`;
+      ${lignes}. <a href="#/settings">Voir l'état du système</a>
+      <button class="btn btn-sm" id="health-sync" style="margin-left:8px">Tout synchroniser</button></div>`;
+    $('#health-sync')?.addEventListener('click', (e) => {
+      e.target.disabled = true;
+      $('#syncall-btn')?.click();
+    });
   }).catch(() => { /* la santé ne doit jamais casser le tableau de bord */ });
 
   api.operations(6).then(({ operations }) => {
