@@ -151,7 +151,16 @@ les stratégies. ⚠️ RÈGLE ACTÉE après marche arrière validée : NE PLUS
 RETIRER d'emojis existants (la dé-émojisation totale a été annulée —
 l'utilisateur veut l'identité chaleureuse ; réduire seulement les
 cumuls emoji+pastille+badges). Toujours lister les changements AVANT
-une passe de ce type. Sinon inchangé : tour 3 bouclé, récupérable 8 762
-mails / 1,3 Go, `thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $,
-clé API pas demandée), stratégies à activer avec l'utilisateur, C5 à
-faire.
+une passe de ce type.
+**DÉPOUILLEMENT livré (02/08, Lot 1 du plan ChatGPT validé)** : cycle
+« décision prise » (Message.reviewedAt/reviewDecision, services/review.ts,
+routes /review/*) — carte Dépouiller sur la Vue du jour, parcours par
+lots homogènes (corbeille toujours confirmée), Boîte unifiée en mode
+« Décisions recommandées » par défaut. Lots 2-3 restants : reprise de
+session, temps choisi, apprentissage de règles. Bug répondeurs
+automatiques corrigé (isAutoReply — exclu de « À répondre » ET du
+« réponse reçue » des relances) ; lecture mail = HTML fidèle + images à
+la demande (cid: compris) + resize mémorisé + liens réparés.
+Sinon inchangé : tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
+`thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
+demandée), stratégies à activer avec l'utilisateur, C5 à faire.

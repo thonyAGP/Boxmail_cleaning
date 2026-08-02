@@ -5,6 +5,33 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (15) — Dépouillement livré (Lot 1 du plan ChatGPT validé)
+
+(`6b0c0bc`) Le cycle « décision prise » est en place :
+- **services/review.ts** : ligne de base data/review-baseline.json
+  (48 h au premier appel, n'avance JAMAIS — la file se vide par
+  reviewedAt) ; classify() important/read/range (person + bank/admin/
+  insurance + invoice/reply_expected/appointment/reminder + aiAction
+  reply/pay → important ; confidence low → read, jamais range) ; lots
+  homogènes clé compte|expéditeur|intention, échantillon 10 ; decide()
+  seen (IMAP \Seen + index) / trash (moveToTrash lots 200 + isDeleted) /
+  action (createTask source mail + messageRef) / later / keep, puis
+  reviewedAt+reviewDecision, oplog ui_review_decide (famille Mails).
+- Routes GET /review/summary, /review/queue, POST /review/decide
+  (globales, pas par compte).
+- Vue du jour : #today-review (carte Dépouiller) rempli en asynchrone.
+- startReviewFlow() : modale une-étape-par-groupe ; « Décider un par
+  un » éclate un lot (≤ échantillon) ; corbeille toujours confirm() ;
+  fin avec décompte par décision.
+- Boîte unifiée : bascule ✨ Décisions recommandées (défaut,
+  localStorage inbox-view) / 🕐 Plus récents ; loadInboxReco() =
+  3 sections + actions par ligne + Tout dépouiller ; uniquement sur
+  @inbox unifiée (pas les dossiers ni une boîte seule).
+Testé bout en bout sur seeds : action→tâche, vu, corbeille, résumé 0,
+journal FR. RESTE (Lots 2-3) : reprise de session affichée, temps
+choisi sur le dépouillement, apprentissage des règles après gestes
+répétés, « déjà dépouillés » listés dans la vue reco.
+
 ## 02/08 (14) — Bug répondeurs automatiques + fondations « dépouillement »
 
 (`5340900`) Bug réel : l'utilisateur répond depuis l'app, le répondeur
