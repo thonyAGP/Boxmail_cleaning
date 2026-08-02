@@ -921,6 +921,7 @@ async function renderToday() {
     ${!t.categorized ? `<div class="notice warn">Les catégories n'ont pas encore été calculées : la partie « nettoyage » sera vide.
       Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
     ${strip}
+    <div id="today-review"></div>
     <div class="today-grid">
       <div>
         <div class="panel">
@@ -994,9 +995,35 @@ async function renderToday() {
   $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
 
   // ---- Compléments asynchrones (échéances à venir, santé, activité) ----
+  todayFillReview();
   todayFillDeadlines();
   todayFillHealth(syncedCount, totalAccounts);
   todayFillActivity();
+}
+
+// Carte « N nouveaux mails attendent une décision » (dépouillement, Lot 1).
+async function todayFillReview() {
+  const el = $('#today-review');
+  if (!el) return;
+  try {
+    const s = await api.reviewSummary();
+    if (!el.isConnected) return;
+    if (s.total === 0) {
+      el.innerHTML = `<div class="muted" style="font-size:13px; margin:0 0 14px">
+        ✅ Ton courrier est dépouillé — aucun nouveau mail n'attend une décision.${s.laterCount ? ` ${fmtNum(s.laterCount)} gardé(s) « à lire plus tard ».` : ''}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="ta-hero" style="margin-bottom:14px">
+      <div><strong>📬 ${fmtNum(s.total)} nouveau(x) mail(s) attendent une décision</strong>
+        <div class="muted" style="font-size:12.5px; margin-top:2px">
+          ${s.important ? `${fmtNum(s.important)} demandent probablement une action · ` : ''}${s.read ? `${fmtNum(s.read)} méritent une lecture · ` : ''}${s.range ? `${fmtNum(s.range)} probablement rangeables d'un geste` : ''}</div></div>
+      <button class="btn btn-primary" id="review-start"
+        title="L'assistant te présente le courrier préparé : les importants un par un, le reste par lots homogènes — rien ne part sans ta décision">Dépouiller</button>
+    </div>`;
+    $('#review-start')?.addEventListener('click', () => startReviewFlow());
+  } catch {
+    if (el.isConnected) el.innerHTML = '';
+  }
 }
 
 /** Références des échéances « à venir » (ouvrir le mail d'origine au clic). */
@@ -1245,6 +1272,186 @@ function startTodoAssistant(t, { limit } = {}) {
       });
     });
     $('#ta-skip').addEventListener('click', () => next(false));
+  }
+
+  step();
+}
+
+// ---------------------------------------------------------------- Dépouillement
+// Parcours « Dépouiller mes nouveaux mails » (Lot 1 du plan validé 02/08) :
+// l'assistant PRÉPARE le courrier — les importants un par un, le bruit par
+// LOTS homogènes (même boîte + même expéditeur + même intention) — et chaque
+// étape propose une décision par défaut. Rien ne part sans décision explicite ;
+// la corbeille est toujours confirmée ; tout est journalisé.
+const REVIEW_CLASS_LABELS = {
+  important: ['🔥 À décider', 'red'],
+  read: ['📖 À lire', 'blue'],
+  range: ['🧹 Rangeable', 'gray'],
+};
+
+function reviewReason(item) {
+  const bits = [];
+  if (item.senderCategory) bits.push(SENDER_CATEGORY_LABELS[item.senderCategory] ?? item.senderCategory);
+  if (item.intent) bits.push(INTENT_LABELS[item.intent] ?? item.intent);
+  if (item.aiSummary) bits.push(`IA : ${item.aiSummary}`);
+  return bits.join(' · ');
+}
+
+async function startReviewFlow() {
+  let q;
+  try {
+    q = await api.reviewQueue();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  if (!q.groups.length) {
+    alert('Aucun nouveau mail à dépouiller. 🎉');
+    return;
+  }
+  const queue = [...q.groups];
+  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0 };
+  let idx = 0;
+
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal modal-wide">
+    <div class="modal-head"><h2 id="rv-title">📬 Dépouillement</h2>
+      <button class="modal-close" title="Arrêter (rien n'est perdu : le reste sera reproposé)">✕</button></div>
+    <div class="modal-body" id="rv-body"></div>
+    <div class="modal-foot" id="rv-foot"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
+
+  const finish = () => {
+    const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash;
+    $('#rv-title').textContent = decided ? '✅ Ton courrier est dépouillé' : 'Dépouillement interrompu';
+    $('#rv-body').innerHTML = `<div class="empty" style="font-size:15px; text-align:left">
+      ${counts.seen ? `<div>👁️ ${fmtNum(counts.seen)} marqué(s) vu(s)</div>` : ''}
+      ${counts.action ? `<div>☑️ ${fmtNum(counts.action)} ajouté(s) à tes actions</div>` : ''}
+      ${counts.later ? `<div>📖 ${fmtNum(counts.later)} gardé(s) à lire plus tard</div>` : ''}
+      ${counts.keep ? `<div>📥 ${fmtNum(counts.keep)} gardé(s) dans la boîte</div>` : ''}
+      ${counts.trash ? `<div>🗑️ ${fmtNum(counts.trash)} mis à la corbeille (récupérables ~30 j)</div>` : ''}
+      ${counts.skipped ? `<div class="muted">⏭️ ${fmtNum(counts.skipped)} passé(s) — reproposés au prochain dépouillement</div>` : ''}
+      <div class="muted" style="font-size:12.5px; margin-top:10px">Aucun nouveau mail n'attend de décision.
+        Tout est journalisé dans le <a href="#/operations">📜 Journal d'activité</a>.</div></div>`;
+    $('#rv-foot').innerHTML = '<button class="btn btn-primary" id="rv-close">Fermer</button>';
+    $('#rv-close').addEventListener('click', () => { closeModal(); renderToday(); });
+  };
+
+  const next = () => {
+    idx += 1;
+    if (idx >= queue.length) finish();
+    else step();
+  };
+
+  // Une décision réseau : désactive, exécute, compte, avance.
+  const decide = async (ids, decision, nMails) => {
+    $('#rv-foot').querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      const r = await api.reviewDecide(ids, decision);
+      counts[decision] += nMails;
+      if (r.errors?.length) alert(`Décision enregistrée, mais un effet a échoué :\n${r.errors.join('\n')}`);
+      next();
+    } catch (err) {
+      alert(err.message);
+      step();
+    }
+  };
+
+  function step() {
+    const g = queue[idx];
+    $('#rv-title').textContent = `📬 Courrier ${idx + 1} sur ${queue.length}`;
+
+    if (g.kind === 'lot') {
+      const who = g.fromName || g.fromEmail;
+      const intentLabel = g.intent ? (INTENT_LABELS[g.intent] ?? g.intent) : 'même nature';
+      const catLabel = g.senderCategory ? (SENDER_CATEGORY_LABELS[g.senderCategory] ?? g.senderCategory) : '';
+      $('#rv-body').innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+          <span class="badge gray">🧹 Lot rangeable</span>${accountChip(g.account)}
+          ${catLabel ? `<span class="muted" style="font-size:12px">${esc(catLabel)}</span>` : ''}</div>
+        <div style="font-size:15px; margin-bottom:2px"><strong>${fmtNum(g.count)} mails de ${esc(who)}</strong>
+          <span class="muted">— ${esc(intentLabel)}</span></div>
+        <div class="muted" style="font-size:12.5px; margin-bottom:8px">Proposition : les marquer comme vus.
+          Rien n'est supprimé — la corbeille est un choix séparé, toujours confirmé.</div>
+        <div class="subject-list">${g.samples.map((s) =>
+          `<div><span class="mail-date">${fmtDate(s.date)}</span> ${esc(s.subject)}</div>`).join('')}
+          ${g.count > g.samples.length ? `<div class="muted">… et ${fmtNum(g.count - g.samples.length)} autre(s) du même expéditeur</div>` : ''}</div>`;
+      const buttons = [`<button class="btn btn-sm btn-primary" id="rv-seen">👁️ Vu pour les ${fmtNum(g.count)}</button>`,
+        `<button class="btn btn-sm" id="rv-trash" style="color:var(--red)">🗑️ Corbeille…</button>`,
+        `<button class="btn btn-sm" id="rv-keep">📥 Garder tels quels</button>`];
+      if (g.count <= g.samples.length) {
+        buttons.push('<button class="btn btn-sm" id="rv-split">Décider un par un</button>');
+      }
+      $('#rv-foot').innerHTML = `
+        <span class="muted" style="font-size:12px; margin-right:auto">Journalisé · réversible (sauf lecture)</span>
+        ${buttons.join('')}
+        <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement">⏭️ Passer</button>`;
+      $('#rv-seen').addEventListener('click', () => decide(g.ids, 'seen', g.count));
+      $('#rv-trash').addEventListener('click', () => {
+        if (confirm(`Mettre ces ${g.count} mail(s) de ${who} à la corbeille ?\n\nIls restent récupérables ~30 jours, et l'opération est journalisée avec la liste exacte.`)) {
+          decide(g.ids, 'trash', g.count);
+        }
+      });
+      $('#rv-keep').addEventListener('click', () => decide(g.ids, 'keep', g.count));
+      $('#rv-split')?.addEventListener('click', () => {
+        // Le lot éclate en décisions individuelles insérées à la suite.
+        const singles = g.samples.map((s) => ({
+          kind: 'single',
+          item: { id: s.id, account: g.account, folder: s.folder, uid: s.uid, subject: s.subject,
+            snippet: '', fromEmail: g.fromEmail, fromName: g.fromName, date: s.date, isSeen: true,
+            intent: g.intent, aiSummary: null, senderCategory: g.senderCategory, class: 'range' },
+        }));
+        queue.splice(idx, 1, ...singles);
+        step();
+      });
+      $('#rv-skip').addEventListener('click', () => { counts.skipped += g.count; next(); });
+      return;
+    }
+
+    // Décision individuelle.
+    const it = g.item;
+    const [clsLabel, clsColor] = REVIEW_CLASS_LABELS[it.class] ?? REVIEW_CLASS_LABELS.read;
+    const reason = reviewReason(it);
+    $('#rv-body').innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <span class="badge ${clsColor}">${clsLabel}</span>${accountChip(it.account)}
+        ${it.isSeen ? '' : '<span class="badge orange">non lu</span>'}</div>
+      <div style="font-size:15px; margin-bottom:2px"><strong>${esc(it.fromName || it.fromEmail || '?')}</strong>
+        — « ${esc(it.subject)} »</div>
+      ${it.snippet ? `<div class="muted" style="font-size:12.5px; margin-bottom:6px">${esc(it.snippet)}</div>` : ''}
+      ${reason ? `<div class="muted" style="font-size:12px; margin-bottom:8px">Pourquoi : ${esc(reason)}</div>` : ''}
+      <div style="margin-bottom:4px"><span class="openable" id="rv-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>`;
+    $('#rv-read')?.addEventListener('click', () => openReaderFor(it, {}));
+
+    const B = [];
+    if (it.class === 'important') {
+      B.push(['📖 Lire et traiter', 'btn-primary', () => openReaderFor(it, {})]);
+      B.push(['☑️ Ajouter à mes actions', '', () => decide([it.id], 'action', 1)]);
+      B.push(['👁️ Vu', '', () => decide([it.id], 'seen', 1)]);
+    } else if (it.class === 'read') {
+      B.push(['📖 Lire maintenant', 'btn-primary', () => openReaderFor(it, {})]);
+      B.push(['👁️ Vu', '', () => decide([it.id], 'seen', 1)]);
+      B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
+    } else {
+      B.push(['👁️ Vu', 'btn-primary', () => decide([it.id], 'seen', 1)]);
+      B.push(['🗑️ Corbeille…', '', () => {
+        if (confirm(`Mettre « ${it.subject} » à la corbeille ?\n\nRécupérable ~30 jours, journalisé.`)) decide([it.id], 'trash', 1);
+      }]);
+      B.push(['📥 Garder', '', () => decide([it.id], 'keep', 1)]);
+    }
+    if (it.class === 'important') B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
+    $('#rv-foot').innerHTML = `
+      <span class="muted" style="font-size:12px; margin-right:auto">Journalisé · réversible (sauf lecture)</span>
+      ${B.map(([label, cls], k) => `<button class="btn btn-sm ${cls}" data-rv="${k}">${label}</button>`).join('')}
+      <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement">⏭️ Passer</button>`;
+    $('#rv-foot').querySelectorAll('[data-rv]').forEach((btn) => {
+      btn.addEventListener('click', () => { B[Number(btn.dataset.rv)][2](); });
+    });
+    $('#rv-skip').addEventListener('click', () => { counts.skipped += 1; next(); });
   }
 
   step();
@@ -6411,6 +6618,10 @@ async function renderInbox(slugFromHash) {
       <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">Nouveau mail</button>
     </div></div>
     <div id="inbox-notice"></div>
+    <div class="tabs hidden" id="inbox-view-tabs" style="margin-bottom:10px">
+      <button class="tab" data-iv="reco" title="Le courrier groupé par besoin de décision, avec une action proposée par mail">✨ Décisions recommandées</button>
+      <button class="tab" data-iv="recent" title="La liste chronologique classique">🕐 Plus récents</button>
+    </div>
     <div class="inbox-layout" id="inbox-layout">
       <div class="inbox-list" id="inbox-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
       <div class="inbox-dock hidden" id="inbox-dock"></div>
@@ -6522,9 +6733,137 @@ async function loadInboxFolders() {
   }
 }
 
+// Vue « Décisions recommandées » : le courrier entrant groupé par besoin de
+// décision (à décider / à lire / probablement rangeable), une action proposée
+// par ligne — la liste chronologique classique reste à un clic.
+async function loadInboxReco() {
+  const body = $('#inbox-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Préparation du courrier…</div>';
+  let q;
+  let s;
+  try {
+    [q, s] = await Promise.all([api.reviewQueue(), api.reviewSummary()]);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+
+  const singles = q.groups.filter((g) => g.kind === 'single').map((g) => g.item);
+  const lots = q.groups.filter((g) => g.kind === 'lot');
+  const importants = singles.filter((i) => i.class === 'important');
+  const reads = singles.filter((i) => i.class === 'read');
+  const ranges = singles.filter((i) => i.class === 'range');
+  reviewRefs = [...singles];
+
+  const row = (it, mainBtn) => `<div class="reply-row" data-rv-row="${it.id}">
+    <div class="reply-main">
+      <div class="reply-top"><strong>${esc(it.fromName || it.fromEmail || '?')}</strong>
+        ${accountChip(it.account)} ${it.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+        <span class="reply-date">${fmtDate(it.date)}</span></div>
+      <div class="reply-subject"><span class="openable" data-rv-open="${it.id}">${esc(it.subject)}</span></div>
+      ${reviewReason(it) ? `<div class="reply-reason muted">${esc(reviewReason(it))}</div>` : ''}
+    </div>
+    <div class="reply-side"><div class="reply-actions">
+      ${mainBtn}
+      <button class="btn btn-sm" data-rv-later="${it.id}" title="Décision prise : tu le liras plus tard">🕐 Plus tard</button>
+    </div></div>
+  </div>`;
+  const lotRow = (lot, k) => `<div class="reply-row">
+    <div class="reply-main">
+      <div class="reply-top"><strong>${fmtNum(lot.count)} mails de ${esc(lot.fromName || lot.fromEmail)}</strong>
+        ${accountChip(lot.account)}
+        <span class="muted" style="font-size:12px">${esc(lot.intent ? (INTENT_LABELS[lot.intent] ?? lot.intent) : '')}</span></div>
+      <div class="reply-reason muted">${lot.samples.slice(0, 2).map((x) => esc(x.subject)).join(' · ')}${lot.count > 2 ? ' …' : ''}</div>
+    </div>
+    <div class="reply-side"><div class="reply-actions">
+      <button class="btn btn-sm btn-primary" data-rv-lot-seen="${k}">👁️ Vu pour les ${fmtNum(lot.count)}</button>
+    </div></div>
+  </div>`;
+  const section = (title, badge, inner) => inner
+    ? `<div class="panel"><div class="panel-head"><h2>${title}</h2>${badge}</div>
+       <div class="panel-body tight">${inner}</div></div>`
+    : '';
+
+  body.innerHTML = `
+    ${s.total > 0 ? `<div class="ta-hero" style="margin-bottom:12px">
+      <div><strong>${fmtNum(s.total)} nouveau(x) mail(s) attendent une décision</strong></div>
+      <button class="btn btn-primary" id="rv-inbox-start">Tout dépouiller</button></div>` : ''}
+    ${section('🔥 À décider maintenant', `<span class="badge red">${fmtNum(importants.length)}</span>`,
+      importants.map((i) => row(i, `<button class="btn btn-sm btn-primary" data-rv-act="${i.id}">☑️ Ajouter à mes actions</button>`)).join(''))}
+    ${section('📖 À lire quand tu as le temps', `<span class="badge blue">${fmtNum(reads.length)}</span>`,
+      reads.map((i) => row(i, `<button class="btn btn-sm btn-primary" data-rv-seen="${i.id}">👁️ Vu</button>`)).join(''))}
+    ${section('🧹 Peuvent probablement être rangés', `<span class="badge gray">${fmtNum(ranges.length + lots.reduce((n, l) => n + l.count, 0))}</span>`,
+      lots.map((l, k) => lotRow(l, k)).join('') +
+      ranges.map((i) => row(i, `<button class="btn btn-sm btn-primary" data-rv-seen="${i.id}">👁️ Vu</button>`)).join(''))}
+    ${s.total === 0 ? '<div class="empty">✅ Ton courrier est dépouillé — aucun nouveau mail sans décision.</div>' : ''}
+    <div class="muted" style="font-size:12.5px; margin-top:8px">
+      ${s.reviewedToday ? `${fmtNum(s.reviewedToday)} décision(s) prise(s) aujourd'hui · ` : ''}
+      ${s.laterCount ? `${fmtNum(s.laterCount)} « à lire plus tard » · ` : ''}
+      « Plus récents » montre la liste chronologique complète.</div>`;
+
+  const decideRow = async (btn, id, decision) => {
+    btn.disabled = true;
+    try {
+      await api.reviewDecide([id], decision);
+      body.querySelector(`[data-rv-row="${id}"]`)?.remove();
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message);
+    }
+  };
+  $('#rv-inbox-start')?.addEventListener('click', () => startReviewFlow());
+  body.querySelectorAll('[data-rv-seen]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvSeen), 'seen')));
+  body.querySelectorAll('[data-rv-later]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvLater), 'later')));
+  body.querySelectorAll('[data-rv-act]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvAct), 'action')));
+  body.querySelectorAll('[data-rv-lot-seen]').forEach((b) => b.addEventListener('click', async () => {
+    const lot = lots[Number(b.dataset.rvLotSeen)];
+    b.disabled = true;
+    try {
+      await api.reviewDecide(lot.ids, 'seen');
+      loadInbox();
+    } catch (err) {
+      b.disabled = false;
+      alert(err.message);
+    }
+  }));
+  body.querySelectorAll('[data-rv-open]').forEach((el) => el.addEventListener('click', () => {
+    const it = reviewRefs.find((r) => r.id === Number(el.dataset.rvOpen));
+    if (it) openReaderFor(it, { dock: $('#inbox-dock') });
+  }));
+}
+let reviewRefs = [];
+
+// Mode d'affichage de la boîte unifiée : « Décisions recommandées » (défaut,
+// le courrier groupé par besoin de décision) ou « Plus récents » (chronologie).
+function inboxView() {
+  try { return localStorage.getItem('inbox-view') === 'recent' ? 'recent' : 'reco'; } catch { return 'reco'; }
+}
+
 async function loadInbox() {
   const body = $('#inbox-body');
   if (!body) return;
+  // La bascule n'existe que sur la boîte de réception unifiée — pas sur les
+  // dossiers (envoyés, corbeille…) ni sur une boîte précise.
+  const tabs = $('#inbox-view-tabs');
+  const recoAvailable = isUnifiedInbox() && inboxState.role === 'inbox';
+  if (tabs) {
+    tabs.classList.toggle('hidden', !recoAvailable);
+    if (recoAvailable) {
+      tabs.querySelectorAll('[data-iv]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.iv === inboxView());
+        b.onclick = () => {
+          try { localStorage.setItem('inbox-view', b.dataset.iv); } catch { /* privé */ }
+          loadInbox();
+        };
+      });
+    }
+  }
+  if (recoAvailable && inboxView() === 'reco') {
+    await loadInboxReco();
+    return;
+  }
   body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement…</div>';
   try {
     inboxState.data = isUnifiedInbox()
@@ -7795,7 +8134,7 @@ const OP_FAMILIES = {
   mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
-    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual'],
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide'],
   analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',

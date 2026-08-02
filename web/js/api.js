@@ -53,6 +53,10 @@ export const api = {
     return request('GET', `/accounts/${encodeURIComponent(slug)}/stats?${q}`);
   },
   today: () => request('GET', '/today'),
+  // Dépouillement du courrier entrant (Lot 1).
+  reviewSummary: () => request('GET', '/review/summary'),
+  reviewQueue: () => request('GET', '/review/queue'),
+  reviewDecide: (ids, decision) => request('POST', '/review/decide', { ids, decision }),
   suggestions: () => request('GET', '/suggestions'),
   suggestionDismiss: (kind, refKey) => request('POST', '/suggestions/dismiss', { kind, refKey }),
   reviewSample: (n = 10) => request('GET', `/review/sample?n=${n}`),

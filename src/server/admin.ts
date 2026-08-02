@@ -119,6 +119,7 @@ import {
 } from '../services/snippets.js';
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
+import { reviewSummary, reviewQueue, reviewDecide, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import {
   listPolicies,
   previewPolicy,
@@ -685,6 +686,38 @@ export function buildAdminRouter(): Router {
     '/today',
     guard(async (_req, res) => {
       res.json(await generateToday());
+    }),
+  );
+
+  // --- Dépouillement du courrier entrant (Lot 1, plan validé 02/08) ---------------
+  router.get(
+    '/review/summary',
+    guard(async (_req, res) => {
+      res.json(await reviewSummary());
+    }),
+  );
+  router.get(
+    '/review/queue',
+    guard(async (_req, res) => {
+      res.json(await reviewQueue());
+    }),
+  );
+  router.post(
+    '/review/decide',
+    guard(async (req, res) => {
+      const ids = Array.isArray(req.body?.ids)
+        ? (req.body.ids as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n > 0)
+        : [];
+      const decision = String(req.body?.decision ?? '');
+      if (ids.length === 0) {
+        res.status(400).json({ error: 'Aucun mail sélectionné.' });
+        return;
+      }
+      if (!REVIEW_DECISIONS.includes(decision as ReviewDecision)) {
+        res.status(400).json({ error: `Décision inconnue : ${decision}` });
+        return;
+      }
+      res.json(await reviewDecide(ids, decision as ReviewDecision));
     }),
   );
 
