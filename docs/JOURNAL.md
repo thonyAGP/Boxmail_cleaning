@@ -5,6 +5,27 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (12) — Lecture des mails : rendu HTML fidèle + images + largeur
+
+Retour utilisateur (capture prod) : newsletters illisibles en texte
+extrait (trous partout), pas d'images, lecture étroite. Livré
+(`f25e8b0`) :
+- imap.ts : readEmail renvoie aussi `html` (findHtmlNode — même cas
+  mono-partie que findTextNode —, decodeText, plafond 800 Ko) ; le
+  texte extrait reste renvoyé (citation de réponse + analyse).
+- app.js : renderReaderHtml → iframe sandbox="allow-same-origin
+  allow-popups" srcdoc (PAS d'allow-scripts ; <script>/on*/javascript:
+  retirés en plus par sanitizeMailHtml). Images distantes bloquées par
+  défaut (src→data-x-src comptés, url(https:) neutralisé) + bandeau
+  « N image(s) bloquée(s) » et bouton Afficher. <base target=_blank>.
+  Mails texte : rendu brut conservé, \n{3,} compactés.
+- Largeurs : reader superposé 620→min(880px,94vw) ; colonne ancrée
+  inbox 44 %→54 % (min 480 px).
+Limite connue : les images embarquées cid: (pièces jointes inline) ne
+sont pas résolues — seules les images distantes s'affichent.
+Testé via page.route (API mockée) : rendu fidèle, blocage/affichage
+des images, script inerte.
+
 ## 02/08 (11) — MARCHE ARRIÈRE emojis (validée) + 3 colonnes + Risque
 
 ⚠️ LEÇON : la dé-émojisation complète (entrée 10) SUR-INTERPRÉTAIT la
