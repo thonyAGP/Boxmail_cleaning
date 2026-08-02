@@ -132,20 +132,21 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Revue UX — Phase 1 « clarté » livrée (02/08)**, 6 commits séparés :
-wording orienté action partout (À répondre, À ne pas manquer, Libérer de
-l'espace, Corriger l'assistant… ; « enrôlé »→connecté, « index »→mails
-synchronisés), badges masqués à zéro + états vides compacts, un seul
-bouton principal par écran (emojis retirés des boutons), lecteur = contenu
-d'abord puis analyse résumée dépliable, journal humanisé (lots IA
-regroupés, filtres Tout/Mails/Analyses/Suivi/Réglages, erreur MSAL
-reformulée), carte « Commencer » avec durée estimée + progression + fin
-explicite. Testé tsc + node --check + Playwright à chaque passe.
-**Restent** : Phase 2 (hubs À traiter/Nettoyer/Organiser, sidebar 7
-entrées — ⚠️ déplacer le bandeau de màj sur Aujourd'hui), Phase 3 (file de
-missions ; today.ts agrège déjà), brancher `mojibake.ts` (commité mais PAS
-BRANCHÉ : intégration sync + rattrapage des 3 617 extraits illisibles).
-Sinon inchangé : superviseur accéléré (01/08) effectif au prochain
-lancement ; tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
-`thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
-demandée), stratégies à activer avec l'utilisateur, C5 à faire.
+**Revue UX : Phases 1 ET 2 livrées (02/08)**. Phase 1 : wording orienté
+action, badges à zéro masqués, états vides compacts, un bouton principal
+par écran, lecteur contenu-d'abord, journal humanisé + filtres, carte
+« Commencer » avec durée/progression/fin. Phase 2 : sidebar à 7 entrées +
+groupes repliables « Dossiers mail »/« Plus », hubs À traiter / Nettoyer /
+Organiser (routes conservées, onglets injectés par `hubTabs()` dans
+`route()`), badges sidebar réduits à 3, bandeau de màj AUSSI sur
+Aujourd'hui (checkForUpdates), État des boîtes = problèmes en tête.
+**Mojibake BRANCHÉ (02/08)** : réparation à la capture (cleanSnippet) +
+passe unique au boot (marqueur `data/mojibake-repair.done`, le supprimer
+relance) avec re-détection d'intention (auto seulement) + confiance —
+les 3 617 extraits réels seront réparés au premier démarrage.
+**Restent (Phase 3)** : file de missions unifiée (today.ts agrège déjà),
+choix du temps disponible, « une vérification à la fois » (Corriger
+l'assistant), Calendrier vue « À venir ». Sinon inchangé : tour 3 bouclé,
+récupérable 8 762 mails / 1,3 Go, `thony56_gtr` ~8 982 restants (option
+C3b Haiku ~4,70 $, clé API pas demandée), stratégies à activer avec
+l'utilisateur, C5 à faire.

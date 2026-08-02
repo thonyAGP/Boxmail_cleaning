@@ -5,6 +5,40 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (7) — Mojibake branché + Phase 2 de la revue UX (navigation)
+
+**Mojibake branché** (`45c6d85`) : cleanSnippet répare à la capture ;
+repairSnippets réécrit sur le module séquence-par-séquence (l'ancien code
+« chaîne entière », jamais branché, est supprimé) — répare le stock,
+REJOUE l'intention sur le texte lisible (intentSource=auto uniquement),
+recalcule la confiance des boîtes touchées, journalise (famille
+Analyses). Au boot : passe unique différée 30 s, marqueur
+`data/mojibake-repair.done` (le supprimer relance). Testé bout en bout
+sur seeds : « Ã©chÃ©ance/â‚¬/â€™ » réparés, intention info→invoice,
+confiance high reposée. Les ~3 617 extraits réels seront réparés au
+premier démarrage après mise à jour.
+
+**Phase 2 navigation** (`633f53f`, `aa1de83`) : sidebar à 7 entrées
+(Aujourd'hui, Boîte de réception, À traiter, Nettoyer, Organiser,
+Calendrier, Recherche) + groupes repliables « Dossiers mail » et
+« Plus » (états en localStorage, ouverture auto si la page active y
+vit). Les hubs gardent les routes existantes : `hubTabs()` injecte une
+barre d'onglets commune en tête d'écran, centralement dans `route()`
+(possible car tous les renderers posent leur page-head avant leur
+premier await — vérifié : aucun renderer de hub n'est appelé hors
+routeur). `highlightNav` = table NAV_BY_ROUTE. Badges sidebar réduits à
+3 (Aujourd'hui, À traiter — posés par renderToday —, Mails suivis) ;
+les 7 rafraîchisseurs par moteur ne sont plus appelés au boot (les
+fonctions restent, no-op). Bandeau de mise à jour factorisé
+(checkForUpdates) et posé AUSSI sur Aujourd'hui — indispensable
+puisque État des boîtes est passé dans « Plus ». État des boîtes :
+bannières santé/jamais-synchronisée en tête avec bouton Tout
+synchroniser, Actions rapides supprimées.
+
+Restent (Phase 3) : file de missions unifiée intercatégories (today.ts
+agrège déjà), choix du temps disponible, mode « une vérification à la
+fois » pour Corriger l'assistant, vue Calendrier « À venir » par défaut.
+
 ## 02/08 (6) — Revue UX : Phase 1 « clarté » livrée en 6 passes + mojibake commité
 
 L'utilisateur a fourni une revue UX/UI complète (18 captures, pack local
