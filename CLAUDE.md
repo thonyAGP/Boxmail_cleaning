@@ -132,19 +132,20 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Superviseur accéléré (01/08)** : étapes conditionnelles (install/generate/
-tsc seulement si leurs entrées changent, migrate retiré — le boot s'en charge),
-mise à jour ~10 s au lieu de ~3 min ; effectif au prochain lancement de
-MailAssistant.bat. **Passe « clarté » livrée (01/08)** sur retour utilisateur : ordre des boîtes
-choisi (Account.sortOrder, ↑/↓ dans Paramètres, tout suit), quota expliqué
-(fetchQuotaDiagnostic + quotaNote/quotaCheckedAt, bouton 📏 Quota — À VALIDER
-en réel : la note dira pourquoi si Outlook n'expose pas QUOTA), compteurs IA
-PAR BOÎTE dans Paramètres (réconcilie « il reste 4 500 » = douteux Cowork vs
-« 42 % analysés » = verdicts/lisibles), légende Provenance cliquable sur la
-vue unifiée, tooltips sur les actions sensibles. Testé : tsc, migration,
-serveur 8799 + seeds, captures Playwright. Sinon inchangé depuis le 30/07 :
-tour 3 bouclé, récupérable 8 762 mails / 1,3 Go, `thony56_gtr` ~8 982
-restants (option C3b Haiku ~4,70 $, clé API pas encore demandée), stratégies
-à activer avec l'utilisateur, C5 à faire. Chantier NON commité :
-`src/services/mojibake.ts` + retouche `snippets.ts` (l'octet nul littéral
-qui rendait snippets.ts invisible à ripgrep a été corrigé en `\u0000`).
+**Revue UX — Phase 1 « clarté » livrée (02/08)**, 6 commits séparés :
+wording orienté action partout (À répondre, À ne pas manquer, Libérer de
+l'espace, Corriger l'assistant… ; « enrôlé »→connecté, « index »→mails
+synchronisés), badges masqués à zéro + états vides compacts, un seul
+bouton principal par écran (emojis retirés des boutons), lecteur = contenu
+d'abord puis analyse résumée dépliable, journal humanisé (lots IA
+regroupés, filtres Tout/Mails/Analyses/Suivi/Réglages, erreur MSAL
+reformulée), carte « Commencer » avec durée estimée + progression + fin
+explicite. Testé tsc + node --check + Playwright à chaque passe.
+**Restent** : Phase 2 (hubs À traiter/Nettoyer/Organiser, sidebar 7
+entrées — ⚠️ déplacer le bandeau de màj sur Aujourd'hui), Phase 3 (file de
+missions ; today.ts agrège déjà), brancher `mojibake.ts` (commité mais PAS
+BRANCHÉ : intégration sync + rattrapage des 3 617 extraits illisibles).
+Sinon inchangé : superviseur accéléré (01/08) effectif au prochain
+lancement ; tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
+`thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
+demandée), stratégies à activer avec l'utilisateur, C5 à faire.

@@ -5,6 +5,57 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (6) — Revue UX : Phase 1 « clarté » livrée en 6 passes + mojibake commité
+
+L'utilisateur a fourni une revue UX/UI complète (18 captures, pack local
+`ux-review/` non versionné). Diagnostic central validé : l'interface
+ressemblait à un panneau d'administration de moteurs, pas à un assistant.
+Plan retenu : Phase 1 (clarté sans restructurer) → Phase 2 (hubs de
+navigation) → Phase 3 (file de missions). La Phase 1 est livrée, en 6
+commits poussés séparément :
+
+- **P1.1 wording orienté action** (`f32b684`) : tableau de la revue
+  appliqué partout — À répondre, À ne pas manquer, À relancer, Dates à
+  confirmer, Mes tâches, Nettoyage rapide, Libérer de l'espace,
+  Classement automatique, Règles proposées, Corriger l'assistant, État
+  des boîtes ; « enrôlé »→connecté, « index (local)/indexé »→mails
+  synchronisés/copie locale, importance faible/moyenne/haute→peut
+  attendre/à regarder/prioritaire, plus d'« Appliquer » ambigu. Fait par
+  script de remplacement ordonné avec comptage par règle (scratchpad),
+  audité via git diff. Côté serveur : label moteur « important »
+  (quality.ts) et fin de nettoyage (report.ts).
+- **P1.2 badges & états vides** (`4b5f05f`) : compteurs seulement si
+  > 0 (onglets, pastilles comptes, panneaux Aujourd'hui) ; `.empty`
+  compacté (12px).
+- **P1.3 un bouton principal/écran** (`db3cc0b`) : Sync rapide principal
+  sur la vue compte, Tout synchroniser sur État des boîtes, ＋ Créer une
+  règle sur Classement automatique ; emojis retirés des boutons.
+- **P1.4 lecteur** (`87edf91`) : analyse déplacée SOUS le contenu ;
+  résumé une ligne (verdict en mots + confiance + raison sans le poids
+  numérique), détail dépliable ; corrections toujours visibles.
+- **P1.5 journal + messages techniques** (`5e6d4d9`) : tous les
+  événements traduits (défaut = phrase `result` du serveur), lots IA
+  regroupés (« 240 mails analysés (5 lots) »), filtres
+  Tout/Mails/Analyses/Suivi/Réglages ; erreur MSAL reformulée pour
+  l'interface (le geste passe par Paramètres, plus par npm),
+  SYNC_INTERVAL/ENABLE_SMTP_SEND relégués en infobulle.
+- **P1.6 progression** (`79a3f1e`) : carte « N actions — environ M min
+  [Commencer] » dominante sur Aujourd'hui ; « Action 2 sur 7 · ~3 min
+  restantes » ; fin « C'est bon pour aujourd'hui » avec décompte.
+
+Avant tout ça, le chantier en attente a été commité tel quel
+(`1ad98cd`) : `mojibake.ts` (module écrit et mesuré, PAS ENCORE BRANCHÉ
+— intégration sync + rattrapage des 3 617 extraits à faire) + garde
+snippets.ts contre les demi-caractères de substitution.
+
+Testé à chaque passe : tsc, node --check, serveur 8799 + seeds,
+captures Playwright (une douzaine d'écrans). Restent pour la suite :
+Phase 2 (hubs À traiter/Nettoyer/Organiser, sidebar à 7 entrées — ⚠️ y
+déplacer le bandeau de mise à jour sur Aujourd'hui si le Tableau de bord
+sort de la navigation), Phase 3 (file de missions unifiée — today.ts
+agrège déjà, mode « une vérification à la fois » pour Corriger
+l'assistant), et le branchement mojibake.
+
 ## 02/08 (5) — Les sessions survivent aux mises à jour
 
 « À chaque maj il faut que je me réidentifie » : les sessions vivaient en
