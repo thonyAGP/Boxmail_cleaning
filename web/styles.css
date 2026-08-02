@@ -203,6 +203,13 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 /* État vide compact : une phrase de confirmation, pas une grande carte blanche. */
 .empty { text-align: center; color: var(--muted); padding: 12px 10px; font-size: 13.5px; }
+
+/* Carte « Commencer » d'Aujourd'hui : LA prochaine action, mise en avant. */
+.ta-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; margin-bottom: 10px; font-size: 15px;
+  background: #f2f6ff; border: 1px solid #dbe6ff; border-radius: 10px;
+}
 .placeholder-card { opacity: .65; }
 .op-line { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f2f7; font-size: 13px; align-items: baseline; }
 .op-line:last-child { border-bottom: none; }

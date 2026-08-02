@@ -824,12 +824,14 @@ async function renderToday() {
       Va dans <a href="#/settings">⚙️ Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
 
     <div class="panel">
-      <div class="panel-head"><h2>🔥 À faire</h2>
-        <span>
-          ${t.todo.total ? `<button class="btn btn-sm btn-primary" id="todo-assist"
-            title="L'assistant te présente chaque action une par une, avec les bons boutons : répondre, reporter, confirmer, classer…">Commencer</button>` : ''}
-          ${t.todo.total ? `<span class="badge red" style="margin-left:8px">${fmtNum(t.todo.total)} action(s)</span>` : ''}</span></div>
+      <div class="panel-head"><h2>🔥 À faire</h2></div>
       <div class="panel-body">
+        ${t.todo.total ? `<div class="ta-hero">
+          <div><strong>${fmtNum(t.todo.total)} action(s) à traiter</strong>
+            <span class="muted">— environ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min</span></div>
+          <button class="btn btn-primary" id="todo-assist"
+            title="Une action à la fois, avec les bons boutons : répondre, reporter, confirmer, classer…">Commencer</button>
+        </div>` : ''}
         ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
         <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
           <a href="#/replies">↩️ Réponses</a> · <a href="#/followups">⏰ Relances</a> ·
@@ -909,10 +911,10 @@ function startTodoAssistant(t) {
   overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
 
   const finish = () => {
-    $('#ta-title').textContent = '🎉 Terminé';
+    $('#ta-title').textContent = 'C\'est bon pour aujourd\'hui 🎉';
     $('#ta-body').innerHTML = `<div class="empty" style="font-size:15px">
-      ${treated ? `<strong>${fmtNum(treated)}</strong> action(s) traitée(s)` : 'Rien de traité'}
-      ${passed ? ` · ${fmtNum(passed)} passée(s) — elles restent dans la liste « À faire »` : ''}.<br>
+      ${treated ? `Tu as traité <strong>${fmtNum(treated)}</strong> action(s)` : 'Rien de traité cette fois'}
+      ${passed ? ` · ${fmtNum(passed)} remise(s) à plus tard — elles restent dans « À faire »` : ''}.<br>
       <span class="muted" style="font-size:12.5px">Tout est journalisé dans le
       <a href="#/operations">📒 Journal d'activité</a>.</span></div>`;
     $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">Fermer</button>';
@@ -949,7 +951,8 @@ function startTodoAssistant(t) {
   function step() {
     const { kind, x } = queue[idx];
     const [emoji, kindLabel] = KIND_LABELS[kind];
-    $('#ta-title').textContent = `▶️ Action ${idx + 1} sur ${queue.length}`;
+    const minLeft = Math.max(1, Math.ceil((queue.length - idx) * 1.5));
+    $('#ta-title').textContent = `Action ${idx + 1} sur ${queue.length} · ~${minLeft} min restantes`;
 
     const who = kind === 'followup'
       ? (x.counterpartyName || x.counterpartyEmail || '')
@@ -1053,7 +1056,7 @@ async function openNoiseModal(bucket, { tour } = {}) {
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
     <div class="modal-head"><h2>${emoji} ${esc(label)}
-      ${tour ? `<span class="badge blue" style="margin-left:8px">ménage guidé — famille ${tour.index}/${tour.total}</span>` : ''}</h2>
+      ${tour ? `<span class="badge blue" style="margin-left:8px">nettoyage guidé — famille ${tour.index}/${tour.total}</span>` : ''}</h2>
       <button class="modal-close" title="${tour ? 'Arrêter le ménage guidé' : 'Fermer'}">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement de la liste…</div></div>
     <div class="modal-foot" id="modal-foot"></div>
