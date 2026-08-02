@@ -505,6 +505,25 @@ async function refreshOverview() {
   sideFoldersCache.clear(); // compteurs à jour au prochain dépliage
   renderAccountsNav();
   loadSideFolders();
+  updateSideStatus();
+}
+
+/** Pied de sidebar : l'état système en trois lignes, toujours visible. */
+function updateSideStatus() {
+  const el = $('#side-status');
+  const ov = overviewCache;
+  if (!el || !ov) return;
+  const total = ov.enrolled.length;
+  const synced = ov.accounts.filter((a) => a.lastSyncAt).length;
+  const lastSync = ov.accounts.reduce((m, a) => {
+    const t = a.lastSyncAt ? new Date(a.lastSyncAt).getTime() : 0;
+    return t > m ? t : m;
+  }, 0);
+  const dot = total === 0 ? '' : synced === total ? 'ok' : synced === 0 ? 'err' : 'warn';
+  el.innerHTML = `
+    <div><span class="status-dot ${dot}"></span>${fmtNum(synced)}/${fmtNum(total)} compte(s) synchronisé(s)</div>
+    ${lastSync ? `<div>Dernière synchro : ${new Date(lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+    <div><a href="#/dashboard">Voir le détail système</a></div>`;
 }
 
 // Route → entrée de navigation. Depuis la Phase 2 de la revue UX, plusieurs
@@ -512,7 +531,7 @@ async function refreshOverview() {
 const NAV_BY_ROUTE = {
   inbox: 'inbox',
   replies: 'todo', followups: 'todo', important: 'todo', deadlines: 'todo', tasks: 'todo',
-  cleanup: 'clean', unsubscribe: 'clean', bigclean: 'clean',
+  cleanup: 'clean', unsubscribe: 'unsubscribe', bigclean: 'clean',
   rules: 'organize', suggestions: 'organize', verify: 'organize',
   calendar: 'calendar', search: 'search',
   dashboard: 'dashboard', attachments: 'attachments', operations: 'operations',
@@ -548,11 +567,7 @@ function highlightNav() {
   }
   const seg = hash.slice(2).split('/')[0].split('?')[0];
   const nav = NAV_BY_ROUTE[seg] ?? 'today';
-  const link = document.querySelector(`[data-nav="${nav}"]`);
-  // L'entrée active peut vivre dans un groupe replié (« Plus ») : on l'ouvre,
-  // sinon la sélection serait invisible.
-  if (link?.closest('#more-nav')) openSideGroup('more');
-  link?.classList.add('active');
+  document.querySelector(`[data-nav="${nav}"]`)?.classList.add('active');
 }
 
 /** Ouvre (sans refermer) un groupe repliable de la sidebar. */
@@ -566,9 +581,9 @@ function openSideGroup(key) {
   }
 }
 
-/** Bascules « Dossiers mail » et « Plus » (état mémorisé localement). */
+/** Bascule « Dossiers mail » (état mémorisé localement). */
 function installSideToggles() {
-  for (const key of ['folders', 'more']) {
+  for (const key of ['folders']) {
     const toggle = $(`#${key}-toggle`);
     const nav = $(`#${key}-nav`);
     const caret = $(`#${key}-caret`);
@@ -769,13 +784,13 @@ function bindTodayRows(root) {
 
 async function renderToday() {
   const main = $('#main');
-  const todayDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  main.innerHTML = `<div class="page-head"><div><h1>Bonjour Anthony 👋</h1>
-    <div class="sub">Voici ce qui mérite ton attention — tout le reste peut attendre.</div></div>
+  const todayDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  main.innerHTML = `<div class="page-head"><div><h1>Vue du jour</h1>
+    <div class="sub" style="text-transform:capitalize">${esc(todayDate)}</div></div>
     <div class="head-actions">
-      <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(todayDate)}</span>
-      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">Tout synchroniser</button>
-      <button class="btn" id="refresh-btn">↻ Actualiser</button>
+      <a class="btn" href="#/search">Rechercher</a>
+      <button class="btn" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">Synchroniser</button>
+      <button class="btn" id="refresh-btn" title="Recharger la vue">Actualiser</button>
     </div></div>
     <div id="today-body"><div class="empty"><span class="spinner"></span>Analyse de tes boîtes…</div></div>`;
   $('#refresh-btn').addEventListener('click', () => renderToday());
@@ -794,139 +809,174 @@ async function renderToday() {
   try {
     t = await api.today();
   } catch (err) {
-    $('#today-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#today-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (location.hash && !(location.hash === '#/today' || location.hash === '' || location.hash === '#/')) return;
   todayReaderRefs = [];
 
-  // Badges sidebar : nombre d'actions à faire (Aujourd'hui + hub À traiter).
+  // Badges sidebar : nombre d'actions à faire (Vue du jour + hub À traiter).
   for (const badge of [$('#today-badge'), $('#todo-badge')]) {
     if (!badge) continue;
     badge.textContent = fmtNum(t.todo.total);
     badge.classList.toggle('hidden', t.todo.total === 0);
   }
 
-  // Bandeau de mise à jour : Aujourd'hui est LA page d'accueil — c'est ici
-  // qu'il doit vivre depuis que « État des boîtes » est passé dans « Plus »
-  // (sans lui, l'utilisateur ne verrait plus jamais les mises à jour).
+  // Bandeau de mise à jour : la Vue du jour est LA page d'accueil — c'est ici
+  // qu'il vit (l'État des comptes n'est plus dans la navigation principale).
   checkForUpdates($('#today-body'));
 
-  const rows = [];
+  // ---- Bandeau synthétique : une seule surface, des séparateurs ----
+  const ov = overviewCache;
+  const syncedCount = ov ? ov.accounts.filter((a) => a.lastSyncAt).length : 0;
+  const totalAccounts = ov ? ov.enrolled.length : 0;
+  const dueToday = t.todo.deadlines.filter((d) => d.inDays <= 0).length;
+  const strip = `<div class="summary-strip">
+    <a class="summary-cell" href="#/inbox/@inbox">
+      <span class="val">${fmtNum(ov?.newMails?.today ?? 0)}</span>
+      <span class="lbl">nouveaux mails aujourd'hui</span></a>
+    <a class="summary-cell ${t.todo.total ? 'warn' : 'ok'}" href="#/replies">
+      <span class="val">${fmtNum(t.todo.total)}</span>
+      <span class="lbl">à traiter</span></a>
+    <a class="summary-cell ${dueToday ? 'danger' : ''}" href="#/deadlines">
+      <span class="val">${fmtNum(dueToday)}</span>
+      <span class="lbl">échéance(s) aujourd'hui</span></a>
+    <a class="summary-cell" href="#/cleanup">
+      <span class="val">${fmtNum(t.noise.total)}</span>
+      <span class="lbl">mails à nettoyer · ${fmtSize(t.noise.sizeBytes)}</span></a>
+    <a class="summary-cell ${totalAccounts && syncedCount === totalAccounts ? 'ok' : 'warn'}" href="#/dashboard">
+      <span class="val">${fmtNum(syncedCount)}/${fmtNum(totalAccounts)}</span>
+      <span class="lbl">comptes synchronisés</span></a>
+  </div>`;
+
+  // ---- Colonne principale : tableau « À traiter aujourd'hui » ----
+  // Une ligne par action, colonnes Priorité / Action / Compte / Raison /
+  // Attente. Les lignes s'ouvrent dans le panneau de lecture ; le parcours
+  // guidé (« Commencer », 5/15 min) reste le geste principal.
+  const prio = (cls, label) => `<span class="prio ${cls}">${label}</span>`;
+  const todoRows = [];
+  const pushRow = (readerItem, cells) => {
+    const idx = readerItem ? todayReaderRefs.push(readerItem) - 1 : -1;
+    todoRows.push(`<tr class="row-click" ${idx >= 0 ? `data-today-open="${idx}"` : ''}>
+      ${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`);
+  };
   for (const r of t.todo.replies) {
-    rows.push(todayRow(
-      `↩️ <strong>Répondre à ${esc(r.fromName || r.fromEmail)}</strong> — « ${esc(r.subject)} »
-       <span class="muted" style="font-size:12px">· ${daysAgo(r.waitingHours)} · ${esc(r.reason)}</span>`,
-      r,
-      r.overdue ? '<span class="badge red">en retard</span>' : '',
-    ));
+    pushRow(r, [
+      r.overdue ? prio('high', 'Haute') : prio('medium', 'Normale'),
+      `<strong>Répondre à ${esc(r.fromName || r.fromEmail)}</strong>
+        <div class="row-snippet">${esc(r.subject)}</div>`,
+      accountChip(r.account),
+      `<span class="muted" style="font-size:12.5px">${esc(r.reason ?? 'réponse attendue')}</span>`,
+      `<span class="muted" style="white-space:nowrap">${daysAgo(r.waitingHours)}</span>`,
+    ]);
   }
   for (const i of t.todo.invoices) {
-    rows.push(todayRow(
-      `💶 <strong>Facture à traiter</strong> — « ${esc(i.subject)} »
-       <span class="muted" style="font-size:12px">· ${esc(i.fromName || i.fromEmail)} · ${esc(i.reason)}</span>`,
-      i,
-    ));
+    pushRow(i, [
+      prio('medium', 'Normale'),
+      `<strong>Facture à traiter</strong>
+        <div class="row-snippet">${esc(i.subject)} — ${esc(i.fromName || i.fromEmail)}</div>`,
+      accountChip(i.account),
+      `<span class="muted" style="font-size:12.5px">${esc(i.reason ?? 'facture détectée')}</span>`,
+      '',
+    ]);
   }
   for (const d of t.todo.deadlines) {
-    const when = d.inDays < 0
-      ? `<span class="badge red">dépassée de ${fmtNum(-d.inDays)} j</span>`
-      : d.inDays === 0 ? '<span class="badge red">aujourd’hui</span>' : '';
-    rows.push(todayRow(
-      `📅 <strong>Échéance : ${esc(d.title)}</strong>
-       <span class="muted" style="font-size:12px">· ${fmtDate(d.date)}${d.status === 'proposed' ? ' · à confirmer dans 📅 Dates à confirmer' : ''}</span>`,
-      d.folder && d.uid
-        ? { account: d.account, folder: d.folder, uid: d.uid, subject: d.subject, fromName: d.fromName, fromEmail: d.fromEmail, date: d.msgDate, isSeen: d.isSeen }
-        : { account: d.account },
-      when,
-    ));
+    const readerItem = d.folder && d.uid
+      ? { account: d.account, folder: d.folder, uid: d.uid, subject: d.subject, fromName: d.fromName, fromEmail: d.fromEmail, date: d.msgDate, isSeen: d.isSeen }
+      : { account: d.account };
+    pushRow(readerItem, [
+      d.inDays <= 0 ? prio('high', 'Haute') : prio('medium', 'Normale'),
+      `<strong>Échéance : ${esc(d.title)}</strong>
+        ${d.status === 'proposed' ? '<div class="row-snippet">détectée — à confirmer</div>' : ''}`,
+      accountChip(d.account),
+      `<span class="muted" style="font-size:12.5px">${esc(d.reason ?? '')}</span>`,
+      d.inDays < 0 ? `<span class="badge red">dépassée de ${fmtNum(-d.inDays)} j</span>`
+        : d.inDays === 0 ? '<span class="badge red">aujourd’hui</span>'
+        : `<span class="muted" style="white-space:nowrap">${fmtDate(d.date)}</span>`,
+    ]);
   }
   for (const f of t.todo.followups) {
-    const stageBadge =
-      f.stage === 'stale' ? '<span class="badge orange">💤 abandonné ? clôturer</span>'
-      : f.stage === 'urgent' ? '<span class="badge red">🚨 urgent</span>'
-      : f.overdue ? '<span class="badge red">en retard</span>' : '';
-    rows.push(todayRow(
-      `⏰ <strong>Relancer ${esc(f.counterpartyName || f.counterpartyEmail)}</strong> — « ${esc(f.subject)} »
-       <span class="muted" style="font-size:12px">· sans réponse ${daysAgo(f.waitingHours)}${f.suggestion ? ` · ${esc(f.suggestion)}` : ''}</span>`,
+    pushRow(
       { account: f.account, folder: f.folder, uid: f.uid, subject: f.subject, fromName: 'Toi (mail envoyé)', fromEmail: '', date: f.date, isSeen: true },
-      stageBadge,
-    ));
+      [
+        f.stage === 'urgent' || f.overdue ? prio('high', 'Haute') : prio('low', 'Basse'),
+        `<strong>Relancer ${esc(f.counterpartyName || f.counterpartyEmail)}</strong>
+          <div class="row-snippet">${esc(f.subject)}</div>`,
+        accountChip(f.account),
+        `<span class="muted" style="font-size:12.5px">${f.stage === 'stale' ? 'abandonné ? à clôturer' : esc(f.suggestion ?? 'sans réponse')}</span>`,
+        `<span class="muted" style="white-space:nowrap">${daysAgo(f.waitingHours)}</span>`,
+      ],
+    );
   }
 
-  const importantRows = t.important.map((m) => todayRow(
-    `<span class="score-pill ${m.level === 'high' ? 'high' : 'medium'}">${m.score}</span>
-     <strong>${esc(m.fromName || m.fromEmail)}</strong> — « ${esc(m.subject)} »
-     <span class="muted" style="font-size:12px" title="${esc(m.reasons.join(' · '))}">· ${
-       m.reasons.slice(0, 2).map(esc).join(' · ')
-     }${m.reasons.length > 2 ? ' …' : ''}</span>`,
-    m,
-  ));
-
-  const noiseRows = t.noise.buckets.map((b) => {
-    const [emoji, label] = NOISE_LABELS[b.bucket] ?? ['⚪', b.bucket];
-    return `<div class="today-row" style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border)">
-      <div style="flex:1">${emoji} <strong>${esc(label)}</strong>
-        <span class="muted" style="font-size:12px">· ${fmtNum(b.count)} mails (${fmtNum(b.unseen)} non lus) · ${fmtSize(b.sizeBytes)}</span></div>
-      ${b.count > 0 ? `<button class="btn btn-sm noise-btn" data-bucket="${b.bucket}">👀 Voir et nettoyer</button>` : '<span class="muted" style="font-size:12px">rien 👌</span>'}
-    </div>`;
+  const noiseLines = t.noise.buckets.filter((b) => b.count > 0).map((b) => {
+    const label = (NOISE_LABELS[b.bucket] ?? ['', b.bucket])[1];
+    return `<div class="set-line"><span>${esc(label)}
+        <span class="muted" style="font-size:12px">· ${fmtNum(b.count)} mails · ${fmtSize(b.sizeBytes)}</span></span>
+      <button class="btn btn-sm noise-btn" data-bucket="${b.bucket}">Examiner</button></div>`;
   }).join('');
 
   $('#today-body').innerHTML = `
-    ${t.skippedAccounts.length ? `<div class="notice warn">⚠️ Boîte(s) ignorée(s) : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
-    ${!t.categorized ? `<div class="notice warn">🏷️ Les catégories n'ont pas encore été calculées : la section « Bruit » sera vide.
-      Va dans <a href="#/settings">⚙️ Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
-
-    <div class="panel">
-      <div class="panel-head"><h2>🔥 À faire</h2></div>
-      <div class="panel-body">
-        ${t.todo.total ? `<div class="ta-hero">
-          <div><strong>${fmtNum(t.todo.total)} action(s) à traiter</strong>
-            <span class="muted">— environ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min</span>
-            ${t.todo.total > 3 ? `<div class="muted" style="font-size:12px; margin-top:2px">Peu de temps ? Traite juste l'essentiel :
-              <button class="btn btn-sm" data-todo-mins="5">5 min</button>
-              <button class="btn btn-sm" data-todo-mins="15">15 min</button></div>` : ''}</div>
-          <button class="btn btn-primary" id="todo-assist"
-            title="Une action à la fois, avec les bons boutons : répondre, reporter, confirmer, classer…">Commencer</button>
-        </div>` : ''}
-        ${rows.length ? rows.join('') : '<div class="empty">🎉 Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
-        <div class="muted" style="font-size:12.5px; padding-top:8px">Tout voir :
-          <a href="#/replies">↩️ Réponses</a> · <a href="#/followups">⏰ Relances</a> ·
-          <a href="#/deadlines">📅 Dates à confirmer</a> · <a href="#/tasks">☑️ Mes tâches</a></div>
+    ${t.skippedAccounts.length ? `<div class="notice warn"><strong>Boîte(s) ignorée(s)</strong> : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
+    ${!t.categorized ? `<div class="notice warn">Les catégories n'ont pas encore été calculées : la partie « nettoyage » sera vide.
+      Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
+    ${strip}
+    <div class="today-grid">
+      <div>
+        <div class="panel">
+          <div class="panel-head"><h2>À traiter aujourd'hui</h2>
+            <span style="display:flex; gap:8px; align-items:center">
+              ${t.todo.total > 3 ? `<span class="muted" style="font-size:12px">Peu de temps ?</span>
+                <button class="btn btn-sm" data-todo-mins="5">5 min</button>
+                <button class="btn btn-sm" data-todo-mins="15">15 min</button>` : ''}
+              ${t.todo.total ? `<button class="btn btn-primary btn-sm" id="todo-assist"
+                title="Une action à la fois (~${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min au total), avec les bons boutons : répondre, reporter, confirmer, classer">Commencer</button>` : ''}
+            </span></div>
+          <div class="panel-body tight">
+            ${todoRows.length ? `<table>
+              <thead><tr><th style="width:86px">Priorité</th><th>Action</th><th style="width:80px">Compte</th>
+                <th style="width:200px">Raison</th><th style="width:120px">Attente</th></tr></thead>
+              <tbody>${todoRows.join('')}</tbody></table>`
+              : '<div class="empty">Rien d’urgent : aucune réponse attendue, facture ou échéance du jour.</div>'}
+            <div class="muted" style="font-size:12.5px; padding:8px 16px">
+              ${t.important.length ? `<a href="#/important">${fmtNum(t.important.length)} mail(s) à ne pas manquer</a> · ` : ''}
+              ${t.canWait.unseen > 0 ? `${fmtNum(t.canWait.unseen)} non lu(s) peuvent attendre · ` : ''}
+              Tout voir : <a href="#/replies">Réponses</a> · <a href="#/followups">Relances</a> ·
+              <a href="#/deadlines">Dates</a> · <a href="#/tasks">Tâches</a></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Échéances à venir</h2>
+            <a class="btn btn-sm" href="#/deadlines">Gérer</a></div>
+          <div class="panel-body tight" id="today-deadlines"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
+        </div>
       </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>🟠 Important</h2>
-        ${t.important.length ? `<span class="badge orange">${fmtNum(t.important.length)}</span>` : ''}</div>
-      <div class="panel-body">
-        ${importantRows.length ? importantRows.join('') : '<div class="empty">Rien d’important non traité cette semaine.</div>'}
-        <div class="muted" style="font-size:12.5px; padding-top:8px"><a href="#/important">⭐ Voir la liste complète</a></div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>🟢 Peut attendre</h2></div>
-      <div class="panel-body">
-        ${t.canWait.unseen > 0
-          ? `${fmtNum(t.canWait.unseen)} mail(s) non lu(s) sans signal d'urgence — ils t'attendent tranquillement
-             dans la <a href="#/inbox/@inbox">📥 boîte de réception</a>.`
-          : 'Aucun mail non lu en attente. 👌'}
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>⚪ Bruit</h2>
-        <span>
-          ${t.noise.total ? `<button class="btn btn-sm" id="noise-tour"
-            title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides — corbeille ou passer">🧹 Nettoyage guidé</button>` : ''}
-          ${t.noise.total ? `<span class="badge gray" style="margin-left:8px">${fmtNum(t.noise.total)} mails · ${fmtSize(t.noise.sizeBytes)}</span>` : ''}</span></div>
-      <div class="panel-body">
-        ${noiseRows}
-        <div class="muted" style="font-size:12.5px; padding-top:8px">
-          Les mails reçus ces <strong>7 derniers jours</strong> ne sont jamais proposés — le bruit, c'est ce qui s'accumule.
-          « Voir et nettoyer » montre la liste EXACTE avant toute action ; la suppression va à la corbeille
-          (récupérable ~30 jours). Nettoyage fin par expéditeur : <a href="#/cleanup">🧹 Nettoyage rapide</a>.</div>
+      <div>
+        <div class="panel">
+          <div class="panel-head"><h2>État du système</h2></div>
+          <div class="panel-body" id="today-health"><div class="empty"><span class="spinner"></span></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Nettoyage proposé</h2></div>
+          <div class="panel-body">
+            ${t.noise.total ? `
+              <div style="font-size:14px; margin-bottom:2px"><strong>${fmtNum(t.noise.total)} mails</strong> peuvent être nettoyés</div>
+              <div class="muted" style="font-size:12.5px; margin-bottom:8px">Gain estimé : ${fmtSize(t.noise.sizeBytes)} —
+                uniquement du bruit de plus de 7 jours, liste exacte avant toute action, corbeille récupérable ~30 j.</div>
+              ${noiseLines}
+              <div style="display:flex; gap:8px; margin-top:10px">
+                <button class="btn btn-sm" id="noise-tour"
+                  title="Passe les familles de bruit une par une : à chaque étape tu vois la liste exacte, tu vérifies, tu décides">Nettoyage guidé</button>
+                <a class="btn btn-sm" href="#/cleanup">Examiner le lot</a>
+              </div>`
+              : '<div class="empty">Rien à nettoyer pour l’instant.</div>'}
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Activité récente</h2>
+            <a class="btn btn-sm" href="#/operations">Historique</a></div>
+          <div class="panel-body compact-ops" id="today-ops"><div class="empty"><span class="spinner"></span></div></div>
+        </div>
       </div>
     </div>`;
 
@@ -942,7 +992,104 @@ async function renderToday() {
       startTodoAssistant(t, { limit: Math.max(1, Math.floor(Number(btn.dataset.todoMins) / 1.5)) }));
   });
   $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
+
+  // ---- Compléments asynchrones (échéances à venir, santé, activité) ----
+  todayFillDeadlines();
+  todayFillHealth(syncedCount, totalAccounts);
+  todayFillActivity();
 }
+
+/** Références des échéances « à venir » (ouvrir le mail d'origine au clic). */
+let todayDlRefs = [];
+
+async function todayFillDeadlines() {
+  const el = $('#today-deadlines');
+  if (!el) return;
+  try {
+    const d = await api.deadlines();
+    if (!el.isConnected) return;
+    todayDlRefs = [];
+    const upcoming = d.items
+      .filter((x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays > 0 && x.inDays <= 30)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 8);
+    if (!upcoming.length) {
+      el.innerHTML = '<div class="empty">Rien dans les 30 prochains jours.</div>';
+      return;
+    }
+    el.innerHTML = `<table>
+      <thead><tr><th style="width:110px">Date</th><th>Objet</th><th style="width:80px">Compte</th><th style="width:110px">Statut</th></tr></thead>
+      <tbody>${upcoming.map((x) => {
+        const canOpen = x.folder && x.uid != null;
+        const idx = canOpen
+          ? todayDlRefs.push({ account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate ?? x.date, isSeen: x.isSeen ?? true }) - 1
+          : -1;
+        return `<tr class="${canOpen ? 'row-click' : ''}" ${idx >= 0 ? `data-dl-open="${idx}"` : ''}>
+          <td style="white-space:nowrap">${fmtDate(x.date)}</td>
+          <td>${esc(x.title)}</td>
+          <td>${accountChip(x.account)}</td>
+          <td>${x.status === 'proposed' ? '<span class="badge orange">à confirmer</span>' : '<span class="badge blue">confirmée</span>'}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+    el.querySelectorAll('[data-dl-open]').forEach((row) => {
+      row.addEventListener('click', () => {
+        const item = todayDlRefs[Number(row.dataset.dlOpen)];
+        if (item) openReaderFor(item, {});
+      });
+    });
+  } catch {
+    if (el.isConnected) el.innerHTML = '<div class="empty">Échéances indisponibles.</div>';
+  }
+}
+
+async function todayFillHealth(syncedCount, totalAccounts) {
+  const el = $('#today-health');
+  if (!el) return;
+  const line = (label, value) => `<div class="set-line"><span class="muted">${label}</span><span>${value}</span></div>`;
+  try {
+    const h = await api.health();
+    if (!el.isConnected) return;
+    const ov = overviewCache;
+    const lastSync = ov ? ov.accounts.reduce((m, a) => {
+      const ts = a.lastSyncAt ? new Date(a.lastSyncAt).getTime() : 0;
+      return ts > m ? ts : m;
+    }, 0) : 0;
+    const issues = h.accounts?.filter((a) => a.level !== 'ok') ?? [];
+    const auto = serverVersion?.autoSync;
+    const status = h.level === 'ok'
+      ? '<span><span class="status-dot ok"></span>Opérationnelle</span>'
+      : h.level === 'error'
+        ? '<span style="color:var(--danger)"><span class="status-dot err"></span>Erreur</span>'
+        : '<span style="color:var(--warning)"><span class="status-dot warn"></span>Attention</span>';
+    el.innerHTML = `
+      ${line('Synchronisation', status)}
+      ${line('Comptes synchronisés', `${fmtNum(syncedCount)}/${fmtNum(totalAccounts)}`)}
+      ${lastSync ? line('Dernier passage', new Date(lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })) : ''}
+      ${line('Problèmes détectés', issues.length ? `<span style="color:var(--danger)">${fmtNum(issues.length)}</span>` : '0')}
+      ${auto?.intervalMinutes ? line('Prochain passage', auto.nextRunAt ? new Date(auto.nextRunAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : `toutes les ${fmtNum(auto.intervalMinutes)} min`) : line('Passage automatique', 'à la demande')}
+      ${issues.length ? `<div class="muted" style="font-size:12px; margin-top:6px">${issues.map((a) => `<strong>${esc(a.account)}</strong> : ${esc(a.message)}`).join('<br>')}</div>` : ''}
+      <div style="margin-top:8px"><a class="btn btn-sm" href="#/dashboard">Voir le détail</a></div>`;
+  } catch {
+    if (el.isConnected) el.innerHTML = '<div class="empty">État indisponible.</div>';
+  }
+}
+
+async function todayFillActivity() {
+  const el = $('#today-ops');
+  if (!el) return;
+  try {
+    const { operations } = await api.operations(5);
+    if (!el.isConnected) return;
+    // Les libellés du journal portent encore des emojis (héritage) : on les
+    // neutralise sur la Vue du jour, sobre par design.
+    el.innerHTML = operations.length
+      ? groupOps(operations).map(opLine).join('').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      : '<div class="empty">Aucune opération pour l’instant.</div>';
+  } catch {
+    if (el.isConnected) el.innerHTML = '<div class="empty">Journal indisponible.</div>';
+  }
+}
+
 
 // ---------------------------------------------------------------- Mode « Traiter »
 // Demande utilisateur 02/08 : passer de « je t'affiche plein de choses » à
