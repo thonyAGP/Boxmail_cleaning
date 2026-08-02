@@ -5,6 +5,32 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (9) — Refonte visuelle, Étapes 1-2 (brief « direction retenue »)
+
+Nouveau brief utilisateur : direction « outil de pilotage professionnel »
+(sidebar bleu nuit #172634, surfaces ivoire chaudes, accent #185A8C,
+rayons modestes, zéro emoji/pilule/glow, icônes filaires). Livré
+(`9712fe1`), EN ATTENTE DE VALIDATION avant généralisation (Étape 4) :
+
+- styles.css réécrit en tokens (anciens noms gardés en ALIAS — aucun
+  sélecteur supprimé, tout l'existant se rethème sans toucher app.js).
+- Sidebar 232 px : groupes VUE D'ENSEMBLE / COMPTES / DOSSIERS MAIL /
+  NETTOYAGE / AUTOMATISATION / OUTILS / SYSTÈME, icônes SVG inline
+  (spritesheet <defs> dans index.html, zéro dépendance), pied avec
+  point d'état + n/n synchronisés (updateSideStatus, refreshOverview).
+- Vue du jour refondue : bandeau 5 indicateurs (une surface, séparateurs),
+  70/30, tableau À traiter (Priorité point coloré/Action/Compte/Raison/
+  Attente, lignes → lecteur) + Commencer/5-15 min conservés, Échéances à
+  venir, panneaux État du système / Nettoyage proposé (Nettoyage guidé
+  conservé) / Activité récente (emojis du journal neutralisés à
+  l'affichage). « Bonjour Anthony » → « Vue du jour » + date.
+- Désinscriptions = entrée de navigation propre (NAV_BY_ROUTE).
+
+RESTE (Étape 4, après validation utilisateur) : dé-emojiser et aligner
+les autres écrans (Boîtes mail, hubs À traiter, Nettoyage/Libérer,
+Désinscriptions en tableau §11, Règles, État des comptes §8, lecteur,
+modales, assistant), opLine sans emojis, largeurs de lecture.
+
 ## 02/08 (8) — Phase 3 de la revue UX : l'assistant assiste vraiment
 
 (`cbcced7`) Trois briques, toutes côté web/ :
