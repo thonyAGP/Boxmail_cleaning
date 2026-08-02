@@ -179,7 +179,9 @@ export async function getFollowupsDue(
   for (const ids of chunk(threadIds, 500)) {
     const aggs = await db.message.groupBy({
       by: ['threadId'],
-      where: { threadId: { in: ids }, isDeleted: false },
+      // isAutoReply exclu : un répondeur automatique ne compte PAS comme une
+      // réponse reçue — sans ça, il masquait la relance à faire (bug 02/08).
+      where: { threadId: { in: ids }, isDeleted: false, isAutoReply: false },
       _max: { date: true },
       _count: { _all: true },
     });
@@ -188,7 +190,7 @@ export async function getFollowupsDue(
     }
     // Dernier entrant de chaque fil (pour le nom du correspondant).
     const inbounds = await db.message.findMany({
-      where: { threadId: { in: ids }, isDeleted: false, isOutbound: false },
+      where: { threadId: { in: ids }, isDeleted: false, isOutbound: false, isAutoReply: false },
       orderBy: { date: 'desc' },
       select: { threadId: true, date: true, fromEmail: true, fromName: true },
     });

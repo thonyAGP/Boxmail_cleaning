@@ -84,6 +84,15 @@ model Message {
   isSeen             Boolean   @default(false)
   isAnswered         Boolean   @default(false)
   isFlagged          Boolean   @default(false)
+  // Réponse AUTOMATIQUE (répondeur, absence du bureau) — détectée sur le sujet.
+  // Bug réel 02/08 : un répondeur arrivé 1 min après la réponse de l'utilisateur
+  // remettait le fil dans « À répondre » ET le masquait dans « À relancer ».
+  // Ces mails ne comptent ni comme « attend ta réponse » ni comme « réponse reçue ».
+  isAutoReply        Boolean   @default(false)
+  // Dépouillement (cycle « décision prise », indépendant de lu/non-lu) :
+  // null = aucune décision ; sinon date + décision (range/keep/read/action/later…).
+  reviewedAt         DateTime?
+  reviewDecision     String?
   // true si envoyé par le compte lui-même (fromEmail == adresse du compte)
   isOutbound         Boolean   @default(false)
   sizeBytes          Int       @default(0)
@@ -139,6 +148,7 @@ model Message {
   @@index([accountSlug, isDeleted, date])
   @@index([accountSlug, intent])
   @@index([aiAction])
+  @@index([accountSlug, reviewedAt])
 }
 
 model Thread {
@@ -219,6 +229,9 @@ model Deadline {
 
   @@unique([accountSlug, messageId, date])
   @@index([accountSlug, status, date])
+  // Créé par la migration manuscrite 20260730100000_audit_indexes — reporté ici
+  // pour que Prisma ne le supprime pas à la prochaine migration (dérive constatée).
+  @@index([messageId, status])
 }
 
 // Tâche (L5.5) : créée à la main, depuis un mail ou depuis une échéance.

@@ -90,6 +90,21 @@ const CATEGORY_LABELS: Record<ReplyCategory, string> = {
 export const AUTO_SENDER_RE =
   /(no[-._]?reply|nepasrepondre|ne[-._]?pas[-._]?repondre|do[-._]?not[-._]?reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
 
+/**
+ * Sujet de RÉPONSE AUTOMATIQUE (répondeur, absence du bureau, accusé
+ * d'orientation). Bug réel 02/08 : l'utilisateur répond, le répondeur du
+ * destinataire renvoie « Ceci est une réponse automatique… » une minute plus
+ * tard — chronologiquement le fil se termine par un entrant, donc il
+ * retombait dans « À répondre » ET disparaissait de « À relancer ». Ces mails
+ * ne comptent NI comme « attend ta réponse » NI comme « réponse reçue ».
+ */
+export const AUTO_REPLY_SUBJECT_RE =
+  /r[ée]ponse\s+automatique|r[ée]ponse\s+d['’]absence|absente?\s+du\s+bureau|automatic\s+reply|auto[-\s]?reply|autoreply|out\s+of\s+office|away\s+from\s+(the\s+)?office/i;
+
+export function isAutoReplySubject(subject: string | null | undefined): boolean {
+  return !!subject && AUTO_REPLY_SUBJECT_RE.test(subject);
+}
+
 /** Sujet qui réclame une réponse rapide. */
 export const URGENT_SUBJECT_RE =
   /(urgent|au plus vite|asap|dernier rappel|derni[èe]re relance|mise en demeure|imp[ée]ratif|avant le)/i;
@@ -275,6 +290,7 @@ export async function getUnansweredEmails(
       isDeleted: false,
       isOutbound: false,
       isAnswered: false,
+      isAutoReply: false,
       hasListUnsubscribe: false,
       threadId: { not: null },
       fromEmail: { not: null },
@@ -302,6 +318,8 @@ export async function getUnansweredEmails(
   for (const m of raw) {
     if (m.threadId === null || m.date === null || !m.fromEmail) continue;
     if (AUTO_SENDER_RE.test(m.fromEmail)) continue;
+    // Filet pour les mails indexés avant la colonne isAutoReply.
+    if (isAutoReplySubject(m.subject)) continue;
     // Règle utilisateur : les avis « relevé à disposition » et les avis
     // d'espace périmés (> 60 j) n'attendent aucune réponse — jamais listés.
     if (autoNoticeMuted(m.subject, m.date, now)) continue;
@@ -346,7 +364,8 @@ export async function getUnansweredEmails(
   for (const ids of chunk(threadIds, 500)) {
     const aggs = await db.message.groupBy({
       by: ['threadId'],
-      where: { threadId: { in: ids }, isDeleted: false },
+      // isAutoReply exclu : un répondeur automatique ne « termine » pas un fil.
+      where: { threadId: { in: ids }, isDeleted: false, isAutoReply: false },
       _max: { date: true },
       _count: { _all: true },
     });

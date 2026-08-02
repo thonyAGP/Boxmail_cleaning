@@ -2,7 +2,7 @@ import type { ImapFlow } from 'imapflow';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService, normalizeSubject } from './imap.js';
-import { AUTO_SENDER_RE } from './attention.js';
+import { AUTO_SENDER_RE, isAutoReplySubject } from './attention.js';
 import { categorizeSender, detectIntent } from './categorize.js';
 import type { AccountRecord } from './accounts.js';
 
@@ -241,6 +241,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             isSeen: boolean;
             isAnswered: boolean;
             isFlagged: boolean;
+            isAutoReply: boolean;
             isOutbound: boolean;
             sizeBytes: number;
             hasListUnsubscribe: boolean;
@@ -295,6 +296,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               isSeen: flags.has('\\Seen'),
               isAnswered: flags.has('\\Answered'),
               isFlagged: flags.has('\\Flagged'),
+              isAutoReply: isAutoReplySubject(msg.envelope?.subject),
               isOutbound: fromEmail === selfEmail,
               sizeBytes: msg.size ?? 0,
               hasListUnsubscribe,
