@@ -5,6 +5,36 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (8) — Phase 3 de la revue UX : l'assistant assiste vraiment
+
+(`cbcced7`) Trois briques, toutes côté web/ :
+
+- **File de missions unifiée + temps choisi** : startTodoAssistant trie
+  désormais TOUTES les catégories par urgence (fonction `urgency` —
+  retards +50/+30, échéances 80−2×joursRestants borné [−10..30],
+  ancienneté plafonnée à 10 j en départage ; poids grossiers à dessein,
+  commentés). Boutons [5 min] [15 min] sur la carte « Commencer »
+  (affichés si > 3 actions) : file bornée à floor(min/1,5) actions les
+  plus urgentes ; l'écran de fin dit combien d'actions moins urgentes
+  restent.
+- **Corriger l'assistant guidé par défaut** : renderVerify éclaté en
+  renderVerifyGuided (une carte « Vérification 3 sur 12 » : claim, Lire,
+  Oui/Non-corriger (raisons + applyVerifyCorrection)/Je ne sais
+  pas/Passer, résumé de fin) et renderVerifyList (ancienne vue) ;
+  verifyRecord factorisé ; mode dans localStorage `verify-mode`,
+  bascule dans l'en-tête.
+- **Calendrier « À venir » par défaut** : renderCalendarUpcoming (30 j
+  en liste groupée par jour, Aujourd'hui/Demain, retards en rouge,
+  badge « à confirmer » cliquable vers #/deadlines, mail d'origine
+  ouvrable) ; onglets À venir/Mois (localStorage `cal-view`), la grille
+  et son panneau jour inchangés derrière « Mois ».
+
+Parcours Playwright complets validés (Oui→avance, raisons, Passer,
+bascule liste, assistant, bascule vues calendrier). La revue UX est
+maintenant couverte sur ses trois phases ; améliorations possibles
+plus tard : missions « suggestion de nettoyage » dans la file,
+priorisation plus fine, largeurs de lecture (§ densité).
+
 ## 02/08 (7) — Mojibake branché + Phase 2 de la revue UX (navigation)
 
 **Mojibake branché** (`45c6d85`) : cleanSnippet répare à la capture ;

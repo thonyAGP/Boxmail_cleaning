@@ -132,21 +132,22 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Revue UX : Phases 1 ET 2 livrées (02/08)**. Phase 1 : wording orienté
+**Revue UX : les 3 phases livrées (02/08)**. P1 clarté : wording orienté
 action, badges à zéro masqués, états vides compacts, un bouton principal
-par écran, lecteur contenu-d'abord, journal humanisé + filtres, carte
-« Commencer » avec durée/progression/fin. Phase 2 : sidebar à 7 entrées +
-groupes repliables « Dossiers mail »/« Plus », hubs À traiter / Nettoyer /
-Organiser (routes conservées, onglets injectés par `hubTabs()` dans
-`route()`), badges sidebar réduits à 3, bandeau de màj AUSSI sur
-Aujourd'hui (checkForUpdates), État des boîtes = problèmes en tête.
+par écran, lecteur contenu-d'abord, journal humanisé + filtres. P2
+navigation : sidebar 7 entrées + « Dossiers mail »/« Plus » repliables,
+hubs À traiter/Nettoyer/Organiser (routes conservées, onglets injectés
+par `hubTabs()` dans `route()`), bandeau de màj AUSSI sur Aujourd'hui,
+État des boîtes = problèmes en tête. P3 assistant : file de missions
+intercatégories triée par urgence + choix du temps [5/15 min], Corriger
+l'assistant en mode « une vérification à la fois » par défaut,
+Calendrier vue « À venir » par défaut (modes en localStorage).
 **Mojibake BRANCHÉ (02/08)** : réparation à la capture (cleanSnippet) +
 passe unique au boot (marqueur `data/mojibake-repair.done`, le supprimer
 relance) avec re-détection d'intention (auto seulement) + confiance —
 les 3 617 extraits réels seront réparés au premier démarrage.
-**Restent (Phase 3)** : file de missions unifiée (today.ts agrège déjà),
-choix du temps disponible, « une vérification à la fois » (Corriger
-l'assistant), Calendrier vue « À venir ». Sinon inchangé : tour 3 bouclé,
+À VALIDER en réel par l'utilisateur : toute la nouvelle navigation + la
+passe mojibake au premier lancement. Sinon inchangé : tour 3 bouclé,
 récupérable 8 762 mails / 1,3 Go, `thony56_gtr` ~8 982 restants (option
 C3b Haiku ~4,70 $, clé API pas demandée), stratégies à activer avec
 l'utilisateur, C5 à faire.
