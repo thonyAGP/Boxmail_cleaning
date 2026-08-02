@@ -5,6 +5,20 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (13) — Images cid: à la demande + lecture accélérée
+
+(`018ec87`) La limite « images intégrées non résolues » de l'entrée 12
+est levée : les pièces jointes exposent leur Content-ID (BodyNode.id /
+mailparser cid), le premier rendu bloque AUSSI les cid: (plus de lien
+cassé), et « Afficher les images » les résout vers
+/attachments/:index?inline=1 — récupérées à la demande, jamais
+téléchargées sur disque. Perfs : cache mémoire serveur des corps lus
+(LRU 20, un mail est immuable), cache client (LRU 20, réouverture
+instantanée — utile en mode « une par une »), Cache-Control privé 24 h
+sur l'inline, loading=lazy + decoding=async injectés sur les <img>.
+Testé en API mockée : cid: demandée en inline et affichée, distante
+affichée, aucun lien cassé avant le clic.
+
 ## 02/08 (12) — Lecture des mails : rendu HTML fidèle + images + largeur
 
 Retour utilisateur (capture prod) : newsletters illisibles en texte
