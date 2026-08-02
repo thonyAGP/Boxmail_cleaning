@@ -6,6 +6,8 @@ import { imapService } from './imap.js';
 import type { AccountRecord } from './accounts.js';
 import { stripQuotedText } from './attention.js';
 import { detectIntent } from './categorize.js';
+import { reparerMojibake } from './mojibake.js';
+import { recordOperation } from './oplog.js';
 
 /**
  * Extraits de texte (C1 — Série C, « comprendre le contenu »).
@@ -160,7 +162,9 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
   // inencodable en UTF-8, et l'écriture échoue pour TOUTE la boîte, pas
   // seulement pour le mail fautif. Un corps de mail mal formé ne doit jamais
   // pouvoir bloquer une passe entière.
-  const sain = raw
+  // Et mojibake réparé À LA SOURCE : les nouveaux extraits sont lisibles dès
+  // leur capture (« Ã©chÃ©ance » → « échéance ») et detectIntent lit un vrai texte.
+  const sain = reparerMojibake(raw)
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
     .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
@@ -395,80 +399,99 @@ export async function backfillSnippets(
 // ----------------------------------------- Réparation des extraits en charabia
 
 /**
- * Répare un extrait victime du classique « UTF-8 lu comme du latin-1 » :
- * « voilÃ  » au lieu de « voilà », « Ã© » au lieu de « é ». Fréquent sur les
- * mails d'avant 2010, qui déclarent souvent un jeu de caractères faux.
+ * Passe de réparation sur TOUS les extraits déjà en base, via `reparerMojibake`
+ * (séquence par séquence — l'ancienne approche « chaîne entière » échouait dès
+ * qu'une seule séquence était abîmée : 234 échecs sur 400, mesuré). Aucune
+ * connexion IMAP : c'est une relecture du texte, pas des mails.
  *
- * Retourne null quand il n'y a rien à faire — le texte est déjà propre, la
- * réparation ne change rien, ou elle produit des caractères de remplacement
- * (signe qu'on s'est trompé de piste). Dans le doute, on ne touche pas.
- *
- * Le décodage IMAP est corrigé à la source (decodeText), mais les extraits
- * DÉJÀ capturés gardent leur charabia : cette réparation les rattrape sans
- * avoir à relire les boîtes.
- */
-export function repairMojibake(text: string): string | null {
-  if (!text) return null;
-  // Signature du charabia : un octet 0xC2/0xC3 suivi d'un octet de
-  // continuation UTF-8 (0x80-0xBF). Comparaison de CODES et non plage
-  // littérale : écrits en clair, ces caractères se font manger à la copie et
-  // la plage devient fausse sans que rien ne le signale (constaté).
-  let looksMangled = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    // Un vrai caractère hors latin-1 prouve que le texte n'est PAS une suite
-    // d'octets mal lus : le repasser en latin-1 le détruirait.
-    if (c > 0xff) return null;
-    const next = i + 1 < text.length ? text.charCodeAt(i + 1) : -1;
-    if ((c === 0xc2 || c === 0xc3) && next >= 0x80 && next <= 0xbf) looksMangled = true;
-  }
-  if (!looksMangled) return null;
-  const repaired = Buffer.from(text, 'latin1').toString('utf8');
-  // U+FFFD = la relecture a produit des caractères de remplacement : on s'est
-  // trompé de piste, on ne touche à rien.
-  if (repaired.includes('\uFFFD') || repaired === text) return null;
-  return repaired;
-}
-
-/**
- * Passe de réparation sur TOUS les extraits déjà en base. Aucune connexion
- * IMAP : c'est une relecture des octets, pas des mails.
+ * Un extrait réparé peut changer la donne pour les moteurs : l'intention
+ * détectée sur le charabia est REJOUÉE sur le texte lisible — uniquement le
+ * calcul automatique (précédence manual > ai > auto, jamais écrasée) — puis la
+ * confiance des boîtes touchées est recalculée (recalcul direct, jamais de
+ * remise à null : cf. le piège documenté dans backfillSnippets).
  */
 export async function repairSnippets(
   progress: (m: string) => void = () => {},
-): Promise<{ scanned: number; repaired: number }> {
+): Promise<{ scanned: number; repaired: number; intentsRecomputed: number }> {
   await ensureDbReady();
   let cursor = 0;
   let scanned = 0;
   let repaired = 0;
+  let intentsRecomputed = 0;
+  const touchedAccounts = new Set<string>();
   for (;;) {
     const batch = await db.message.findMany({
       where: { snippet: { not: null }, id: { gt: cursor } },
       orderBy: { id: 'asc' },
       take: 1000,
-      select: { id: true, snippet: true },
+      select: {
+        id: true, snippet: true, subject: true, fromEmail: true,
+        hasListUnsubscribe: true, intent: true, intentSource: true, accountSlug: true,
+      },
     });
     if (batch.length === 0) break;
     cursor = batch[batch.length - 1].id;
     scanned += batch.length;
 
-    const fixes: { id: number; snippet: string }[] = [];
+    const fixes: { id: number; snippet: string; intent?: string; intentReason?: string }[] = [];
     for (const m of batch) {
-      const fixed = repairMojibake(m.snippet ?? '');
-      if (fixed) fixes.push({ id: m.id, snippet: fixed });
+      const fixed = reparerMojibake(m.snippet ?? '');
+      if (fixed === m.snippet) continue;
+      touchedAccounts.add(m.accountSlug);
+      const fix: (typeof fixes)[number] = { id: m.id, snippet: fixed };
+      if (m.intentSource === 'auto') {
+        const r = detectIntent({
+          subject: m.subject,
+          hasListUnsubscribe: m.hasListUnsubscribe,
+          fromEmail: m.fromEmail,
+          snippet: fixed,
+        });
+        if (r.intent !== m.intent) {
+          fix.intent = r.intent;
+          fix.intentReason = r.reason;
+          intentsRecomputed++;
+        }
+      }
+      fixes.push(fix);
     }
     for (let i = 0; i < fixes.length; i += 100) {
       await db.$transaction(
         fixes.slice(i, i + 100).map((f) =>
-          db.message.update({ where: { id: f.id }, data: { snippet: f.snippet } }),
+          db.message.update({
+            where: { id: f.id },
+            data: {
+              snippet: f.snippet,
+              ...(f.intent ? { intent: f.intent, intentReason: f.intentReason } : {}),
+            },
+          }),
         ),
       );
     }
     repaired += fixes.length;
     if (scanned % 5000 === 0) progress(`${scanned} extraits examinés, ${repaired} réparés…`);
   }
-  progress(`Réparation terminée : ${repaired} extrait(s) remis d'aplomb sur ${scanned}.`);
-  return { scanned, repaired };
+
+  // Des intentions ont bougé ⇒ la confiance (B4) qui en découle doit suivre.
+  if (intentsRecomputed > 0) {
+    const { computeConfidenceForAccount } = await import('./categorize.js');
+    for (const account of touchedAccounts) {
+      await computeConfidenceForAccount(account, {}, progress);
+    }
+  }
+
+  progress(
+    `Réparation terminée : ${repaired} extrait(s) remis d'aplomb sur ${scanned}, ` +
+      `${intentsRecomputed} intention(s) recalculée(s).`,
+  );
+  if (repaired > 0) {
+    await recordOperation({
+      account: '*',
+      tool: 'repair_snippets',
+      params: { scanned, repaired, intentsRecomputed },
+      result: `${repaired} extrait(s) illisibles réparés (accents), ${intentsRecomputed} classement(s) recalculé(s)`,
+    });
+  }
+  return { scanned, repaired, intentsRecomputed };
 }
 
 // ------------------------------------------- Rattrapage repris après redémarrage

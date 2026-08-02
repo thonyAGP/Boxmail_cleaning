@@ -7154,7 +7154,7 @@ const OP_FAMILIES = {
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
     'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual'],
-  analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback'],
+  analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',
     'restore_deadline', 'propose_deadline', 'create_task', 'task_from_deadline',

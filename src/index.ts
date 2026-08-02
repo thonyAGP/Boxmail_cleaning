@@ -12,8 +12,9 @@ import { startAutoSync } from './services/autosync.js';
 import { startAutoBackup } from './services/backup.js';
 import { startAutoUpdate } from './services/autoupdate.js';
 import { ensureMigrationsApplied } from './db/migrate.js';
-import { pendingBackfill, runBackfillAllAccounts } from './services/snippets.js';
+import { pendingBackfill, runBackfillAllAccounts, repairSnippets } from './services/snippets.js';
 import { startJob, hasRunningJob } from './services/jobs.js';
+import { existsSync, writeFileSync } from 'node:fs';
 
 /**
  * Reprise du rattrapage des extraits après un redémarrage (C1).
@@ -33,6 +34,28 @@ function resumeSnippetBackfill(): void {
       return runBackfillAllAccounts(pending.scope, progress);
     });
   }, 15_000);
+  timer.unref();
+}
+
+/**
+ * Réparation UNIQUE des extraits mojibake déjà en base (3 617 mesurés le
+ * 30/07 : « Ã©chÃ©ance » au lieu de « échéance » — les moteurs ne les
+ * lisaient pas). Les NOUVEAUX extraits sont réparés à la capture
+ * (cleanSnippet) ; cette passe rattrape le stock. Marqueur sur disque pour ne
+ * pas rebalayer ~20 000 lignes à chaque démarrage — la passe étant
+ * idempotente, supprimer le marqueur suffit à la relancer.
+ */
+function repairMojibakeOnce(): void {
+  const marker = resolve(process.cwd(), 'data', 'mojibake-repair.done');
+  if (existsSync(marker)) return;
+  const timer = setTimeout(() => {
+    startJob('mojibake', async (progress) => {
+      progress('Réparation des extraits illisibles (accents)…');
+      const r = await repairSnippets(progress);
+      writeFileSync(marker, JSON.stringify({ finishedAt: new Date().toISOString(), ...r }), 'utf8');
+      return r;
+    });
+  }, 30_000);
   timer.unref();
 }
 
@@ -195,6 +218,7 @@ async function main() {
     startAutoBackup();
     startAutoUpdate();
     resumeSnippetBackfill();
+    repairMojibakeOnce();
   });
 
   // Arrêt propre.
