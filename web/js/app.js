@@ -1401,7 +1401,7 @@ function reviewRun(groups) {
     <div class="panel-head"><h2 id="rv-title">📬 Dépouillement</h2>
       <button class="btn btn-sm" id="rv-stop" title="Arrêter — rien n'est perdu : le reste sera reproposé">⏸ Arrêter</button></div>
     <div class="panel-body" id="rv-body"></div>
-    <div class="modal-foot" id="rv-foot"></div>
+    <div class="rv-foot" id="rv-foot"></div>
   </div>`;
   runReviewEngine(groups, { stopEl: $('#rv-stop'), onDone: (counts) => reviewFinish(counts) });
 }
@@ -1411,14 +1411,17 @@ function reviewRun(groups) {
 async function reviewFinish(counts) {
   const el = $('#rv-screen');
   if (!el) return;
-  const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash;
+  const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash
+    + (counts.replied ?? 0) + (counts.moved ?? 0);
   el.innerHTML = `<div class="panel"><div class="panel-body">
     <h2 id="rv-fin-title" style="font-size:16px; margin-bottom:8px">${decided ? '✅ Session terminée' : 'Dépouillement interrompu'}</h2>
     <div style="font-size:14px">
+      ${counts.replied ? `<div>↩️ ${fmtNum(counts.replied)} répondu(s)</div>` : ''}
       ${counts.seen ? `<div>👁️ ${fmtNum(counts.seen)} marqué(s) vu(s)</div>` : ''}
       ${counts.action ? `<div>☑️ ${fmtNum(counts.action)} ajouté(s) à tes actions</div>` : ''}
       ${counts.later ? `<div>📖 ${fmtNum(counts.later)} gardé(s) à lire plus tard</div>` : ''}
       ${counts.keep ? `<div>📥 ${fmtNum(counts.keep)} gardé(s) dans la boîte</div>` : ''}
+      ${counts.moved ? `<div>📦 ${fmtNum(counts.moved)} rangé(s) dans un dossier</div>` : ''}
       ${counts.trash ? `<div>🗑️ ${fmtNum(counts.trash)} mis à la corbeille (récupérables ~30 j)</div>` : ''}
       ${counts.skipped ? `<div class="muted">⏭️ ${fmtNum(counts.skipped)} passé(s) — reproposés plus tard</div>` : ''}
     </div>
@@ -1516,7 +1519,7 @@ function fillReviewLearning(el, learn, onChanged) {
 // #rv-title / #rv-body / #rv-foot, quel que soit l'écran qui les héberge.
 function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
   const queue = [...initialQueue];
-  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0 };
+  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0, replied: 0, moved: 0 };
   let idx = 0;
   let done = false;
   const finish = () => {
@@ -1601,6 +1604,24 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
     const it = g.item;
     const [clsLabel, clsColor] = REVIEW_CLASS_LABELS[it.class] ?? REVIEW_CLASS_LABELS.read;
     const reason = reviewReason(it);
+    // Le lecteur est un GESTE du parcours (retour utilisateur 02/08 : « je
+    // supprime depuis le lecteur et rien n'avance ») : corbeille, déplacement
+    // ou réponse envoyée depuis le panneau comptent comme la décision de
+    // cette étape et font passer au courrier suivant.
+    const readerOpts = {
+      onRemoved: (_item, action) => {
+        if (action === 'move') counts.moved += 1;
+        else counts.trash += 1;
+        next();
+      },
+      onReplied: async () => {
+        // La réponse est partie : on enregistre la décision (le mail sort de
+        // la file) sans bloquer si l'index est en retard.
+        try { await api.reviewDecide([it.id], 'seen'); } catch { /* répondu quand même */ }
+        counts.replied += 1;
+        next();
+      },
+    };
     $('#rv-body').innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
         <span class="badge ${clsColor}">${clsLabel}</span>${accountChip(it.account)}
@@ -1610,18 +1631,18 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
       ${it.snippet ? `<div class="muted" style="font-size:12.5px; margin-bottom:6px">${esc(it.snippet)}</div>` : ''}
       ${reason ? `<div class="muted" style="font-size:12px; margin-bottom:8px">Pourquoi : ${esc(reason)}</div>` : ''}
       <div style="margin-bottom:4px"><span class="openable" id="rv-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>`;
-    $('#rv-read')?.addEventListener('click', () => openReaderFor(it, {}));
+    $('#rv-read')?.addEventListener('click', () => openReaderFor(it, readerOpts));
 
     const B = [];
     if (it.class === 'important') {
       // Le libellé suit le geste attendu : répondre si une réponse est attendue.
       const readLabel = (it.aiAction === 'reply' || it.intent === 'reply_expected')
         ? '↩️ Lire et répondre' : '📖 Lire et traiter';
-      B.push([readLabel, 'btn-primary', () => openReaderFor(it, {})]);
+      B.push([readLabel, 'btn-primary', () => openReaderFor(it, readerOpts)]);
       B.push(['☑️ Ajouter à mes actions', '', () => decide([it.id], 'action', 1)]);
       B.push(['👁️ Vu', '', () => decide([it.id], 'seen', 1)]);
     } else if (it.class === 'read') {
-      B.push(['📖 Lire maintenant', 'btn-primary', () => openReaderFor(it, {})]);
+      B.push(['📖 Lire maintenant', 'btn-primary', () => openReaderFor(it, readerOpts)]);
       B.push(['👁️ Vu', '', () => decide([it.id], 'seen', 1)]);
       B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
     } else {
@@ -7966,7 +7987,7 @@ async function openReader(item, row, opts = {}) {
       return;
     }
     if (await doAction(e.target, 'move', destination)) {
-      onRemoved(item);
+      onRemoved(item, 'move');
       closeReader();
     }
   });
@@ -7974,7 +7995,7 @@ async function openReader(item, row, opts = {}) {
   $('#reader-delete').addEventListener('click', async (e) => {
     if (!confirm('Déplacer ce mail vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)')) return;
     if (await doAction(e.target, 'delete')) {
-      onRemoved(item);
+      onRemoved(item, 'delete');
       closeReader();
     }
   });
@@ -7991,6 +8012,7 @@ async function openReader(item, row, opts = {}) {
       subject: /^re\s*:/i.test(item.subject) ? item.subject : `Re: ${item.subject}`,
       text: `\n\nLe ${fmtDateTime(item.date)}, ${item.fromName || item.fromEmail} a écrit :\n${quoted()}`,
       replyRef: { folder: item.folder, uid: item.uid, mode: 'reply' },
+      onSent: opts.onReplied ?? null,
     });
   });
   $('#reader-task')?.addEventListener('click', () => {
@@ -8012,7 +8034,7 @@ async function openReader(item, row, opts = {}) {
 }
 
 // ------------------------------------------------ Composer un mail (L5.3)
-function openComposeModal({ account, to = '', cc = '', subject = '', text = '', replyRef = null }) {
+function openComposeModal({ account, to = '', cc = '', subject = '', text = '', replyRef = null, onSent = null }) {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -8080,7 +8102,11 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
       $('#c-done').addEventListener('click', () => {
         closeModal();
         closeReader(); // le mail est traité : on referme aussi le panneau de lecture
-        route(); // rafraîchit l'écran (réponses en attente, etc.)
+        // L'écran appelant garde la main s'il l'a demandé (le dépouillement
+        // avance d'une étape) ; sinon, rafraîchissement générique — SANS
+        // re-rendre un parcours en cours.
+        if (onSent) onSent();
+        else route(); // rafraîchit l'écran (réponses en attente, etc.)
       });
     } catch (err) {
       btn.disabled = false;
@@ -8290,7 +8316,7 @@ function renderReaderAnalysis(a, item) {
 // Ouvre le panneau de lecture depuis un élément « intelligence » (importants,
 // réponses, relances, échéances, brief) : construit l'item minimal et branche
 // les callbacks de rafraîchissement de l'écran appelant.
-function openReaderFor(src, { onSeen, onRemoved, dock } = {}) {
+function openReaderFor(src, { onSeen, onRemoved, dock, onReplied } = {}) {
   if (!src || !src.folder || !src.uid) {
     alert('Ce mail n\'est plus dans l\'index (supprimé ou déplacé) — resynchronise la boîte.');
     return;
@@ -8307,7 +8333,7 @@ function openReaderFor(src, { onSeen, onRemoved, dock } = {}) {
       isSeen: src.isSeen ?? true,
     },
     null,
-    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock },
+    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock, onReplied },
   );
 }
 

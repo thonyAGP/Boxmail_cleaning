@@ -5,6 +5,31 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (17) — Le lecteur devient un geste du dépouillement
+
+Retour utilisateur immédiat après livraison des Lots 2-3 : « j'ouvre le
+1er mail, je le supprime, je reviens à la page de dépouillement. C'est
+nul. » Deux causes réelles :
+1. `openReaderFor` a un défaut `onRemoved: () => route()` → supprimer
+   depuis le lecteur re-rendait TOUTE la page → retour à l'accueil du
+   dépouillement, session perdue.
+2. Après une réponse envoyée, `#c-done` faisait `route()` → même effet.
+Correctifs : le parcours passe des callbacks au lecteur — corbeille /
+déplacement (`onRemoved(item, 'delete'|'move')`) et réponse envoyée
+(`opts.onReplied`, transmis à openComposeModal via `onSent`) comptent
+comme la décision de l'étape et font avancer la file (compteurs
+`replied`/`moved` ajoutés au bilan ; la réponse enregistre aussi
+reviewDecide('seen') pour sortir le mail de la file). `onSent` absent =
+comportement historique (`route()`).
+PIÈGE corrigé au passage : le pied d'étape utilisait la classe
+`.modal-foot` — or la modale de composition écrit son bouton « Fermer »
+dans LE PREMIER `.modal-foot` du document. Classe dédiée `.rv-foot`.
+LEÇON : jamais de classes de modale (`modal-body`/`modal-foot`) hors
+d'une modale — plusieurs écrans les ciblent par sélecteur global.
+Testé (Playwright, IMAP/SMTP simulés par page.route) : répondre →
+« Courrier 2 sur 6 », corbeille lecteur → « Courrier 3 sur 6 », bilan
+« 1 répondu(s) · 1 mis à la corbeille », zéro retour accueil.
+
 ## 02/08 (16) — Dépouillement Lots 2-3 + correction d'intention efficace
 
 (`633f3ce`) Fin du plan ChatGPT validé :

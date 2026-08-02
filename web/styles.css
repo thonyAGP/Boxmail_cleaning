@@ -795,6 +795,14 @@ th.sortable:hover { color: var(--primary); }
   .summary-cell { min-width: 46%; border-left: none !important; border-top: 1px solid var(--border-soft); }
 }
 
+/* Dépouillement : pied d'étape de la page (PAS .modal-foot — la modale de
+   composition cible « le premier .modal-foot du document » pour son bouton
+   Fermer, il ne doit pas exister en dehors d'une modale). */
+.rv-foot {
+  display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+  flex-wrap: wrap; padding: 13px 16px; border-top: 1px solid var(--border);
+}
+
 /* Dépouillement (Lot 3) : cartes « Ce que j'ai remarqué ». */
 .learn-card {
   border: 1px solid var(--border); border-radius: var(--radius-md);
