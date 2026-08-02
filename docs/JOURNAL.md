@@ -5,6 +5,25 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (14) — Bug répondeurs automatiques + fondations « dépouillement »
+
+(`5340900`) Bug réel : l'utilisateur répond depuis l'app, le répondeur
+d'en face répond 1 min après → le fil retombait dans « À répondre » ET
+disparaissait de « À relancer ». Corrigé à la racine : colonne
+Message.isAutoReply (détection sujet au sync + rattrapage SQL du stock),
+exclue des candidats ET des agrégats de fin de fil dans attention.ts,
+et du « réponse reçue » de followups.ts. Testé sur le scénario exact.
+Au passage : dérive d'index réparée (Deadline_messageId_status reporté
+au schéma — Prisma allait le DROPper), et la même migration pose les
+colonnes du chantier dépouillement (reviewedAt, reviewDecision, index)
+issues du plan ChatGPT validé par l'utilisateur (cycle « décision
+prise » : pending/decided/later, Vue du jour = orchestrateur,
+Dépouiller = parcours, À traiter = obligations, Boîte = vue libre).
+Lot 1 à implémenter ensuite (compteur + carte Vue du jour + parcours +
+tri « décisions recommandées » de la Boîte).
+Leçon test : les candidats « À relancer » exigent le rôle de dossier
+'sent' — un seed dans INBOX ne les exerce pas.
+
 ## 02/08 (13) — Images cid: à la demande + lecture accélérée
 
 (`018ec87`) La limite « images intégrées non résolues » de l'entrée 12
