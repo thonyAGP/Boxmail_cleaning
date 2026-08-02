@@ -152,15 +152,19 @@ RETIRER d'emojis existants (la dé-émojisation totale a été annulée —
 l'utilisateur veut l'identité chaleureuse ; réduire seulement les
 cumuls emoji+pastille+badges). Toujours lister les changements AVANT
 une passe de ce type.
-**DÉPOUILLEMENT livré (02/08, Lot 1 du plan ChatGPT validé)** : cycle
-« décision prise » (Message.reviewedAt/reviewDecision, services/review.ts,
-routes /review/*) — carte Dépouiller sur la Vue du jour, parcours par
-lots homogènes (corbeille toujours confirmée), Boîte unifiée en mode
-« Décisions recommandées » par défaut. Lots 2-3 restants : reprise de
-session, temps choisi, apprentissage de règles. Bug répondeurs
-automatiques corrigé (isAutoReply — exclu de « À répondre » ET du
-« réponse reçue » des relances) ; lecture mail = HTML fidèle + images à
-la demande (cid: compris) + resize mémorisé + liens réparés.
+**DÉPOUILLEMENT COMPLET (02/08, Lots 1-2-3 du plan ChatGPT livrés)** :
+cycle « décision prise » (Message.reviewedAt/reviewDecision,
+services/review.ts, routes /review/*) ; page dédiée `#/depouillement`
+(reprise de session, choix du temps 5/15 min/tout, moteur d'étapes
+runReviewEngine) ; apprentissage des gestes répétés (2 = remarque,
+≥3 cohérents = proposition avec liste exacte, « Ne plus proposer »
+définitif, corbeille toujours confirmée, motif contredit jamais proposé) ;
+Boîte unifiée en « Décisions recommandées » par défaut. Corriger
+l'intention du dernier mail d'un fil ajuste AUSSI « À traiter »
+(dismissReply/restoreReply auto). Bug répondeurs automatiques corrigé
+(isAutoReply) ; lecture mail = HTML fidèle + images à la demande +
+resize mémorisé. Restant possible (non demandé) : brancher les motifs
+appris sur « Règles proposées »/learning.ts.
 Sinon inchangé : tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
 `thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
 demandée), stratégies à activer avec l'utilisateur, C5 à faire.

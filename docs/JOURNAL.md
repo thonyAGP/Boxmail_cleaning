@@ -5,6 +5,42 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 02/08 (16) — Dépouillement Lots 2-3 + correction d'intention efficace
+
+(`633f3ce`) Fin du plan ChatGPT validé :
+- **Lot 2** : le parcours vit sur `#/depouillement` (page plein écran,
+  renderReviewPage → reviewIntro → reviewRun → reviewFinish ; moteur
+  d'étapes extrait dans runReviewEngine, écrit dans #rv-title/#rv-body/
+  #rv-foot). Reprise de session = serveur (reviewedToday + total, pas de
+  localStorage). Choix du temps 5/15 min/tout : coût estimé par étape
+  (lot 0,4 min, important 1,5, lecture 0,7, rangeable 0,3),
+  reviewSliceByMinutes coupe la file dans l'ordre de priorité. Fin de
+  session : bilan + « Il reste N — Continuer ». startReviewFlow() est
+  devenu une simple navigation (Vue du jour + Boîte y mènent).
+- **Lot 3** : reviewLearning() (service review.ts) agrège les décisions
+  seen/trash/keep par compte|expéditeur|intention ; motif COHÉRENT
+  seulement (une seule décision observée — toute contradiction éteint le
+  motif) ; 2 gestes → remarque, ≥3 gestes AVEC mails en attente →
+  proposition (liste exacte, « Appliquer » via reviewDecide journalisé,
+  corbeille toujours confirmée, « Ne plus proposer » définitif dans
+  data/review-learning.json + oplog ui_review_learning_dismiss).
+  Routes GET /review/learning, POST /review/learning/dismiss.
+- **Bug corrigé** (retour utilisateur en cours de session : « je passe le
+  mail en information et il reste dans la Vue du jour ») : le PATCH
+  /messages/intent, quand la correction porte sur le DERNIER mail entrant
+  de son fil, appelle dismissReply (intent ≠ reply_expected) ou
+  restoreReply (intent = reply_expected). Réponse enrichie de
+  replyDismissed ; le lecteur l'affiche et recharge la Vue du jour
+  derrière. Vérifié : counts.active 0, todo.replies vide, restauration OK.
+Testé bout en bout (seeds + Playwright) : navigation carte→page, reprise,
+proposition appliquée (4 mails corbeille confirmés), parcours 5 min,
+Arrêter → bilan, Continuer → intro. Journal : dismiss_reply,
+ui_review_learning_dismiss, ui_review_decide ×3. LEÇON seed : Thread
+n'a pas de champ subjectKey (normalizedSubject).
+Reste du plan (§5 Lot 3, non demandé explicitement) : intégrer les motifs
+appris à l'écran « Règles proposées »/learning.ts et mesurer les
+corrections dans la durée.
+
 ## 02/08 (15) — Dépouillement livré (Lot 1 du plan ChatGPT validé)
 
 (`6b0c0bc`) Le cycle « décision prise » est en place :
