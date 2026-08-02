@@ -7082,6 +7082,54 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
 // Réutilisé par TOUS les écrans (recherche, importants, réponses, relances,
 // échéances, dashboard, brief) : il suffit d'un item {account, folder, uid,
 // subject, fromName, fromEmail, date, isSeen} et de deux callbacks optionnels.
+// ---------------------------------------------------- Corps HTML (iframe sûre)
+// Le HTML du mail est affiché dans une iframe SANDBOX : aucun script ne peut
+// s'exécuter (pas de token allow-scripts, et les <script>/on*/javascript: sont
+// retirés par précaution). Les images DISTANTES sont bloquées par défaut — un
+// pixel invisible suffit à signaler la lecture à l'expéditeur — et un clic
+// suffit à les afficher pour ce mail.
+function sanitizeMailHtml(html, withImages) {
+  let blocked = 0;
+  let out = html
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/((?:href|action)\s*=\s*["']?)\s*javascript:/gi, '$1blocked:');
+  if (!withImages) {
+    out = out
+      .replace(/\s(src|srcset)\s*=\s*(["'])(?!\s*(?:data:|cid:))/gi, (_m, attr, q) => {
+        blocked++;
+        return ` data-x-${attr}=${q}`;
+      })
+      .replace(/url\(\s*(["']?)\s*https?:/gi, 'url($1blocked:');
+  }
+  const head = `<base target="_blank"><style>
+    body { margin: 12px 16px; font-family: Inter, system-ui, "Segoe UI", sans-serif;
+           font-size: 14px; color: #17212B; word-break: break-word; }
+    img { max-width: 100%; height: auto; }
+    table { max-width: 100%; }
+  </style>`;
+  return { html: head + out, blocked };
+}
+
+function renderReaderHtml(el, body, relocatedNote) {
+  const draw = (withImages) => {
+    const { html, blocked } = sanitizeMailHtml(body.html, withImages);
+    el.classList.add('html-mode');
+    el.innerHTML = `
+      ${relocatedNote ? `<div class="notice" style="margin:10px 14px 0">${esc(relocatedNote)}</div>` : ''}
+      ${blocked ? `<div class="html-imgbar">🖼️ ${fmtNum(blocked)} image(s) bloquée(s) — les afficher peut signaler ta lecture à l'expéditeur.
+        <button class="btn btn-sm" id="reader-show-images">Afficher les images</button></div>` : ''}
+      ${body.htmlTruncated ? '<div class="notice warn" style="margin:8px 14px">✂️ Mail très lourd : seul le début est affiché.</div>' : ''}
+      <iframe class="reader-frame" sandbox="allow-same-origin allow-popups" title="Contenu du mail"></iframe>`;
+    el.querySelector('.reader-frame').setAttribute('srcdoc', html);
+    $('#reader-show-images')?.addEventListener('click', () => draw(true));
+  };
+  draw(false);
+}
+
 function closeReader() {
   document.querySelector('.reader-overlay')?.remove();
   document.querySelector('.reader')?.remove();
@@ -7184,27 +7232,36 @@ async function openReader(item, row, opts = {}) {
     // Auto-réparation serveur : le mail avait bougé, il a été retrouvé par son
     // identifiant dans un autre dossier — on suit, pour que les actions
     // (déplacer, corbeille, pièces jointes) visent le BON emplacement.
+    let relocatedNote = '';
     if (body.relocated && body.folder) {
       item.folder = body.folder;
       item.uid = body.uid;
-      const note = document.createElement('div');
-      note.className = 'notice';
-      note.style.marginBottom = '10px';
-      note.textContent = `📦 Ce mail avait changé de place — retrouvé dans « ${body.folder} ». L'index est recalé.`;
-      el.replaceChildren(note);
+      relocatedNote = `📦 Ce mail avait changé de place — retrouvé dans « ${body.folder} ». L'index est recalé.`;
     }
     loadedText = body.text || '';
-    if (body.relocated) {
-      el.append(body.text || '(mail sans contenu texte)');
+    if (body.html) {
+      // Rendu FIDÈLE (mise en page + images) — retour utilisateur 02/08 : le
+      // texte extrait d'une newsletter laissait des trous partout.
+      renderReaderHtml(el, body, relocatedNote);
     } else {
-      el.textContent = body.text || '(mail sans contenu texte)';
-    }
-    if (body.truncated) {
-      const note = document.createElement('div');
-      note.className = 'notice warn';
-      note.style.marginTop = '14px';
-      note.textContent = '✂️ Mail très long : seul le début est affiché ici. L\'original complet reste dans ta boîte.';
-      el.appendChild(note);
+      el.classList.remove('html-mode');
+      el.replaceChildren();
+      if (relocatedNote) {
+        const note = document.createElement('div');
+        note.className = 'notice';
+        note.style.marginBottom = '10px';
+        note.textContent = relocatedNote;
+        el.appendChild(note);
+      }
+      // Les mails texte gardent leur rendu brut, lignes vides compactées.
+      el.append((body.text || '(mail sans contenu texte)').replace(/\n{3,}/g, '\n\n'));
+      if (body.truncated) {
+        const note = document.createElement('div');
+        note.className = 'notice warn';
+        note.style.marginTop = '14px';
+        note.textContent = '✂️ Mail très long : seul le début est affiché ici. L\'original complet reste dans ta boîte.';
+        el.appendChild(note);
+      }
     }
     if (body.to) {
       const to = $('#reader-to');

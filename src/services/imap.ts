@@ -54,8 +54,19 @@ export interface EmailBody {
   date: string | null;
   text: string;
   truncated: boolean;
+  /**
+   * Corps HTML BRUT quand le mail en a un (newsletters, factures…) : le rendu
+   * texte perdait la mise en page et les images (retour utilisateur 02/08).
+   * L'interface l'affiche dans une iframe sandbox (scripts bloqués, images
+   * distantes bloquées par défaut). Null si le mail est purement texte.
+   */
+  html?: string | null;
+  htmlTruncated?: boolean;
   attachments: { filename: string; contentType: string; sizeBytes: number }[];
 }
+
+/** Plafond du HTML renvoyé (les newsletters lourdes dépassent rarement 500 Ko). */
+const MAX_HTML_CHARS = 800_000;
 
 export interface DeletePreview {
   count: number;
@@ -349,7 +360,25 @@ class ImapService {
           const dl = await client.download(String(uid), textNode.part, { uid: true });
           const raw = await streamToBuffer(dl.content);
           let text = decodeText(raw, textNode.parameters?.charset);
-          if ((textNode.type ?? '').toLowerCase() === 'text/html') text = htmlToText(text);
+          let html: string | null = null;
+          if ((textNode.type ?? '').toLowerCase() === 'text/html') {
+            html = text;
+            text = htmlToText(text);
+          } else {
+            // La partie affichée est le texte brut : on récupère AUSSI le HTML
+            // s'il existe (quelques Ko de plus, jamais les pièces jointes).
+            const htmlNode = findHtmlNode(bs);
+            if (htmlNode?.part) {
+              try {
+                const dlHtml = await client.download(String(uid), htmlNode.part, { uid: true });
+                html = decodeText(await streamToBuffer(dlHtml.content), htmlNode.parameters?.charset);
+              } catch {
+                /* l'affichage texte reste disponible */
+              }
+            }
+          }
+          const htmlTruncated = (html?.length ?? 0) > MAX_HTML_CHARS;
+          if (html && htmlTruncated) html = html.slice(0, MAX_HTML_CHARS);
           const truncated = text.length > config.limits.maxBodyChars;
           if (truncated) text = text.slice(0, config.limits.maxBodyChars);
           const env = info.envelope;
@@ -361,6 +390,8 @@ class ImapService {
             date: toIso(env.date),
             text,
             truncated,
+            html,
+            htmlTruncated,
             attachments: listAttachmentParts(bs).map((a) => ({
               filename: a.filename,
               contentType: a.contentType,
@@ -394,6 +425,9 @@ class ImapService {
     if (!text && parsed.html) text = htmlToText(parsed.html);
     const truncated = text.length > config.limits.maxBodyChars;
     if (truncated) text = text.slice(0, config.limits.maxBodyChars);
+    let html: string | null = typeof parsed.html === 'string' ? parsed.html : null;
+    const htmlTruncated = (html?.length ?? 0) > MAX_HTML_CHARS;
+    if (html && htmlTruncated) html = html.slice(0, MAX_HTML_CHARS);
     const toText = Array.isArray(parsed.to)
       ? parsed.to.map((a) => a.text).join(', ')
       : parsed.to?.text ?? '';
@@ -405,6 +439,8 @@ class ImapService {
       date: parsed.date ? parsed.date.toISOString() : null,
       text,
       truncated,
+      html,
+      htmlTruncated,
       attachments: (parsed.attachments ?? []).map((a) => ({
         filename: a.filename ?? '(sans nom)',
         contentType: a.contentType ?? 'application/octet-stream',
@@ -868,6 +904,26 @@ function findTextNode(node: BodyNode | null | undefined): BodyNode | null {
   };
   if (node) walk(node);
   return plain ?? html;
+}
+
+/** Première partie text/html du mail (pour le rendu fidèle), sinon null. */
+function findHtmlNode(node: BodyNode | null | undefined): BodyNode | null {
+  if (node && !node.childNodes?.length && !node.part) {
+    // Mail mono-partie : la racine est la partie (BODY[1]) — cf. findTextNode.
+    if ((node.type ?? '').toLowerCase() === 'text/html') return { ...node, part: '1' };
+    return null;
+  }
+  let html: BodyNode | null = null;
+  const walk = (n: BodyNode) => {
+    if (n.childNodes?.length) {
+      n.childNodes.forEach(walk);
+      return;
+    }
+    if (isAttachmentLeaf(n) || !n.part || html) return;
+    if ((n.type ?? '').toLowerCase() === 'text/html') html = n;
+  };
+  if (node) walk(node);
+  return html;
 }
 
 /**
