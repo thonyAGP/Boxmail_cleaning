@@ -673,6 +673,8 @@ function route() {
     renderVerify();
   } else if (hash.startsWith('#/important')) {
     renderImportant();
+  } else if (hash.startsWith('#/depouillement')) {
+    renderReviewPage();
   } else if (hash.startsWith('#/tasks')) {
     renderTasks();
   } else if (hash.startsWith('#/dashboard')) {
@@ -1297,49 +1299,232 @@ function reviewReason(item) {
   return bits.join(' · ');
 }
 
-async function startReviewFlow() {
-  let q;
-  try {
-    q = await api.reviewQueue();
-  } catch (err) {
-    alert(err.message);
-    return;
-  }
-  if (!q.groups.length) {
-    alert('Aucun nouveau mail à dépouiller. 🎉');
-    return;
-  }
-  const queue = [...q.groups];
-  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0 };
-  let idx = 0;
+// ---------------------------------------------------------------- Dépouillement
+// Lot 2 : le parcours vit sur sa page #/depouillement (plein écran, lien
+// direct). La reprise de session est naturelle : seules les DÉCISIONS font
+// avancer la file — s'arrêter ne perd rien. Les boutons « Dépouiller » de la
+// Vue du jour et de la Boîte mènent ici.
+function startReviewFlow() {
+  if ((location.hash || '').startsWith('#/depouillement')) renderReviewPage();
+  else location.hash = '#/depouillement';
+}
 
-  closeModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay under-reader';
-  overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2 id="rv-title">📬 Dépouillement</h2>
-      <button class="modal-close" title="Arrêter (rien n'est perdu : le reste sera reproposé)">✕</button></div>
-    <div class="modal-body" id="rv-body"></div>
+// Coût estimé d'une étape (en minutes) — sert à « Tu as combien de temps ? » :
+// un lot se règle d'un geste, un mail important demande de la lecture.
+function reviewGroupMinutes(g) {
+  if (g.kind === 'lot') return 0.4;
+  if (g.item.class === 'important') return 1.5;
+  if (g.item.class === 'read') return 0.7;
+  return 0.3;
+}
+function reviewSliceByMinutes(groups, minutes) {
+  const out = [];
+  let acc = 0;
+  for (const g of groups) {
+    const cost = reviewGroupMinutes(g);
+    if (out.length && acc + cost > minutes) break;
+    acc += cost;
+    out.push(g);
+  }
+  return out;
+}
+
+async function renderReviewPage() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head"><div><h1>📬 Dépouillement</h1>
+    <div class="sub">Ton nouveau courrier, préparé : les mails importants un par un, le reste par lots homogènes.
+      Rien ne part sans ta décision, tout est journalisé.</div></div>
+    <div class="head-actions"><a class="btn" href="#/today">← Vue du jour</a></div></div>
+    <div id="rv-screen"><div class="empty"><span class="spinner"></span>Préparation du courrier…</div></div>`;
+  reviewIntro();
+}
+
+// Écran d'accueil : résumé, reprise de session, choix du temps, et les
+// propositions apprises (Lot 3).
+async function reviewIntro() {
+  const el = $('#rv-screen');
+  if (!el) return;
+  let s; let q; let learn;
+  try {
+    [s, q, learn] = await Promise.all([
+      api.reviewSummary(),
+      api.reviewQueue(),
+      api.reviewLearning().catch(() => ({ notes: [], proposals: [] })),
+    ]);
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!el.isConnected) return;
+
+  if (!q.groups.length) {
+    el.innerHTML = `<div class="panel"><div class="panel-body">
+      <div class="empty" style="font-size:15px">✅ Ton courrier est dépouillé — aucun nouveau mail n'attend une décision.
+        ${s.reviewedToday ? `<div class="muted" style="font-size:12.5px; margin-top:6px">${fmtNum(s.reviewedToday)} décision(s) prise(s) aujourd'hui${s.laterCount ? ` · ${fmtNum(s.laterCount)} gardé(s) « à lire plus tard »` : ''}.</div>` : ''}
+      </div></div></div>
+      <div id="rv-learn"></div>`;
+    fillReviewLearning($('#rv-learn'), learn, () => reviewIntro());
+    return;
+  }
+
+  const estAll = Math.max(1, Math.round(q.groups.reduce((n, g) => n + reviewGroupMinutes(g), 0)));
+  const resume = s.reviewedToday > 0
+    ? `<div class="notice" style="margin-bottom:10px">🔁 Tu as déjà dépouillé <strong>${fmtNum(s.reviewedToday)}</strong> mail(s) aujourd'hui — il en reste <strong>${fmtNum(s.total)}</strong>. Reprends où tu t'es arrêté.</div>`
+    : '';
+  el.innerHTML = `
+    ${resume}
+    <div class="panel"><div class="panel-body">
+      <div class="ta-hero" style="margin-bottom:12px">
+        <div><strong>📬 ${fmtNum(s.total)} nouveau(x) mail(s) attendent une décision</strong>
+          <div class="muted" style="font-size:12.5px; margin-top:2px">
+            ${s.important ? `${fmtNum(s.important)} demandent probablement une action · ` : ''}${s.read ? `${fmtNum(s.read)} méritent une lecture · ` : ''}${s.range ? `${fmtNum(s.range)} probablement rangeables d'un geste` : ''}</div></div>
+      </div>
+      <div style="font-size:13.5px; margin-bottom:8px">⏱️ Tu as combien de temps ?</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" data-rv-mins="5">▶️ 5 minutes</button>
+        <button class="btn" data-rv-mins="15">▶️ 15 minutes</button>
+        <button class="btn btn-primary" id="rv-all">⚡ Tout dépouiller (≈ ${estAll} min)</button>
+      </div>
+      <div class="muted" style="font-size:12px; margin-top:8px">Arrête-toi quand tu veux : rien n'est perdu, le reste sera reproposé.</div>
+    </div></div>
+    <div id="rv-learn"></div>`;
+  el.querySelectorAll('[data-rv-mins]').forEach((b) => b.addEventListener('click', () =>
+    reviewRun(reviewSliceByMinutes(q.groups, Number(b.dataset.rvMins)))));
+  $('#rv-all')?.addEventListener('click', () => reviewRun(q.groups));
+  fillReviewLearning($('#rv-learn'), learn, () => reviewIntro());
+}
+
+function reviewRun(groups) {
+  const el = $('#rv-screen');
+  if (!el || !groups.length) return;
+  el.innerHTML = `<div class="panel">
+    <div class="panel-head"><h2 id="rv-title">📬 Dépouillement</h2>
+      <button class="btn btn-sm" id="rv-stop" title="Arrêter — rien n'est perdu : le reste sera reproposé">⏸ Arrêter</button></div>
+    <div class="panel-body" id="rv-body"></div>
     <div class="modal-foot" id="rv-foot"></div>
   </div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
+  runReviewEngine(groups, { stopEl: $('#rv-stop'), onDone: (counts) => reviewFinish(counts) });
+}
 
-  const finish = () => {
-    const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash;
-    $('#rv-title').textContent = decided ? '✅ Ton courrier est dépouillé' : 'Dépouillement interrompu';
-    $('#rv-body').innerHTML = `<div class="empty" style="font-size:15px; text-align:left">
+// Fin de session : le bilan, la suite (« il en reste N »), et ce que
+// l'assistant a remarqué (Lot 3).
+async function reviewFinish(counts) {
+  const el = $('#rv-screen');
+  if (!el) return;
+  const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash;
+  el.innerHTML = `<div class="panel"><div class="panel-body">
+    <h2 id="rv-fin-title" style="font-size:16px; margin-bottom:8px">${decided ? '✅ Session terminée' : 'Dépouillement interrompu'}</h2>
+    <div style="font-size:14px">
       ${counts.seen ? `<div>👁️ ${fmtNum(counts.seen)} marqué(s) vu(s)</div>` : ''}
       ${counts.action ? `<div>☑️ ${fmtNum(counts.action)} ajouté(s) à tes actions</div>` : ''}
       ${counts.later ? `<div>📖 ${fmtNum(counts.later)} gardé(s) à lire plus tard</div>` : ''}
       ${counts.keep ? `<div>📥 ${fmtNum(counts.keep)} gardé(s) dans la boîte</div>` : ''}
       ${counts.trash ? `<div>🗑️ ${fmtNum(counts.trash)} mis à la corbeille (récupérables ~30 j)</div>` : ''}
-      ${counts.skipped ? `<div class="muted">⏭️ ${fmtNum(counts.skipped)} passé(s) — reproposés au prochain dépouillement</div>` : ''}
-      <div class="muted" style="font-size:12.5px; margin-top:10px">Aucun nouveau mail n'attend de décision.
-        Tout est journalisé dans le <a href="#/operations">📜 Journal d'activité</a>.</div></div>`;
-    $('#rv-foot').innerHTML = '<button class="btn btn-primary" id="rv-close">Fermer</button>';
-    $('#rv-close').addEventListener('click', () => { closeModal(); renderToday(); });
+      ${counts.skipped ? `<div class="muted">⏭️ ${fmtNum(counts.skipped)} passé(s) — reproposés plus tard</div>` : ''}
+    </div>
+    <div class="muted" style="font-size:12.5px; margin-top:10px">Tout est journalisé dans le <a href="#/operations">📜 Journal d'activité</a>.</div>
+    <div id="rv-fin-next" style="display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap"></div>
+  </div></div>
+  <div id="rv-learn"></div>`;
+
+  let s = null;
+  let learn = { notes: [], proposals: [] };
+  try {
+    [s, learn] = await Promise.all([api.reviewSummary(), api.reviewLearning()]);
+  } catch { /* le bilan reste affichable sans le résumé */ }
+  if (!el.isConnected) return;
+  const nextEl = $('#rv-fin-next');
+  if (s && s.total > 0) {
+    nextEl.innerHTML = `<span style="font-size:13px">Il reste <strong>${fmtNum(s.total)}</strong> mail(s) à dépouiller.</span>
+      <button class="btn btn-primary" id="rv-continue">▶️ Continuer</button>
+      <a class="btn" href="#/today">🏠 Plus tard</a>`;
+    $('#rv-continue')?.addEventListener('click', () => reviewIntro());
+  } else {
+    if (decided) $('#rv-fin-title').textContent = '✅ Ton courrier est dépouillé';
+    nextEl.innerHTML = '<a class="btn btn-primary" href="#/today">🏠 Retour à la Vue du jour</a>';
+  }
+  fillReviewLearning($('#rv-learn'), learn, () => reviewFinish(counts));
+}
+
+// ---------------------------------------------------------------- Apprentissage (Lot 3)
+const LEARN_DECISION_LABELS = {
+  seen: ['👁️', 'Vu'],
+  trash: ['🗑️', 'Corbeille'],
+  keep: ['📥', 'Garder'],
+};
+
+// « Ce que j'ai remarqué » : après 2 gestes identiques, une simple remarque ;
+// après 3 gestes cohérents, une proposition avec la liste EXACTE des mails en
+// attente concernés. Rien n'est jamais automatique : appliquer = un clic ici,
+// et la corbeille reste confirmée.
+function fillReviewLearning(el, learn, onChanged) {
+  if (!el) return;
+  const notes = learn?.notes ?? [];
+  const proposals = learn?.proposals ?? [];
+  if (!notes.length && !proposals.length) { el.innerHTML = ''; return; }
+  const intentTxt = (p) => (p.intent ? ` (${(INTENT_LABELS[p.intent] ?? p.intent).toLowerCase()})` : '');
+  el.innerHTML = `<div class="panel" style="margin-top:12px">
+    <div class="panel-head"><h2>💡 Ce que j'ai remarqué</h2></div>
+    <div class="panel-body">
+      ${proposals.map((p, k) => {
+        const [emo, lbl] = LEARN_DECISION_LABELS[p.decision] ?? ['❓', p.decision];
+        const who = p.fromName || p.fromEmail;
+        return `<div class="learn-card" data-lp="${k}">
+          <div style="font-size:13.5px">Tu as choisi <strong>${fmtNum(p.count)}× « ${emo} ${lbl} »</strong> pour les mails de
+            <strong>${esc(who)}</strong>${esc(intentTxt(p))} — <strong>${fmtNum(p.pendingIds.length)}</strong> mail(s) en attente correspondent.</div>
+          <div class="subject-list hidden" data-lp-list="${k}">${p.pendingSamples.map((sm) =>
+            `<div><span class="mail-date">${fmtDate(sm.date)}</span> ${esc(sm.subject)}</div>`).join('')}
+            ${p.pendingIds.length > p.pendingSamples.length ? `<div class="muted">… et ${fmtNum(p.pendingIds.length - p.pendingSamples.length)} autre(s)</div>` : ''}</div>
+          <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+            <button class="btn btn-sm" data-lp-show="${k}">Voir les ${fmtNum(p.pendingIds.length)} mails</button>
+            <button class="btn btn-sm btn-primary" data-lp-apply="${k}">${emo} Appliquer aux ${fmtNum(p.pendingIds.length)}</button>
+            <button class="btn btn-sm" data-lp-dismiss="${k}" title="Définitif — je ne proposerai plus ce motif">Ne plus proposer</button>
+          </div></div>`;
+      }).join('')}
+      ${notes.map((p) => {
+        const [emo, lbl] = LEARN_DECISION_LABELS[p.decision] ?? ['❓', p.decision];
+        return `<div class="muted" style="font-size:12.5px; margin:2px 0">💡 2× « ${emo} ${lbl} » pour les mails de
+          ${esc(p.fromName || p.fromEmail)}${esc(intentTxt(p))} — encore un geste identique et je te proposerai de l'appliquer en lot.</div>`;
+      }).join('')}
+    </div></div>`;
+  el.querySelectorAll('[data-lp-show]').forEach((b) => b.addEventListener('click', () => {
+    el.querySelector(`[data-lp-list="${b.dataset.lpShow}"]`)?.classList.toggle('hidden');
+  }));
+  el.querySelectorAll('[data-lp-apply]').forEach((b) => b.addEventListener('click', async () => {
+    const p = proposals[Number(b.dataset.lpApply)];
+    const who = p.fromName || p.fromEmail;
+    if (p.decision === 'trash'
+      && !confirm(`Mettre ces ${p.pendingIds.length} mail(s) de ${who} à la corbeille ?\n\nIls restent récupérables ~30 jours, et l'opération est journalisée avec la liste exacte.`)) return;
+    b.disabled = true;
+    try {
+      await api.reviewDecide(p.pendingIds, p.decision);
+      onChanged?.();
+    } catch (err) { b.disabled = false; alert(err.message); }
+  }));
+  el.querySelectorAll('[data-lp-dismiss]').forEach((b) => b.addEventListener('click', async () => {
+    const p = proposals[Number(b.dataset.lpDismiss)];
+    b.disabled = true;
+    try {
+      await api.reviewLearningDismiss(p.key);
+      el.querySelector(`[data-lp="${b.dataset.lpDismiss}"]`)?.remove();
+    } catch (err) { b.disabled = false; alert(err.message); }
+  }));
+}
+
+// ---------------------------------------------------------------- Moteur d'étapes
+// Une étape par groupe (mail important seul, ou lot homogène). Écrit dans
+// #rv-title / #rv-body / #rv-foot, quel que soit l'écran qui les héberge.
+function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
+  const queue = [...initialQueue];
+  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0 };
+  let idx = 0;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    onDone?.(counts);
   };
+  stopEl?.addEventListener('click', finish);
 
   const next = () => {
     idx += 1;
@@ -1429,7 +1614,10 @@ async function startReviewFlow() {
 
     const B = [];
     if (it.class === 'important') {
-      B.push(['📖 Lire et traiter', 'btn-primary', () => openReaderFor(it, {})]);
+      // Le libellé suit le geste attendu : répondre si une réponse est attendue.
+      const readLabel = (it.aiAction === 'reply' || it.intent === 'reply_expected')
+        ? '↩️ Lire et répondre' : '📖 Lire et traiter';
+      B.push([readLabel, 'btn-primary', () => openReaderFor(it, {})]);
       B.push(['☑️ Ajouter à mes actions', '', () => decide([it.id], 'action', 1)]);
       B.push(['👁️ Vu', '', () => decide([it.id], 'seen', 1)]);
     } else if (it.class === 'read') {
@@ -8038,7 +8226,7 @@ function renderReaderAnalysis(a, item) {
   };
   $('#ra-intent')?.addEventListener('change', async (e) => {
     try {
-      await api.setMessageIntent(item.account, {
+      const r = await api.setMessageIntent(item.account, {
         folder: item.folder,
         uid: item.uid,
         intent: e.target.value || null,
@@ -8046,9 +8234,16 @@ function renderReaderAnalysis(a, item) {
       const n = $('#ra-intent-note');
       if (n) {
         n.textContent = e.target.value
-          ? '✓ corrigé pour ce mail — jamais écrasé'
+          ? (r.replyDismissed
+            ? '✓ corrigé — le fil sort aussi de « À traiter » (plus de réponse attendue)'
+            : '✓ corrigé pour ce mail — jamais écrasé')
           : '✓ repassé en calcul automatique';
         n.style.color = 'var(--green, #16a34a)';
+      }
+      // La liste derrière le lecteur doit refléter la correction tout de
+      // suite : la Vue du jour se recharge quand le fil vient d'en sortir.
+      if (r.replyDismissed && (location.hash === '#/today' || location.hash === '' || location.hash === '#/')) {
+        renderToday();
       }
     } catch (err) { alert(err.message); }
   });
@@ -8135,7 +8330,7 @@ const OP_FAMILIES = {
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
     'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide'],
-  analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets'],
+  analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets', 'ui_review_learning_dismiss'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',
     'restore_deadline', 'propose_deadline', 'create_task', 'task_from_deadline',

@@ -794,3 +794,9 @@ th.sortable:hover { color: var(--primary); }
   .summary-strip { flex-wrap: wrap; }
   .summary-cell { min-width: 46%; border-left: none !important; border-top: 1px solid var(--border-soft); }
 }
+
+/* Dépouillement (Lot 3) : cartes « Ce que j'ai remarqué ». */
+.learn-card {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 10px 12px; margin-bottom: 8px; background: var(--surface-raised);
+}

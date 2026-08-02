@@ -57,6 +57,8 @@ export const api = {
   reviewSummary: () => request('GET', '/review/summary'),
   reviewQueue: () => request('GET', '/review/queue'),
   reviewDecide: (ids, decision) => request('POST', '/review/decide', { ids, decision }),
+  reviewLearning: () => request('GET', '/review/learning'),
+  reviewLearningDismiss: (key) => request('POST', '/review/learning/dismiss', { key }),
   suggestions: () => request('GET', '/suggestions'),
   suggestionDismiss: (kind, refKey) => request('POST', '/suggestions/dismiss', { kind, refKey }),
   reviewSample: (n = 10) => request('GET', `/review/sample?n=${n}`),

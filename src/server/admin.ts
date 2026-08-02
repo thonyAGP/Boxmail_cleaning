@@ -119,7 +119,7 @@ import {
 } from '../services/snippets.js';
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
-import { reviewSummary, reviewQueue, reviewDecide, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
+import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import {
   listPolicies,
   previewPolicy,
@@ -718,6 +718,25 @@ export function buildAdminRouter(): Router {
         return;
       }
       res.json(await reviewDecide(ids, decision as ReviewDecision));
+    }),
+  );
+  // Apprentissage des décisions (Lot 3) : motifs répétés + « ne plus proposer ».
+  router.get(
+    '/review/learning',
+    guard(async (_req, res) => {
+      res.json(await reviewLearning());
+    }),
+  );
+  router.post(
+    '/review/learning/dismiss',
+    guard(async (req, res) => {
+      const key = String(req.body?.key ?? '').trim();
+      if (!key || key.length > 300) {
+        res.status(400).json({ error: 'Motif manquant.' });
+        return;
+      }
+      await reviewLearningDismiss(key);
+      res.json({ ok: true });
     }),
   );
 
@@ -2015,7 +2034,7 @@ export function buildAdminRouter(): Router {
       await ensureDbReady();
       const m = await db.message.findFirst({
         where: { accountSlug: slug, uid, isDeleted: false, folder: { is: { path: folder } } },
-        select: { id: true, subject: true, fromEmail: true },
+        select: { id: true, subject: true, fromEmail: true, threadId: true, isOutbound: true },
       });
       if (!m) {
         res.status(404).json({ error: "Mail introuvable dans l'index — resynchronise la boîte." });
@@ -2043,7 +2062,36 @@ export function buildAdminRouter(): Router {
           ? `intention corrigée : ${MESSAGE_INTENT_LABELS[intent as MessageIntent]}`
           : 'intention repassée en calcul automatique',
       });
-      res.json({ ok: true, intent, intentSource: intent ? 'manual' : 'auto' });
+
+      // La correction doit se VOIR (retour utilisateur 02/08 : « je passe le
+      // mail en information et il reste dans la Vue du jour ») : si c'est le
+      // DERNIER mail entrant de son fil — le cas exact où « il attend
+      // probablement ta réponse » le liste — reclasser vers autre chose que
+      // « réponse attendue » vaut « pas de réponse nécessaire » (même
+      // mécanisme qu'Ignorer : réversible, reproposé si un nouveau mail
+      // arrive). Corriger VERS « réponse attendue » fait l'inverse.
+      let replyDismissed = false;
+      if (intent && m.threadId && !m.isOutbound) {
+        try {
+          const lastOfThread = await db.message.findFirst({
+            where: { accountSlug: slug, threadId: m.threadId, isDeleted: false },
+            orderBy: { date: 'desc' },
+            select: { id: true },
+          });
+          if (lastOfThread?.id === m.id) {
+            if (intent === 'reply_expected') await restoreReply(slug, m.threadId);
+            else {
+              await dismissReply(slug, m.threadId);
+              replyDismissed = true;
+            }
+          }
+        } catch (err) {
+          logger.warn('correction d’intention : état « à répondre » non ajusté', {
+            account: slug, uid, error: (err as Error).message,
+          });
+        }
+      }
+      res.json({ ok: true, intent, intentSource: intent ? 'manual' : 'auto', replyDismissed });
     }),
   );
 

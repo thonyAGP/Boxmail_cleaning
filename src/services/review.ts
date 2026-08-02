@@ -314,6 +314,132 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
   return { groups: ordered.slice(0, 120), total };
 }
 
+// ---------------------------------------------------------------- Apprentissage
+// Lot 3 du plan : l'assistant observe les DÉCISIONS répétées (même compte,
+// même expéditeur, même intention → même geste) et les restitue :
+//  - 2 gestes identiques  → simple remarque en fin de dépouillement ;
+//  - 3 gestes cohérents ou plus → proposition explicite, avec la liste exacte
+//    des mails EN ATTENTE qui seraient concernés (« Voir les N mails »).
+// Un motif contredit (gestes différents sur la même clé) n'est JAMAIS proposé,
+// et « Ne plus proposer » est définitif (data/review-learning.json).
+// L'application d'une proposition repasse par reviewDecide (journalisée), la
+// corbeille restant confirmée côté interface — rien n'est jamais automatisé.
+
+const LEARNING_FILE = (): string => resolve(process.cwd(), 'data', 'review-learning.json');
+
+function readLearningState(): { dismissed: Record<string, string> } {
+  try {
+    if (existsSync(LEARNING_FILE())) {
+      const raw = JSON.parse(readFileSync(LEARNING_FILE(), 'utf8')) as { dismissed?: Record<string, string> };
+      if (raw && typeof raw.dismissed === 'object' && raw.dismissed) return { dismissed: raw.dismissed };
+    }
+  } catch {
+    /* fichier illisible : on repart d'un état vide */
+  }
+  return { dismissed: {} };
+}
+
+export interface LearningMotif {
+  key: string;
+  account: string;
+  fromEmail: string;
+  fromName: string | null;
+  intent: string | null;
+  decision: ReviewDecision;
+  /** Nombre de gestes identiques déjà faits par l'utilisateur. */
+  count: number;
+  /** Mails encore en attente de décision qui correspondent au motif. */
+  pendingIds: number[];
+  pendingSamples: { subject: string; date: string | null }[];
+}
+
+/** Seuls ces gestes s'apprennent : un « plus tard » ou une tâche créée ne
+ *  disent rien de généralisable sur l'expéditeur. */
+const LEARNABLE: ReviewDecision[] = ['seen', 'trash', 'keep'];
+
+export async function reviewLearning(): Promise<{ notes: LearningMotif[]; proposals: LearningMotif[] }> {
+  await ensureDbReady();
+  const decided = await db.message.findMany({
+    where: { reviewedAt: { not: null }, reviewDecision: { in: LEARNABLE }, fromEmail: { not: null } },
+    orderBy: { reviewedAt: 'desc' },
+    take: 2000,
+    select: { accountSlug: true, fromEmail: true, fromName: true, intent: true, reviewDecision: true },
+  });
+
+  // Décompte par clé compte|expéditeur|intention, toutes décisions confondues
+  // (pour détecter les contradictions).
+  const tally = new Map<string, {
+    account: string; fromEmail: string; fromName: string | null; intent: string | null;
+    byDecision: Map<ReviewDecision, number>;
+  }>();
+  for (const m of decided) {
+    const key = `${m.accountSlug}|${m.fromEmail}|${m.intent ?? ''}`;
+    if (!tally.has(key)) {
+      tally.set(key, {
+        account: m.accountSlug, fromEmail: m.fromEmail!, fromName: m.fromName,
+        intent: m.intent, byDecision: new Map(),
+      });
+    }
+    const t = tally.get(key)!.byDecision;
+    const d = m.reviewDecision as ReviewDecision;
+    t.set(d, (t.get(d) ?? 0) + 1);
+  }
+
+  const { dismissed } = readLearningState();
+  const { rows } = await loadCandidates();
+  const notes: LearningMotif[] = [];
+  const proposals: LearningMotif[] = [];
+
+  for (const [key, t] of tally) {
+    // Motif cohérent = UNE seule décision observée sur la clé. Dès que
+    // l'utilisateur a corrigé (gestes différents), le motif disparaît.
+    if (t.byDecision.size !== 1) continue;
+    const [decision, count] = [...t.byDecision.entries()][0];
+    if (count < 2) continue;
+    const motifKey = `${key}|${decision}`;
+    if (dismissed[motifKey]) continue;
+
+    const pending = rows.filter((r) =>
+      r.accountSlug === t.account && r.fromEmail === t.fromEmail && (r.intent ?? '') === (t.intent ?? ''));
+    const motif: LearningMotif = {
+      key: motifKey,
+      account: t.account,
+      fromEmail: t.fromEmail,
+      fromName: t.fromName,
+      intent: t.intent,
+      decision,
+      count,
+      pendingIds: pending.map((r) => r.id),
+      pendingSamples: pending.slice(0, 8).map((r) => ({
+        subject: r.subject ?? '(sans sujet)',
+        date: r.date?.toISOString() ?? null,
+      })),
+    };
+    // Proposition seulement si elle a une prise concrète (des mails en attente).
+    if (count >= 3 && motif.pendingIds.length > 0) proposals.push(motif);
+    else if (count === 2) notes.push(motif);
+  }
+
+  proposals.sort((a, b) => b.pendingIds.length - a.pendingIds.length);
+  notes.sort((a, b) => b.count - a.count);
+  return { notes: notes.slice(0, 5), proposals: proposals.slice(0, 5) };
+}
+
+/** « Ne plus proposer » — définitif, journalisé. */
+export async function reviewLearningDismiss(key: string): Promise<void> {
+  const state = readLearningState();
+  state.dismissed[key] = new Date().toISOString();
+  mkdirSync(dirname(LEARNING_FILE()), { recursive: true });
+  writeFileSync(LEARNING_FILE(), JSON.stringify(state, null, 2), 'utf8');
+  const [account] = key.split('|');
+  await recordOperation({
+    account: account || '*',
+    tool: 'ui_review_learning_dismiss',
+    params: { key },
+    result: `apprentissage : proposition « ${key} » écartée définitivement`,
+  });
+}
+
 // ---------------------------------------------------------------- Décision
 export interface DecideResult {
   count: number;
