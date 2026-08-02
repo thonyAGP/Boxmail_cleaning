@@ -333,10 +333,33 @@ const FROM = `FROM Message m
   JOIN Folder f ON f.id = m.folderId
   LEFT JOIN Sender s ON s.accountSlug = m.accountSlug AND s.email = m.fromEmail`;
 
+/**
+ * Niveau de risque d'une stratégie (revue UI §10 : « le risque doit être aussi
+ * visible que le gain »). Dérivé de la CLÉ du preset — pas de colonne en base :
+ * c'est un jugement produit, pas une donnée utilisateur.
+ *  - very_low : contenu jetable par nature (OTP, livraisons, jamais ouvert) ;
+ *  - low      : automatique/transactionnel, protégé par les garde-fous B1/B5 ;
+ *  - medium   : peut viser des mails déjà LUS (promo365, verdicts IA).
+ */
+export type PolicyRisk = 'very_low' | 'low' | 'medium';
+const RISK_BY_KEY: Record<string, PolicyRisk> = {
+  otp7: 'very_low',
+  shipping30: 'very_low',
+  newsletter90: 'very_low',
+  promo30: 'very_low',
+  notif90: 'low',
+  social90: 'low',
+  confirm180: 'low',
+  ai_archive90: 'medium',
+  promo365: 'medium',
+};
+
 export interface PolicyWithCount {
   id: number;
   key: string;
   label: string;
+  /** Niveau de risque affiché (dérivé du preset ; 'low' pour une stratégie inconnue). */
+  risk: PolicyRisk;
   matchIntent: string | null;
   matchCategory: string | null;
   matchAiAction: string | null;
@@ -377,6 +400,7 @@ export async function listPolicies(): Promise<PolicyWithCount[]> {
       id: p.id,
       key: p.key,
       label: p.label,
+      risk: RISK_BY_KEY[p.key] ?? 'low',
       matchIntent: p.matchIntent,
       matchCategory: p.matchCategory,
       matchAiAction: p.matchAiAction,

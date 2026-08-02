@@ -154,7 +154,16 @@ body {
 .acct-chip { font-weight: 600; }
 
 /* ---------- Main + header compact ---------- */
-.main { flex: 1; padding: 0 28px 26px; max-width: 1440px; min-width: 0; }
+/* Pleine largeur (retour utilisateur 02/08 : le plafond à 1440 px laissait
+   un vide à droite sur grand écran). */
+.main { flex: 1; padding: 0 28px 26px; min-width: 0; }
+
+/* Texte long dans une cellule (colonne Raison) : 2 lignes max + ellipse,
+   le détail complet reste dans l'infobulle. */
+.clamp2 {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .page-head {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 66px; padding: 12px 0; margin: 0 0 18px;
