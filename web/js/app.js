@@ -7088,7 +7088,7 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
 // retirés par précaution). Les images DISTANTES sont bloquées par défaut — un
 // pixel invisible suffit à signaler la lecture à l'expéditeur — et un clic
 // suffit à les afficher pour ce mail.
-function sanitizeMailHtml(html, withImages) {
+function sanitizeMailHtml(html, withImages, cidMap) {
   let blocked = 0;
   let out = html
     .replace(/<script[\s\S]*?<\/script\s*>/gi, '')
@@ -7097,9 +7097,17 @@ function sanitizeMailHtml(html, withImages) {
     .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
     .replace(/((?:href|action)\s*=\s*["']?)\s*javascript:/gi, '$1blocked:');
-  if (!withImages) {
+  if (withImages) {
+    // Images INTÉGRÉES au mail (cid:) : résolues vers l'endpoint de pièces
+    // jointes (inline, servi avec cache navigateur) — récupérées à la demande,
+    // jamais téléchargées sur le disque.
+    out = out.replace(/(\ssrc\s*=\s*["'])cid:([^"']+)(["'])/gi, (_m, pre, cid, post) =>
+      `${pre}${cidMap?.get(cid.trim()) ?? 'blocked:cid-introuvable'}${post}`);
+    // Chargement paresseux : le navigateur ne charge que ce qui est visible.
+    out = out.replace(/<img\b/gi, '<img loading="lazy" decoding="async" ');
+  } else {
     out = out
-      .replace(/\s(src|srcset)\s*=\s*(["'])(?!\s*(?:data:|cid:))/gi, (_m, attr, q) => {
+      .replace(/\s(src|srcset)\s*=\s*(["'])(?!\s*data:)/gi, (_m, attr, q) => {
         blocked++;
         return ` data-x-${attr}=${q}`;
       })
@@ -7114,9 +7122,15 @@ function sanitizeMailHtml(html, withImages) {
   return { html: head + out, blocked };
 }
 
-function renderReaderHtml(el, body, relocatedNote) {
+function renderReaderHtml(el, body, relocatedNote, item) {
+  // Table Content-ID → URL inline (les pièces jointes du mail, même ordre que
+  // l'endpoint /attachments/:index).
+  const cidMap = new Map();
+  (body.attachments ?? []).forEach((a, i) => {
+    if (a.contentId) cidMap.set(a.contentId, api.attachmentInlineUrl(item.account, item.folder, item.uid, i));
+  });
   const draw = (withImages) => {
-    const { html, blocked } = sanitizeMailHtml(body.html, withImages);
+    const { html, blocked } = sanitizeMailHtml(body.html, withImages, cidMap);
     el.classList.add('html-mode');
     el.innerHTML = `
       ${relocatedNote ? `<div class="notice" style="margin:10px 14px 0">${esc(relocatedNote)}</div>` : ''}
@@ -7128,6 +7142,23 @@ function renderReaderHtml(el, body, relocatedNote) {
     $('#reader-show-images')?.addEventListener('click', () => draw(true));
   };
   draw(false);
+}
+
+// Cache CLIENT des corps lus (LRU 20) : rouvrir un mail est instantané — le
+// serveur a le même cache, mais éviter l'aller-retour réseau compte aussi.
+const readBodyCache = new Map();
+async function readMessageCached(account, folder, uid) {
+  const key = `${account}|${folder}|${uid}`;
+  const hit = readBodyCache.get(key);
+  if (hit) {
+    readBodyCache.delete(key);
+    readBodyCache.set(key, hit);
+    return hit;
+  }
+  const body = await api.readMessage(account, folder, uid);
+  readBodyCache.set(key, body);
+  if (readBodyCache.size > 20) readBodyCache.delete(readBodyCache.keys().next().value);
+  return body;
 }
 
 function closeReader() {
@@ -7226,7 +7257,7 @@ async function openReader(item, row, opts = {}) {
   // Corps du mail : lecture IMAP live. En cas d'échec (boîte injoignable),
   // on l'explique proprement — les actions restent disponibles.
   let loadedText = ''; // corps téléchargé, pour la citation dans une réponse
-  api.readMessage(item.account, item.folder, item.uid).then((body) => {
+  readMessageCached(item.account, item.folder, item.uid).then((body) => {
     const el = $('#reader-body');
     if (!el) return;
     // Auto-réparation serveur : le mail avait bougé, il a été retrouvé par son
@@ -7242,7 +7273,7 @@ async function openReader(item, row, opts = {}) {
     if (body.html) {
       // Rendu FIDÈLE (mise en page + images) — retour utilisateur 02/08 : le
       // texte extrait d'une newsletter laissait des trous partout.
-      renderReaderHtml(el, body, relocatedNote);
+      renderReaderHtml(el, body, relocatedNote, item);
     } else {
       el.classList.remove('html-mode');
       el.replaceChildren();

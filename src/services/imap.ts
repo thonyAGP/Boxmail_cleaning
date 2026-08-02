@@ -62,7 +62,7 @@ export interface EmailBody {
    */
   html?: string | null;
   htmlTruncated?: boolean;
-  attachments: { filename: string; contentType: string; sizeBytes: number }[];
+  attachments: { filename: string; contentType: string; sizeBytes: number; contentId?: string | null }[];
 }
 
 /** Plafond du HTML renvoyé (les newsletters lourdes dépassent rarement 500 Ko). */
@@ -332,7 +332,31 @@ class ImapService {
 
   // --- Lecture d'un mail ----------------------------------------------------
 
+  /**
+   * Cache mémoire des corps lus (perf, retour utilisateur 02/08) : un mail est
+   * IMMUABLE — rouvrir le même mail (mode « une par une », aller-retours dans
+   * la liste) ne doit pas redescendre sur IMAP. LRU borné : 20 entrées.
+   */
+  private bodyCache = new Map<string, EmailBody>();
+
   async readEmail(rec: AccountRecord, folder: string, uid: number): Promise<EmailBody> {
+    const cacheKey = `${rec.account}|${folder}|${uid}`;
+    const cached = this.bodyCache.get(cacheKey);
+    if (cached) {
+      // LRU : replacer l'entrée en tête.
+      this.bodyCache.delete(cacheKey);
+      this.bodyCache.set(cacheKey, cached);
+      return cached;
+    }
+    const result = await this.readEmailUncached(rec, folder, uid);
+    this.bodyCache.set(cacheKey, result);
+    if (this.bodyCache.size > 20) {
+      this.bodyCache.delete(this.bodyCache.keys().next().value as string);
+    }
+    return result;
+  }
+
+  private async readEmailUncached(rec: AccountRecord, folder: string, uid: number): Promise<EmailBody> {
     const client = await this.getClient(rec);
     const lock = await client.getMailboxLock(folder);
     try {
@@ -396,6 +420,7 @@ class ImapService {
               filename: a.filename,
               contentType: a.contentType,
               sizeBytes: a.sizeBytes,
+              contentId: a.contentId,
             })),
           };
         } catch (err) {
@@ -445,6 +470,7 @@ class ImapService {
         filename: a.filename ?? '(sans nom)',
         contentType: a.contentType ?? 'application/octet-stream',
         sizeBytes: a.size ?? 0,
+        contentId: a.cid ?? null,
       })),
     };
   }
@@ -842,6 +868,8 @@ type BodyNode = {
   disposition?: string;
   dispositionParameters?: { filename?: string };
   parameters?: { name?: string; charset?: string };
+  /** Content-ID MIME (avec chevrons) — référencé par les images `cid:` du HTML. */
+  id?: string;
   childNodes?: BodyNode[];
 };
 
@@ -850,6 +878,8 @@ interface AttachmentPart {
   filename: string;
   contentType: string;
   sizeBytes: number;
+  /** Content-ID sans chevrons (null si la partie n'en a pas). */
+  contentId: string | null;
 }
 
 /** Une partie feuille est une pièce jointe si disposition=attachment OU nom de fichier. */
@@ -873,6 +903,7 @@ function listAttachmentParts(node: BodyNode | null | undefined): AttachmentPart[
         filename,
         contentType: (n.type ?? 'application/octet-stream').toLowerCase(),
         sizeBytes: n.size ?? 0,
+        contentId: n.id ? n.id.replace(/^<|>$/g, '') : null,
       });
     }
   };

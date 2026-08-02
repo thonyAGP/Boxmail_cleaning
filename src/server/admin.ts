@@ -1645,6 +1645,9 @@ export function buildAdminRouter(): Router {
         // inline=1 → « Voir » : le navigateur affiche (PDF/image) au lieu de
         // forcer le téléchargement, et met en cache. Sinon : téléchargement.
         const disposition = req.query.inline ? 'inline' : 'attachment';
+        // Une pièce jointe est immuable : autoriser le navigateur à la garder
+        // en cache évite de redescendre les images cid: à chaque ouverture.
+        if (req.query.inline) res.setHeader('Cache-Control', 'private, max-age=86400');
         res
           .type(att.contentType)
           .setHeader(
