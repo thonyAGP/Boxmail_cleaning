@@ -230,6 +230,13 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 a.tab { text-decoration: none; }
 .hub-tabs { margin-bottom: 16px; }
 
+/* Calendrier — vue « À venir » (liste chronologique, Phase 3). */
+.cal-up-day { padding: 6px 0 10px; }
+.cal-up-day + .cal-up-day { border-top: 1px solid var(--border); }
+.cal-up-date { font-weight: 600; margin: 6px 0 4px; display: flex; gap: 8px; align-items: center; }
+.cal-up-date.overdue { color: var(--red); }
+.cal-up-row { display: flex; gap: 8px; align-items: center; padding: 4px 0; flex-wrap: wrap; }
+
 /* Groupes repliables de la sidebar (Dossiers mail, Plus). */
 .side-toggle { cursor: pointer; user-select: none; }
 .side-toggle:hover { color: var(--accent); }

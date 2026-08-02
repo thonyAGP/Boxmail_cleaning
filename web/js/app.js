@@ -882,7 +882,10 @@ async function renderToday() {
       <div class="panel-body">
         ${t.todo.total ? `<div class="ta-hero">
           <div><strong>${fmtNum(t.todo.total)} action(s) à traiter</strong>
-            <span class="muted">— environ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min</span></div>
+            <span class="muted">— environ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min</span>
+            ${t.todo.total > 3 ? `<div class="muted" style="font-size:12px; margin-top:2px">Peu de temps ? Traite juste l'essentiel :
+              <button class="btn btn-sm" data-todo-mins="5">5 min</button>
+              <button class="btn btn-sm" data-todo-mins="15">15 min</button></div>` : ''}</div>
           <button class="btn btn-primary" id="todo-assist"
             title="Une action à la fois, avec les bons boutons : répondre, reporter, confirmer, classer…">Commencer</button>
         </div>` : ''}
@@ -932,6 +935,12 @@ async function renderToday() {
     btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
   });
   $('#todo-assist')?.addEventListener('click', () => startTodoAssistant(t));
+  // « Tu as combien de temps ? » : la file est bornée aux actions les plus
+  // urgentes qui tiennent dans le temps choisi (~1,5 min par action).
+  document.querySelectorAll('[data-todo-mins]').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      startTodoAssistant(t, { limit: Math.max(1, Math.floor(Number(btn.dataset.todoMins) / 1.5)) }));
+  });
   $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
 }
 
@@ -940,13 +949,29 @@ async function renderToday() {
 // « je t'assiste ». L'assistant présente chaque action UNE PAR UNE avec les
 // bons boutons selon sa nature — répondre / reporter / confirmer / classer —
 // au lieu de laisser l'utilisateur naviguer dans des listes.
-function startTodoAssistant(t) {
-  const queue = [
+function startTodoAssistant(t, { limit } = {}) {
+  // File de missions UNIFIÉE (Phase 3) : toutes catégories mélangées, triées
+  // par urgence — un retard passe devant, une échéance qui approche grimpe,
+  // l'ancienneté départage. Les poids sont grossiers à dessein : il s'agit de
+  // choisir par quoi COMMENCER, pas de noter les mails.
+  const urgency = ({ kind, x }) => {
+    if (kind === 'deadline') {
+      const daysLeft = (new Date(x.date).getTime() - Date.now()) / 86_400_000;
+      return 80 - Math.max(-10, Math.min(daysLeft, 30)) * 2; // passée > imminente > lointaine
+    }
+    const waited = Math.min((x.waitingHours ?? 0) / 24, 10); // plafonné : 10 j comptent comme 10
+    if (kind === 'reply') return 50 + (x.overdue ? 50 : 0) + waited;
+    if (kind === 'invoice') return 60;
+    return 40 + (x.overdue ? 30 : 0) + waited; // followup
+  };
+  let queue = [
     ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
     ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
     ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
     ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
-  ];
+  ].sort((a, b) => urgency(b) - urgency(a));
+  const totalActions = queue.length;
+  if (limit) queue = queue.slice(0, limit);
   if (queue.length === 0) return;
   let idx = 0;
   let treated = 0;
@@ -965,10 +990,12 @@ function startTodoAssistant(t) {
   overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
 
   const finish = () => {
+    const leftOut = totalActions - queue.length;
     $('#ta-title').textContent = 'C\'est bon pour aujourd\'hui 🎉';
     $('#ta-body').innerHTML = `<div class="empty" style="font-size:15px">
       ${treated ? `Tu as traité <strong>${fmtNum(treated)}</strong> action(s)` : 'Rien de traité cette fois'}
-      ${passed ? ` · ${fmtNum(passed)} remise(s) à plus tard — elles restent dans « À faire »` : ''}.<br>
+      ${passed ? ` · ${fmtNum(passed)} remise(s) à plus tard — elles restent dans « À faire »` : ''}.
+      ${leftOut > 0 ? `<br>${fmtNum(leftOut)} action(s) moins urgente(s) attendent dans la liste — rien n'est perdu.` : ''}<br>
       <span class="muted" style="font-size:12.5px">Tout est journalisé dans le
       <a href="#/operations">📒 Journal d'activité</a>.</span></div>`;
     $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">Fermer</button>';
@@ -4328,6 +4355,21 @@ const VERIFY_VERDICT_BADGES = {
   unsure: '<span class="badge">? Ne sais pas</span>',
 };
 
+// Mode de vérification (Phase 3) : « une à la fois » par défaut — l'écran
+// liste ressemblait à une tâche d'annotation de données. Mémorisé localement.
+function verifyMode() {
+  try { return localStorage.getItem('verify-mode') === 'list' ? 'list' : 'guided'; } catch { return 'guided'; }
+}
+function setVerifyMode(mode) {
+  try { localStorage.setItem('verify-mode', mode); } catch { /* privé */ }
+  updateVerifyModeButton();
+  renderVerifyBody();
+}
+function updateVerifyModeButton() {
+  const btn = $('#verify-mode-toggle');
+  if (btn) btn.textContent = verifyMode() === 'guided' ? 'Voir toute la liste' : 'Mode guidé (une à la fois)';
+}
+
 async function renderVerify() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
@@ -4335,10 +4377,16 @@ async function renderVerify() {
       <div class="sub">Contrôle qualité : quelques mails tirés AU HASARD dans chaque moteur d'analyse.
       Dis si l'assistant a bon — tes corrections améliorent les catégories, les priorités et les listes.
       Rien n'est supprimé ici.</div></div>
-    <div class="head-actions"><button class="btn" id="verify-refresh">🎲 Nouvel échantillon</button></div></div>
+    <div class="head-actions">
+      <button class="btn" id="verify-mode-toggle"></button>
+      <button class="btn" id="verify-refresh">🎲 Nouvel échantillon</button>
+    </div></div>
     <div id="verify-stats"></div>
     <div id="verify-body"><div class="empty"><span class="spinner"></span>Tirage d'un échantillon…</div></div>`;
   $('#verify-refresh').addEventListener('click', loadVerify);
+  updateVerifyModeButton();
+  $('#verify-mode-toggle').addEventListener('click', () =>
+    setVerifyMode(verifyMode() === 'guided' ? 'list' : 'guided'));
   await loadVerify();
 }
 
@@ -4364,6 +4412,15 @@ function renderVerifyStats(stats) {
     <div class="panel-body" style="display:flex; gap:10px; flex-wrap:wrap">${rated.map(chip).join('')}</div></div>`;
 }
 
+const VERIFY_HINTS = {
+  reply: 'Mails où l\'assistant pense que quelqu\'un attend TA réponse.',
+  important: 'Mails jugés importants (score ≥ 40) — lus ou non.',
+  newsletter: 'Expéditeurs classés « newsletter » par la machine.',
+  notification: 'Expéditeurs classés « notification / robot » par la machine.',
+  cleanup: 'Mails que les stratégies de nettoyage viseraient aujourd\'hui.',
+};
+const VERIFY_ICONS = { reply: '↩️', important: '⭐', newsletter: '📰', notification: '🤖', cleanup: '🧹' };
+
 async function loadVerify() {
   const body = $('#verify-body');
   if (!body) return;
@@ -4376,19 +4433,113 @@ async function loadVerify() {
   }
   if (!body.isConnected) return;
   renderVerifyStats(verifySample.stats);
+  renderVerifyBody();
+}
 
-  const engineHints = {
-    reply: 'Mails où l\'assistant pense que quelqu\'un attend TA réponse.',
-    important: 'Mails jugés importants (score ≥ 40) — lus ou non.',
-    newsletter: 'Expéditeurs classés « newsletter » par la machine.',
-    notification: 'Expéditeurs classés « notification / robot » par la machine.',
-    cleanup: 'Mails que les stratégies de nettoyage viseraient aujourd\'hui.',
+function renderVerifyBody() {
+  if (!verifySample || !$('#verify-body')) return;
+  if (verifyMode() === 'guided') renderVerifyGuided();
+  else renderVerifyList();
+}
+
+/** Enregistre un verdict (partagé entre la liste et le mode guidé). */
+async function verifyRecord(item, verdict, reason) {
+  const r = await api.reviewFeedback({
+    engine: item.engine,
+    account: item.account,
+    messageId: item.messageId,
+    verdict,
+    reason: reason ?? null,
+    claim: item.claim,
+  });
+  item.verdict = verdict;
+  item.verdictReason = reason ?? null;
+  if (r?.stats) renderVerifyStats(r.stats);
+}
+
+// Mode guidé (Phase 3) : UNE décision à la fois — correct ou pas.
+function renderVerifyGuided() {
+  const body = $('#verify-body');
+  const queue = [];
+  for (const e of verifySample.engines) {
+    for (const it of e.items) if (!it.verdict) queue.push({ it, label: e.label });
+  }
+  let idx = 0;
+  const counts = { correct: 0, incorrect: 0, unsure: 0, skipped: 0 };
+
+  const finish = () => {
+    const total = counts.correct + counts.incorrect + counts.unsure;
+    body.innerHTML = `<div class="panel"><div class="panel-body empty" style="font-size:15px">
+      ${total ? `🎯 C'est vérifié : <strong>${fmtNum(counts.correct)}</strong> juste(s),
+        <strong>${fmtNum(counts.incorrect)}</strong> à corriger, ${fmtNum(counts.unsure)} incertaine(s)${counts.skipped ? `, ${fmtNum(counts.skipped)} passée(s)` : ''}.
+        Chaque avis affine la précision mesurée ci-dessus.`
+        : 'Rien à vérifier dans cet échantillon — tout a déjà reçu ton avis.'}
+      <br><button class="btn btn-primary btn-sm" id="vg-again" style="margin-top:10px">🎲 Nouvel échantillon</button></div></div>`;
+    $('#vg-again')?.addEventListener('click', loadVerify);
   };
-  const icons = { reply: '↩️', important: '⭐', newsletter: '📰', notification: '🤖', cleanup: '🧹' };
 
+  const step = () => {
+    if (idx >= queue.length) { finish(); return; }
+    const { it, label } = queue[idx];
+    body.innerHTML = `<div class="panel">
+      <div class="panel-head"><h2>Vérification ${idx + 1} sur ${queue.length}</h2>
+        <span class="muted" style="font-size:12px">${VERIFY_ICONS[it.engine] ?? ''} ${esc(label)} — ${esc(VERIFY_HINTS[it.engine] ?? '')}</span></div>
+      <div class="panel-body">
+        <div style="font-size:15px; margin-bottom:10px"><strong>L'assistant pense que :</strong> ${esc(it.claim)}</div>
+        <div><strong>${esc(it.subject)}</strong> ${it.isSeen ? '' : '<span class="badge blue">non lu</span>'}</div>
+        <div class="muted" style="font-size:12.5px">${esc(it.fromName || it.fromEmail)} · ${fmtDate(it.date)} ${accountChip(it.account)}</div>
+        <div style="margin:10px 0"><span class="openable" id="vg-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>
+        <div id="vg-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center"></div>
+      </div></div>`;
+    $('#vg-read')?.addEventListener('click', () => openReaderFor(it, {}));
+
+    const zone = $('#vg-actions');
+    const guard = (fn) => async () => {
+      zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      try { await fn(); } catch (err) { alert(err.message); actions(); }
+    };
+    const actions = () => {
+      zone.innerHTML = `<button class="btn btn-sm btn-primary" id="vg-ok">✓ Oui, c'est juste</button>
+        <button class="btn btn-sm" id="vg-ko">✗ Non, corriger</button>
+        <button class="btn btn-sm" id="vg-idk" title="Impossible à dire sans plus de contexte">? Je ne sais pas</button>
+        <button class="btn btn-sm" id="vg-skip" style="margin-left:auto" title="Décision remise à plus tard">⏭️ Passer</button>`;
+      $('#vg-ok').addEventListener('click', guard(async () => { await verifyRecord(it, 'correct'); counts.correct++; idx++; step(); }));
+      $('#vg-idk').addEventListener('click', guard(async () => { await verifyRecord(it, 'unsure'); counts.unsure++; idx++; step(); }));
+      $('#vg-skip').addEventListener('click', () => { counts.skipped++; idx++; step(); });
+      $('#vg-ko').addEventListener('click', () => {
+        const reasons = VERIFY_REASONS[it.engine] ?? [{ label: 'Autre raison' }];
+        zone.innerHTML = `<span class="muted" style="font-size:12px">Qu'est-ce qui cloche ?</span>
+          ${reasons.map((r, ri) => `<button class="btn btn-sm vg-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
+          <button class="btn btn-sm" id="vg-cancel" title="Annuler">↩</button>`;
+        $('#vg-cancel').addEventListener('click', actions);
+        zone.querySelectorAll('.vg-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
+          const r = reasons[Number(btn.dataset.ri)];
+          const doAction = r.action && (!r.confirm || confirm(r.confirm)) &&
+            !(r.action === 'dismissReply' && !it.threadId);
+          await verifyRecord(it, 'incorrect', r.label);
+          if (doAction) {
+            try {
+              await applyVerifyCorrection(it, r.action);
+            } catch (err) {
+              alert(`Verdict enregistré, mais la correction a échoué : ${err.message}`);
+            }
+          }
+          counts.incorrect++;
+          idx++;
+          step();
+        })));
+      });
+    };
+    actions();
+  };
+  step();
+}
+
+function renderVerifyList() {
+  const body = $('#verify-body');
   body.innerHTML = verifySample.engines.map((e, ei) => `<div class="panel">
-    <div class="panel-head"><h2>${icons[e.engine] ?? ''} ${esc(e.label)}</h2>
-      <span class="muted" style="font-size:12px">${esc(engineHints[e.engine] ?? '')}</span></div>
+    <div class="panel-head"><h2>${VERIFY_ICONS[e.engine] ?? ''} ${esc(e.label)}</h2>
+      <span class="muted" style="font-size:12px">${esc(VERIFY_HINTS[e.engine] ?? '')}</span></div>
     <div class="panel-body">
       ${e.items.length === 0 ? '<div class="empty">Rien à vérifier — ce moteur ne détecte rien en ce moment.</div>' : ''}
       ${e.items.map((it, i) => `<div class="today-row" style="display:flex; align-items:flex-start; gap:10px; padding:9px 0; border-bottom:1px solid var(--border)">
@@ -4432,18 +4583,8 @@ function renderVerifyZone(ei, i) {
     <button class="btn btn-sm v-idk" title="Impossible à dire">?</button>`;
 
   const record = async (verdict, reason) => {
-    const r = await api.reviewFeedback({
-      engine: item.engine,
-      account: item.account,
-      messageId: item.messageId,
-      verdict,
-      reason: reason ?? null,
-      claim: item.claim,
-    });
-    item.verdict = verdict;
-    item.verdictReason = reason ?? null;
+    await verifyRecord(item, verdict, reason);
     renderVerifyZone(ei, i);
-    if (r?.stats) renderVerifyStats(r.stats);
   };
   const guard = (fn) => async () => {
     zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
@@ -5534,7 +5675,12 @@ function renderSettingsBody() {
 // ------------------------------------------------- Calendrier des échéances (L5.7)
 // Vue mois posée sur les données EXISTANTES (/api/attention/deadlines +
 // /api/tasks) : aucun nouveau backend, rien n'est écrit depuis cet écran.
-const calState = { year: null, month: null, selected: null, deadlines: [], tasks: [] };
+const calState = {
+  year: null, month: null, selected: null, deadlines: [], tasks: [],
+  // Vue par défaut (Phase 3) : « À venir » — la grille d'un mois creux, c'est
+  // surtout du vide ; une liste chronologique dit tout de suite ce qui arrive.
+  view: (() => { try { return localStorage.getItem('cal-view') === 'month' ? 'month' : 'upcoming'; } catch { return 'upcoming'; } })(),
+};
 
 const CAL_TYPE_EMOJI = { payment: '💶', document: '📄', appointment: '📅', renewal: '🔁', other: '📌' };
 
@@ -5582,9 +5728,109 @@ function calEventsByDay() {
   return map;
 }
 
+function calViewTabs() {
+  return `<div class="tabs" style="margin-bottom:10px">
+    <button class="tab ${calState.view === 'upcoming' ? 'active' : ''}" data-cal-view="upcoming">À venir</button>
+    <button class="tab ${calState.view === 'month' ? 'active' : ''}" data-cal-view="month">Mois</button>
+  </div>`;
+}
+
+function bindCalViewTabs(root) {
+  root.querySelectorAll('[data-cal-view]').forEach((b) => b.addEventListener('click', () => {
+    calState.view = b.dataset.calView;
+    try { localStorage.setItem('cal-view', calState.view); } catch { /* privé */ }
+    renderCalendarBody();
+  }));
+}
+
+// Vue « À venir » : les 30 prochains jours en liste chronologique (+ ce qui
+// est déjà en retard), groupés par jour. Lecture seule, comme la grille.
+function renderCalendarUpcoming(body) {
+  const now0 = new Date();
+  now0.setHours(0, 0, 0, 0);
+  const horizon = now0.getTime() + 30 * 86_400_000;
+  const todayKey = calDateKey(new Date());
+  const tomorrowKey = calDateKey(new Date(now0.getTime() + 86_400_000));
+
+  const entries = [
+    ...calState.deadlines
+      .filter((x) => x.status === 'proposed' || x.status === 'confirmed')
+      .map((x) => ({ kind: 'deadline', date: new Date(x.date), item: x })),
+    ...calState.tasks.map((t) => ({ kind: 'task', date: new Date(t.dueDate), item: t })),
+  ]
+    .filter((e) => e.date.getTime() <= horizon)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const byDay = new Map();
+  for (const e of entries) {
+    const key = calDateKey(e.date);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(e);
+  }
+
+  const flat = []; // pour retrouver l'entrée cliquée
+  const row = (e) => {
+    const i = e.item;
+    const idx = flat.push(e) - 1;
+    if (e.kind === 'task') {
+      return `<div class="cal-up-row">
+        <span class="badge gray">☑️ tâche</span>
+        <span>${esc(i.title)}</span>
+        ${i.account ? accountChip(i.account) : ''}
+      </div>`;
+    }
+    const type = DEADLINE_TYPES[i.type] ?? DEADLINE_TYPES.other;
+    const canOpen = i.uid != null && i.folder;
+    return `<div class="cal-up-row">
+      <span class="badge ${type.badge}">${type.label}</span>
+      <span class="${canOpen ? 'openable' : ''}" ${canOpen ? `data-cal-up="${idx}" title="Lire le mail d'origine"` : ''}>${esc(i.title)}</span>
+      ${i.status === 'proposed' ? '<a class="badge orange" href="#/deadlines" title="Confirme ou écarte cette date depuis l\'écran Dates à confirmer" style="text-decoration:none">à confirmer</a>' : '<span class="badge blue">confirmée</span>'}
+      ${accountChip(i.account)}
+    </div>`;
+  };
+
+  const dayBlock = (key, evs) => {
+    const d = new Date(`${key}T12:00:00`);
+    const overdue = key < todayKey;
+    const label = key === todayKey ? 'Aujourd\'hui'
+      : key === tomorrowKey ? 'Demain'
+      : d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    return `<div class="cal-up-day">
+      <div class="cal-up-date ${overdue ? 'overdue' : ''}" style="text-transform:capitalize">${esc(label)}
+        ${overdue ? '<span class="badge red">en retard</span>' : ''}</div>
+      ${evs.map(row).join('')}
+    </div>`;
+  };
+
+  body.innerHTML = `${calViewTabs()}
+    <div class="panel"><div class="panel-body">
+      ${byDay.size === 0
+        ? '<div class="empty">Rien dans les 30 prochains jours. 🎉 Les dates détectées dans tes mails apparaîtront ici.</div>'
+        : [...byDay.entries()].map(([key, evs]) => dayBlock(key, evs)).join('')}
+    </div></div>
+    <div class="muted" style="font-size:12.5px">🛟 Lecture seule : confirme ou écarte les dates
+      depuis <a href="#/deadlines">📅 Dates à confirmer</a>.</div>`;
+
+  bindCalViewTabs(body);
+  body.querySelectorAll('[data-cal-up]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const x = flat[Number(el.dataset.calUp)]?.item;
+      if (!x) return;
+      openReaderFor(
+        { ...x, subject: x.subject ?? x.title, date: x.msgDate ?? x.date },
+        { onRemoved: () => renderCalendar() },
+      );
+    });
+  });
+}
+
 function renderCalendarBody() {
   const body = $('#cal-body');
   if (!body) return;
+  if (calState.view === 'upcoming') {
+    renderCalendarUpcoming(body);
+    return;
+  }
   const { year, month } = calState;
   const events = calEventsByDay();
   const todayKey = calDateKey(new Date());
@@ -5622,7 +5868,7 @@ function renderCalendarBody() {
   }
 
   const dows = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
-  body.innerHTML = `
+  body.innerHTML = `${calViewTabs()}
     <div class="cal-layout">
       <div>
         <div class="cal-head">
@@ -5667,6 +5913,7 @@ function renderCalendarBody() {
       renderCalendarBody();
     });
   });
+  bindCalViewTabs(body);
 
   renderCalendarSide(events);
 }
