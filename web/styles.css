@@ -717,13 +717,15 @@ th.sortable:hover { color: var(--primary); }
   display: flex; align-items: center; gap: 8px; color: inherit;
   text-decoration: none; flex: 1; min-width: 0;
 }
+/* Chevron d'expand des comptes : même langage que « DOSSIERS MAIL »,
+   sans boîte autour — juste un chevron qui tourne. */
 .side-caret {
-  width: 18px; height: 18px; flex-shrink: 0; border-radius: var(--radius-sm);
-  border: 1px solid var(--sidebar-border); background: transparent; color: var(--sidebar-muted);
-  font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
+  width: 16px; height: 20px; flex-shrink: 0; border-radius: var(--radius-sm);
+  border: none; background: transparent; color: var(--sidebar-muted);
+  font-size: 10px; line-height: 20px; cursor: pointer; padding: 0; text-align: center;
 }
-.side-caret:hover { background: var(--navy-2); color: #fff; border-color: var(--sidebar-muted); }
-.side-folders { margin: 0 0 4px 20px; border-left: 1px solid var(--sidebar-border); }
+.side-caret:hover { background: var(--navy-2); color: #fff; }
+.side-folders { margin: 2px 0 8px 25px; border-left: 1px solid var(--sidebar-border); }
 .side-folder {
   display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px;
   color: var(--sidebar-muted); font-size: 12.5px; cursor: pointer; border-radius: 0 6px 6px 0;

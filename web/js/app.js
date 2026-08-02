@@ -50,7 +50,7 @@ function accountChip(slug, { onDark = false } = {}) {
 }
 let smtpEnabled = false; // renseigné par /api/me au chargement
 
-// Badge « 🗂️ Règles » : suggestions en attente de validation (L7).
+// Badge « Règles » : suggestions en attente de validation (L7).
 function refreshRulesBadge() {
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   Promise.all(accounts.map((slug) => api.rules(slug).catch(() => ({ rules: [] }))))
@@ -63,7 +63,7 @@ function refreshRulesBadge() {
     });
 }
 
-// Badge « 💡 Règles proposées » (A6) : ce que l'assistant a appris de tes habitudes.
+// Badge « Règles proposées » (A6) : ce que l'assistant a appris de tes habitudes.
 function refreshSuggestionsBadge() {
   api.suggestions().then((s) => {
     const b = $('#suggestions-badge');
@@ -73,7 +73,7 @@ function refreshSuggestionsBadge() {
   }).catch(() => {});
 }
 
-// Badge « ⭐ Mails suivis » de la sidebar (L5.13).
+// Badge « Mails suivis » de la sidebar (L5.13).
 function refreshFlaggedBadge() {
   api.messagesUnified({ role: 'flagged', limit: 1 }).then((d) => {
     const b = $('#flagged-badge');
@@ -90,7 +90,7 @@ function installGlobalUx() {
   globalUxInstalled = true;
 
   // Ouvrir un mail listé dans le journal d'activité (panneau « Activité
-  // récente » du tableau de bord ET écran 📜 Journal). Délégué : les lignes
+  // récente » du tableau de bord ET écran Journal). Délégué : les lignes
   // sont réécrites à chaque rafraîchissement, un écouteur par ligne serait
   // reperdu à chaque fois.
   document.addEventListener('click', (e) => {
@@ -124,12 +124,12 @@ function installGlobalUx() {
     closeModal();
   });
 
-  // Bouton ⬆ retour en haut sur les longues listes.
+  // Bouton retour en haut sur les longues listes.
   const topBtn = document.createElement('button');
   topBtn.id = 'scroll-top';
   topBtn.className = 'scroll-top hidden';
   topBtn.title = 'Revenir en haut de la page';
-  topBtn.textContent = '⬆';
+  topBtn.textContent = '';
   topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
   document.body.appendChild(topBtn);
   window.addEventListener('scroll', () => {
@@ -195,7 +195,7 @@ async function showApp() {
   api.version().then((v) => {
     serverVersion = v;
     $('#version-line').textContent =
-      `version ${v.commit} · ${v.date}` + (v.supervised ? '' : ' · ⚠️ non supervisé');
+      `version ${v.commit} · ${v.date}` + (v.supervised ? '' : ' · non supervisé');
   }).catch(() => {});
   await refreshOverview();
   installGlobalUx();
@@ -222,7 +222,7 @@ async function refreshTasksBadge(data) {
   }
 }
 
-// Badge « importance haute » (score ≥ 70) sur le lien ⭐ À ne pas manquer.
+// Badge « importance haute » (score ≥ 70) sur le lien À ne pas manquer.
 async function refreshImportantBadge(data) {
   try {
     const d = data ?? (await api.important());
@@ -292,13 +292,13 @@ function startJobWatcher() {
 }
 
 function jobLabel(kind) {
-  if (kind.startsWith('sync:')) return `🔄 Sync ${kind.slice(5)}`;
-  if (kind.startsWith('cleanup:')) return `🧹 Nettoyage ${kind.slice(8)}`;
+  if (kind.startsWith('sync:')) return `Sync ${kind.slice(5)}`;
+  if (kind.startsWith('cleanup:')) return `Nettoyage ${kind.slice(8)}`;
   if (kind.startsWith('enroll:')) return `＋ Ajout ${kind.slice(7)}`;
-  if (kind.startsWith('deadlines:')) return `📅 Détection échéances ${kind.slice(10)}`;
-  if (kind === 'sync-all') return '🔄 Sync de toutes les boîtes';
-  if (kind === 'update') return '⬆️ Mise à jour';
-  return `⚙️ ${kind}`;
+  if (kind.startsWith('deadlines:')) return `Détection échéances ${kind.slice(10)}`;
+  if (kind === 'sync-all') return 'Sync de toutes les boîtes';
+  if (kind === 'update') return 'Mise à jour';
+  return `${kind}`;
 }
 
 async function pollJobs() {
@@ -354,7 +354,7 @@ async function pollJobs() {
     });
   }
 
-  // Badge ⏳ sur les comptes occupés dans la sidebar.
+  // Badge sur les comptes occupés dans la sidebar.
   document.querySelectorAll('#accounts-nav [data-account]').forEach((a) => {
     const slug = a.dataset.account;
     const busy = running.some(
@@ -367,7 +367,7 @@ async function pollJobs() {
     if (busy) {
       const s = document.createElement('span');
       s.className = 'badge orange sync-badge';
-      s.textContent = '⏳';
+      s.textContent = '';
       a.appendChild(s);
     }
   });
@@ -422,7 +422,7 @@ function sideFolderList(slug) {
     .map(
       (f) => `<a class="side-folder" data-goto-folder="${esc(f.path)}" data-goto-account="${esc(slug)}"
         title="${esc(f.path)} (${fmtNum(f.messageCount)} mails)">
-        <span class="side-folder-name">${FOLDER_ROLE_EMOJI[f.role] ?? '📂'} ${esc(f.name || f.path)}</span>
+        <span class="side-folder-name">${esc(f.name || f.path)}</span>
         ${f.unseenCount ? `<span class="badge blue">${fmtNum(f.unseenCount)}</span>` : ''}
       </a>`,
     )
@@ -440,7 +440,7 @@ function renderAccountsNav() {
     return `<div class="side-acct">
       <div class="side-link" data-account="${esc(e.account)}">
         <button class="side-caret" data-toggle="${esc(e.account)}"
-          title="${open ? 'Replier' : 'Déplier'} les dossiers de ${esc(e.account)}">${open ? '−' : '+'}</button>
+          title="${open ? 'Replier' : 'Déplier'} les dossiers de ${esc(e.account)}">${open ? '▾' : '▸'}</button>
         <a href="#/account/${esc(e.account)}" class="side-acct-link" title="${esc(e.username)}">
           <span class="acct-dot" style="background:${accountColor(e.account)}"></span>
           <span class="account-email">${esc(e.account)}</span></a>
@@ -605,21 +605,21 @@ function installSideToggles() {
 // portent simplement une barre d'onglets commune en tête d'écran.
 const HUBS = {
   todo: [
-    ['replies', '#/replies', '↩️ À répondre'],
-    ['followups', '#/followups', '⏰ À relancer'],
-    ['important', '#/important', '⭐ À ne pas manquer'],
-    ['deadlines', '#/deadlines', '📅 Dates'],
-    ['tasks', '#/tasks', '☑️ Mes tâches'],
+    ['replies', '#/replies', 'À répondre'],
+    ['followups', '#/followups', 'À relancer'],
+    ['important', '#/important', 'À ne pas manquer'],
+    ['deadlines', '#/deadlines', 'Dates'],
+    ['tasks', '#/tasks', 'Mes tâches'],
   ],
   clean: [
-    ['cleanup', '#/cleanup', '🧹 Nettoyage rapide'],
-    ['unsubscribe', '#/unsubscribe', '🚫 Désinscriptions'],
-    ['bigclean', '#/bigclean', '🧺 Libérer de l\'espace'],
+    ['cleanup', '#/cleanup', 'Nettoyage rapide'],
+    ['unsubscribe', '#/unsubscribe', 'Désinscriptions'],
+    ['bigclean', '#/bigclean', 'Libérer de l\'espace'],
   ],
   organize: [
-    ['rules', '#/rules', '🗂️ Classement automatique'],
-    ['suggestions', '#/suggestions', '💡 Règles proposées'],
-    ['verify', '#/verify', '🔬 Corriger l\'assistant'],
+    ['rules', '#/rules', 'Classement automatique'],
+    ['suggestions', '#/suggestions', 'Règles proposées'],
+    ['verify', '#/verify', 'Corriger l\'assistant'],
   ],
 };
 
@@ -699,13 +699,13 @@ function quotaColor(pct) {
 // affiché en clair, sinon l'utilisateur ne peut rien en conclure.
 function quotaCell(q, note) {
   if (!q) {
-    return `<span class="muted" style="font-size:12px" title="${esc(note || '')}">inconnu — ${esc(note || 'lance une synchronisation (ou 📏 Quota dans Paramètres)')}</span>`;
+    return `<span class="muted" style="font-size:12px" title="${esc(note || '')}">inconnu — ${esc(note || 'lance une synchronisation (ou Quota dans Paramètres)')}</span>`;
   }
   const color = quotaColor(q.pct);
   return `<div class="quota-cell" title="${fmtSize(q.usedBytes)} utilisés sur ${fmtSize(q.limitBytes)}">
     <div class="bar-track"><div class="bar-fill" style="width:${q.pct}%; background:${color}"></div></div>
     <span style="white-space:nowrap; font-size:12px; ${q.pct >= 90 ? `color:${color}; font-weight:600` : ''}">
-      ${fmtSize(q.usedBytes)} / ${fmtSize(q.limitBytes)} · ${q.pct}%${q.pct >= 90 ? ` ⚠️ libre : ${fmtSize(q.freeBytes)}` : ''}</span>
+      ${fmtSize(q.usedBytes)} / ${fmtSize(q.limitBytes)} · ${q.pct}%${q.pct >= 90 ? ` libre : ${fmtSize(q.freeBytes)}` : ''}</span>
   </div>`;
 }
 
@@ -721,10 +721,10 @@ function newMailsDelta(nm) {
 // ------------------------------------------------- Aujourd'hui (A2 — Cap V3)
 // L'accueil orienté ACTIONS : on ne montre pas des mails, on dit quoi faire.
 const NOISE_LABELS = {
-  newsletter: ['📰', 'Newsletters'],
-  notification: ['🤖', 'Notifications'],
-  social: ['💬', 'Réseaux sociaux'],
-  promo: ['📢', 'Publicités & promos'],
+  newsletter: ['', 'Newsletters'],
+  notification: ['', 'Notifications'],
+  social: ['', 'Réseaux sociaux'],
+  promo: ['', 'Publicités & promos'],
 };
 
 function daysAgo(hours) {
@@ -732,7 +732,7 @@ function daysAgo(hours) {
   return d <= 0 ? "aujourd'hui" : d === 1 ? 'depuis 1 jour' : `depuis ${d} jours`;
 }
 
-// Une ligne d'action : phrase + chip de la boîte + 📖 si un mail est lisible.
+// Une ligne d'action : phrase + chip de la boîte + si un mail est lisible.
 // Les items lisibles sont gardés en mémoire (pas dans le HTML : les sujets
 // contiennent des apostrophes/guillemets qui casseraient les attributs).
 let todayReaderRefs = [];
@@ -744,7 +744,7 @@ function todayRow(html, readerItem, badge = '') {
   if (readable) {
     todayReaderRefs.push(readerItem);
     idx = todayReaderRefs.length - 1;
-    readBtn = `<button class="btn btn-sm today-read" data-idx="${idx}">📖 Lire</button>`;
+    readBtn = `<button class="btn btn-sm today-read" data-idx="${idx}">Lire</button>`;
   }
   // DATE DE RÉCEPTION. Aucune des quatre listes de l'accueil n'en affichait :
   // un mail de 2020 se présentait exactement comme un mail de ce mois-ci, alors
@@ -755,7 +755,7 @@ function todayRow(html, readerItem, badge = '') {
     ? `<span class="muted" style="font-size:11.5px; white-space:nowrap">${fmtDate(readerItem.date)}</span>`
     : '';
   // Le sujet devient cliquable comme partout ailleurs : sur cet écran, seul le
-  // bouton « 📖 Lire » ouvrait le mail — incohérence d'affordance sur la page
+  // bouton « Lire » ouvrait le mail — incohérence d'affordance sur la page
   // la plus consultée. Le bouton reste, pour rester découvrable.
   const corps = readable
     ? `<span class="openable" data-today-open="${idx}">${html}</span>`
@@ -1128,7 +1128,7 @@ function startTodoAssistant(t, { limit } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2 id="ta-title">▶️ On traite ensemble</h2>
+    <div class="modal-head"><h2 id="ta-title">On traite ensemble</h2>
       <button class="modal-close" title="Arrêter (rien n'est perdu : les actions restantes restent listées)">✕</button></div>
     <div class="modal-body" id="ta-body"></div>
     <div class="modal-foot" id="ta-foot"></div>
@@ -1138,13 +1138,13 @@ function startTodoAssistant(t, { limit } = {}) {
 
   const finish = () => {
     const leftOut = totalActions - queue.length;
-    $('#ta-title').textContent = 'C\'est bon pour aujourd\'hui 🎉';
+    $('#ta-title').textContent = 'C\'est bon pour aujourd\'hui ';
     $('#ta-body').innerHTML = `<div class="empty" style="font-size:15px">
       ${treated ? `Tu as traité <strong>${fmtNum(treated)}</strong> action(s)` : 'Rien de traité cette fois'}
       ${passed ? ` · ${fmtNum(passed)} remise(s) à plus tard — elles restent dans « À faire »` : ''}.
       ${leftOut > 0 ? `<br>${fmtNum(leftOut)} action(s) moins urgente(s) attendent dans la liste — rien n'est perdu.` : ''}<br>
       <span class="muted" style="font-size:12.5px">Tout est journalisé dans le
-      <a href="#/operations">📒 Journal d'activité</a>.</span></div>`;
+      <a href="#/operations">Journal d'activité</a>.</span></div>`;
     $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">Fermer</button>';
     $('#ta-close').addEventListener('click', () => { closeModal(); renderToday(); });
   };
@@ -1170,10 +1170,10 @@ function startTodoAssistant(t, { limit } = {}) {
   };
 
   const KIND_LABELS = {
-    reply: ['↩️', 'Réponse attendue'],
-    invoice: ['💶', 'Facture à traiter'],
-    deadline: ['📅', 'Échéance'],
-    followup: ['⏰', 'Relance à faire'],
+    reply: ['', 'Réponse attendue'],
+    invoice: ['', 'Facture à traiter'],
+    deadline: ['', 'Échéance'],
+    followup: ['', 'Relance à faire'],
   };
 
   function step() {
@@ -1205,18 +1205,18 @@ function startTodoAssistant(t, { limit } = {}) {
       </div>
       <div style="font-size:15px; margin-bottom:4px"><strong>${esc(who)}</strong>${who ? ' — ' : ''}« ${esc(title)} »</div>
       <div class="muted" style="font-size:12.5px; margin-bottom:12px">${explain}</div>
-      ${readerItem ? `<div style="margin-bottom:6px"><span class="openable" id="ta-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>` : ''}
+      ${readerItem ? `<div style="margin-bottom:6px"><span class="openable" id="ta-read" style="font-size:13px">Lire le mail avant de décider</span></div>` : ''}
     `;
     $('#ta-read')?.addEventListener('click', () => openReaderFor(readerItem, {}));
 
     const buttons = [];
     if (kind === 'reply') {
-      if (smtpEnabled && readerItem) buttons.push(['↩️ Répondre', 'btn-primary', null, () => { openReaderFor(readerItem, {}); }]);
-      buttons.push(['🚫 Pas de réponse à faire', '', () => api.replyDismiss(x.account, x.threadId)]);
-      buttons.push(['💤 Me le reproposer dans 3 j', '', () => api.replySnooze(x.account, x.threadId, 3)]);
+      if (smtpEnabled && readerItem) buttons.push(['Répondre', 'btn-primary', null, () => { openReaderFor(readerItem, {}); }]);
+      buttons.push(['Pas de réponse à faire', '', () => api.replyDismiss(x.account, x.threadId)]);
+      buttons.push(['Me le reproposer dans 3 j', '', () => api.replySnooze(x.account, x.threadId, 3)]);
     } else if (kind === 'invoice') {
       buttons.push(['✓ C\'est réglé', 'btn-primary', () => api.messageAction(x.account, { folder: x.folder, uid: x.uid, action: 'seen' })]);
-      buttons.push(['☑️ En faire une tâche', '', () => api.taskCreate({
+      buttons.push(['En faire une tâche', '', () => api.taskCreate({
         title: `Payer : ${x.subject}`,
         account: x.account,
         messageRef: { folder: x.folder, uid: x.uid },
@@ -1224,19 +1224,19 @@ function startTodoAssistant(t, { limit } = {}) {
     } else if (kind === 'deadline') {
       if (x.status === 'proposed') {
         buttons.push(['✓ Confirmer cette échéance', 'btn-primary', () => api.deadlineAction(x.account, x.id, 'confirm')]);
-        buttons.push(['🚫 Fausse détection, écarter', '', () => api.deadlineAction(x.account, x.id, 'dismiss')]);
+        buttons.push(['Fausse détection, écarter', '', () => api.deadlineAction(x.account, x.id, 'dismiss')]);
       } else {
         buttons.push(['✓ C\'est fait', 'btn-primary', () => api.deadlineAction(x.account, x.id, 'done')]);
       }
     } else if (kind === 'followup') {
       buttons.push(['✓ Relance faite / plus besoin', 'btn-primary', () => api.followupDismiss(x.account, x.threadId)]);
-      buttons.push(['💤 Me le reproposer dans 3 j', '', () => api.followupSnooze(x.account, x.threadId, 3)]);
+      buttons.push(['Me le reproposer dans 3 j', '', () => api.followupSnooze(x.account, x.threadId, 3)]);
     }
 
     $('#ta-foot').innerHTML = `
       <span class="muted" style="font-size:12px; margin-right:auto">Toutes ces actions sont journalisées et réversibles.</span>
       ${buttons.map(([label, cls], k) => `<button class="btn btn-sm ${cls}" data-ta="${k}">${label}</button>`).join('')}
-      <button class="btn btn-sm" id="ta-skip" title="Décision remise à plus tard — l'action reste dans la liste">⏭️ Passer</button>`;
+      <button class="btn btn-sm" id="ta-skip" title="Décision remise à plus tard — l'action reste dans la liste">Passer</button>`;
     $('#ta-foot').querySelectorAll('[data-ta]').forEach((btn) => {
       const [, , fn, direct] = buttons[Number(btn.dataset.ta)];
       btn.addEventListener('click', () => {
@@ -1266,7 +1266,7 @@ function startNoiseTour(buckets) {
       openNoiseModal(steps[i].bucket, { tour: { index: i + 1, total: steps.length, onNext: advance } });
     } else {
       closeModal();
-      alert(`🧹 Nettoyage guidé terminé${totalDeleted ? ` : ${fmtNum(totalDeleted)} mail(s) à la corbeille (récupérables ~30 j)` : ' — rien n\'a été supprimé'}. Tout est dans le 📒 Journal d'activité.`);
+      alert(`Nettoyage guidé terminé${totalDeleted ? ` : ${fmtNum(totalDeleted)} mail(s) à la corbeille (récupérables ~30 j)` : ' — rien n\'a été supprimé'}. Tout est dans le Journal d'activité.`);
       renderToday();
     }
   };
@@ -1277,7 +1277,7 @@ function startNoiseTour(buckets) {
 // endpoints bulk existants (journalisés), groupés par boîte + dossier.
 async function openNoiseModal(bucket, { tour } = {}) {
   closeModal();
-  const [emoji, label] = NOISE_LABELS[bucket] ?? ['⚪', bucket];
+  const [emoji, label] = NOISE_LABELS[bucket] ?? ['', bucket];
   const overlay = document.createElement('div');
   // under-reader : le panneau de lecture s'ouvre AU-DESSUS de cette modale
   // (on vérifie un mail avant de valider le nettoyage).
@@ -1297,7 +1297,7 @@ async function openNoiseModal(bucket, { tour } = {}) {
   try {
     data = await api.todayNoise(bucket);
   } catch (err) {
-    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#modal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
 
@@ -1332,9 +1332,9 @@ async function openNoiseModal(bucket, { tour } = {}) {
   $('#modal-foot').innerHTML = `
     <span class="muted" style="font-size:12px; margin-right:auto">Corbeille = récupérable ~30 jours, rien n'est effacé définitivement.</span>
     ${tour
-      ? '<button class="btn" id="noise-cancel" title="Cette famille ne bouge pas — on passe à la suivante">⏭️ Passer cette famille</button>'
+      ? '<button class="btn" id="noise-cancel" title="Cette famille ne bouge pas — on passe à la suivante">Passer cette famille</button>'
       : '<button class="btn" id="noise-cancel">Annuler</button>'}
-    <button class="btn btn-primary" id="noise-delete" ${data.items.length ? '' : 'disabled'}>🗑️ Mettre ${fmtNum(data.items.length)} mail(s) à la corbeille</button>`;
+    <button class="btn btn-primary" id="noise-delete" ${data.items.length ? '' : 'disabled'}>Mettre ${fmtNum(data.items.length)} mail(s) à la corbeille</button>`;
   $('#noise-cancel').addEventListener('click', () => {
     if (tour) tour.onNext(0);
     else closeModal();
@@ -1364,12 +1364,12 @@ async function openNoiseModal(bucket, { tour } = {}) {
       }
     }
     if (tour) {
-      if (failed) alert(`⚠️ ${failed} mail(s) en échec (boîte injoignable ?) — on continue le ménage.`);
+      if (failed) alert(`${failed} mail(s) en échec (boîte injoignable ?) — on continue le ménage.`);
       tour.onNext(done);
       return;
     }
     closeModal();
-    alert(`🗑️ ${done} mail(s) mis à la corbeille${failed ? ` — ⚠️ ${failed} en échec (boîte injoignable ?)` : ''}.`);
+    alert(`${done} mail(s) mis à la corbeille${failed ? ` — ${failed} en échec (boîte injoignable ?)` : ''}.`);
     renderToday();
   });
 }
@@ -1378,10 +1378,9 @@ async function openNoiseModal(bucket, { tour } = {}) {
 async function renderDashboard() {
   const main = $('#main');
   const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  main.innerHTML = `<div class="page-head"><div><h1>Bonjour Anthony 👋</h1>
-    <div class="sub">Voici ce qui se passe dans tes boîtes aujourd'hui.</div></div>
+  main.innerHTML = `<div class="page-head"><div><h1>État des comptes</h1>
+    <div class="sub" style="text-transform:capitalize">${esc(today)} — synchronisation, espace, brief et aperçu par boîte.</div></div>
     <div class="head-actions">
-      <span class="btn" style="cursor:default; text-transform:capitalize">🗓️ ${esc(today)}</span>
       <button class="btn btn-primary" id="syncall-btn" title="Synchronise chaque boîte l'une après l'autre, en arrière-plan">Tout synchroniser</button>
       <button class="btn" id="refresh-btn">↻ Actualiser</button>
     </div></div>
@@ -1427,7 +1426,7 @@ async function renderDashboard() {
   body.innerHTML = `
     ${'' /* Les problèmes qui faussent tout le reste s'affichent EN PREMIER
           (revue UX) : boîtes jamais synchronisées, santé du système. */}
-    ${ov.neverSynced.length ? `<div class="notice warn">⚠️ <strong>Boîte(s) jamais synchronisée(s)</strong> :
+    ${ov.neverSynced.length ? `<div class="notice warn"><strong>Boîte(s) jamais synchronisée(s)</strong> :
       ${ov.neverSynced.map((n) => `<strong>${esc(n)}</strong>`).join(', ')} —
       les chiffres ci-dessous peuvent être incomplets.
       <button class="btn btn-sm" id="never-sync-all" style="margin-left:8px">Tout synchroniser</button></div>` : ''}
@@ -1436,7 +1435,7 @@ async function renderDashboard() {
     <div class="panel" id="brief-panel">
       <div class="panel-head">
         <h2 id="brief-toggle" style="cursor:pointer" title="Replier / déplier le brief">
-          <span id="brief-caret">▾</span> ☀️ Brief du jour
+          <span id="brief-caret">▾</span> Brief du jour
           <span class="muted brief-when" id="brief-when"></span></h2>
         <div class="head-actions">
           <select id="brief-type" title="Brief du jour (24 h) ou revue de la semaine (7 jours)">
@@ -1450,22 +1449,22 @@ async function renderDashboard() {
     </div>
 
     <div class="cards">
-      <div class="kpi accent"><div class="kpi-label">✉️ Nouveaux mails aujourd'hui</div>
+      <div class="kpi accent"><div class="kpi-label">Nouveaux mails aujourd'hui</div>
         <div class="kpi-value">${fmtNum(ov.newMails?.today ?? 0)}</div>
         <div class="kpi-sub">${newMailsDelta(ov.newMails)}</div></div>
-      <div class="kpi"><div class="kpi-label">⭐ À ne pas manquer</div>
+      <div class="kpi"><div class="kpi-label">À ne pas manquer</div>
         <div class="kpi-value" id="kpi-important">…</div>
         <div class="kpi-sub">à traiter</div></div>
-      <div class="kpi"><div class="kpi-label">↩️ À répondre</div>
+      <div class="kpi"><div class="kpi-label">À répondre</div>
         <div class="kpi-value" id="kpi-replies">…</div>
         <div class="kpi-sub" id="kpi-replies-sub">&nbsp;</div></div>
-      <div class="kpi orange"><div class="kpi-label">⏰ À relancer</div>
+      <div class="kpi orange"><div class="kpi-label">À relancer</div>
         <div class="kpi-value" id="kpi-followups">…</div>
         <div class="kpi-sub" id="kpi-followups-sub">&nbsp;</div></div>
-      <div class="kpi"><div class="kpi-label">📅 Dates détectées</div>
+      <div class="kpi"><div class="kpi-label">Dates détectées</div>
         <div class="kpi-value" id="kpi-deadlines">…</div>
         <div class="kpi-sub" id="kpi-deadlines-sub">&nbsp;</div></div>
-      <div class="kpi green"><div class="kpi-label">🧹 Supprimables sans risque</div>
+      <div class="kpi green"><div class="kpi-label">Supprimables sans risque</div>
         <div class="kpi-value">${fmtNum(deletable)}</div>
         <div class="kpi-sub"><a href="#/cleanup">voir et nettoyer</a></div></div>
     </div>
@@ -1473,15 +1472,15 @@ async function renderDashboard() {
     ${(() => {
       const full = ov.accounts.filter((a) => a.quota && a.quota.pct >= 90);
       return full.length
-        ? `<div class="notice warn">🚨 Boîte(s) presque pleine(s) :
+        ? `<div class="notice warn">Boîte(s) presque pleine(s) :
           ${full.map((a) => `<strong>${esc(a.account)}</strong> (${a.quota.pct}% — reste ${fmtSize(a.quota.freeBytes)})`).join(', ')}
-          — pense au <a href="#/cleanup">🧹 nettoyage</a>.</div>`
+          — pense au <a href="#/cleanup">nettoyage</a>.</div>`
         : '';
     })()}
     <div class="grid-2">
       <div class="panel">
         <div class="panel-head"><h2>Aperçu par compte</h2>
-          <span class="muted" style="font-size:12px">espace : ⚠️ orange ≥ 90 % · rouge ≥ 95 %</span></div>
+          <span class="muted" style="font-size:12px">espace : orange ≥ 90 % · rouge ≥ 95 %</span></div>
         <div class="panel-body tight"><table>
           <thead><tr><th>Compte</th><th class="num">INBOX</th><th class="num">Non lus</th><th>Espace utilisé</th><th></th></tr></thead>
           <tbody>${ov.accounts
@@ -1499,7 +1498,7 @@ async function renderDashboard() {
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>🧹 Nettoyage rapide</h2>
+        <div class="panel-head"><h2>Nettoyage rapide</h2>
           <span><span class="badge green">${fmtNum(deletable)} mails « sûrs »</span>
           <a class="btn btn-sm" href="#/cleanup" style="margin-left:8px">Voir et nettoyer</a></span></div>
         <div class="panel-body tight">
@@ -1508,12 +1507,12 @@ async function renderDashboard() {
           <tbody>${allCandidates.slice(0, 8).map((c) => `<tr>
             <td>${esc(c.senderName || c.sender)} ${accountChip(c.account)}<br>
               <span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
+            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
             <td><button class="btn btn-sm cleanup-btn" data-account="${esc(c.account)}"
               data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}"
-              title="Ouvre l'aperçu détaillé des mails de cet expéditeur — rien n'est supprimé sans ta confirmation (corbeille, récupérable ~30 j)">🧹 Nettoyer</button></td>
+              title="Ouvre l'aperçu détaillé des mails de cet expéditeur — rien n'est supprimé sans ta confirmation (corbeille, récupérable ~30 j)">Nettoyer</button></td>
           </tr>`).join('')}</tbody></table>
           <div class="panel-body muted" style="font-size:12.5px">« Nettoyer » = aperçu détaillé puis, après TA
           confirmation, déplacement vers la corbeille (récupérable ~30 jours). Rien n'est supprimé définitivement.</div>`}
@@ -1523,19 +1522,19 @@ async function renderDashboard() {
 
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-head"><h2>⭐ À ne pas manquer</h2>
+        <div class="panel-head"><h2>À ne pas manquer</h2>
           <a class="btn btn-sm" href="#/important">Voir tout</a></div>
         <div class="panel-body" id="dash-important"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>↩️ À répondre</h2>
+        <div class="panel-head"><h2>À répondre</h2>
           <a class="btn btn-sm" href="#/replies">Voir tout</a></div>
         <div class="panel-body" id="dash-replies"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>⏰ À relancer</h2>
+        <div class="panel-head"><h2>À relancer</h2>
           <a class="btn btn-sm" href="#/followups">Voir tout</a></div>
         <div class="panel-body" id="dash-followups"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>📅 Dates à venir</h2>
+        <div class="panel-head"><h2>Dates à venir</h2>
           <a class="btn btn-sm" href="#/deadlines">Voir tout</a></div>
         <div class="panel-body" id="dash-deadlines"><span class="spinner"></span></div>
-        <div class="panel-head"><h2>☑️ Mes tâches</h2>
+        <div class="panel-head"><h2>Mes tâches</h2>
           <a class="btn btn-sm" href="#/tasks">Voir tout</a></div>
         <div class="panel-body" id="dash-tasks"><span class="spinner"></span></div>
       </div>
@@ -1567,7 +1566,7 @@ async function renderDashboard() {
       .map((a) => `<strong>${esc(a.account)}</strong> : ${esc(a.message)}`)
       .join(' · ');
     el.innerHTML = `<div class="notice warn">
-      ${h.level === 'error' ? '🚨' : '⚠️'} <strong>L'assistant ne travaille pas normalement</strong> —
+      ${h.level === 'error' ? '' : ''} <strong>L'assistant ne travaille pas normalement</strong> —
       ${lignes}. <a href="#/settings">Voir l'état du système</a>
       <button class="btn btn-sm" id="health-sync" style="margin-left:8px">Tout synchroniser</button></div>`;
     $('#health-sync')?.addEventListener('click', (e) => {
@@ -1633,7 +1632,7 @@ async function renderDashboard() {
         (d.counts.active > 5
           ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 5)} autre(s) — <a href="#/replies">voir tout</a>.</div>`
           : '')
-      : '<div class="empty">🎉 Rien en attente de réponse sur les 60 derniers jours.</div>';
+      : '<div class="empty">Rien en attente de réponse sur les 60 derniers jours.</div>';
     bindOpenables(el, top);
   }).catch(() => {
     const el = $('#dash-replies');
@@ -1663,7 +1662,7 @@ async function renderDashboard() {
         (d.counts.active > 3
           ? `<div class="muted" style="font-size:12px; padding-top:8px">…et ${fmtNum(d.counts.active - 3)} autre(s) — <a href="#/followups">voir tout</a>.</div>`
           : '')
-      : '<div class="empty">👍 Personne à relancer sur les 60 derniers jours.</div>';
+      : '<div class="empty">Personne à relancer sur les 60 derniers jours.</div>';
     bindOpenables(el, top, (i) => ({ ...i, fromName: 'Toi (mail envoyé)', fromEmail: '', isSeen: true }));
   }).catch(() => {
     const el = $('#dash-followups');
@@ -1741,7 +1740,7 @@ function checkForUpdates(container) {
     if (!behind || !container.isConnected) return;
     const el = document.createElement('div');
     el.className = 'notice';
-    el.innerHTML = `⬆️ <strong>Mise à jour disponible</strong> (${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}) :
+    el.innerHTML = `<strong>Mise à jour disponible</strong> (${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}) :
       <span class="muted">${commits.slice(0, 3).map(esc).join(' · ')}</span>
       <button class="btn btn-primary btn-sm update-btn" style="margin-left:10px">Mettre à jour maintenant</button>`;
     container.prepend(el);
@@ -1753,7 +1752,7 @@ function checkForUpdates(container) {
     if (!container.isConnected) return;
     const el = document.createElement('div');
     el.className = 'notice warn';
-    el.innerHTML = `⚠️ <strong>Impossible de vérifier les mises à jour</strong> —
+    el.innerHTML = `<strong>Impossible de vérifier les mises à jour</strong> —
       ${esc(err.message)}.<br><span class="muted" style="font-size:12.5px">Ferme Mail Assistant
     et relance <strong>MailAssistant.bat</strong> : il récupère le code au démarrage.</span>`;
     container.prepend(el);
@@ -1774,7 +1773,7 @@ function bindOpenables(root, items, mapFn) {
 }
 
 // ---------------------------------------------------------------- Brief (L5)
-// Panneau « ☀️ Brief du jour » en tête de dashboard : affiche le dernier brief
+// Panneau « Brief du jour » en tête de dashboard : affiche le dernier brief
 // archivé (aucun calcul au chargement), bouton pour en générer un frais.
 const briefState = { type: 'daily' };
 
@@ -1784,7 +1783,7 @@ function initBriefPanel() {
   typeSel.addEventListener('change', () => {
     briefState.type = typeSel.value === 'weekly' ? 'weekly' : 'daily';
     $('#brief-toggle').innerHTML = `<span id="brief-caret">▾</span> ${
-      briefState.type === 'weekly' ? '📆 Revue de la semaine' : '☀️ Brief du jour'
+      briefState.type === 'weekly' ? 'Revue de la semaine' : 'Brief du jour'
     } <span class="muted brief-when" id="brief-when"></span>`;
     applyBriefCollapsed();
     loadBrief();
@@ -1814,7 +1813,7 @@ async function loadBrief() {
     const { brief } = await api.brief(briefState.type);
     renderBrief(brief);
   } catch (err) {
-    body.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
   }
 }
 
@@ -1831,7 +1830,7 @@ async function generateBriefNow() {
     const { brief } = await api.briefGenerate(briefState.type);
     renderBrief(brief);
   } catch (err) {
-    body.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
   } finally {
     btn.disabled = false;
   }
@@ -1844,7 +1843,7 @@ function renderBrief(b) {
   if (when) when.textContent = b ? `généré le ${fmtDateTime(b.generatedAt)}` : '';
   if (!b) {
     body.innerHTML = `<div class="empty">Aucun brief pour l'instant — clique sur
-      <strong>☀️ Régénérer</strong> pour faire le point sur tes boîtes (instantané,
+      <strong>Régénérer</strong> pour faire le point sur tes boîtes (instantané,
       calculé depuis les mails synchronisés).</div>`;
     return;
   }
@@ -1854,14 +1853,14 @@ function renderBrief(b) {
       ${icon} <strong>${fmtNum(n)}</strong> ${label}</a>`;
 
   const chips = [
-    chip('📥', b.totals.newMessages, `nouveaux (${esc(b.periodLabel)})`, ''),
-    chip('🔵', b.totals.unseenInbox, 'non lus au total', ''),
-    chip('⭐', b.important.high, 'prioritaires', '#/important', b.important.high ? 'hot' : ''),
-    chip('↩️', b.replies.overdue, 'réponses en retard', '#/replies', b.replies.overdue ? 'hot' : ''),
-    chip('⏰', b.followups.overdue, 'relances à faire', '#/followups', b.followups.overdue ? 'hot' : ''),
-    chip('📅', b.deadlines.upcoming, 'échéances < 14 j', '#/deadlines', b.deadlines.toValidate ? 'hot' : ''),
-    ...(b.tasks ? [chip('☑️', b.tasks.todo, 'tâches à faire', '#/tasks', b.tasks.overdue ? 'hot' : '')] : []),
-    chip('🧹', b.cleanup.deletableEstimate, 'mails supprimables', ''),
+    chip('', b.totals.newMessages, `nouveaux (${esc(b.periodLabel)})`, ''),
+    chip('', b.totals.unseenInbox, 'non lus au total', ''),
+    chip('', b.important.high, 'prioritaires', '#/important', b.important.high ? 'hot' : ''),
+    chip('', b.replies.overdue, 'réponses en retard', '#/replies', b.replies.overdue ? 'hot' : ''),
+    chip('', b.followups.overdue, 'relances à faire', '#/followups', b.followups.overdue ? 'hot' : ''),
+    chip('', b.deadlines.upcoming, 'échéances < 14 j', '#/deadlines', b.deadlines.toValidate ? 'hot' : ''),
+    ...(b.tasks ? [chip('', b.tasks.todo, 'tâches à faire', '#/tasks', b.tasks.overdue ? 'hot' : '')] : []),
+    chip('', b.cleanup.deletableEstimate, 'mails supprimables', ''),
   ].join('');
 
   const section = (title, rows) =>
@@ -1920,19 +1919,19 @@ function renderBrief(b) {
       ${fmtNum(b.previousBrief.newMessagesSince)} nouveau(x) mail(s) synchronisé(s).</div>` : ''}
     <div class="grid-2">
       <div>
-        ${section('⭐ À regarder en premier', importantRows)}
-        ${section('📅 Dates proches', deadlineRows)}
+        ${section('À regarder en premier', importantRows)}
+        ${section('Dates proches', deadlineRows)}
       </div>
       <div>
-        ${section('↩️ Réponses en retard', replyRows)}
-        ${section('⏰ À relancer', followupRows)}
+        ${section('Réponses en retard', replyRows)}
+        ${section('À relancer', followupRows)}
       </div>
     </div>
     ${!importantRows.length && !deadlineRows.length && !replyRows.length && !followupRows.length
-      ? '<div class="empty">🎉 Rien d\'urgent : pas de mail important non lu, pas de retard, pas d\'échéance proche.</div>'
+      ? '<div class="empty">Rien d\'urgent : pas de mail important non lu, pas de retard, pas d\'échéance proche.</div>'
       : ''}
     ${b.skippedAccounts.length ? `<div class="notice warn" style="margin-top:10px; margin-bottom:6px">
-      ⚠️ Compte(s) non couvert(s) : ${b.skippedAccounts
+      Compte(s) non couvert(s) : ${b.skippedAccounts
         .map((s) => `<strong>${esc(s.account)}</strong> (${esc(s.error)})`)
         .join(', ')}</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:8px">${accountsLine}</div>`;
@@ -2060,164 +2059,164 @@ function opLine(op) {
   let title;
   switch (op.tool) {
     case 'ui_cleanup_sender':
-      title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille` +
+      title = `<strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille` +
         (p.batch ? ` <span class="muted">(lot ${esc(p.batch)})</span>` : '') +
         (p.batches > 1 ? ` <span class="muted">(en ${fmtNum(p.batches)} lots de 200)</span>` : '');
       break;
     case 'snooze_reply':
-      title = `⏰ Réponse reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
+      title = `Réponse reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
       break;
     case 'dismiss_reply':
-      title = `🔕 Fil ignoré <span class="muted">(pas de réponse nécessaire)</span>`;
+      title = `Fil ignoré <span class="muted">(pas de réponse nécessaire)</span>`;
       break;
     case 'restore_reply':
-      title = `↩️ Fil remis dans « À répondre »`;
+      title = `Fil remis dans « À répondre »`;
       break;
     case 'snooze_followup':
-      title = `⏰ Relance reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
+      title = `Relance reportée de <strong>${fmtNum(p.days ?? '?')} jour(s)</strong>`;
       break;
     case 'mark_followup_done':
       title = `✓ Relance marquée traitée`;
       break;
     case 'restore_followup':
-      title = `↩️ Fil remis dans « À relancer »`;
+      title = `Fil remis dans « À relancer »`;
       break;
     case 'detect_deadlines':
-      title = `📅 <strong>${fmtNum(p.created ?? 0)} échéance(s)</strong> détectée(s) et proposée(s)`;
+      title = `<strong>${fmtNum(p.created ?? 0)} échéance(s)</strong> détectée(s) et proposée(s)`;
       break;
     case 'confirm_deadline':
-      title = `📅 Échéance confirmée`;
+      title = `Échéance confirmée`;
       break;
     case 'dismiss_deadline':
-      title = `📅 Échéance ignorée`;
+      title = `Échéance ignorée`;
       break;
     case 'complete_deadline':
-      title = `📅 Échéance marquée faite`;
+      title = `Échéance marquée faite`;
       break;
     case 'restore_deadline':
-      title = `📅 Échéance rétablie`;
+      title = `Échéance rétablie`;
       break;
     case 'bulk_delete_by_sender':
-      title = `🗑️ <strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> de <strong>${senderLabel}</strong> → corbeille <span class="muted">(via Claude)</span>`;
       break;
     case 'delete_emails':
-      title = `🗑️ <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(via Claude)</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(via Claude)</span>`;
       break;
     case 'ui_delete_message':
-      title = `🗑️ <strong>1 mail</strong> → corbeille <span class="muted">(depuis la recherche)</span>`;
+      title = `<strong>1 mail</strong> → corbeille <span class="muted">(depuis la recherche)</span>`;
       break;
     case 'ui_move_message':
-      title = `📦 <strong>1 mail</strong> déplacé vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(depuis la recherche)</span>`;
+      title = `<strong>1 mail</strong> déplacé vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(depuis la recherche)</span>`;
       break;
     case 'ui_mark_message':
-      title = `🏷️ <strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
+      title = `<strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
       break;
     case 'ui_bulk_delete':
-      title = `🗑️ <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(sélection boîte de réception)</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(sélection boîte de réception)</span>`;
       break;
     case 'ui_bulk_move':
-      title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(sélection)</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(sélection)</span>`;
       break;
     case 'ui_bulk_mark':
-      title = `🏷️ <strong>${fmtNum(n)} mails</strong> marqués « ${p.action === 'seen' ? 'lus' : 'non lus'} »`;
+      title = `<strong>${fmtNum(n)} mails</strong> marqués « ${p.action === 'seen' ? 'lus' : 'non lus'} »`;
       break;
     case 'ui_send_mail':
-      title = `✉️ Mail envoyé — <strong>${esc(p.subject ?? '')}</strong> à ${esc(((p.to ?? [])).join(', '))}` +
+      title = `Mail envoyé — <strong>${esc(p.subject ?? '')}</strong> à ${esc(((p.to ?? [])).join(', '))}` +
         (p.mode === 'reply' ? ' <span class="muted">(réponse)</span>' : p.mode === 'forward' ? ' <span class="muted">(transfert)</span>' : '');
       break;
     case 'propose_deadline':
-      title = `📅 Échéance proposée depuis un mail ouvert`;
+      title = `Échéance proposée depuis un mail ouvert`;
       break;
     case 'create_task':
-      title = `☑️ Tâche créée`;
+      title = `Tâche créée`;
       break;
     case 'task_from_deadline':
-      title = `☑️ Tâche créée depuis une échéance`;
+      title = `Tâche créée depuis une échéance`;
       break;
     case 'complete_task':
-      title = `☑️ Tâche terminée`;
+      title = `Tâche terminée`;
       break;
     case 'dismiss_task':
-      title = `☑️ Tâche ignorée`;
+      title = `Tâche ignorée`;
       break;
     case 'reopen_task':
-      title = `☑️ Tâche remise à faire`;
+      title = `Tâche remise à faire`;
       break;
     case 'move_emails':
-      title = `📦 <strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
+      title = `<strong>${fmtNum(n)} mails</strong> déplacés vers <strong>${esc(p.destination ?? '?')}</strong>`;
       break;
     case 'mark_emails':
-      title = `🏷️ <strong>${fmtNum(n)} mails</strong> marqués « ${esc(p.flag ?? '')} »`;
+      title = `<strong>${fmtNum(n)} mails</strong> marqués « ${esc(p.flag ?? '')} »`;
       break;
     case 'create_folder':
-      title = `📁 Dossier <strong>${esc(p.path ?? '')}</strong> créé`;
+      title = `Dossier <strong>${esc(p.path ?? '')}</strong> créé`;
       break;
     case 'ai_analysis':
       title = op._group && op._group.batches > 1
-        ? `🤖 <strong>${fmtNum(op._group.count)} mails</strong> analysés par l'IA <span class="muted">(${fmtNum(op._group.batches)} lots)</span>`
-        : `🤖 <strong>${fmtNum(p.verdicts ?? op.items?.length ?? 0)} mails</strong> analysés par l'IA`;
+        ? `<strong>${fmtNum(op._group.count)} mails</strong> analysés par l'IA <span class="muted">(${fmtNum(op._group.batches)} lots)</span>`
+        : `<strong>${fmtNum(p.verdicts ?? op.items?.length ?? 0)} mails</strong> analysés par l'IA`;
       break;
     case 'grand_menage':
-      title = `🧺 <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(Libérer de l'espace${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(Libérer de l'espace${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
       break;
     case 'retention_auto_apply':
-      title = `🧹 <strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(nettoyage automatique${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
+      title = `<strong>${fmtNum(n)} mails</strong> → corbeille <span class="muted">(nettoyage automatique${p.label ? ` — ${esc(p.label)}` : ''})</span>`;
       break;
     case 'apply_mail_rule':
     case 'rule_auto_apply':
-      title = `🗂️ <strong>${fmtNum(n)} mails</strong> rangés${p.targetFolder ? ` vers <strong>${esc(p.targetFolder)}</strong>` : ''}` +
+      title = `<strong>${fmtNum(n)} mails</strong> rangés${p.targetFolder ? ` vers <strong>${esc(p.targetFolder)}</strong>` : ''}` +
         (op.tool === 'rule_auto_apply' ? ' <span class="muted">(règle automatique)</span>' : ' <span class="muted">(règle de classement)</span>');
       break;
     case 'ui_message_intent':
-      title = `🏷️ Classement d'un mail corrigé${op.result ? ` <span class="muted">— ${esc(op.result)}</span>` : ''}`;
+      title = `Classement d'un mail corrigé${op.result ? ` <span class="muted">— ${esc(op.result)}</span>` : ''}`;
       break;
     case 'ui_sender_category':
     case 'set_sender_category':
-      title = `👤 Catégorie d'un expéditeur corrigée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      title = `Catégorie d'un expéditeur corrigée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
       break;
     case 'ui_sender_priority':
     case 'set_sender_priority':
-      title = `⭐ Priorité d'un expéditeur modifiée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      title = `Priorité d'un expéditeur modifiée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
       break;
     case 'ui_analysis_feedback':
-      title = `🎯 ${esc(op.result ?? 'Analyse vérifiée')}`;
+      title = `${esc(op.result ?? 'Analyse vérifiée')}`;
       break;
     case 'ui_suggestion_dismiss':
-      title = `💡 Règle proposée ignorée`;
+      title = `Règle proposée ignorée`;
       break;
     case 'ui_accounts_order':
-      title = `⚙️ Ordre des boîtes modifié`;
+      title = `Ordre des boîtes modifié`;
       break;
     case 'ui_account_color':
-      title = `🎨 Couleur d'une boîte modifiée`;
+      title = `Couleur d'une boîte modifiée`;
       break;
     case 'ui_account_rename':
-      title = `✏️ Boîte renommée${p.to ? ` <span class="muted">— ${esc(p.to)}</span>` : ''}`;
+      title = `Boîte renommée${p.to ? ` <span class="muted">— ${esc(p.to)}</span>` : ''}`;
       break;
     case 'ui_account_remove':
-      title = `🗑️ Boîte retirée de Mail Assistant <span class="muted">(les mails chez Microsoft ne bougent pas)</span>`;
+      title = `Boîte retirée de Mail Assistant <span class="muted">(les mails chez Microsoft ne bougent pas)</span>`;
       break;
     case 'ui_accounts_export':
-      title = `📦 Accès des boîtes exportés`;
+      title = `Accès des boîtes exportés`;
       break;
     case 'ui_accounts_import':
-      title = `📦 Accès de boîtes importés`;
+      title = `Accès de boîtes importés`;
       break;
     case 'ui_backup_create':
-      title = `💾 Sauvegarde créée`;
+      title = `Sauvegarde créée`;
       break;
     case 'ui_unsubscribe':
-      title = `🚫 Désinscription demandée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      title = `Désinscription demandée${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
       break;
     case 'ui_unsubscribe_manual':
-      title = `🚫 Désinscription marquée faite${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
+      title = `Désinscription marquée faite${p.email ? ` <span class="muted">— ${esc(p.email)}</span>` : ''}`;
       break;
     default:
       // Le journal serveur porte souvent une phrase de résultat en français :
       // on la préfère toujours au nom technique de l'opération.
       title = op.result
         ? `${esc(op.result)} <span class="muted" style="font-size:11px" title="opération : ${esc(op.tool ?? '')}"></span>`
-        : `⚙️ ${esc(op.tool ?? 'opération')}`;
+        : `${esc(op.tool ?? 'opération')}`;
   }
 
   const meta = [op.account, op.folder].filter(Boolean).map(esc).join(' · ');
@@ -2248,27 +2247,27 @@ const statsState = { sortKey: 'count', sortDir: -1, data: null, selected: new Ma
 
 // Catégories d'expéditeur (A1 — mêmes valeurs que le serveur, libellés FR).
 const SENDER_CATEGORY_LABELS = {
-  person: '👤 Personne',
-  company: '🏢 Entreprise',
-  bank: '🏦 Banque / argent',
-  insurance: '🛡️ Assurance',
-  admin: '🏛️ Administration',
-  marketplace: '🛒 Boutique en ligne',
-  social: '💬 Réseau social',
-  newsletter: '📰 Newsletter',
-  notification: '🤖 Notification',
-  ad: '📢 Publicité',
+  person: 'Personne',
+  company: 'Entreprise',
+  bank: 'Banque / argent',
+  insurance: 'Assurance',
+  admin: 'Administration',
+  marketplace: 'Boutique en ligne',
+  social: 'Réseau social',
+  newsletter: 'Newsletter',
+  notification: 'Notification',
+  ad: 'Publicité',
 };
 
 const FOLDER_ROLE_EMOJI = {
-  inbox: '📥', sent: '📤', drafts: '📝', trash: '🗑️', archive: '📦', spam: '⚠️', custom: '📂',
+  inbox: '', sent: '', drafts: '', trash: '', archive: '', spam: '', custom: '',
 };
 
 async function renderAccount(slug) {
   const main = $('#main');
   const enrolled = overviewCache?.enrolled.find((e) => e.account === slug);
   main.innerHTML = `<div class="page-head">
-      <div><h1>📧 ${esc(slug)}</h1><div class="sub">${esc(enrolled?.username ?? '')}</div></div>
+      <div><h1>${esc(slug)}</h1><div class="sub">${esc(enrolled?.username ?? '')}</div></div>
       <div class="head-actions">
         <a class="btn" href="#/inbox/${esc(slug)}">Parcourir les mails</a>
         <button class="btn btn-primary" id="sync-recent">Sync rapide</button>
@@ -2302,32 +2301,32 @@ async function renderAccount(slug) {
   try {
     ov = await api.accountOverview(slug);
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}<br>
       Lance une <strong>Sync complète</strong> (bouton en haut à droite) pour indexer cette boîte.</div>`;
     return;
   }
 
   body.innerHTML = `
     <div class="cards">
-      <div class="kpi"><div class="kpi-label">📥 INBOX</div>
+      <div class="kpi"><div class="kpi-label">INBOX</div>
         <div class="kpi-value">${fmtNum(ov.inbox?.messages ?? 0)}</div></div>
-      <div class="kpi accent"><div class="kpi-label">🔵 Non lus</div>
+      <div class="kpi accent"><div class="kpi-label">Non lus</div>
         <div class="kpi-value">${fmtNum(ov.inbox?.unseen ?? 0)}</div></div>
-      <div class="kpi orange"><div class="kpi-label">📰 Newsletters</div>
+      <div class="kpi orange"><div class="kpi-label">Newsletters</div>
         <div class="kpi-value">${fmtNum(ov.inbox?.newsletters ?? 0)}</div></div>
-      <div class="kpi"><div class="kpi-label">💾 Espace boîte</div>
+      <div class="kpi"><div class="kpi-label">Espace boîte</div>
         <div class="kpi-value" style="font-size:20px; ${ov.quota && ov.quota.pct >= 90 ? `color:${quotaColor(ov.quota.pct)}` : ''}">
           ${ov.quota ? `${ov.quota.pct}%` : fmtSize(ov.inbox?.totalSizeBytes)}</div>
         <div class="kpi-sub" ${ov.quota ? '' : `title="${esc(ov.quotaNote || '')}"`}>${ov.quota
           ? `${fmtSize(ov.quota.usedBytes)} / ${fmtSize(ov.quota.limitBytes)} · libre : ${fmtSize(ov.quota.freeBytes)}`
-          : `quota inconnu — ${esc(ov.quotaNote || 'synchronise la boîte (ou 📏 Quota dans Paramètres)')}`}</div></div>
-      <div class="kpi"><div class="kpi-label">👥 Expéditeurs</div>
+          : `quota inconnu — ${esc(ov.quotaNote || 'synchronise la boîte (ou Quota dans Paramètres)')}`}</div></div>
+      <div class="kpi"><div class="kpi-label">Expéditeurs</div>
         <div class="kpi-value">${fmtNum(ov.senderCount)}</div>
         <div class="kpi-sub">dernière sync : ${fmtDateTime(ov.lastSyncAt)}</div></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>📂 Dossiers</h2>
+      <div class="panel-head"><h2>Dossiers</h2>
         <span class="muted" style="font-size:12.5px">clique un dossier pour lire ses mails</span></div>
       <div class="panel-body tight">
         <table><thead><tr><th>Dossier</th><th class="num">Mails</th><th class="num">Non lus</th><th></th></tr></thead>
@@ -2335,10 +2334,10 @@ async function renderAccount(slug) {
           .filter((f) => f.messageCount > 0 || ['inbox', 'sent', 'trash', 'drafts'].includes(f.role))
           .map((f) => `<tr>
             <td><span class="openable" data-folder="${esc(f.path)}" title="Lire les mails de ce dossier">
-              ${FOLDER_ROLE_EMOJI[f.role] ?? '📂'} ${esc(f.path)}</span></td>
+              ${esc(f.path)}</span></td>
             <td class="num">${fmtNum(f.messageCount)}</td>
             <td class="num">${f.unseenCount ? `<span class="badge orange">${fmtNum(f.unseenCount)}</span>` : '—'}</td>
-            <td style="text-align:right"><button class="btn btn-sm" data-folder="${esc(f.path)}">📖 Lire</button></td>
+            <td style="text-align:right"><button class="btn btn-sm" data-folder="${esc(f.path)}">Lire</button></td>
           </tr>`).join('')}</tbody></table>
       </div>
     </div>
@@ -2386,20 +2385,20 @@ async function loadAccountCleanup(slug) {
   }
   if (!data.candidates.length) return;
   el.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>🧹 Nettoyage rapide</h2>
+    <div class="panel-head"><h2>Nettoyage rapide</h2>
       <span class="badge green">${fmtNum(data.totalDeletableEstimate)} mails « sûrs »</span></div>
     <div class="panel-body tight">
       <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Non lus</th>
         <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
       <tbody>${data.candidates.map((c) => `<tr>
         <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-        <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
+        <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
         <td class="num">${fmtNum(c.unseenCount)}</td>
         <td class="num">${fmtSize(c.totalSizeBytes)}</td>
         <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
         <td class="muted" style="font-size:12px; max-width:260px">${esc(c.reason)}</td>
         <td><button class="btn btn-sm cleanup-btn" data-account="${esc(slug)}"
-          data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
+          data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">Nettoyer</button></td>
       </tr>`).join('')}</tbody></table>
     </div></div>`;
   bindCleanupButtons(el);
@@ -2418,7 +2417,7 @@ async function loadStats(slug) {
     statsState.selected.clear();
     renderStatsTable();
   } catch (err) {
-    el.innerHTML = `<div class="empty">⚠️ ${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
   }
 }
 
@@ -2452,17 +2451,17 @@ function renderStatsTable() {
         <td>${esc(s.name || s.address)}<br><span class="muted" style="font-size:12px">${esc(s.address)}</span></td>
         <td style="white-space:nowrap">
           <select class="stats-cat" data-address="${esc(s.address)}"
-            title="${esc(s.categoryReason || 'Catégorie non calculée — lance « Réexaminer les expéditeurs » dans ⚙️ Paramètres')}">
+            title="${esc(s.categoryReason || 'Catégorie non calculée — lance « Réexaminer les expéditeurs » dans Paramètres')}">
             <option value="" ${s.category ? '' : 'selected'}>${s.category ? '↺ automatique' : '—'}</option>
             ${Object.entries(SENDER_CATEGORY_LABELS)
               .map(([v, l]) => `<option value="${v}" ${s.category === v ? 'selected' : ''}>${l}</option>`)
               .join('')}
-          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas">✍️</span>' : ''}
+          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas"></span>' : ''}
           <select class="stats-prio" data-address="${esc(s.address)}"
-            title="Priorité par relation : ⭐ booste l'importance de tous ses mails, 🔕 la plafonne">
+            title="Priorité par relation : booste l'importance de tous ses mails, la plafonne">
             <option value="normal" ${s.priority === 'normal' || !s.priority ? 'selected' : ''}>Priorité normale</option>
-            <option value="always_important" ${s.priority === 'always_important' ? 'selected' : ''}>⭐ Toujours important</option>
-            <option value="never_urgent" ${s.priority === 'never_urgent' ? 'selected' : ''}>🔕 Jamais urgent</option>
+            <option value="always_important" ${s.priority === 'always_important' ? 'selected' : ''}>Toujours important</option>
+            <option value="never_urgent" ${s.priority === 'never_urgent' ? 'selected' : ''}>Jamais urgent</option>
           </select></td>
         <td class="num"><strong>${fmtNum(s.count)}</strong></td>
         <td class="num">${fmtSize(s.totalSizeBytes)}</td>
@@ -2506,7 +2505,7 @@ function renderStatsTable() {
     });
   });
 
-  // Priorité par relation (A5) : ⭐ toujours important / 🔕 jamais urgent.
+  // Priorité par relation (A5) : toujours important / jamais urgent.
   el.querySelectorAll('.stats-prio').forEach((select) => {
     select.addEventListener('change', async () => {
       const slug = decodeURIComponent(location.hash.split('/')[2] ?? '');
@@ -2552,9 +2551,9 @@ function renderExportBar() {
   const sel = statsState.selected;
   bar.classList.toggle('hidden', sel.size === 0);
   if (sel.size === 0) return;
-  bar.innerHTML = `📇 <strong>${fmtNum(sel.size)}</strong> contact(s) sélectionné(s)
-    <button class="btn btn-sm btn-primary" id="export-vcf">⬇ Exporter .vcf</button>
-    <button class="btn btn-sm" id="export-csv">⬇ Exporter .csv</button>
+  bar.innerHTML = `<strong>${fmtNum(sel.size)}</strong> contact(s) sélectionné(s)
+    <button class="btn btn-sm btn-primary" id="export-vcf">↓ Exporter .vcf</button>
+    <button class="btn btn-sm" id="export-csv">↓ Exporter .csv</button>
     <button class="btn btn-sm" id="export-clear">Tout décocher</button>
     <span class="muted" style="font-size:12px">puis importe le fichier dans Outlook.com → Contacts → Gérer → Importer</span>`;
   $('#export-vcf').addEventListener('click', () => downloadContacts('vcard'));
@@ -2606,7 +2605,7 @@ async function runSync(slug, mode) {
     ({ jobId } = await api.startSync(slug, mode));
   } catch (err) {
     const zone = $('#sync-zone');
-    if (zone) zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    if (zone) zone.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   attachSyncJob(slug, jobId);
@@ -2646,12 +2645,12 @@ function attachSyncJob(slug, jobId) {
         slug,
         html:
           j.status === 'done'
-            ? `<div class="notice">✅ Sync terminée en ${((r.durationMs ?? 0) / 1000).toFixed(1)}s —
+            ? `<div class="notice">Sync terminée en ${((r.durationMs ?? 0) / 1000).toFixed(1)}s —
                ${fmtNum(r.newMessages ?? 0)} nouveaux, ${fmtNum(r.deletedMessages ?? 0)} disparus,
                ${fmtNum(r.foldersSynced?.length ?? 0)} dossiers.${
-                 r.errors?.length ? ` ⚠️ ${r.errors.length} dossier(s) en échec.` : ''
+                 r.errors?.length ? ` ${r.errors.length} dossier(s) en échec.` : ''
                }</div>`
-            : `<div class="notice warn">❌ Échec de la sync : ${esc(j.error ?? '')}</div>`,
+            : `<div class="notice warn">Échec de la sync : ${esc(j.error ?? '')}</div>`,
       };
       await refreshOverview();
       // Ne re-rend la vue que si l'utilisateur regarde encore cette boîte.
@@ -2673,7 +2672,7 @@ async function openCleanupModal(account, sender, senderName) {
   // lecteur (z 96) passerait derrière l'overlay (z 100).
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2>🧹 Nettoyer « ${esc(senderName)} » ${accountChip(account)}</h2>
+    <div class="modal-head"><h2>Nettoyer « ${esc(senderName)} » ${accountChip(account)}</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
     <div class="modal-foot" id="modal-foot"></div>
@@ -2692,14 +2691,14 @@ async function openCleanupModal(account, sender, senderName) {
       api.cleanupMessages(account, sender),
     ]);
   } catch (err) {
-    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#modal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     $('#modal-foot').innerHTML = `<button class="btn" onclick="document.querySelector('.modal-overlay').remove()">Fermer</button>`;
     return;
   }
 
   const autos = list.messages.filter((m) => m.kind === 'auto');
   const persos = list.messages.filter((m) => m.kind === 'personal');
-  // 📄 Mails porteurs d'une pièce : jamais cochés, même venant d'un robot
+  // Mails porteurs d'une pièce : jamais cochés, même venant d'un robot
   // publicitaire — c'est le même expéditeur qui envoie les soldes et tes
   // tickets de caisse.
   const docs = list.messages.filter((m) => m.kind === 'document');
@@ -2718,17 +2717,17 @@ async function openCleanupModal(account, sender, senderName) {
 
     <div class="cat-toggle">
       <label><input type="checkbox" id="cat-auto" checked>
-        🤖 <strong>Automatiques</strong> (${fmtNum(autos.length)}) — lien de désinscription ou expéditeur noreply</label>
+        <strong>Automatiques</strong> (${fmtNum(autos.length)}) — lien de désinscription ou expéditeur noreply</label>
       <label><input type="checkbox" id="cat-doc">
-        📄 <strong>À conserver</strong> (${fmtNum(docs.length)}) — pièce jointe, facture, ticket, attestation.
+        <strong>À conserver</strong> (${fmtNum(docs.length)}) — pièce jointe, facture, ticket, attestation.
         Un magasin envoie ses pubs ET tes tickets depuis la même adresse :
         ceux-là sont mis de côté. <strong>Décochés par défaut.</strong></label>
       <label><input type="checkbox" id="cat-perso">
-        👤 <strong>Possiblement personnels</strong> (${fmtNum(persos.length)}) — répondu, suivi, conversation,
+        <strong>Possiblement personnels</strong> (${fmtNum(persos.length)}) — répondu, suivi, conversation,
         ou sans marqueur automatique. <strong>Décochés par défaut.</strong></label>
     </div>
 
-    <button class="btn btn-sm" id="toggle-list">📋 Voir la liste complète (${fmtNum(list.messages.length)})</button>
+    <button class="btn btn-sm" id="toggle-list">Voir la liste complète (${fmtNum(list.messages.length)})</button>
     ${list.truncated ? `<span class="muted" style="font-size:12px"> (${fmtNum(list.total)} au total, affichage limité à ${fmtNum(list.messages.length)})</span>` : ''}
     <div class="mail-list hidden" id="mail-list">
       ${list.messages.map((m, i) => `
@@ -2740,12 +2739,12 @@ async function openCleanupModal(account, sender, senderName) {
           }</span>
           <span class="badge ${m.kind === 'auto' ? 'gray' : m.kind === 'document' ? 'green' : 'blue'}"
             title="${esc(m.signals.join(' · '))}">${
-              m.kind === 'auto' ? '🤖 auto' : m.kind === 'document' ? '📄 à conserver' : '👤 perso'
+              m.kind === 'auto' ? 'auto' : m.kind === 'document' ? 'à conserver' : 'perso'
             }</span>
           ${m.isSeen ? '' : '<span class="badge orange">non lu</span>'}
         </div>`).join('')}
     </div>
-    <div class="trash-note">🛟 Soft delete uniquement : les mails cochés vont dans la corbeille Outlook et restent
+    <div class="trash-note">Soft delete uniquement : les mails cochés vont dans la corbeille Outlook et restent
       récupérables ~30 jours. Lots de 200, chaque lot journalisé avec la liste exacte des mails.</div>`;
 
   $('#modal-foot').innerHTML = `
@@ -2824,7 +2823,7 @@ async function openCleanupModal(account, sender, senderName) {
     try {
       ({ jobId } = await api.cleanupExecute(account, sender, [...selected]));
     } catch (err) {
-      $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      $('#modal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
       $('#modal-foot').innerHTML = `<button class="btn" id="modal-cancel2">Fermer</button>`;
       $('#modal-cancel2').addEventListener('click', closeModal);
       return;
@@ -2844,10 +2843,10 @@ async function openCleanupModal(account, sender, senderName) {
           }
           $('#modal-body').innerHTML =
             j.status === 'done'
-              ? `<div class="notice">✅ <strong>${fmtNum(r.deleted ?? 0)}</strong> mails déplacés vers
+              ? `<div class="notice"><strong>${fmtNum(r.deleted ?? 0)}</strong> mails déplacés vers
                  <strong>${esc(r.destination || 'la corbeille')}</strong> en ${fmtNum(r.batches ?? 0)} lot(s).
                  Récupérables ~30 jours dans Outlook.</div>`
-              : `<div class="notice warn">❌ Échec : ${esc(j.error ?? '')}</div>`;
+              : `<div class="notice warn">Échec : ${esc(j.error ?? '')}</div>`;
           $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="modal-done">Fermer</button>`;
           $('#modal-done').addEventListener('click', closeModal);
         }
@@ -2902,15 +2901,15 @@ function openEnrollModal() {
     refreshOverview().then(() => route()).catch(() => {});
 
     const zone = $('#enroll-zone');
-    zone.innerHTML = `<div class="notice">✅ <strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
+    zone.innerHTML = `<div class="notice"><strong>${esc(r.username ?? '')}</strong> ajouté sous le nom
       <strong>${esc(r.account ?? name)}</strong>.<br>
       <span class="muted" style="font-size:12.5px">Vérifie que l'adresse ci-dessus est bien
       celle attendue.</span></div>
-      ${r.duplicateOf ? `<div class="notice warn">⚠️ Cette adresse est <strong>déjà connectée</strong>
+      ${r.duplicateOf ? `<div class="notice warn">Cette adresse est <strong>déjà connectée</strong>
         sous le nom « ${esc(r.duplicateOf)} » ! Tu as probablement choisi le mauvais compte.
         Refais « Ajouter un compte » avec le même nom <strong>${esc(r.account ?? name)}</strong>
         et choisis « Utiliser un autre compte » dans la fenêtre Microsoft.</div>` : ''}
-      <p class="muted" style="margin-top:10px; font-size:12.5px">💡 La synchronisation peut aussi se
+      <p class="muted" style="margin-top:10px; font-size:12.5px">La synchronisation peut aussi se
       lancer plus tard depuis la page de la boîte — tu peux enchaîner l'ajout de tes autres comptes.</p>`;
     $('.modal-foot').innerHTML = `
       <button class="btn" id="enroll-another">＋ Ajouter une autre boîte</button>
@@ -2939,12 +2938,12 @@ function openEnrollModal() {
       try {
         start = await api.enrollStart(name);
       } catch (err) {
-        zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+        zone.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
         return;
       }
       const popup = window.open(start.authUrl, 'boxmail-enroll', 'width=540,height=720');
       if (!popup) {
-        zone.innerHTML = `<div class="notice warn">⚠️ Popup bloquée par le navigateur — autorise les
+        zone.innerHTML = `<div class="notice warn">Popup bloquée par le navigateur — autorise les
           popups pour ce site, ou utilise la méthode par code.</div>`;
         return;
       }
@@ -2958,7 +2957,7 @@ function openEnrollModal() {
         window.removeEventListener('message', onMessage);
         if (ev.data.ok) showEnrollSuccess(ev.data, name);
         else {
-          zone.innerHTML = `<div class="notice warn">❌ Échec de la connexion : ${esc(ev.data.error ?? '')}<br>
+          zone.innerHTML = `<div class="notice warn">Échec de la connexion : ${esc(ev.data.error ?? '')}<br>
             <span class="muted" style="font-size:12px">Si l'erreur mentionne « redirect URI »
             (AADSTS50011), il faut déclarer l'URL de retour dans Entra — voir le README §4bis —
             ou utiliser la méthode par code.</span></div>`;
@@ -2974,7 +2973,7 @@ function openEnrollModal() {
     try {
       ({ jobId, replacing } = await api.enroll(name));
     } catch (err) {
-      zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      zone.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
       return;
     }
     $('#enroll-form').classList.add('hidden');
@@ -3006,7 +3005,7 @@ function openEnrollModal() {
         if (j.status === 'done') {
           showEnrollSuccess(j.result ?? {}, name);
         } else {
-          zone.innerHTML = `<div class="notice warn">❌ Échec de la connexion : ${esc(j.error ?? '')}<br>
+          zone.innerHTML = `<div class="notice warn">Échec de la connexion : ${esc(j.error ?? '')}<br>
             <span class="muted" style="font-size:12px">Causes fréquentes : code expiré (15 min),
             connexion refusée, ou mauvaise boîte utilisée. Tu peux réessayer.</span></div>`;
           $('#enroll-form').classList.remove('hidden');
@@ -3026,15 +3025,15 @@ function waitLabel(hours) {
 }
 
 function replyCategoryBadge(i) {
-  if (i.category === 'urgent') return '<span class="badge red">🔥 Urgent · seuil 24 h</span>';
-  if (i.category === 'important') return '<span class="badge orange">🏛️ Banque / admin · seuil 48 h</span>';
+  if (i.category === 'urgent') return '<span class="badge red">Urgent · seuil 24 h</span>';
+  if (i.category === 'important') return '<span class="badge orange">Banque / admin · seuil 48 h</span>';
   return '<span class="badge gray">Normal · seuil 7 j</span>';
 }
 
 async function renderReplies() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>↩️ À répondre</h1>
+    <div><h1>À répondre</h1>
       <div class="sub">Mails reçus qui attendent une réponse de ta part — détectés depuis les mails synchronisés
       (newsletters, notifications et no-reply exclus). Synchronise tes boîtes pour des résultats à jour.</div></div>
     <div class="head-actions">
@@ -3059,7 +3058,7 @@ async function loadReplies() {
   try {
     repliesState.data = await api.replies(repliesState.sinceDays);
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}<br>
       Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
@@ -3083,8 +3082,8 @@ function renderRepliesBody() {
     : i.state === repliesState.tab,
   );
   const emptyMessages = {
-    active: '🎉 Rien à traiter : aucun mail en attente de réponse sur cette période.',
-    overdue: '👍 Aucun seuil dépassé : tu es à jour dans tes réponses.',
+    active: 'Rien à traiter : aucun mail en attente de réponse sur cette période.',
+    overdue: 'Aucun seuil dépassé : tu es à jour dans tes réponses.',
     snoozed: 'Aucun fil reporté. « Reporter » cache un fil quelques jours, puis il revient tout seul.',
     dismissed: 'Aucun fil ignoré. « Ignorer » retire un fil de la liste (il revient si un nouveau mail arrive).',
   };
@@ -3102,7 +3101,7 @@ function renderRepliesBody() {
         : items.map(replyRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      📖 Clique un sujet pour lire le mail ici. 🛟 « Reporter » et « Ignorer » ne touchent pas
+      Clique un sujet pour lire le mail ici. « Reporter » et « Ignorer » ne touchent pas
       aux mails : simple marque-page local, journalisé, annulable depuis les onglets
       Reportés / Ignorés. Un fil ignoré réapparaît si un nouveau mail y arrive.</div>`;
 
@@ -3157,20 +3156,20 @@ function replyRow(i, idx) {
   const actions =
     (i.state === 'active'
       ? `<select class="reply-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
-           <option value="">⏰ Reporter…</option>
+           <option value="">Reporter…</option>
            <option value="1">1 jour</option><option value="3">3 jours</option>
            <option value="7">7 jours</option><option value="30">30 jours</option>
          </select>
-         <button class="btn btn-sm reply-dismiss" ${ident} title="Pas de réponse nécessaire">🔕 Ignorer</button>`
-      : `<button class="btn btn-sm reply-restore" ${ident}>↩︎ Remettre en liste</button>`) +
-    `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>`;
+         <button class="btn btn-sm reply-dismiss" ${ident} title="Pas de réponse nécessaire">Ignorer</button>`
+      : `<button class="btn btn-sm reply-restore" ${ident}>︎ Remettre en liste</button>`) +
+    `<button class="btn btn-sm openable-btn" data-open="${idx}">Lire</button>`;
   const stateInfo =
     i.state === 'snoozed'
       ? `<span class="badge blue">reporté jusqu'au ${fmtDate(i.snoozedUntil)}</span>`
       : i.state === 'dismissed'
         ? '<span class="badge gray">ignoré</span>'
         : i.overdue
-          ? `<span class="badge red">⏰ en retard — attend depuis ${waitLabel(i.waitingHours)}</span>`
+          ? `<span class="badge red">en retard — attend depuis ${waitLabel(i.waitingHours)}</span>`
           : `<span class="badge gray">attend depuis ${waitLabel(i.waitingHours)}</span>`;
   return `<div class="reply-row">
     <div class="reply-main">
@@ -3179,9 +3178,9 @@ function replyRow(i, idx) {
         <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
         ${accountChip(i.account)}
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
-        ${i.requestKind === 'action' ? '<span class="badge orange">🗣️ action demandée</span>'
-          : i.requestKind === 'reply_expected' ? '<span class="badge orange">🗣️ réponse attendue</span>'
-          : i.requestKind === 'question' ? '<span class="badge blue">❓ question</span>' : ''}
+        ${i.requestKind === 'action' ? '<span class="badge orange">action demandée</span>'
+          : i.requestKind === 'reply_expected' ? '<span class="badge orange">réponse attendue</span>'
+          : i.requestKind === 'question' ? '<span class="badge blue">question</span>' : ''}
         ${i.inCopy ? '<span class="badge gray" title="Tu n\'es pas dans les destinataires principaux">cc — en copie</span>' : ''}
       </div>
       <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}
@@ -3201,15 +3200,15 @@ function replyRow(i, idx) {
 const followupsState = { tab: 'active', sinceDays: 60, data: null };
 
 function followupCategoryBadge(i) {
-  if (i.category === 'urgent') return '<span class="badge red">🔥 Sujet pressant · délai 3 j</span>';
-  if (i.category === 'important') return '<span class="badge orange">🏛️ Banque / admin · délai 5 j</span>';
+  if (i.category === 'urgent') return '<span class="badge red">Sujet pressant · délai 3 j</span>';
+  if (i.category === 'important') return '<span class="badge orange">Banque / admin · délai 5 j</span>';
   return '<span class="badge gray">Normal · délai 7 j</span>';
 }
 
 async function renderFollowups() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>⏰ À relancer</h1>
+    <div><h1>À relancer</h1>
       <div class="sub">Mails que TU as envoyés, restés sans réponse : le correspondant à relancer est
       indiqué. Détecté depuis les mails synchronisés (destinataires no-reply exclus) — synchronise tes boîtes
       pour des résultats à jour.</div></div>
@@ -3235,7 +3234,7 @@ async function loadFollowups() {
   try {
     followupsState.data = await api.followups(followupsState.sinceDays);
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}<br>
       Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
@@ -3259,8 +3258,8 @@ function renderFollowupsBody() {
     : i.state === followupsState.tab,
   );
   const emptyMessages = {
-    active: '👍 Personne à relancer : tous tes mails envoyés ont eu leur réponse sur cette période.',
-    overdue: '🎉 Aucun délai de relance dépassé.',
+    active: 'Personne à relancer : tous tes mails envoyés ont eu leur réponse sur cette période.',
+    overdue: 'Aucun délai de relance dépassé.',
     snoozed: 'Aucune relance reportée. « Reporter » cache un fil quelques jours, puis il revient.',
     dismissed: 'Aucune relance marquée traitée. « Traité » retire le fil (il revient si un nouveau message arrive).',
   };
@@ -3278,7 +3277,7 @@ function renderFollowupsBody() {
         : items.map(followupRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      📖 Clique un sujet pour relire le mail que tu avais envoyé. 🛟 « Reporter » et « Traité »
+      Clique un sujet pour relire le mail que tu avais envoyé. « Reporter » et « Traité »
       ne touchent pas aux mails : simple marque-page local, journalisé, annulable depuis les
       onglets Reportées / Traitées. Un fil marqué traité réapparaît si un nouveau message y arrive.</div>`;
 
@@ -3310,7 +3309,7 @@ function renderFollowupsBody() {
       btn.disabled = false;
     }
   };
-  // ✍️ Relancer (A5) : brouillon pré-rempli — rien ne part sans ton clic.
+  // Relancer (A5) : brouillon pré-rempli — rien ne part sans ton clic.
   body.querySelectorAll('.followup-draft').forEach((btn) => {
     btn.addEventListener('click', () => {
       const i = items[Number(btn.dataset.draft)];
@@ -3354,21 +3353,21 @@ function followupRow(i, idx) {
   const actions =
     (i.state === 'active'
       ? `${i.stage !== 'waiting' ? `<button class="btn btn-sm btn-primary followup-draft" data-draft="${idx}"
-           title="Prépare un mail de relance : tu relis, tu ajustes, tu envoies">✍️ Relancer</button>` : ''}
+           title="Prépare un mail de relance : tu relis, tu ajustes, tu envoies">Relancer</button>` : ''}
          <select class="followup-snooze" ${ident} title="Cacher ce fil quelques jours, puis il revient">
-           <option value="">⏰ Reporter…</option>
+           <option value="">Reporter…</option>
            <option value="1">1 jour</option><option value="3">3 jours</option>
            <option value="7">7 jours</option><option value="30">30 jours</option>
          </select>
-         <button class="btn btn-sm followup-dismiss" ${ident} title="${i.stage === 'stale' ? 'Clôturer : plus rien à attendre de ce fil' : 'Relance envoyée ou plus nécessaire'}">${i.stage === 'stale' ? '🗄️ Clôturer' : '✓ Traité'}</button>`
-      : `<button class="btn btn-sm followup-restore" ${ident}>↩︎ Remettre en liste</button>`) +
-    `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>`;
+         <button class="btn btn-sm followup-dismiss" ${ident} title="${i.stage === 'stale' ? 'Clôturer : plus rien à attendre de ce fil' : 'Relance envoyée ou plus nécessaire'}">${i.stage === 'stale' ? 'Clôturer' : '✓ Traité'}</button>`
+      : `<button class="btn btn-sm followup-restore" ${ident}>︎ Remettre en liste</button>`) +
+    `<button class="btn btn-sm openable-btn" data-open="${idx}">Lire</button>`;
   // Escalade pilotée (A5) : l'outil dit où en est la relance et quoi faire.
   const stageBadge = {
     waiting: `<span class="badge gray">sans réponse depuis ${waitLabel(i.waitingHours)}</span>`,
-    due: `<span class="badge red">⏰ à relancer — sans réponse depuis ${waitLabel(i.waitingHours)}</span>`,
-    urgent: `<span class="badge red">🚨 urgent — ${waitLabel(i.waitingHours)} sans réponse</span>`,
-    stale: `<span class="badge orange">💤 probablement abandonné (${waitLabel(i.waitingHours)}) — clôturer ?</span>`,
+    due: `<span class="badge red">à relancer — sans réponse depuis ${waitLabel(i.waitingHours)}</span>`,
+    urgent: `<span class="badge red">urgent — ${waitLabel(i.waitingHours)} sans réponse</span>`,
+    stale: `<span class="badge orange">probablement abandonné (${waitLabel(i.waitingHours)}) — clôturer ?</span>`,
   };
   const stateInfo =
     i.state === 'snoozed'
@@ -3411,7 +3410,7 @@ function scoreBadge(score) {
 async function renderImportant() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>⭐ À ne pas manquer</h1>
+    <div><h1>À ne pas manquer</h1>
       <div class="sub">Chaque mail reçu est noté sur 100 par des règles simples (banque/administration,
       urgence, vraie personne, question, montant…) — les raisons sont affichées sous chaque mail.
       Détecté depuis les mails synchronisés : synchronise tes boîtes pour des résultats à jour.</div></div>
@@ -3458,7 +3457,7 @@ async function loadImportant() {
       importantState.includeRead,
     );
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}<br>
       Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
@@ -3470,9 +3469,9 @@ async function loadImportant() {
 // B3 : trois groupes remplacent la liste unique — nouveaux / non traités /
 // probablement traités. Cap d'affichage par groupe + « +N autres ».
 const IMPORTANT_GROUPS = [
-  { key: 'new', icon: '🆕', label: 'Nouveaux (7 derniers jours)', hint: 'reçus récemment — à regarder' },
-  { key: 'untreated', icon: '⏳', label: 'Non traités', hint: 'plus anciens, AUCUNE réponse ni tâche — même si tu les as lus' },
-  { key: 'treated', icon: '✅', label: 'Probablement traités', hint: 'réponse envoyée ou tâche liée — pour vérification' },
+  { key: 'new', icon: '', label: 'Nouveaux (7 derniers jours)', hint: 'reçus récemment — à regarder' },
+  { key: 'untreated', icon: '', label: 'Non traités', hint: 'plus anciens, AUCUNE réponse ni tâche — même si tu les as lus' },
+  { key: 'treated', icon: '', label: 'Probablement traités', hint: 'réponse envoyée ou tâche liée — pour vérification' },
 ];
 const IMPORTANT_GROUP_CAP = 10;
 
@@ -3498,19 +3497,19 @@ function renderImportantBody() {
 
   body.innerHTML = `
     <div class="cards">
-      <div class="kpi"><div class="kpi-label">🔴 Prioritaires (score ≥ 70)</div>
+      <div class="kpi"><div class="kpi-label">Prioritaires (score ≥ 70)</div>
         <div class="kpi-value">${fmtNum(d.counts.high)}</div></div>
-      <div class="kpi orange"><div class="kpi-label">🟠 À regarder (score 40-69)</div>
+      <div class="kpi orange"><div class="kpi-label">À regarder (score 40-69)</div>
         <div class="kpi-value">${fmtNum(d.counts.medium)}</div></div>
-      <div class="kpi"><div class="kpi-label">⚪ Faible (&lt; 40)</div>
+      <div class="kpi"><div class="kpi-label">Faible (&lt; 40)</div>
         <div class="kpi-value">${fmtNum(d.counts.low)}</div>
         <div class="kpi-sub">masqués par le filtre de score</div></div>
     </div>
     ${d.items.length === 0
-      ? `<div class="panel"><div class="panel-body"><div class="empty">Aucun mail à score ≥ ${d.minScore} sur cette période${d.includeRead ? '' : ' (parmi les non-lus)'}. 👍</div></div></div>`
+      ? `<div class="panel"><div class="panel-body"><div class="empty">Aucun mail à score ≥ ${d.minScore} sur cette période${d.includeRead ? '' : ' (parmi les non-lus)'}. </div></div></div>`
       : IMPORTANT_GROUPS.map(groupPanel).join('')}
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      📖 Clique un sujet pour lire le mail ici (et agir : corbeille, déplacer, lu/non lu).
+      Clique un sujet pour lire le mail ici (et agir : corbeille, déplacer, lu/non lu).
       « Non traités » = importants restés sans réponse ni tâche : c'est là que se cachent les oublis.</div>`;
 
   body.querySelectorAll('.important-more').forEach((btn) => {
@@ -3539,7 +3538,7 @@ function importantRow(i, idx) {
         <span class="muted" style="font-size:12px">${esc(i.fromEmail)}</span>
         ${accountChip(i.account)}
         ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
-        ${i.senderKind === 'person' ? '<span class="badge green">👤 personne</span>' : ''}
+        ${i.senderKind === 'person' ? '<span class="badge green">personne</span>' : ''}
       </div>
       <div class="reply-subject openable" data-open="${idx}" title="Lire le mail">${esc(i.subject)}</div>
       <div class="reply-reason muted">${i.reasons.map(esc).join(' · ')}</div>
@@ -3551,8 +3550,8 @@ function importantRow(i, idx) {
         : i.level === 'medium'
           ? '<span class="badge orange">à regarder</span>'
           : '<span class="badge gray">peut attendre</span>'}
-      ${i.treatState === 'untreated' ? `<span class="badge orange">⏳ ${fmtNum(i.daysSinceReceived)} j sans traitement</span>` : ''}
-      <div class="reply-actions"><button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button></div>
+      ${i.treatState === 'untreated' ? `<span class="badge orange">${fmtNum(i.daysSinceReceived)} j sans traitement</span>` : ''}
+      <div class="reply-actions"><button class="btn btn-sm openable-btn" data-open="${idx}">Lire</button></div>
     </div>
   </div>`;
 }
@@ -3569,17 +3568,17 @@ function deadlineCountdown(inDays) {
 }
 
 const DEADLINE_TYPES = {
-  payment: { label: '💶 Paiement', badge: 'red' },
-  document: { label: '📄 Document', badge: 'blue' },
-  appointment: { label: '📅 Rendez-vous', badge: 'green' },
-  renewal: { label: '🔁 Renouvellement', badge: 'orange' },
-  other: { label: '📌 Autre', badge: 'gray' },
+  payment: { label: 'Paiement', badge: 'red' },
+  document: { label: 'Document', badge: 'blue' },
+  appointment: { label: 'Rendez-vous', badge: 'green' },
+  renewal: { label: 'Renouvellement', badge: 'orange' },
+  other: { label: 'Autre', badge: 'gray' },
 };
 
 async function renderDeadlines() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>📅 Dates à confirmer</h1>
+    <div><h1>Dates à confirmer</h1>
       <div class="sub">Dates limites détectées dans tes mails (paiements, documents à fournir,
       rendez-vous…). Chaque échéance est PROPOSÉE : à toi de la confirmer ou de l'ignorer —
       rien n'est ajouté à un calendrier automatiquement.</div></div>
@@ -3641,7 +3640,7 @@ async function runDeadlineDetect() {
     if (st) st.textContent = lastMsg ? ` ${lastMsg}` : '';
     if (done === jobIds.length) {
       clearInterval(timer);
-      zone.innerHTML = `<div class="notice">✅ Détection terminée :
+      zone.innerHTML = `<div class="notice">Détection terminée :
         <strong>${fmtNum(created)}</strong> nouvelle(s) échéance(s) proposée(s).</div>`;
       btn.disabled = false;
       await loadDeadlines();
@@ -3656,7 +3655,7 @@ async function loadDeadlines() {
   try {
     deadlinesState.data = await api.deadlines();
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   refreshDeadlinesBadge(deadlinesState.data);
@@ -3701,8 +3700,8 @@ function renderDeadlinesBody() {
         : items.map(deadlineRow).join('')}
     </div></div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      📖 Clique le sujet pour lire le mail d'origine et vérifier la date avant de confirmer.
-      🛟 Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
+      Clique le sujet pour lire le mail d'origine et vérifier la date avant de confirmer.
+      Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
 
   body.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3752,10 +3751,10 @@ function deadlineRow(x, idx) {
       <button class="btn btn-sm" ${ident} data-dl-action="dismiss" title="Fausse détection ou sans importance">✕ Ignorer</button>`;
   } else if (x.status === 'confirmed') {
     actions = `<button class="btn btn-sm btn-green" ${ident} data-dl-action="done">✓ Fait</button>
-      <button class="btn btn-sm" ${ident} data-dl-action="task" title="Ajouter à ta liste de tâches">☑️ → tâche</button>
+      <button class="btn btn-sm" ${ident} data-dl-action="task" title="Ajouter à ta liste de tâches">→ tâche</button>
       <button class="btn btn-sm" ${ident} data-dl-action="dismiss">✕ Ignorer</button>`;
   } else {
-    actions = `<button class="btn btn-sm" ${ident} data-dl-action="restore">↩︎ Rétablir</button>`;
+    actions = `<button class="btn btn-sm" ${ident} data-dl-action="restore">︎ Rétablir</button>`;
   }
   const statusBadge =
     x.status === 'done' ? '<span class="badge green">✓ fait</span>'
@@ -3776,7 +3775,7 @@ function deadlineRow(x, idx) {
       <div class="reply-reason muted">${esc(x.fromName || x.fromEmail || '')} · ${esc(x.reason)}</div>
     </div>
     <div class="reply-side">
-      <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">📖 Lire</button>` : ''}${actions}</div>
+      <div class="reply-actions">${canOpen ? `<button class="btn btn-sm openable-btn" data-open="${idx}">Lire</button>` : ''}${actions}</div>
     </div>
   </div>`;
 }
@@ -3793,7 +3792,7 @@ const RULE_TYPE_LABELS = {
 async function renderRules() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🗂️ Classement automatique</h1>
+    <div><h1>Classement automatique</h1>
       <div class="sub">« Si expéditeur X → déplacer vers le dossier Y ». Mail Assistant te PROPOSE
       des règles (rangements que tu fais déjà à la main, grosses newsletters) — rien n'est déplacé
       sans ta validation. Une règle validée peut ensuite s'appliquer automatiquement à chaque
@@ -3845,14 +3844,14 @@ async function runRulesSuggest() {
   }
   btn.disabled = false;
   notice.innerHTML = created
-    ? `<div class="notice">💡 <strong>${fmtNum(created)}</strong> nouvelle(s) règle(s) suggérée(s) — regarde l'aperçu de chacune avant de valider.</div>`
+    ? `<div class="notice"><strong>${fmtNum(created)}</strong> nouvelle(s) règle(s) suggérée(s) — regarde l'aperçu de chacune avant de valider.</div>`
     : '<div class="notice">Aucune nouvelle suggestion : rien de récurrent à automatiser pour l\'instant.</div>';
   await loadRules();
 }
 
 function ruleSentence(r) {
   return `Si <strong>${esc(RULE_TYPE_LABELS[r.matchType] ?? r.matchType)}</strong> = « ${esc(r.matchValue)} »
-    → déplacer vers <strong>📂 ${esc(r.targetFolder)}</strong>`;
+    → déplacer vers <strong>${esc(r.targetFolder)}</strong>`;
 }
 
 function renderRulesBody() {
@@ -3860,7 +3859,7 @@ function renderRulesBody() {
   if (!body) return;
   if (rulesState.byAccount.length === 0) {
     body.innerHTML = `<div class="empty">Aucune règle pour l'instant. Clique
-      <strong>💡 Suggérer des règles</strong> pour que Mail Assistant analyse tes boîtes, ou
+      <strong>Suggérer des règles</strong> pour que Mail Assistant analyse tes boîtes, ou
       <strong>＋ Nouvelle règle</strong> pour en créer une toi-même.</div>`;
     return;
   }
@@ -3880,25 +3879,25 @@ function renderRulesBody() {
             (r) => `<div class="reply-row">
           <div class="reply-main">
             <div class="reply-top">${statusBadge(r)}
-              ${r.autoApply ? '<span class="badge blue" title="Appliquée automatiquement à chaque synchronisation">🤖 auto</span>' : ''}
+              ${r.autoApply ? '<span class="badge blue" title="Appliquée automatiquement à chaque synchronisation">auto</span>' : ''}
               ${r.pendingCount ? `<span class="badge orange">${fmtNum(r.pendingCount)} mail(s) à ranger</span>` : '<span class="badge gray">rien en attente</span>'}
             </div>
             <div class="reply-subject">${ruleSentence(r)}</div>
             <div class="reply-reason muted">${esc(r.reason)}${r.appliedCount ? ` · déjà ${fmtNum(r.appliedCount)} mails rangés` : ''}</div>
           </div>
           <div class="reply-side"><div class="reply-actions">
-            <button class="btn btn-sm" data-rule-preview data-account="${esc(slug)}" data-id="${r.id}">👁️ Aperçu</button>
+            <button class="btn btn-sm" data-rule-preview data-account="${esc(slug)}" data-id="${r.id}">Aperçu</button>
             ${r.status === 'suggested'
               ? `<button class="btn btn-sm btn-green" data-rule-validate data-account="${esc(slug)}" data-id="${r.id}">✓ Valider</button>
                  <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}">✕ Ignorer</button>`
               : r.status === 'active'
-              ? `${r.pendingCount ? `<button class="btn btn-sm btn-primary" data-rule-apply data-account="${esc(slug)}" data-id="${r.id}" data-count="${r.pendingCount}" data-folder="${esc(r.targetFolder)}">▶️ Ranger ${fmtNum(r.pendingCount)}</button>` : ''}
+              ? `${r.pendingCount ? `<button class="btn btn-sm btn-primary" data-rule-apply data-account="${esc(slug)}" data-id="${r.id}" data-count="${r.pendingCount}" data-folder="${esc(r.targetFolder)}">Ranger ${fmtNum(r.pendingCount)}</button>` : ''}
                  <label class="muted" style="display:flex; align-items:center; gap:4px; font-size:12px" title="Appliquer automatiquement à chaque synchronisation">
                    <input type="checkbox" data-rule-auto data-account="${esc(slug)}" data-id="${r.id}" ${r.autoApply ? 'checked' : ''}> auto</label>
-                 <button class="btn btn-sm" data-rule-pause data-account="${esc(slug)}" data-id="${r.id}">⏸ Pause</button>
-                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)">🗑️</button>`
-              : `<button class="btn btn-sm btn-green" data-rule-validate data-account="${esc(slug)}" data-id="${r.id}">▶ Réactiver</button>
-                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)">🗑️</button>`}
+                 <button class="btn btn-sm" data-rule-pause data-account="${esc(slug)}" data-id="${r.id}">Pause</button>
+                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)"></button>`
+              : `<button class="btn btn-sm btn-green" data-rule-validate data-account="${esc(slug)}" data-id="${r.id}">Réactiver</button>
+                 <button class="btn btn-sm" data-rule-delete data-account="${esc(slug)}" data-id="${r.id}" style="color:var(--red)"></button>`}
           </div></div>
         </div>`,
           )
@@ -3908,7 +3907,7 @@ function renderRulesBody() {
     )
     .join('') +
     `<div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 Une règle DÉPLACE des mails (jamais de suppression), par lots de 200, dossier créé au
+      Une règle DÉPLACE des mails (jamais de suppression), par lots de 200, dossier créé au
       besoin, chaque application journalisée avec la liste exacte des mails.</div>`;
 
   const notice = (html) => { $('#rules-notice').innerHTML = html; };
@@ -3919,7 +3918,7 @@ function renderRulesBody() {
       await loadRules();
     } catch (err) {
       btn.disabled = false;
-      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      notice(`<div class="notice warn">${esc(err.message)}</div>`);
     }
   };
 
@@ -3942,7 +3941,7 @@ function renderRulesBody() {
       act(box, async () => {
         await api.ruleUpdate(box.dataset.account, Number(box.dataset.id), { autoApply: box.checked });
         notice(box.checked
-          ? '<div class="notice">🤖 Règle automatique : elle s\'appliquera aux nouveaux mails à chaque synchronisation.</div>'
+          ? '<div class="notice">Règle automatique : elle s\'appliquera aux nouveaux mails à chaque synchronisation.</div>'
           : '<div class="notice">Règle repassée en manuel.</div>');
       }));
   });
@@ -3951,7 +3950,7 @@ function renderRulesBody() {
       if (!confirm(`Déplacer ${btn.dataset.count} mail(s) vers « ${btn.dataset.folder} » ?\n(Déplacement uniquement — récupérable en re-déplaçant ; tout est journalisé.)`)) return;
       act(btn, async () => {
         const r = await api.ruleApply(btn.dataset.account, Number(btn.dataset.id));
-        notice(`<div class="notice">✅ ${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ».</div>`);
+        notice(`<div class="notice">${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ».</div>`);
       });
     });
   });
@@ -3968,7 +3967,7 @@ async function openRulePreview(slug, id) {
   // de valider un déplacement de masse.
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2>👁️ Aperçu de la règle</h2>
+    <div class="modal-head"><h2>Aperçu de la règle</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Analyse…</div></div>
     <div class="modal-foot" id="modal-foot"></div>
@@ -4001,14 +4000,14 @@ async function openRulePreview(slug, id) {
     });
     $('#modal-foot').innerHTML = `
       <button class="btn" id="rule-preview-close">Fermer</button>
-      ${p.total > 0 ? `<button class="btn btn-primary" id="rule-preview-apply">▶️ Déplacer ${fmtNum(p.total)} mail(s) vers 📂 ${esc(p.rule.targetFolder)}</button>` : ''}`;
+      ${p.total > 0 ? `<button class="btn btn-primary" id="rule-preview-apply">Déplacer ${fmtNum(p.total)} mail(s) vers ${esc(p.rule.targetFolder)}</button>` : ''}`;
     $('#rule-preview-close').addEventListener('click', closeModal);
     $('#rule-preview-apply')?.addEventListener('click', async (e) => {
       e.target.disabled = true;
       try {
         const r = await api.ruleApply(slug, id);
         closeModal();
-        $('#rules-notice').innerHTML = `<div class="notice">✅ ${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ». La règle est validée.</div>`;
+        $('#rules-notice').innerHTML = `<div class="notice">${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ». La règle est validée.</div>`;
         await loadRules();
       } catch (err) {
         e.target.disabled = false;
@@ -4016,7 +4015,7 @@ async function openRulePreview(slug, id) {
       }
     });
   } catch (err) {
-    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#modal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
   }
 }
 
@@ -4042,7 +4041,7 @@ function openRuleModal() {
       </div>
       <datalist id="nr-folders"></datalist>
       <div id="nr-error"></div>
-      <div class="trash-note" style="margin-top:10px">🛟 La règle est créée ACTIVE mais ne déplace
+      <div class="trash-note" style="margin-top:10px">La règle est créée ACTIVE mais ne déplace
         rien tant que tu ne cliques pas « Ranger » (ou ne coches pas « auto »).</div>
     </div>
     <div class="modal-foot">
@@ -4074,11 +4073,11 @@ function openRuleModal() {
         targetFolder: $('#nr-folder').value,
       });
       closeModal();
-      $('#rules-notice').innerHTML = '<div class="notice">✅ Règle créée (active). Utilise 👁️ Aperçu puis ▶️ Ranger pour l\'appliquer.</div>';
+      $('#rules-notice').innerHTML = '<div class="notice">Règle créée (active). Utilise Aperçu puis Ranger pour l\'appliquer.</div>';
       await loadRules();
     } catch (err) {
       e.target.disabled = false;
-      $('#nr-error').innerHTML = `<div class="notice warn" style="margin-top:8px">⚠️ ${esc(err.message)}</div>`;
+      $('#nr-error').innerHTML = `<div class="notice warn" style="margin-top:8px">${esc(err.message)}</div>`;
     }
   });
 }
@@ -4090,7 +4089,7 @@ function openRuleModal() {
 async function renderCleanupGlobal() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🧹 Nettoyage rapide</h1>
+    <div><h1>Nettoyage rapide</h1>
       <div class="sub">Les expéditeurs qui encombrent tes boîtes (newsletters, notifications…),
       toutes boîtes confondues. « Nettoyer » montre d'abord la liste exacte des mails — rien ne
       part sans ta confirmation, et tout va dans la corbeille (récupérable ~30 jours).</div></div>
@@ -4109,17 +4108,17 @@ async function renderCleanupGlobal() {
 // Tarir le flux à la source : plutôt que de supprimer les mêmes newsletters
 // éternellement, on demande à l'expéditeur d'arrêter.
 const UNSUB_METHOD = {
-  'one-click': ['⚡', 'en un clic', 'Cet expéditeur accepte une désinscription immédiate, sans page à ouvrir.'],
-  mail: ['✉️', 'par mail', 'On envoie une demande de désinscription depuis ta boîte.'],
-  lien: ['🔗', 'page web', 'Aucune désinscription automatique : sa page s’ouvrira dans un onglet.'],
+  'one-click': ['', 'en un clic', 'Cet expéditeur accepte une désinscription immédiate, sans page à ouvrir.'],
+  mail: ['', 'par mail', 'On envoie une demande de désinscription depuis ta boîte.'],
+  lien: ['', 'page web', 'Aucune désinscription automatique : sa page s’ouvrira dans un onglet.'],
 };
 
 async function renderUnsubscribe() {
   const main = $('#main');
-  main.innerHTML = `<div class="page-head"><div><h1>🚫 Désinscriptions</h1>
+  main.innerHTML = `<div class="page-head"><div><h1>Désinscriptions</h1>
     <div class="sub">Arrêter les listes à la source — c'est ce qui empêche tes boîtes de se remplir à nouveau.</div></div>
     <div class="head-actions">
-      <button class="btn" id="unsub-refresh" title="Va lire les en-têtes de désinscription des expéditeurs de type liste">🔍 Chercher les liens</button>
+      <button class="btn" id="unsub-refresh" title="Va lire les en-têtes de désinscription des expéditeurs de type liste">Chercher les liens</button>
       <label class="muted" style="font-size:12.5px; display:flex; align-items:center; gap:4px">
         <input type="checkbox" id="unsub-done"> voir les désinscrits</label>
     </div></div>
@@ -4130,7 +4129,7 @@ async function renderUnsubscribe() {
     try {
       await api.unsubscribeRefresh();
       pollJobs();
-      $('#unsub-body').innerHTML = `<div class="notice">🔍 Recherche des liens de désinscription lancée —
+      $('#unsub-body').innerHTML = `<div class="notice">Recherche des liens de désinscription lancée —
         suis l'avancement via la pastille d'activité, puis reviens sur cet écran.</div>`;
     } catch (err) {
       alert(err.message);
@@ -4149,12 +4148,12 @@ async function loadUnsubscribe() {
   try {
     data = await api.unsubscribeList({ done: $('#unsub-done')?.checked });
   } catch (err) {
-    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (!data.senders.length) {
     el.innerHTML = `<div class="empty">Aucun expéditeur avec un lien de désinscription connu.
-      Clique « 🔍 Chercher les liens » : l'assistant lit l'en-tête de désinscription du dernier mail
+      Clique « Chercher les liens » : l'assistant lit l'en-tête de désinscription du dernier mail
       de chaque newsletter (aucun contenu n'est téléchargé).</div>`;
     return;
   }
@@ -4167,7 +4166,7 @@ async function loadUnsubscribe() {
         <th>Boîte</th><th>Expéditeur</th><th class="num">Mails</th><th class="num">Poids</th>
         <th>Méthode</th><th></th></tr></thead><tbody>
       ${data.senders.map((s, i) => {
-        const [emoji, label, why] = UNSUB_METHOD[s.method] ?? ['🔗', s.method, ''];
+        const [emoji, label, why] = UNSUB_METHOD[s.method] ?? ['', s.method, ''];
         return `<tr>
           <td style="white-space:nowrap">${accountChip(s.account)}</td>
           <td style="max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
@@ -4178,17 +4177,17 @@ async function loadUnsubscribe() {
           <td style="white-space:nowrap" title="${esc(why)}">${emoji} ${esc(label)}</td>
           <td style="white-space:nowrap; text-align:right">
             ${s.unsubscribedAt
-              ? `<span class="badge green" title="${esc(s.note || '')}">✅ désinscrit</span>`
-              : `<button class="btn btn-sm" data-unsub="${i}">🚫 Me désinscrire</button>`}</td>
+              ? `<span class="badge green" title="${esc(s.note || '')}">désinscrit</span>`
+              : `<button class="btn btn-sm" data-unsub="${i}">Me désinscrire</button>`}</td>
         </tr>`;
       }).join('')}
       </tbody></table></div>
       <div class="muted" style="font-size:12.5px; padding-top:10px">
-        ⚡ <strong>En un clic</strong> = l'expéditeur respecte le standard de désinscription : c'est immédiat et sûr.
-        ✉️ <strong>Par mail</strong> = une demande part depuis ta boîte.
-        🔗 <strong>Page web</strong> = rien n'est cliqué automatiquement, sa page s'ouvre et tu décides —
+        <strong>En un clic</strong> = l'expéditeur respecte le standard de désinscription : c'est immédiat et sûr.
+        <strong>Par mail</strong> = une demande part depuis ta boîte.
+        <strong>Page web</strong> = rien n'est cliqué automatiquement, sa page s'ouvre et tu décides —
         chez un expéditeur douteux, cliquer confirmerait surtout que ton adresse est active.
-        <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">🧹 Nettoyage rapide</a> pour le stock déjà reçu.</div>
+        <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">Nettoyage rapide</a> pour le stock déjà reçu.</div>
     </div></div>`;
 
   el.querySelectorAll('[data-unsub]').forEach((btn) => {
@@ -4196,7 +4195,7 @@ async function loadUnsubscribe() {
       const s = data.senders[Number(btn.dataset.unsub)];
       if (!confirm(`Se désinscrire de « ${s.displayName || s.email} » ?\n\n${UNSUB_METHOD[s.method]?.[2] ?? ''}`)) return;
       btn.disabled = true;
-      btn.textContent = '⏳ En cours…';
+      btn.textContent = 'En cours…';
       try {
         const r = await api.unsubscribeSender(s.account, s.email);
         if (r.openUrl) {
@@ -4243,7 +4242,7 @@ async function loadRetention() {
   try {
     data = await api.retention();
   } catch (err) {
-    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (!el.isConnected) return;
@@ -4257,7 +4256,7 @@ async function loadRetention() {
   };
 
   el.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2>🗂️ Stratégies de rétention</h2>
+    <div class="panel-head"><h2>Stratégies de rétention</h2>
       <span class="badge gray">${fmtNum(data.policies.filter((p) => p.enabled).length)} activée(s) / ${fmtNum(data.policies.length)}</span></div>
     <div class="panel-body">
       ${data.policies.map((p) => `
@@ -4270,21 +4269,21 @@ async function loadRetention() {
             ${p.appliedCount ? ` · déjà nettoyé : ${fmtNum(p.appliedCount)}` : ''}</span></div>
           <span class="badge ${p.matchCount ? 'orange' : 'gray'}" title="Ce que la stratégie viserait aujourd'hui (simulation, rien n'est touché)">
             ${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
-          ${p.protectedCount ? `<span class="badge green" title="Mails écartés par la protection : mails étoilés, tâches/échéances liées, expéditeurs ⭐ toujours importants (toujours protégés), et conversations récentes (échanges de moins de 2 ans)">🛡️ ${fmtNum(p.protectedCount)} protégés</span>` : ''}
+          ${p.protectedCount ? `<span class="badge green" title="Mails écartés par la protection : mails étoilés, tâches/échéances liées, expéditeurs toujours importants (toujours protégés), et conversations récentes (échanges de moins de 2 ans)">${fmtNum(p.protectedCount)} protégés</span>` : ''}
           <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px; ${p.enabled ? '' : 'visibility:hidden'}"
             title="Appliquer automatiquement après chaque synchronisation (uniquement une stratégie déjà activée)">
             <input type="checkbox" class="ret-auto" data-id="${p.id}" ${p.autoApply ? 'checked' : ''}> auto</label>
-          <button class="btn btn-sm ret-preview" data-id="${p.id}" ${p.matchCount ? '' : 'disabled'}>👀 Aperçu</button>
+          <button class="btn btn-sm ret-preview" data-id="${p.id}" ${p.matchCount ? '' : 'disabled'}>Aperçu</button>
           <button class="btn btn-sm btn-primary ret-apply" data-id="${p.id}" data-count="${p.matchCount}"
-            data-label="${esc(p.label)}" ${p.enabled && p.matchCount ? '' : 'disabled'}>🧹 Mettre à la corbeille</button>
+            data-label="${esc(p.label)}" ${p.enabled && p.matchCount ? '' : 'disabled'}>Mettre à la corbeille</button>
         </div>`).join('')}
       <div class="muted" style="font-size:12.5px; padding-top:8px">
         Simulation en continu : rien n'est touché tant que tu n'appliques pas. Tout part à la
         corbeille (récupérable ~30 jours) et chaque passage est journalisé. « auto » = la stratégie
         s'applique seule après chaque synchronisation — à activer quand tu lui fais confiance.
-        Les compteurs s'appuient sur les catégories : lance « 🏷️ Réexaminer les expéditeurs » dans ⚙️ Paramètres si tout est à zéro.
-        <br>🛡️ <strong>Ce qui est protégé :</strong> pour toujours, tes mails étoilés, ceux liés à une tâche
-        ou une échéance en cours, et les expéditeurs marqués ⭐ ; et pendant <strong>2 ans</strong>, tout ce
+        Les compteurs s'appuient sur les catégories : lance « Réexaminer les expéditeurs » dans Paramètres si tout est à zéro.
+        <br><strong>Ce qui est protégé :</strong> pour toujours, tes mails étoilés, ceux liés à une tâche
+        ou une échéance en cours, et les expéditeurs marqués ; et pendant <strong>2 ans</strong>, tout ce
         avec quoi tu as interagi (mail répondu, conversation où tu as écrit). Passé ce délai, un vieil échange
         isolé ne bloque plus le nettoyage.</div>
     </div></div>`;
@@ -4327,7 +4326,7 @@ async function loadRetention() {
       try {
         await api.retentionApply(Number(btn.dataset.id));
         pollJobs();
-        alert('🧹 Application lancée — suis l\'avancement via la pastille d\'activité, puis actualise.');
+        alert('Application lancée — suis l\'avancement via la pastille d\'activité, puis actualise.');
       } catch (err) {
         btn.disabled = false;
         alert(err.message);
@@ -4341,7 +4340,7 @@ async function loadRetention() {
 async function renderSuggestions() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>💡 Règles proposées</h1>
+    <div><h1>Règles proposées</h1>
       <div class="sub">Ce que l'assistant a appris en t'observant : chaque suggestion vient avec sa preuve.
       Valider = la règle existe. Ignorer = on ne t'en reparle plus. Rien ne s'applique sans toi.</div></div>
     <div class="head-actions"><button class="btn" id="sugg-refresh">↻ Actualiser</button></div></div>
@@ -4358,14 +4357,14 @@ async function loadSuggestions() {
   try {
     s = await api.suggestions();
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (!body.isConnected) return;
   refreshSuggestionsBadge();
 
   if (s.total === 0) {
-    body.innerHTML = `<div class="empty">Rien à suggérer pour l'instant. 💡 L'assistant apprend au fil de
+    body.innerHTML = `<div class="empty">Rien à suggérer pour l'instant. L'assistant apprend au fil de
       tes rangements, nettoyages et lectures — reviens dans quelques jours.</div>`;
     return;
   }
@@ -4375,21 +4374,21 @@ async function loadSuggestions() {
 
   body.innerHTML = `
     ${s.rules.length ? `<div class="panel">
-      <div class="panel-head"><h2>🗂️ Règles proposées</h2><span class="badge orange">${fmtNum(s.rules.length)}</span></div>
+      <div class="panel-head"><h2>Règles proposées</h2><span class="badge orange">${fmtNum(s.rules.length)}</span></div>
       <div class="panel-body">
         ${s.rules.map((r, i) => row(
           `Si <strong>${r.rule.matchType === 'domain' ? 'domaine' : r.rule.matchType === 'subject' ? 'sujet' : 'expéditeur'} = ${esc(r.rule.matchValue)}</strong>
-           → déplacer vers 📂 <strong>${esc(r.rule.targetFolder)}</strong> ${accountChip(r.account)}
+           → déplacer vers <strong>${esc(r.rule.targetFolder)}</strong> ${accountChip(r.account)}
            <br><span class="muted" style="font-size:12px">Preuve : ${esc(r.rule.reason)}${r.rule.pendingCount ? ` · ${fmtNum(r.rule.pendingCount)} mails à ranger dès maintenant` : ''}</span>`,
           `<button class="btn btn-sm btn-primary sugg-rule-ok" data-i="${i}">✓ Valider</button>
            <button class="btn btn-sm sugg-rule-no" data-i="${i}">✕ Refuser</button>`,
         )).join('')}
         <div class="muted" style="font-size:12.5px; padding-top:8px">Valider active la règle (rangement via
-        le bouton « Ranger » de l'écran <a href="#/rules">🗂️ Règles</a>, ou coche « auto » là-bas quand tu lui fais confiance).</div>
+        le bouton « Ranger » de l'écran <a href="#/rules">Règles</a>, ou coche « auto » là-bas quand tu lui fais confiance).</div>
       </div></div>` : ''}
 
     ${s.retentionAuto.length ? `<div class="panel">
-      <div class="panel-head"><h2>🧹 Nettoyages à automatiser</h2><span class="badge orange">${fmtNum(s.retentionAuto.length)}</span></div>
+      <div class="panel-head"><h2>Nettoyages à automatiser</h2><span class="badge orange">${fmtNum(s.retentionAuto.length)}</span></div>
       <div class="panel-body">
         ${s.retentionAuto.map((r, i) => row(
           `<strong>${esc(r.label)}</strong><br><span class="muted" style="font-size:12px">Preuve : ${esc(r.evidence)}</span>`,
@@ -4399,10 +4398,10 @@ async function loadSuggestions() {
       </div></div>` : ''}
 
     ${s.priorities.length ? `<div class="panel">
-      <div class="panel-head"><h2>⭐ Priorités par relation</h2><span class="badge orange">${fmtNum(s.priorities.length)}</span></div>
+      <div class="panel-head"><h2>Priorités par relation</h2><span class="badge orange">${fmtNum(s.priorities.length)}</span></div>
       <div class="panel-body">
         ${s.priorities.map((p, i) => row(
-          `${p.priority === 'always_important' ? '⭐' : '🔕'} <strong>${esc(p.name)}</strong>
+          `${p.priority === 'always_important' ? '' : ''} <strong>${esc(p.name)}</strong>
            <span class="muted" style="font-size:12px">${esc(p.email)}</span> ${accountChip(p.account)}
            <br><span class="muted" style="font-size:12px">Preuve : ${esc(p.evidence)}</span>`,
           `<button class="btn btn-sm btn-primary sugg-prio-ok" data-i="${i}">✓ ${p.priority === 'always_important' ? 'Toujours important' : 'Jamais urgent'}</button>
@@ -4431,7 +4430,7 @@ async function loadSuggestions() {
   }));
   body.querySelectorAll('.sugg-ret-ok').forEach((btn) => btn.addEventListener('click', () => {
     const r = s.retentionAuto[Number(btn.dataset.i)];
-    if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans 🧹 Nettoyage rapide.`)) return;
+    if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans Nettoyage rapide.`)) return;
     act(btn, () => api.retentionUpdate(r.policyId, { autoApply: true }));
   }));
   body.querySelectorAll('.sugg-ret-no').forEach((btn) => btn.addEventListener('click', () => {
@@ -4465,7 +4464,7 @@ const VERIFY_REASONS = {
   ],
   important: [
     { label: 'Pas important du tout' },
-    { label: 'Expéditeur jamais urgent', action: 'prioNever', confirm: 'Marquer cet expéditeur 🔕 jamais urgent (score plafonné) ?' },
+    { label: 'Expéditeur jamais urgent', action: 'prioNever', confirm: 'Marquer cet expéditeur jamais urgent (score plafonné) ?' },
     { label: "C'est une newsletter / une pub", action: 'catNewsletter', confirm: 'Classer cet expéditeur en « Newsletter » (choix mémorisé) ?' },
     { label: 'Autre raison' },
   ],
@@ -4480,7 +4479,7 @@ const VERIFY_REASONS = {
     { label: 'Autre catégorie' },
   ],
   cleanup: [
-    { label: 'Ne JAMAIS supprimer cet expéditeur', action: 'prioAlways', confirm: 'Marquer cet expéditeur ⭐ toujours important ? Ses mails ne seront plus jamais visés par un nettoyage.' },
+    { label: 'Ne JAMAIS supprimer cet expéditeur', action: 'prioAlways', confirm: 'Marquer cet expéditeur toujours important ? Ses mails ne seront plus jamais visés par un nettoyage.' },
     { label: "C'est une personne", action: 'catPerson', confirm: 'Classer cet expéditeur en « Personne » ? Il sera protégé de tous les nettoyages.' },
     { label: 'Autre raison' },
   ],
@@ -4520,13 +4519,13 @@ function updateVerifyModeButton() {
 async function renderVerify() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🔬 Corriger l'assistant</h1>
+    <div><h1>Corriger l'assistant</h1>
       <div class="sub">Contrôle qualité : quelques mails tirés AU HASARD dans chaque moteur d'analyse.
       Dis si l'assistant a bon — tes corrections améliorent les catégories, les priorités et les listes.
       Rien n'est supprimé ici.</div></div>
     <div class="head-actions">
       <button class="btn" id="verify-mode-toggle"></button>
-      <button class="btn" id="verify-refresh">🎲 Nouvel échantillon</button>
+      <button class="btn" id="verify-refresh">Nouvel échantillon</button>
     </div></div>
     <div id="verify-stats"></div>
     <div id="verify-body"><div class="empty"><span class="spinner"></span>Tirage d'un échantillon…</div></div>`;
@@ -4554,7 +4553,7 @@ function renderVerifyStats(stats) {
       <div class="kpi-sub">${fmtNum(s.correct)} ✓ · ${fmtNum(s.incorrect)} ✗ · ${fmtNum(s.unsure)} ? (${fmtNum(s.total)} avis)</div>
     </div>`;
   };
-  el.innerHTML = `<div class="panel"><div class="panel-head"><h2>🎯 Précision mesurée</h2>
+  el.innerHTML = `<div class="panel"><div class="panel-head"><h2>Précision mesurée</h2>
     <span class="muted" style="font-size:12px">% = corrects / (corrects + incorrects), sur tous tes avis</span></div>
     <div class="panel-body" style="display:flex; gap:10px; flex-wrap:wrap">${rated.map(chip).join('')}</div></div>`;
 }
@@ -4566,7 +4565,7 @@ const VERIFY_HINTS = {
   notification: 'Expéditeurs classés « notification / robot » par la machine.',
   cleanup: 'Mails que les stratégies de nettoyage viseraient aujourd\'hui.',
 };
-const VERIFY_ICONS = { reply: '↩️', important: '⭐', newsletter: '📰', notification: '🤖', cleanup: '🧹' };
+const VERIFY_ICONS = { reply: '', important: '', newsletter: '', notification: '', cleanup: '' };
 
 async function loadVerify() {
   const body = $('#verify-body');
@@ -4575,7 +4574,7 @@ async function loadVerify() {
   try {
     verifySample = await api.reviewSample(10);
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (!body.isConnected) return;
@@ -4617,11 +4616,11 @@ function renderVerifyGuided() {
   const finish = () => {
     const total = counts.correct + counts.incorrect + counts.unsure;
     body.innerHTML = `<div class="panel"><div class="panel-body empty" style="font-size:15px">
-      ${total ? `🎯 C'est vérifié : <strong>${fmtNum(counts.correct)}</strong> juste(s),
+      ${total ? `C'est vérifié : <strong>${fmtNum(counts.correct)}</strong> juste(s),
         <strong>${fmtNum(counts.incorrect)}</strong> à corriger, ${fmtNum(counts.unsure)} incertaine(s)${counts.skipped ? `, ${fmtNum(counts.skipped)} passée(s)` : ''}.
         Chaque avis affine la précision mesurée ci-dessus.`
         : 'Rien à vérifier dans cet échantillon — tout a déjà reçu ton avis.'}
-      <br><button class="btn btn-primary btn-sm" id="vg-again" style="margin-top:10px">🎲 Nouvel échantillon</button></div></div>`;
+      <br><button class="btn btn-primary btn-sm" id="vg-again" style="margin-top:10px">Nouvel échantillon</button></div></div>`;
     $('#vg-again')?.addEventListener('click', loadVerify);
   };
 
@@ -4635,7 +4634,7 @@ function renderVerifyGuided() {
         <div style="font-size:15px; margin-bottom:10px"><strong>L'assistant pense que :</strong> ${esc(it.claim)}</div>
         <div><strong>${esc(it.subject)}</strong> ${it.isSeen ? '' : '<span class="badge blue">non lu</span>'}</div>
         <div class="muted" style="font-size:12.5px">${esc(it.fromName || it.fromEmail)} · ${fmtDate(it.date)} ${accountChip(it.account)}</div>
-        <div style="margin:10px 0"><span class="openable" id="vg-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>
+        <div style="margin:10px 0"><span class="openable" id="vg-read" style="font-size:13px">Lire le mail avant de décider</span></div>
         <div id="vg-actions" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center"></div>
       </div></div>`;
     $('#vg-read')?.addEventListener('click', () => openReaderFor(it, {}));
@@ -4649,7 +4648,7 @@ function renderVerifyGuided() {
       zone.innerHTML = `<button class="btn btn-sm btn-primary" id="vg-ok">✓ Oui, c'est juste</button>
         <button class="btn btn-sm" id="vg-ko">✗ Non, corriger</button>
         <button class="btn btn-sm" id="vg-idk" title="Impossible à dire sans plus de contexte">? Je ne sais pas</button>
-        <button class="btn btn-sm" id="vg-skip" style="margin-left:auto" title="Décision remise à plus tard">⏭️ Passer</button>`;
+        <button class="btn btn-sm" id="vg-skip" style="margin-left:auto" title="Décision remise à plus tard">Passer</button>`;
       $('#vg-ok').addEventListener('click', guard(async () => { await verifyRecord(it, 'correct'); counts.correct++; idx++; step(); }));
       $('#vg-idk').addEventListener('click', guard(async () => { await verifyRecord(it, 'unsure'); counts.unsure++; idx++; step(); }));
       $('#vg-skip').addEventListener('click', () => { counts.skipped++; idx++; step(); });
@@ -4657,7 +4656,7 @@ function renderVerifyGuided() {
         const reasons = VERIFY_REASONS[it.engine] ?? [{ label: 'Autre raison' }];
         zone.innerHTML = `<span class="muted" style="font-size:12px">Qu'est-ce qui cloche ?</span>
           ${reasons.map((r, ri) => `<button class="btn btn-sm vg-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
-          <button class="btn btn-sm" id="vg-cancel" title="Annuler">↩</button>`;
+          <button class="btn btn-sm" id="vg-cancel" title="Annuler"></button>`;
         $('#vg-cancel').addEventListener('click', actions);
         zone.querySelectorAll('.vg-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
           const r = reasons[Number(btn.dataset.ri)];
@@ -4693,9 +4692,9 @@ function renderVerifyList() {
         <div style="flex:1; min-width:0">
           <div><strong>${esc(it.subject)}</strong> ${it.isSeen ? '' : '<span class="badge blue">non lu</span>'}</div>
           <div class="muted" style="font-size:12px">${esc(it.fromName || it.fromEmail)} · ${fmtDate(it.date)} ${accountChip(it.account)}</div>
-          <div class="muted" style="font-size:12px; font-style:italic">🤖 ${esc(it.claim)}</div>
+          <div class="muted" style="font-size:12px; font-style:italic">${esc(it.claim)}</div>
         </div>
-        <button class="btn btn-sm verify-read" data-e="${ei}" data-i="${i}">📖</button>
+        <button class="btn btn-sm verify-read" data-e="${ei}" data-i="${i}"></button>
         <div class="verify-zone" id="v-zone-${ei}-${i}" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end; max-width:340px"></div>
       </div>`).join('')}
     </div></div>`).join('');
@@ -4748,7 +4747,7 @@ function renderVerifyZone(ei, i) {
     const reasons = VERIFY_REASONS[item.engine] ?? [{ label: 'Autre raison' }];
     zone.innerHTML = `<span class="muted" style="font-size:12px">Pourquoi ?</span>
       ${reasons.map((r, ri) => `<button class="btn btn-sm v-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
-      <button class="btn btn-sm v-cancel" title="Annuler">↩</button>`;
+      <button class="btn btn-sm v-cancel" title="Annuler"></button>`;
     zone.querySelector('.v-cancel').addEventListener('click', () => renderVerifyZone(ei, i));
     zone.querySelectorAll('.v-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
       const r = reasons[Number(btn.dataset.ri)];
@@ -4779,10 +4778,10 @@ function pctBar(pct, color) {
 async function renderBigClean() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>🧺 Libérer de l'espace</h1>
+    <div><h1>Libérer de l'espace</h1>
       <div class="sub">Pourquoi ta boîte est pleine, et ce qu'on peut récupérer SANS RISQUE.
       L'analyse ne touche à rien : tu regardes, tu coches, tu valides.</div></div>
-    <div class="head-actions"><button class="btn" id="bigclean-refresh">🔍 Ré-analyser</button></div></div>
+    <div class="head-actions"><button class="btn" id="bigclean-refresh">Ré-analyser</button></div></div>
     <div id="bigclean-body"><div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes…</div></div>`;
   $('#bigclean-refresh').addEventListener('click', loadBigClean);
   await loadBigClean();
@@ -4796,7 +4795,7 @@ async function loadBigClean() {
   try {
     r = await api.report();
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   if (!body.isConnected) return;
@@ -4808,23 +4807,23 @@ async function loadBigClean() {
   const usable = r.deletable.policies.filter((p) => p.matchCount > 0);
 
   body.innerHTML = `
-    ${needCategories ? `<div class="notice warn">🏷️ La plupart des mails ne sont pas encore catégorisés :
-      lance « Réexaminer les expéditeurs » dans <a href="#/settings">⚙️ Paramètres</a> puis reviens — le rapport sera bien plus précis.</div>` : ''}
+    ${needCategories ? `<div class="notice warn">La plupart des mails ne sont pas encore catégorisés :
+      lance « Réexaminer les expéditeurs » dans <a href="#/settings">Paramètres</a> puis reviens — le rapport sera bien plus précis.</div>` : ''}
 
     <div class="cards">
-      <div class="kpi"><div class="kpi-label">✉️ Mails analysés</div>
+      <div class="kpi"><div class="kpi-label">Mails analysés</div>
         <div class="kpi-value">${fmtNum(r.totals.messages)}</div>
         <div class="kpi-sub">${fmtNum(r.totals.accounts)} boîte(s), hors corbeille/spam</div></div>
-      <div class="kpi"><div class="kpi-label">💾 Espace occupé</div>
+      <div class="kpi"><div class="kpi-label">Espace occupé</div>
         <div class="kpi-value">${fmtSize(r.totals.sizeBytes)}</div>
         <div class="kpi-sub">taille des mails synchronisés</div></div>
-      <div class="kpi accent"><div class="kpi-label">🧺 Récupérable sans risque</div>
+      <div class="kpi accent"><div class="kpi-label">Récupérable sans risque</div>
         <div class="kpi-value">${fmtNum(r.deletable.count)}</div>
         <div class="kpi-sub">mails · ${fmtSize(r.deletable.sizeBytes)} — 0 mail personnel, garanti</div></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>📊 Pourquoi ma boîte est pleine ?</h2></div>
+      <div class="panel-head"><h2>Pourquoi ma boîte est pleine ?</h2></div>
       <div class="panel-body">
         ${r.byCategory.map((c) => `
           <div style="display:flex; align-items:center; gap:10px; padding:5px 0">
@@ -4839,7 +4838,7 @@ async function loadBigClean() {
 
     <div class="cards" style="grid-template-columns: 1fr 1fr; align-items:start">
       <div class="panel" style="margin:0">
-        <div class="panel-head"><h2>⏳ Ancienneté</h2></div>
+        <div class="panel-head"><h2>Ancienneté</h2></div>
         <div class="panel-body">
           ${r.byAge.map((a) => `
             <div style="display:flex; align-items:center; gap:10px; padding:5px 0">
@@ -4850,7 +4849,7 @@ async function loadBigClean() {
         </div>
       </div>
       <div class="panel" style="margin:0">
-        <div class="panel-head"><h2>🏋️ Top expéditeurs (poids)</h2></div>
+        <div class="panel-head"><h2>Top expéditeurs (poids)</h2></div>
         <div class="panel-body tight">
           <table><thead><tr><th>Expéditeur</th><th class="num">Mails</th><th class="num">Taille</th></tr></thead>
           <tbody>${r.topSendersBySize.slice(0, 8).map((s) => `<tr>
@@ -4868,14 +4867,14 @@ async function loadBigClean() {
         <span class="badge green">≈ ${fmtNum(r.deletable.count)} mails · ${fmtSize(r.deletable.sizeBytes)} récupérables</span></div>
       <div class="panel-body">
         ${usable.length === 0
-          ? `<div class="empty">Rien à récupérer pour l'instant via les stratégies. ${needCategories ? 'Lance d\'abord le calcul des catégories (bandeau ci-dessus).' : '🎉'}</div>`
+          ? `<div class="empty">Rien à récupérer pour l'instant via les stratégies. ${needCategories ? 'Lance d\'abord le calcul des catégories (bandeau ci-dessus).' : ''}</div>`
           : `${usable.map((p) => `
             <div style="display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border)">
               <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer">
                 <input type="checkbox" class="gm-check" data-id="${p.id}" data-count="${p.matchCount}" checked>
                 <span><strong>${esc(p.label)}</strong></span></label>
               <span class="badge orange">${fmtNum(p.matchCount)} mails · ${fmtSize(p.matchSizeBytes)}</span>
-              <button class="btn btn-sm gm-preview" data-id="${p.id}">👀 Aperçu</button>
+              <button class="btn btn-sm gm-preview" data-id="${p.id}">Aperçu</button>
             </div>`).join('')}
           <div style="display:flex; align-items:center; gap:10px; padding-top:12px">
             <span class="muted" style="font-size:12.5px; flex:1">Tout part à la CORBEILLE (récupérable ~30 jours),
@@ -4896,17 +4895,17 @@ async function loadBigClean() {
       return;
     }
     const total = checked.reduce((s, c) => s + Number(c.dataset.count), 0);
-    if (!confirm(`Libérer de l'espace : ≈ ${fmtNum(total)} mails partiront à la corbeille (${checked.length} stratégie(s)).\n\nIls restent récupérables ~30 jours. Les stratégies cochées seront ACTIVÉES (tu peux les désactiver ensuite dans 🧹 Nettoyage rapide). On y va ?`)) return;
+    if (!confirm(`Libérer de l'espace : ≈ ${fmtNum(total)} mails partiront à la corbeille (${checked.length} stratégie(s)).\n\nIls restent récupérables ~30 jours. Les stratégies cochées seront ACTIVÉES (tu peux les désactiver ensuite dans Nettoyage rapide). On y va ?`)) return;
     const btn = $('#gm-launch');
     btn.disabled = true;
     btn.textContent = 'Nettoyage lancé…';
     try {
       await api.grandMenage(checked.map((c) => Number(c.dataset.id)));
       pollJobs();
-      alert('🧺 Nettoyage lancé en arrière-plan — suis l\'avancement via la pastille d\'activité, puis « 🔍 Ré-analyser » pour voir le résultat.');
+      alert('Nettoyage lancé en arrière-plan — suis l\'avancement via la pastille d\'activité, puis « Ré-analyser » pour voir le résultat.');
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = '🧺 Lancer le nettoyage';
+      btn.textContent = 'Lancer le nettoyage';
       alert(err.message);
     }
   });
@@ -4919,7 +4918,7 @@ async function openRetentionPreview(id) {
   // qu'on puisse vérifier un mail douteux sans fermer l'aperçu.
   overlay.className = 'modal-overlay under-reader';
   overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2>👀 Aperçu de la stratégie</h2>
+    <div class="modal-head"><h2>Aperçu de la stratégie</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body" id="modal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>
     <div class="modal-foot" id="modal-foot"><button class="btn" onclick="document.querySelector('.modal-overlay').remove()">Fermer</button></div>
@@ -4931,7 +4930,7 @@ async function openRetentionPreview(id) {
   try {
     data = await api.retentionPreview(id);
   } catch (err) {
-    $('#modal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#modal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   // La date est la colonne qui décide : un mail de 2020 et un de ce mois-ci ne
@@ -4991,11 +4990,11 @@ async function loadCleanupGlobal() {
   }
   if (!body.isConnected) return;
   if (perAccount.length === 0) {
-    body.innerHTML = '<div class="empty">Rien à nettoyer pour l\'instant. 🎉 (Ou boîtes pas encore synchronisées.)</div>';
+    body.innerHTML = '<div class="empty">Rien à nettoyer pour l\'instant. (Ou boîtes pas encore synchronisées.)</div>';
     return;
   }
   body.innerHTML = `
-    <div class="notice">✨ <strong>${fmtNum(totalDeletable)}</strong> mails « sûrs » peuvent partir à la
+    <div class="notice"><strong>${fmtNum(totalDeletable)}</strong> mails « sûrs » peuvent partir à la
       corbeille, répartis sur <strong>${fmtNum(totalCandidates)}</strong> expéditeurs et
       ${fmtNum(perAccount.length)} boîte(s).</div>
     ${perAccount.map(({ slug, candidates, totalDeletableEstimate }) => `
@@ -5007,40 +5006,40 @@ async function loadCleanupGlobal() {
             <th class="num">Taille</th><th>Risque</th><th>Pourquoi</th><th></th></tr></thead>
           <tbody>${candidates.map((c) => `<tr>
             <td>${esc(c.senderName || c.sender)}<br><span class="muted" style="font-size:12px">${esc(c.sender)}</span></td>
-            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">📄 ${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
+            <td class="num">${fmtNum(c.messageCount)}${c.keepCount ? `<br><span class="badge green" style="font-weight:600" title="Pièce jointe, facture, ticket : jamais proposés">${fmtNum(c.keepCount)} gardés</span>` : ''}</td>
             <td class="num">${fmtNum(c.unseenCount)}</td>
             <td class="num">${fmtSize(c.totalSizeBytes)}</td>
             <td><span class="badge ${c.riskLevel === 'safe' ? 'green' : 'orange'}">${c.riskLevel === 'safe' ? 'Sûr' : 'Moyen'}</span></td>
             <td class="muted" style="font-size:12px; max-width:240px">${esc(c.reason)}</td>
             <td><button class="btn btn-sm cleanup-btn" data-account="${esc(slug)}"
-              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">🧹 Nettoyer</button></td>
+              data-sender="${esc(c.sender)}" data-name="${esc(c.senderName || c.sender)}">Nettoyer</button></td>
           </tr>`).join('')}</tbody></table>
         </div>
       </div>`).join('')}
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 Aperçu détaillé avant chaque nettoyage (liste cochable mail par mail, tri
+      Aperçu détaillé avant chaque nettoyage (liste cochable mail par mail, tri
       automatique/personnel), corbeille uniquement, lots de 200, tout est journalisé.</div>`;
   bindCleanupButtons(body);
 }
 
 // ------------------------------------------------- Pièces jointes (L5.14)
 // Retrouver un document : recherche multi-boîtes limitée aux mails AVEC
-// pièces jointes (index local — la détection 📎 est posée à la sync).
+// pièces jointes (index local — la détection est posée à la sync).
 const attachState = { q: '', account: '', since: '', data: null, searched: false };
 
 async function renderAttachments() {
   const main = $('#main');
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   main.innerHTML = `<div class="page-head">
-    <div><h1>📎 Pièces jointes</h1>
+    <div><h1>Pièces jointes</h1>
       <div class="sub">Retrouve un document reçu ou envoyé : mails avec pièces jointes, toutes boîtes
-      confondues. Ouvre le mail puis clique ⬇️ pour télécharger. NB : seuls les mails synchronisés depuis
+      confondues. Ouvre le mail puis clique ↓ pour télécharger. NB : seuls les mails synchronisés depuis
       la version « pièces jointes » portent l'info — une synchro complète la pose sur l'historique.</div></div></div>
     <form class="search-bar" id="attach-form">
       <input type="search" id="a-q" placeholder="Expéditeur, sujet… (ex. facture, notaire, EDF)"
         value="${esc(attachState.q)}" autocomplete="off">
       <select id="a-account">
-        <option value="">🌐 toutes les boîtes</option>
+        <option value="">toutes les boîtes</option>
         ${accounts.map((a) => `<option value="${esc(a)}" ${a === attachState.account ? 'selected' : ''}>${esc(a)}</option>`).join('')}
       </select>
       <label class="muted" style="display:flex; align-items:center; gap:6px; font-size:12.5px">
@@ -5077,7 +5076,7 @@ async function runAttachSearch() {
       limit: 200,
     });
   } catch (err) {
-    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   renderAttachResults();
@@ -5090,7 +5089,7 @@ function renderAttachResults() {
   if (d.items.length === 0) {
     el.innerHTML = `<div class="empty">Aucun mail avec pièce jointe trouvé.
       Si tu cherches un mail ancien, lance d'abord une <strong>Sync complète</strong> sur la boîte
-      concernée (l'info 📎 est posée à l'indexation).</div>`;
+      concernée (l'info est posée à l'indexation).</div>`;
     return;
   }
   el.innerHTML = `
@@ -5106,7 +5105,7 @@ function renderAttachResults() {
           <span class="result-from" title="${esc(i.fromEmail)}">${esc(i.fromName || i.fromEmail)}</span>
           <span class="result-subject">${esc(i.subject)}</span>
           ${folderBadge(i)}
-          <span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>
+          <span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">PJ${i.attachmentCount > 1 ? ' ' + i.attachmentCount : ''}</span>
         </div>`).join('')}
     </div></div>`;
 
@@ -5128,11 +5127,11 @@ function renderHelp() {
   const qa = (q, a) => `<details class="help-qa"><summary>${q}</summary><div>${a}</div></details>`;
 
   main.innerHTML = `<div class="page-head">
-    <div><h1>❓ Aide</h1>
+    <div><h1>Aide</h1>
       <div class="sub">Les réponses aux questions courantes. Tout se fait depuis l'interface —
       jamais besoin de ligne de commande.</div></div></div>
 
-  ${section('🚀 Démarrage & mises à jour', `
+  ${section('Démarrage & mises à jour', `
     ${qa('Comment lancer Mail Assistant ?',
       `Double-clique sur <strong>MailAssistant.bat</strong> (sur ton Bureau ou dans le dossier
       Boxmail). Il met à jour, prépare la base, démarre le serveur et le relance tout seul en cas
@@ -5140,13 +5139,13 @@ function renderHelp() {
     ${qa('Comment mettre à jour ?',
       `Quand une mise à jour existe, un <strong>bandeau bleu</strong> apparaît en haut du tableau
       de bord : clique dessus, le serveur télécharge la mise à jour et redémarre (quelques dizaines
-      de secondes). Si l'interface indique « ⚠️ non supervisé » en bas de la barre latérale, le
+      de secondes). Si l'interface indique « non supervisé » en bas de la barre latérale, le
       redémarrage automatique n'est pas possible : ferme tout et relance MailAssistant.bat.`)}
     ${qa('L\'interface ne répond plus ?',
       `Ferme la fenêtre noire de MailAssistant.bat puis relance-la. Tes données (index, comptes,
       journal) sont conservées sur ton PC.`)}`)}
 
-  ${section('📧 Boîtes & connexion', `
+  ${section('Boîtes & connexion', `
     ${qa('Ajouter une boîte',
       `Barre latérale → <strong>＋ Ajouter un compte</strong>. Une fenêtre Microsoft s'ouvre et te
       demande QUEL compte connecter : choisis le bon (ou « Utiliser un autre compte »). Répète pour
@@ -5161,11 +5160,11 @@ function renderHelp() {
       (plateforme « Applications de bureau et mobiles ») et patiente 2 à 10 minutes : Microsoft
       met un peu de temps à propager.`)}
     ${qa('Renommer ou retirer une boîte',
-      `Écran <a href="#/settings">⚙️ Paramètres</a>. Renommer garde l'accès (il faut juste relancer
+      `Écran <a href="#/settings">Paramètres</a>. Renommer garde l'accès (il faut juste relancer
       une synchronisation) ; retirer efface l'accès local et la copie des mails — <strong>tes mails chez
       Microsoft ne bougent jamais</strong>.`)}`)}
 
-  ${section('🔄 Synchronisation', `
+  ${section('Synchronisation', `
     ${qa('À quoi sert la synchronisation ?',
       `Elle copie les MÉTADONNÉES de tes mails (expéditeur, sujet, date… jamais le contenu) dans une copie locale ultra-rapide. Recherche, statistiques, importants, relances, échéances : tout lit cette copie. Synchronise régulièrement pour des résultats à jour.`)}
     ${qa('Rapide ou complète ?',
@@ -5177,7 +5176,7 @@ function renderHelp() {
       `Non. Les synchros continuent sur le serveur : la pastille d'activité en bas à gauche suit
       l'avancement, et tu peux revenir sur la boîte à tout moment.`)}`)}
 
-  ${section('🧹 Nettoyage & corbeille', `
+  ${section('Nettoyage & corbeille', `
     ${qa('Le nettoyage peut-il perdre des mails ?',
       `Non. Tout passe par la <strong>corbeille</strong> (« Éléments supprimés ») : récupérable
       pendant ~30 jours dans Outlook. Mail Assistant ne supprime JAMAIS définitivement, et rien ne
@@ -5188,40 +5187,40 @@ function renderHelp() {
       cochées d'office, les mails auxquels tu as répondu (ou conversations engagées) sont
       décochés. Tu peux ajuster mail par mail avant de valider.`)}`)}
 
-  ${section('📖 Lecture, envoi, pièces jointes', `
+  ${section('Lecture, envoi, pièces jointes', `
     ${qa('D\'où vient le contenu quand j\'ouvre un mail ?',
       `Il est téléchargé en direct depuis ta boîte au moment du clic (rien n'est stocké). Si la
       boîte est injoignable, un message l'explique — réessaie ou ouvre le mail dans Outlook.`)}
     ${qa('Télécharger une pièce jointe',
-      `Ouvre le mail : les pièces jointes sont listées en bas du panneau, clique sur ⬇️ pour
-      télécharger. Limite : mails de plus de 25 Mo à ouvrir depuis Outlook. Le badge 📎 dans la
+      `Ouvre le mail : les pièces jointes sont listées en bas du panneau, clique sur ↓ pour
+      télécharger. Limite : mails de plus de 25 Mo à ouvrir depuis Outlook. Le badge dans la
       boîte de réception n'apparaît que sur les mails synchronisés récemment — une synchronisation
       complète le pose sur les nouveaux arrivages.`)}
     ${qa('Envoyer / répondre en sécurité',
       `L'envoi demande toujours une confirmation, est journalisé (destinataires + objet), et une
       copie est déposée dans « Éléments envoyés ». Le mail d'origine est marqué répondu.`)}`)}
 
-  ${section('⌨️ Raccourcis & astuces', `
+  ${section('Raccourcis & astuces', `
     <ul class="help-list">
       <li><strong>Échap</strong> ferme le panneau de lecture et les fenêtres (une confirmation
         protège les brouillons en cours).</li>
       <li>Dans la boîte de réception, clique les en-têtes <strong>Date / Expéditeur / Sujet</strong>
         pour trier ; re-clique pour inverser l'ordre.</li>
-      <li>« 🌐 Toutes les boîtes » mélange toutes tes INBOX par date — chaque boîte a sa couleur
-        (personnalisable dans <a href="#/settings">⚙️ Paramètres</a>).</li>
+      <li>« Toutes les boîtes » mélange toutes tes INBOX par date — chaque boîte a sa couleur
+        (personnalisable dans <a href="#/settings">Paramètres</a>).</li>
       <li>Coche plusieurs mails pour agir en masse (corbeille, lu/non-lu, déplacer) — même dans la
         vue toutes-boîtes.</li>
-      <li>Le bouton <strong>⬆</strong> en bas à droite remonte en haut des longues listes.</li>
+      <li>Le bouton <strong></strong> en bas à droite remonte en haut des longues listes.</li>
     </ul>`)}
 
-  ${section('🆘 En cas de pépin', `
+  ${section('En cas de pépin', `
     <ul class="help-list">
-      <li>Consulte le <a href="#/operations">📜 Journal d'activité</a> : chaque action y est notée
+      <li>Consulte le <a href="#/operations">Journal d'activité</a> : chaque action y est notée
         avec la liste exacte des mails concernés.</li>
       <li>Redémarre via <strong>MailAssistant.bat</strong> — l'index se reconstruit tout seul à la
         synchronisation, rien n'est perdu.</li>
       <li>Vérifie la version en bas de la barre latérale et l'état du serveur dans
-        <a href="#/settings">⚙️ Paramètres</a>.</li>
+        <a href="#/settings">Paramètres</a>.</li>
       <li>Tes identifiants restent chiffrés sur TON PC (accounts.json) : ils ne transitent jamais
         par le navigateur ni par un service externe.</li>
     </ul>`)}`;
@@ -5236,8 +5235,8 @@ function autoUpdateLabel(a) {
   const quand = a.external
     ? 'gérée par le minuteur du serveur (hors application)'
     : `chaque nuit à ${String(a.hour).padStart(2, '0')} h`;
-  if (!a.lastResult) return `✅ ${quand} · <span class="muted">aucun passage encore</span>`;
-  const emoji = a.lastResult === 'échec' ? '⚠️' : '✅';
+  if (!a.lastResult) return `${quand} · <span class="muted">aucun passage encore</span>`;
+  const emoji = a.lastResult === 'échec' ? '' : '';
   const detail = a.lastRunAt ? ` le ${fmtDateTime(a.lastRunAt)}` : '';
   const head = `${emoji} ${quand}<div class="muted" style="font-size:11.5px">dernier passage${detail} : ${esc(a.lastResult)}</div>`;
   if (!a.lastMessage) return head;
@@ -5258,7 +5257,7 @@ function autoSyncLabel(a) {
   const mins = a.nextRunAt
     ? Math.max(0, Math.round((new Date(a.nextRunAt).getTime() - Date.now()) / 60000))
     : null;
-  return `✅ toutes les ${fmtNum(a.intervalMinutes)} min${mins !== null ? ` · prochaine dans ~${fmtNum(mins)} min` : ''}`;
+  return `toutes les ${fmtNum(a.intervalMinutes)} min${mins !== null ? ` · prochaine dans ~${fmtNum(mins)} min` : ''}`;
 }
 
 // ---------------------------------------------------------------- Paramètres (L5.8)
@@ -5270,7 +5269,7 @@ let snipTimer = null;
 async function renderSettings() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>⚙️ Paramètres</h1>
+    <div><h1>Paramètres</h1>
       <div class="sub">Gère tes boîtes (nom, couleur, retrait) et consulte l'état du serveur.
       Supprimer une boîte ici ne touche JAMAIS tes mails chez Microsoft : seul l'accès de
       Mail Assistant est retiré.</div></div></div>
@@ -5291,7 +5290,7 @@ function renderSettingsBody() {
     const ov = byAccount.get(e.account);
     const quotaInfo = ov?.quota
       ? `<span title="${esc(fmtSize(ov.quota.usedBytes))} utilisés sur ${esc(fmtSize(ov.quota.limitBytes))} — relu ${esc(fmtDateTime(ov.quotaCheckedAt))}">${ov.quota.pct} % · libre ${esc(fmtSize(ov.quota.freeBytes))}</span>`
-      : `<span title="${esc(ov?.quotaNote || 'jamais lu — lance une synchronisation ou clique 📏')}">quota inconnu ⓘ</span>`;
+      : `<span title="${esc(ov?.quotaNote || 'jamais lu — lance une synchronisation ou clique ')}">quota inconnu ⓘ</span>`;
     return `<tr>
       <td style="white-space:nowrap">
         <button class="btn btn-sm set-order-up" data-index="${idx}" ${idx === 0 ? 'disabled' : ''}
@@ -5306,9 +5305,9 @@ function renderSettingsBody() {
       <td class="muted" style="white-space:nowrap">${ov ? `${fmtNum(ov.indexedMessages)} mails · sync ${fmtDateTime(ov.lastSyncAt)}` : 'jamais synchronisée'}<br>${quotaInfo}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm set-quota" data-account="${esc(e.account)}"
-          title="Relire tout de suite la capacité de la boîte (utilisé / maximum) auprès du serveur Microsoft">📏 Quota</button>
-        <button class="btn btn-sm set-rename" data-account="${esc(e.account)}" title="Change uniquement le nom affiché ici — l'accès à la boîte est conservé">✏️ Renommer</button>
-        <button class="btn btn-sm set-remove" data-account="${esc(e.account)}" style="color:var(--red)" title="Retire la boîte de Mail Assistant — tes mails chez Microsoft ne bougent pas">🗑️ Supprimer</button>
+          title="Relire tout de suite la capacité de la boîte (utilisé / maximum) auprès du serveur Microsoft">Quota</button>
+        <button class="btn btn-sm set-rename" data-account="${esc(e.account)}" title="Change uniquement le nom affiché ici — l'accès à la boîte est conservé">Renommer</button>
+        <button class="btn btn-sm set-remove" data-account="${esc(e.account)}" style="color:var(--red)" title="Retire la boîte de Mail Assistant — tes mails chez Microsoft ne bougent pas">Supprimer</button>
       </td>
     </tr>`;
   }).join('');
@@ -5316,7 +5315,7 @@ function renderSettingsBody() {
   const v = serverVersion;
   body.innerHTML = `
     <div class="panel">
-      <div class="panel-head"><h2>📧 Boîtes connectées</h2></div>
+      <div class="panel-head"><h2>Boîtes connectées</h2></div>
       <div class="panel-body tight">
         ${enrolled.length === 0
           ? '<div class="empty">Aucune boîte connectée.</div>'
@@ -5324,11 +5323,11 @@ function renderSettingsBody() {
              <tbody>${rows}</tbody></table>`}
       </div>
       <div class="panel-body muted" style="font-size:12.5px; padding-top:0">
-        ✏️ Renommer change uniquement le nom affiché ici (l'accès est conservé) ; la copie locale des mails est reconstruite à la synchronisation suivante. 🗑️ Supprimer retire la boîte de Mail
+        Renommer change uniquement le nom affiché ici (l'accès est conservé) ; la copie locale des mails est reconstruite à la synchronisation suivante. Supprimer retire la boîte de Mail
         Assistant — tes mails chez Microsoft ne bougent pas.</div>
     </div>
     <div class="panel">
-      <div class="panel-head"><h2>🖥️ Serveur</h2></div>
+      <div class="panel-head"><h2>Serveur</h2></div>
       <div class="panel-body">
         <div class="set-line"><span class="muted">Version</span><span>${v ? `${esc(v.commit)} · ${esc(v.date)}` : '—'}</span></div>
         <div class="set-line"><span class="muted">Mise à jour</span>
@@ -5336,20 +5335,20 @@ function renderSettingsBody() {
         <div class="set-line"><span class="muted">Mise à jour automatique</span>
           <span>${autoUpdateLabel(v?.autoUpdate)}</span></div>
         <div class="set-line"><span class="muted">Superviseur (relance auto)</span>
-          <span>${v?.supervised ? '✅ actif' : '⚠️ non supervisé — lancer via MailAssistant.bat'}</span></div>
+          <span>${v?.supervised ? 'actif' : 'non supervisé — lancer via MailAssistant.bat'}</span></div>
         <div class="set-line"><span class="muted">Envoi de mails (SMTP)</span>
-          <span>${smtpEnabled ? '✅ activé' : '<span title="Réglage serveur : ENABLE_SMTP_SEND">✕ désactivé</span>'}</span></div>
+          <span>${smtpEnabled ? 'activé' : '<span title="Réglage serveur : ENABLE_SMTP_SEND">✕ désactivé</span>'}</span></div>
         <div class="set-line"><span class="muted">Synchronisation automatique</span>
           <span>${autoSyncLabel(v?.autoSync)}</span></div>
         <div class="set-line"><span class="muted">Boîtes synchronisées</span>
           <span>${fmtNum(overviewCache?.totals?.accounts ?? 0)} boîte(s) · ${fmtNum(overviewCache?.totals?.indexedMessages ?? 0)} mails</span></div>
         <div class="set-line"><span class="muted">Catégories de l'assistant</span>
-          <span><button class="btn btn-sm" id="set-categorize" title="Réexamine « qui écrit » et « pourquoi » pour tous les mails déjà synchronisés (rapide)">🏷️ Réexaminer les expéditeurs</button></span></div>
+          <span><button class="btn btn-sm" id="set-categorize" title="Réexamine « qui écrit » et « pourquoi » pour tous les mails déjà synchronisés (rapide)">Réexaminer les expéditeurs</button></span></div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>🔎 Compréhension des mails</h2></div>
+      <div class="panel-head"><h2>Compréhension des mails</h2></div>
       <div class="panel-body">
         <div class="muted" style="font-size:12.5px; margin-bottom:12px">
           Jusqu'ici l'assistant ne lisait que le <strong>sujet</strong> et l'expéditeur — d'où
@@ -5363,24 +5362,24 @@ function renderSettingsBody() {
             <span class="muted" style="font-size:12px">Long : chaque mail est ouvert une fois.
             Tu peux fermer la page, ça continue côté serveur.</span></span>
           <span>
-            <button class="btn btn-sm" id="snip-recent" title="Les mails des 3 derniers mois qui n'ont pas encore d'extrait">📖 3 derniers mois</button>
-            <button class="btn btn-sm" id="snip-all" title="Toute la boîte — beaucoup plus long">📚 Toute la boîte</button>
+            <button class="btn btn-sm" id="snip-recent" title="Les mails des 3 derniers mois qui n'ont pas encore d'extrait">3 derniers mois</button>
+            <button class="btn btn-sm" id="snip-all" title="Toute la boîte — beaucoup plus long">Toute la boîte</button>
           </span>
         </div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>📦 Transférer mes boîtes</h2></div>
+      <div class="panel-head"><h2>Transférer mes boîtes</h2></div>
       <div class="panel-body">
         <div class="muted" style="font-size:12.5px; margin-bottom:12px">
           Enrôle tes boîtes <strong>une seule fois</strong>, puis transfère-les vers ton autre
-          installation (ton PC ↔ ce serveur) au lieu de tout ressaisir.
+          installation (ton PC ce serveur) au lieu de tout ressaisir.
           Le fichier produit est protégé par une phrase secrète que tu choisis — il ne dépend
           d'aucune machine.</div>
 
         <div class="notice warn" style="font-size:12.5px">
-          ⚠️ Ce fichier donne un <strong>accès complet à tes boîtes</strong> : traite-le comme un
+          Ce fichier donne un <strong>accès complet à tes boîtes</strong> : traite-le comme un
           mot de passe (ne l'envoie pas par mail, supprime-le après usage).
           Et après le transfert, <strong>n'utilise qu'une seule installation</strong> : si les deux
           tournent en même temps, elles finissent par se déconnecter mutuellement.</div>
@@ -5391,7 +5390,7 @@ function renderSettingsBody() {
           <span style="display:flex; gap:6px; flex-wrap:wrap; align-items:center">
             <input type="password" id="exp-pass" placeholder="phrase secrète (12 car. min)"
               style="min-width:220px" autocomplete="new-password">
-            <button class="btn btn-sm" id="exp-btn">📤 Exporter mes boîtes</button></span>
+            <button class="btn btn-sm" id="exp-btn">Exporter mes boîtes</button></span>
         </div>
 
         <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
@@ -5401,14 +5400,14 @@ function renderSettingsBody() {
             <input type="file" id="imp-file" accept=".json,application/json">
             <input type="password" id="imp-pass" placeholder="phrase secrète du fichier"
               style="min-width:200px" autocomplete="off">
-            <button class="btn btn-sm" id="imp-btn">📥 Importer</button></span>
+            <button class="btn btn-sm" id="imp-btn">Importer</button></span>
         </div>
         <div id="port-result"></div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>🩺 État du système</h2>
+      <div class="panel-head"><h2>État du système</h2>
         <button class="btn btn-sm" id="set-health-refresh" title="Revérifier maintenant">↻ Vérifier</button></div>
       <div class="panel-body">
         <div class="muted" style="font-size:12.5px; margin-bottom:10px">
@@ -5420,8 +5419,8 @@ function renderSettingsBody() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h2>💾 Sauvegardes</h2>
-        <button class="btn btn-sm" id="set-backup" title="Créer une sauvegarde maintenant">💾 Sauvegarder maintenant</button></div>
+      <div class="panel-head"><h2>Sauvegardes</h2>
+        <button class="btn btn-sm" id="set-backup" title="Créer une sauvegarde maintenant">Sauvegarder maintenant</button></div>
       <div class="panel-body">
         <div class="muted" style="font-size:12.5px; margin-bottom:10px">
           Tes mails restent chez Microsoft, mais <strong>ton travail d'organisation</strong> (tâches,
@@ -5439,15 +5438,15 @@ function renderSettingsBody() {
     const el = $('#set-update');
     if (!el) return;
     el.innerHTML = behind
-      ? `<span class="badge orange">⬆️ ${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}</span>
+      ? `<span class="badge orange">${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}</span>
          <button class="btn btn-sm btn-primary" id="set-update-btn">Mettre à jour</button>
          <div class="muted" style="font-size:11.5px; margin-top:4px">${commits.slice(0, 2).map(esc).join(' · ')}</div>`
-      : '✅ à jour';
+      : 'à jour';
     $('#set-update-btn')?.addEventListener('click', () => applyUpdateFlow(el));
   }).catch((err) => {
     const el = $('#set-update');
     if (!el) return;
-    el.innerHTML = `<span class="badge red">⚠️ vérification impossible</span>
+    el.innerHTML = `<span class="badge red">vérification impossible</span>
       <div class="muted" style="font-size:11.5px; margin-top:4px">${esc(err.message)} —
       ferme Mail Assistant et relance <strong>MailAssistant.bat</strong>.</div>`;
   });
@@ -5472,10 +5471,10 @@ function renderSettingsBody() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
       $('#exp-pass').value = '';
-      portMsg(`<div class="notice">📤 ${fmtNum(env.accounts)} boîte(s) exportée(s) — le fichier
+      portMsg(`<div class="notice">${fmtNum(env.accounts)} boîte(s) exportée(s) — le fichier
         est dans tes téléchargements. Garde bien la phrase secrète : sans elle, il est inutilisable.</div>`);
     } catch (err) {
-      portMsg(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      portMsg(`<div class="notice warn">${esc(err.message)}</div>`);
     }
     btn.disabled = false;
   });
@@ -5483,7 +5482,7 @@ function renderSettingsBody() {
   $('#imp-btn')?.addEventListener('click', async () => {
     const file = $('#imp-file').files?.[0];
     const pass = $('#imp-pass').value;
-    if (!file) { portMsg('<div class="notice warn">⚠️ Choisis d’abord le fichier exporté.</div>'); return; }
+    if (!file) { portMsg('<div class="notice warn">Choisis d’abord le fichier exporté.</div>'); return; }
     const btn = $('#imp-btn');
     btn.disabled = true;
     try {
@@ -5498,19 +5497,19 @@ function renderSettingsBody() {
       }
       $('#imp-pass').value = '';
       await refreshOverview();
-      portMsg(`<div class="notice">📥 ${fmtNum(r.imported.length)} boîte(s) importée(s)${
+      portMsg(`<div class="notice">${fmtNum(r.imported.length)} boîte(s) importée(s)${
         r.imported.length ? ' : ' + r.imported.map(esc).join(', ') : ''}.
         ${r.skipped.length ? `<br><span class="muted">Ignorées (déjà présentes) : ${r.skipped.map((s) => esc(s.account)).join(', ')}</span>` : ''}
         <br>Lance maintenant une <strong>synchronisation</strong> pour indexer leurs mails.</div>`);
       renderSettingsBody();
     } catch (err) {
-      portMsg(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      portMsg(`<div class="notice warn">${esc(err.message)}</div>`);
     }
     btn.disabled = false;
   });
 
   // --- État du système (P0.4) -----------------------------------------------
-  const HEALTH_DOT = { ok: '🟢', warn: '🟠', error: '🔴' };
+  const HEALTH_DOT = { ok: '', warn: '', error: '' };
   const loadHealth = async () => {
     const el = $('#health-body');
     if (!el) return;
@@ -5528,9 +5527,9 @@ function renderSettingsBody() {
           <span>${HEALTH_DOT[a.level]} ${esc(a.account)}</span>
           <span class="muted" style="font-size:12px">${esc(a.message)}${a.lastSyncAt ? ` · ${fmtDateTime(a.lastSyncAt)}` : ''}</span></div>`).join('')}
         ${h.recentErrors.length ? `<div class="notice warn" style="margin-top:10px">
-          ⚠️ ${h.recentErrors.map(esc).join('<br>')}</div>` : ''}`;
+          ${h.recentErrors.map(esc).join('<br>')}</div>` : ''}`;
     } catch (err) {
-      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     }
   };
   loadHealth();
@@ -5547,16 +5546,16 @@ function renderSettingsBody() {
             <span>${esc(b.file.replace(/^boxmail_/, '').replace(/\.db$/, ''))}
               <span class="muted" style="font-size:11.5px">· ${fmtSize(b.sizeBytes)}</span></span>
             <span><button class="btn btn-sm" data-backup-dl="${esc(b.file)}"
-              title="Télécharger cette sauvegarde sur ton PC">⬇️ Télécharger</button></span></div>`).join('')
+              title="Télécharger cette sauvegarde sur ton PC">↓ Télécharger</button></span></div>`).join('')
         : '<div class="muted">Aucune sauvegarde pour l’instant — la première sera faite automatiquement.</div>';
       el.querySelectorAll('[data-backup-dl]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const file = btn.dataset.backupDl;
-          downloadWithFeedback(btn, api.backupDownloadUrl(file), file, '⬇️ Télécharger');
+          downloadWithFeedback(btn, api.backupDownloadUrl(file), file, '↓ Télécharger');
         });
       });
     } catch (err) {
-      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     }
   };
   loadBackups();
@@ -5564,16 +5563,16 @@ function renderSettingsBody() {
   $('#set-backup')?.addEventListener('click', async () => {
     const btn = $('#set-backup');
     btn.disabled = true;
-    btn.textContent = '⏳ Sauvegarde…';
+    btn.textContent = 'Sauvegarde…';
     try {
       const b = await api.backupCreate();
-      notice(`<div class="notice">💾 Sauvegarde créée (${esc(fmtSize(b.sizeBytes))}).</div>`);
+      notice(`<div class="notice">Sauvegarde créée (${esc(fmtSize(b.sizeBytes))}).</div>`);
       await loadBackups();
     } catch (err) {
-      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      notice(`<div class="notice warn">${esc(err.message)}</div>`);
     }
     btn.disabled = false;
-    btn.textContent = '💾 Sauvegarder maintenant';
+    btn.textContent = 'Sauvegarder maintenant';
   });
 
   // Rafraîchissement automatique tant qu'une lecture tourne : sans lui, les
@@ -5619,7 +5618,7 @@ function renderSettingsBody() {
           }).join('')}</tbody>
         </table>
         <div class="muted" style="font-size:12px; margin-bottom:10px">
-          💡 Deux compteurs différents, deux questions différentes :
+          Deux compteurs différents, deux questions différentes :
           <strong>« Douteux restants »</strong> = les mails que le rattrapage (Claude/Cowork) traite en
           priorité — c'est le « il reste N mails » qu'il t'annonce.
           <strong>« Analysés IA »</strong> = la part des mails analysables qui ont déjà un verdict
@@ -5633,7 +5632,7 @@ function renderSettingsBody() {
           <div class="muted" style="font-size:12px">Les compteurs ci-dessous se mettent à jour tout seuls.</div>
         </div>` : ''}
         ${!running && job && job.status === 'error' ? `<div class="notice warn" style="margin-bottom:10px">
-          ⚠️ Dernière lecture interrompue : ${esc(job.error || 'raison inconnue')}. Tu peux la relancer.</div>` : ''}
+          Dernière lecture interrompue : ${esc(job.error || 'raison inconnue')}. Tu peux la relancer.</div>` : ''}
         <div class="set-line"><span class="muted">Mails dont le texte est connu</span>
           <span><strong>${t.snippetCoveragePct} %</strong> de ${fmtNum(t.total)} mails</span></div>
         <div class="set-line"><span class="muted">Restant à lire — toute la boîte</span>
@@ -5664,7 +5663,7 @@ function renderSettingsBody() {
       if (snipTimer) clearTimeout(snipTimer);
       snipTimer = running ? setTimeout(loadCoverage, 8000) : null;
     } catch (err) {
-      el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     }
   };
   loadCoverage();
@@ -5673,13 +5672,13 @@ function renderSettingsBody() {
     btn.disabled = true;
     try {
       await api.snippetsBackfill(scope);
-      notice(`<div class="notice">📖 Lecture du texte des mails lancée
+      notice(`<div class="notice">Lecture du texte des mails lancée
         (${scope === 'all' ? 'toute la boîte' : 'les 3 derniers mois'}).
         L'avancement s'affiche juste au-dessus et se met à jour tout seul.</div>`);
       loadCoverage();
     } catch (err) {
       btn.disabled = false;
-      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      notice(`<div class="notice warn">${esc(err.message)}</div>`);
     }
   };
   $('#snip-recent')?.addEventListener('click', (e) => startSnippets('recent', e.currentTarget));
@@ -5690,12 +5689,12 @@ function renderSettingsBody() {
     btn.disabled = true;
     try {
       await api.categorizeAll();
-      notice(`<div class="notice">🏷️ Recalcul des catégories lancé sur toutes les boîtes —
+      notice(`<div class="notice">Recalcul des catégories lancé sur toutes les boîtes —
         suis l'avancement via la pastille d'activité en bas de la barre latérale.
         Les catégories apparaissent dans le tableau des expéditeurs de chaque boîte.</div>`);
     } catch (err) {
       btn.disabled = false;
-      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      notice(`<div class="notice warn">${esc(err.message)}</div>`);
     }
   });
 
@@ -5705,9 +5704,9 @@ function renderSettingsBody() {
         await api.accountSetColor(input.dataset.account, input.value);
         await refreshOverview();
         renderSettingsBody();
-        notice(`<div class="notice">🎨 Couleur de <strong>${esc(input.dataset.account)}</strong> mise à jour.</div>`);
+        notice(`<div class="notice">Couleur de <strong>${esc(input.dataset.account)}</strong> mise à jour.</div>`);
       } catch (err) {
-        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+        notice(`<div class="notice warn">${esc(err.message)}</div>`);
       }
     });
   });
@@ -5717,9 +5716,9 @@ function renderSettingsBody() {
         await api.accountSetColor(btn.dataset.account, null);
         await refreshOverview();
         renderSettingsBody();
-        notice(`<div class="notice">🎨 <strong>${esc(btn.dataset.account)}</strong> repasse en couleur automatique.</div>`);
+        notice(`<div class="notice"><strong>${esc(btn.dataset.account)}</strong> repasse en couleur automatique.</div>`);
       } catch (err) {
-        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+        notice(`<div class="notice warn">${esc(err.message)}</div>`);
       }
     });
   });
@@ -5735,9 +5734,9 @@ function renderSettingsBody() {
       await api.accountsReorder(order);
       await refreshOverview();
       renderSettingsBody();
-      notice(`<div class="notice">↕️ Ordre des boîtes mis à jour : ${order.map(esc).join(' → ')}.</div>`);
+      notice(`<div class="notice">Ordre des boîtes mis à jour : ${order.map(esc).join(' → ')}.</div>`);
     } catch (err) {
-      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+      notice(`<div class="notice warn">${esc(err.message)}</div>`);
     }
   };
   body.querySelectorAll('.set-order-up').forEach((btn) => {
@@ -5753,18 +5752,18 @@ function renderSettingsBody() {
     btn.addEventListener('click', async () => {
       const slug = btn.dataset.account;
       btn.disabled = true;
-      btn.textContent = '⏳';
+      btn.textContent = '';
       try {
         const r = await api.accountQuotaRefresh(slug);
         await refreshOverview();
         renderSettingsBody();
         notice(r.ok
-          ? `<div class="notice">📏 Quota de <strong>${esc(slug)}</strong> : ${esc(fmtSize(r.quota.usedBytes))} utilisés sur ${esc(fmtSize(r.quota.limitBytes))}.</div>`
-          : `<div class="notice warn">📏 Quota de <strong>${esc(slug)}</strong> toujours inconnu — ${esc(r.note || 'raison inconnue')}.</div>`);
+          ? `<div class="notice">Quota de <strong>${esc(slug)}</strong> : ${esc(fmtSize(r.quota.usedBytes))} utilisés sur ${esc(fmtSize(r.quota.limitBytes))}.</div>`
+          : `<div class="notice warn">Quota de <strong>${esc(slug)}</strong> toujours inconnu — ${esc(r.note || 'raison inconnue')}.</div>`);
       } catch (err) {
         btn.disabled = false;
-        btn.textContent = '📏 Quota';
-        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+        btn.textContent = 'Quota';
+        notice(`<div class="notice warn">${esc(err.message)}</div>`);
       }
     });
   });
@@ -5785,11 +5784,11 @@ function renderSettingsBody() {
         const r = await api.accountRename(slug, to.trim());
         await refreshOverview();
         renderSettingsBody();
-        notice(`<div class="notice">✏️ Boîte renommée en <strong>${esc(r.account)}</strong>.
+        notice(`<div class="notice">Boîte renommée en <strong>${esc(r.account)}</strong>.
           Pense à relancer une synchronisation : <a href="#/account/${encodeURIComponent(r.account)}">ouvrir la boîte</a>.</div>`);
       } catch (err) {
         btn.disabled = false;
-        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+        notice(`<div class="notice warn">${esc(err.message)}</div>`);
       }
     });
   });
@@ -5810,10 +5809,10 @@ function renderSettingsBody() {
         await api.accountRemove(slug);
         await refreshOverview();
         renderSettingsBody();
-        notice(`<div class="notice">🗑️ Boîte <strong>${esc(slug)}</strong> retirée de Mail Assistant (mails intacts chez Microsoft).</div>`);
+        notice(`<div class="notice">Boîte <strong>${esc(slug)}</strong> retirée de Mail Assistant (mails intacts chez Microsoft).</div>`);
       } catch (err) {
         btn.disabled = false;
-        notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+        notice(`<div class="notice warn">${esc(err.message)}</div>`);
       }
     });
   });
@@ -5829,7 +5828,7 @@ const calState = {
   view: (() => { try { return localStorage.getItem('cal-view') === 'month' ? 'month' : 'upcoming'; } catch { return 'upcoming'; } })(),
 };
 
-const CAL_TYPE_EMOJI = { payment: '💶', document: '📄', appointment: '📅', renewal: '🔁', other: '📌' };
+const CAL_TYPE_EMOJI = { payment: '', document: '', appointment: '', renewal: '', other: '' };
 
 function calDateKey(d) {
   const x = new Date(d);
@@ -5845,12 +5844,12 @@ async function renderCalendar() {
     calState.selected = calDateKey(now);
   }
   main.innerHTML = `<div class="page-head">
-    <div><h1>🗓️ Calendrier</h1>
+    <div><h1>Calendrier</h1>
       <div class="sub">Tes échéances (confirmées ET proposées) et tes tâches à date, posées sur le mois.
       Clique un jour pour le détail, puis une échéance pour lire le mail d'origine.</div></div>
     <div class="head-actions">
-      <a class="btn" href="#/deadlines">📅 Gérer les échéances</a>
-      <a class="btn" href="#/tasks">☑️ Gérer les tâches</a>
+      <a class="btn" href="#/deadlines">Gérer les échéances</a>
+      <a class="btn" href="#/tasks">Gérer les tâches</a>
     </div></div>
     <div id="cal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
   try {
@@ -5858,7 +5857,7 @@ async function renderCalendar() {
     calState.deadlines = dl.items.filter((x) => x.status !== 'dismissed');
     calState.tasks = tk.items.filter((t) => t.status === 'todo' && t.dueDate);
   } catch (err) {
-    $('#cal-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    $('#cal-body').innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   renderCalendarBody();
@@ -5921,7 +5920,7 @@ function renderCalendarUpcoming(body) {
     const idx = flat.push(e) - 1;
     if (e.kind === 'task') {
       return `<div class="cal-up-row">
-        <span class="badge gray">☑️ tâche</span>
+        <span class="badge gray">tâche</span>
         <span>${esc(i.title)}</span>
         ${i.account ? accountChip(i.account) : ''}
       </div>`;
@@ -5952,11 +5951,11 @@ function renderCalendarUpcoming(body) {
   body.innerHTML = `${calViewTabs()}
     <div class="panel"><div class="panel-body">
       ${byDay.size === 0
-        ? '<div class="empty">Rien dans les 30 prochains jours. 🎉 Les dates détectées dans tes mails apparaîtront ici.</div>'
+        ? '<div class="empty">Rien dans les 30 prochains jours. Les dates détectées dans tes mails apparaîtront ici.</div>'
         : [...byDay.entries()].map(([key, evs]) => dayBlock(key, evs)).join('')}
     </div></div>
-    <div class="muted" style="font-size:12.5px">🛟 Lecture seule : confirme ou écarte les dates
-      depuis <a href="#/deadlines">📅 Dates à confirmer</a>.</div>`;
+    <div class="muted" style="font-size:12.5px">Lecture seule : confirme ou écarte les dates
+      depuis <a href="#/deadlines">Dates à confirmer</a>.</div>`;
 
   bindCalViewTabs(body);
   body.querySelectorAll('[data-cal-up]').forEach((el) => {
@@ -6004,7 +6003,7 @@ function renderCalendarBody() {
     const chips = evs.slice(0, 3).map((ev) => {
       const i = ev.item;
       const color = accountColor(i.account ?? '');
-      const label = ev.kind === 'task' ? `☑️ ${i.title}` : `${CAL_TYPE_EMOJI[i.type] ?? '📌'} ${i.title}`;
+      const label = ev.kind === 'task' ? `${i.title}` : `${CAL_TYPE_EMOJI[i.type] ?? ''} ${i.title}`;
       return `<span class="cal-ev ${ev.kind === 'deadline' && i.status === 'proposed' ? 'proposed' : ''}"
         style="border-left-color:${color}" title="${esc(label)}${i.account ? ` · ${esc(i.account)}` : ''}">${esc(label)}</span>`;
     }).join('');
@@ -6031,7 +6030,7 @@ function renderCalendarBody() {
           ${cells.join('')}
         </div>
         <div class="panel-body muted" style="font-size:12.5px; padding:8px 4px 0">
-          🛟 Lecture seule : rien n'est créé ni modifié depuis le calendrier. Les échéances en
+          Lecture seule : rien n'est créé ni modifié depuis le calendrier. Les échéances en
           pointillé sont encore <em>proposées</em> — confirme-les depuis l'écran Dates à confirmer.</div>
       </div>
       <div class="cal-side" id="cal-side"></div>
@@ -6096,7 +6095,7 @@ function renderCalendarSide(events) {
     </div>`;
   };
   const taskRowSide = (t) => `<div class="cal-side-row">
-    <div><span class="badge gray">☑️ tâche</span>${t.account ? ` ${accountChip(t.account)}` : ''}</div>
+    <div><span class="badge gray">tâche</span>${t.account ? ` ${accountChip(t.account)}` : ''}</div>
     <div>${esc(t.title)}</div>
     ${t.notes ? `<div class="muted" style="font-size:12px">${esc(t.notes)}</div>` : ''}
   </div>`;
@@ -6104,7 +6103,7 @@ function renderCalendarSide(events) {
   side.innerHTML = `<div class="panel">
     <div class="panel-head"><h2 style="text-transform:capitalize">${esc(dayLabel)}</h2></div>
     <div class="panel-body">
-      ${evs.length === 0 ? '<div class="empty">Rien ce jour-là. 🎉</div>' : ''}
+      ${evs.length === 0 ? '<div class="empty">Rien ce jour-là. </div>' : ''}
       ${deadlines.map((e, idx) => dlRow(e.item, idx)).join('')}
       ${tasks.map((e) => taskRowSide(e.item)).join('')}
     </div>
@@ -6128,7 +6127,7 @@ const tasksState = { tab: 'todo', data: null };
 async function renderTasks() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
-    <div><h1>☑️ Mes tâches</h1>
+    <div><h1>Mes tâches</h1>
       <div class="sub">Ta liste à faire : ajoutée à la main, depuis un mail (panneau de lecture)
       ou depuis une échéance. Rien ici ne touche aux mails.</div></div>
     <div class="head-actions">
@@ -6148,7 +6147,7 @@ async function loadTasks() {
   try {
     tasksState.data = await api.tasks();
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     return;
   }
   refreshTasksBadge(tasksState.data);
@@ -6220,8 +6219,8 @@ function renderTasksBody() {
 
 const TASK_SOURCE_LABELS = {
   manual: '',
-  mail: '<span class="badge gray">✉️ depuis un mail</span>',
-  deadline: '<span class="badge gray">📅 depuis une échéance</span>',
+  mail: '<span class="badge gray">depuis un mail</span>',
+  deadline: '<span class="badge gray">depuis une échéance</span>',
 };
 
 function taskRow(t, idx) {
@@ -6230,13 +6229,13 @@ function taskRow(t, idx) {
     t.dueDate === null
       ? ''
       : t.overdue
-        ? `<span class="badge red">⏰ en retard — ${deadlineCountdown(t.inDays)}</span>`
+        ? `<span class="badge red">en retard — ${deadlineCountdown(t.inDays)}</span>`
         : `<span class="badge ${t.inDays <= 3 ? 'orange' : 'gray'}">${deadlineCountdown(t.inDays)}</span>`;
   const actions =
     t.status === 'todo'
       ? `<button class="btn btn-sm btn-green" data-task-action="done" data-id="${t.id}">✓ Fait</button>
          <button class="btn btn-sm" data-task-action="dismiss" data-id="${t.id}" title="Retirer sans marquer fait">✕ Ignorer</button>`
-      : `<button class="btn btn-sm" data-task-action="reopen" data-id="${t.id}">↩︎ Remettre à faire</button>`;
+      : `<button class="btn btn-sm" data-task-action="reopen" data-id="${t.id}">︎ Remettre à faire</button>`;
   return `<div class="reply-row">
     <div class="reply-main">
       <div class="reply-top">
@@ -6261,7 +6260,7 @@ function openTaskModal({ title = '', dueDate = '', account = null, messageRef = 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal">
-    <div class="modal-head"><h2>☑️ Nouvelle tâche</h2>
+    <div class="modal-head"><h2>Nouvelle tâche</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body">
       <div class="compose-grid">
@@ -6269,7 +6268,7 @@ function openTaskModal({ title = '', dueDate = '', account = null, messageRef = 
         <label>Pour le</label><input type="date" id="t-due" value="${esc(dueDate)}">
         <label>Notes</label><input type="text" id="t-notes" maxlength="2000" value="${esc(notes)}" placeholder="optionnel">
       </div>
-      ${messageRef ? '<p class="muted" style="margin-top:10px; font-size:12.5px">📎 La tâche gardera un lien vers le mail ouvert.</p>' : ''}
+      ${messageRef ? '<p class="muted" style="margin-top:10px; font-size:12.5px">La tâche gardera un lien vers le mail ouvert.</p>' : ''}
       <div id="t-error"></div>
     </div>
     <div class="modal-foot">
@@ -6303,14 +6302,14 @@ function openTaskModal({ title = '', dueDate = '', account = null, messageRef = 
       if ((location.hash || '').startsWith('#/tasks')) loadTasks();
     } catch (err) {
       btn.disabled = false;
-      $('#t-error').innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
+      $('#t-error').innerHTML = `<div class="notice warn" style="margin-top:10px">${esc(err.message)}</div>`;
     }
   });
 }
 
 // ------------------------------------------- Boîte de réception navigable (L5.2)
 const inboxState = {
-  // '' = 🌐 toutes les boîtes (défaut) ; mémorisé entre les visites.
+  // '' = toutes les boîtes (défaut) ; mémorisé entre les visites.
   account: localStorage.getItem('bm.inboxAccount') ?? '',
   // Rôle de dossier en vue unifiée : inbox | sent | drafts | trash | archive | spam
   role: 'inbox',
@@ -6331,13 +6330,13 @@ const isUnifiedInbox = () => inboxState.account === '';
 const inboxKey = (i) => `${i.account}|${i.folder}|${i.uid}`;
 
 const INBOX_ROLE_LABELS = {
-  inbox: '📥 Boîte de réception',
-  flagged: '⭐ Mails suivis',
-  sent: '📤 Envoyés',
-  drafts: '📝 Brouillons',
-  trash: '🗑️ Corbeille',
-  archive: '📦 Archive',
-  spam: '⚠️ Spam',
+  inbox: 'Boîte de réception',
+  flagged: 'Mails suivis',
+  sent: 'Envoyés',
+  drafts: 'Brouillons',
+  trash: 'Corbeille',
+  archive: 'Archive',
+  spam: 'Spam',
 };
 
 // Titre explicite de l'écran : on sait toujours OÙ on est (L5.18).
@@ -6345,15 +6344,15 @@ function updateInboxTitle() {
   const h1 = $('#inbox-title');
   if (!h1) return;
   h1.textContent = isUnifiedInbox()
-    ? `🌐 Toutes les boîtes — ${(INBOX_ROLE_LABELS[inboxState.role] ?? inboxState.role).replace(/^\S+ /, '')}`
-    : `📥 ${inboxState.account} — ${inboxState.folder || 'INBOX'}`;
+    ? `Toutes les boîtes — ${INBOX_ROLE_LABELS[inboxState.role] ?? inboxState.role}`
+    : `${inboxState.account} — ${inboxState.folder || 'INBOX'}`;
 }
 
 async function renderInbox(slugFromHash) {
   const main = $('#main');
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   if (accounts.length === 0) {
-    main.innerHTML = `<div class="page-head"><div><h1>📥 Boîte de réception</h1></div></div>
+    main.innerHTML = `<div class="page-head"><div><h1>Boîte de réception</h1></div></div>
       <div class="notice warn">Aucune boîte connectée.</div>`;
     return;
   }
@@ -6377,14 +6376,14 @@ async function renderInbox(slugFromHash) {
   }
 
   main.innerHTML = `<div class="page-head">
-    <div><h1 id="inbox-title">📥 Boîte de réception</h1>
+    <div><h1 id="inbox-title">Boîte de réception</h1>
       <div class="sub">Tous les mails du dossier, page par page (instantané).
       Clique un mail pour le lire ; coche pour agir en masse. Synchronise pour des résultats à jour.</div></div>
     <div class="head-actions">
-      <input type="search" id="inbox-q" placeholder="🔎 Filtrer : sujet, expéditeur…"
+      <input type="search" id="inbox-q" placeholder="Filtrer : sujet, expéditeur…"
         value="${esc(inboxState.q)}" title="Filtre la liste affichée (Entrée pour lancer, ✕ pour effacer)" style="width:210px">
       <select id="inbox-account" title="Boîte">
-        <option value="" ${inboxState.account === '' ? 'selected' : ''}>🌐 Toutes les boîtes</option>
+        <option value="" ${inboxState.account === '' ? 'selected' : ''}>Toutes les boîtes</option>
         ${accounts
           .map((a) => `<option value="${esc(a)}" ${a === inboxState.account ? 'selected' : ''}>${esc(a)}</option>`)
           .join('')}</select>
@@ -6392,8 +6391,8 @@ async function renderInbox(slugFromHash) {
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted">
         <input type="checkbox" id="inbox-unseen" ${inboxState.unseen ? 'checked' : ''}> non lus</label>
       <label style="display:flex; align-items:center; gap:6px; font-size:12.5px" class="muted"
-        title="Seuls les mails synchronisés depuis la version « pièces jointes » portent l'info 📎 — les plus anciens apparaîtront après une resynchronisation complète.">
-        <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> 📎 avec PJ</label>
+        title="Seuls les mails synchronisés depuis la version « pièces jointes » portent l'info — les plus anciens apparaîtront après une resynchronisation complète.">
+        <input type="checkbox" id="inbox-attachments" ${inboxState.attachments ? 'checked' : ''}> avec PJ</label>
       <button class="btn" id="inbox-refresh" title="Recharge la liste depuis les mails synchronisés (pour interroger le serveur Microsoft, lance une synchronisation depuis la vue de la boîte)">↻ Actualiser</button>
       <button class="btn btn-primary" id="inbox-compose" title="Écrire un nouveau mail (envoyé depuis la boîte sélectionnée)">Nouveau mail</button>
     </div></div>
@@ -6468,13 +6467,13 @@ async function loadInboxFolders() {
   if (isUnifiedInbox()) {
     // Vue unifiée : le sélecteur choisit le TYPE de dossier, toutes boîtes.
     const roles = [
-      ['inbox', '📥 Boîte de réception'],
-      ['flagged', '⭐ Mails suivis'],
-      ['sent', '📤 Envoyés'],
-      ['drafts', '📝 Brouillons'],
-      ['trash', '🗑️ Corbeille'],
-      ['archive', '📦 Archive'],
-      ['spam', '⚠️ Spam'],
+      ['inbox', 'Boîte de réception'],
+      ['flagged', 'Mails suivis'],
+      ['sent', 'Envoyés'],
+      ['drafts', 'Brouillons'],
+      ['trash', 'Corbeille'],
+      ['archive', 'Archive'],
+      ['spam', 'Spam'],
     ];
     sel.innerHTML = roles
       .map(([r, label]) => `<option value="@${r}" ${inboxState.role === r ? 'selected' : ''}>${label} (toutes les boîtes)</option>`)
@@ -6533,7 +6532,7 @@ async function loadInbox() {
           q: inboxState.q,
         });
   } catch (err) {
-    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}${
+    body.innerHTML = `<div class="notice warn">${esc(err.message)}${
       err.data?.needsSync
         ? ` <a href="#/account/${esc(inboxState.account)}">Ouvrir la boîte pour la synchroniser</a>.`
         : ''
@@ -6572,10 +6571,10 @@ function renderInboxBody() {
       ${d.items.length === 0
         ? `<div class="empty">${
             inboxState.q
-              ? `Aucun mail ne contient « ${esc(inboxState.q)} » ici. Efface le filtre (✕) ou essaie l'écran 🔎 Recherche pour chercher partout.`
+              ? `Aucun mail ne contient « ${esc(inboxState.q)} » ici. Efface le filtre (✕) ou essaie l'écran Recherche pour chercher partout.`
               : inboxState.attachments
               ? 'Aucun mail avec pièce jointe ici. NB : seuls les mails synchronisés depuis la version « pièces jointes » portent cette info — une resynchronisation complète la pose sur les nouveaux arrivages.'
-              : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. 🎉' : 'Dossier vide (ou pas encore synchronisé).'
+              : inboxState.unseen ? 'Aucun mail non lu dans ce dossier. ' : 'Dossier vide (ou pas encore synchronisé).'
           }</div>`
         : `<table><thead><tr>
             <th style="width:30px"><input type="checkbox" id="inbox-check-all" title="Cocher la page"></th>
@@ -6598,10 +6597,10 @@ function renderInboxBody() {
               <td><span class="openable ${i.isSeen ? '' : 'unread-subject'}" data-open="${k}" title="Lire le mail">${esc(i.subject)}</span>
                 ${i.snippet ? `<div class="row-snippet" title="${esc(i.snippet)}">${esc(i.snippet)}</div>` : ''}</td>
               <td style="white-space:nowrap"><span class="star" data-star="${k}"
-                  title="${i.isFlagged ? 'Ne plus suivre ce mail' : 'Suivre ce mail (⭐)'}">${i.isFlagged ? '⭐' : '☆'}</span>
+                  title="${i.isFlagged ? 'Ne plus suivre ce mail' : 'Suivre ce mail'}">${i.isFlagged ? '★' : '☆'}</span>
                 ${isUnifiedInbox() && inboxState.role === 'flagged' ? folderBadge(i) : ''}
-                ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎${i.attachmentCount > 1 ? i.attachmentCount : ''}</span>` : ''}
-                ${i.hasListUnsubscribe ? '<span class="badge gray">📰</span>' : ''}
+                ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">PJ${i.attachmentCount > 1 ? ' ' + i.attachmentCount : ''}</span>` : ''}
+                ${i.hasListUnsubscribe ? '<span class="badge gray" title="porte un lien de désinscription (newsletter/notification)">liste</span>' : ''}
                 ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}</td>
             </tr>`,
             )
@@ -6613,7 +6612,7 @@ function renderInboxBody() {
       <button class="btn btn-sm" id="inbox-next" ${pageEnd >= d.total ? 'disabled' : ''}>Suivants →</button>
     </div>
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 Les actions en masse passent par la corbeille (soft delete, récupérable ~30 j), par lots
+      Les actions en masse passent par la corbeille (soft delete, récupérable ~30 j), par lots
       de 200, et sont journalisées avec la liste exacte des mails.</div>`;
 
   body.querySelectorAll('[data-legend-account]').forEach((el) => {
@@ -6718,9 +6717,9 @@ function renderInboxBulkbar() {
     : inboxState.folders.filter(
         (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
       );
-  bar.innerHTML = `✅ <strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
-    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)" title="Met les mails cochés à la corbeille après confirmation — récupérables ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
-    ${isUnifiedInbox() ? '' : `<select id="bulk-move"><option value="">📦 Déplacer vers…</option>
+  bar.innerHTML = `<strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
+    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)" title="Met les mails cochés à la corbeille après confirmation — récupérables ~30 jours, rien n'est effacé définitivement">Corbeille</button>
+    ${isUnifiedInbox() ? '' : `<select id="bulk-move"><option value="">Déplacer vers…</option>
       ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>`}
     <button class="btn btn-sm" id="bulk-seen" title="Marque les mails cochés comme lus (aussi côté Microsoft)">Marquer lus</button>
     <button class="btn btn-sm" id="bulk-unseen" title="Marque les mails cochés comme non lus (aussi côté Microsoft)">Marquer non lus</button>
@@ -6754,7 +6753,7 @@ function renderInboxBulkbar() {
         count += r.count ?? 0;
         skipped += r.skipped ?? 0;
       }
-      notice.innerHTML = `<div class="notice">✅ ${
+      notice.innerHTML = `<div class="notice">${
         action === 'delete' ? `${fmtNum(moved)} mail(s) → corbeille (récupérables ~30 j)`
         : action === 'move' ? `${fmtNum(moved)} mail(s) déplacés vers ${esc(destination)}`
         : `${fmtNum(count)} mail(s) marqués ${action === 'seen' ? 'lus' : 'non lus'}`
@@ -6765,7 +6764,7 @@ function renderInboxBulkbar() {
       await loadInbox();
       refreshOverview().catch(() => {});
     } catch (err) {
-      notice.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      notice.innerHTML = `<div class="notice warn">${esc(err.message)}</div>`;
     }
   };
   $('#bulk-delete').addEventListener('click', () => run('delete'));
@@ -6797,7 +6796,7 @@ const searchState = {
   searched: false,
 };
 
-const FOLDER_LABELS = { inbox: '📥', sent: '📤 envoyés', trash: '🗑️ corbeille', spam: '⚠️ spam', archive: '📦 archive', drafts: '📝 brouillons' };
+const FOLDER_LABELS = { inbox: '', sent: 'envoyés', trash: 'corbeille', spam: 'spam', archive: 'archive', drafts: 'brouillons' };
 
 function folderBadge(i) {
   if (i.folderRole === 'inbox') return '';
@@ -6809,14 +6808,14 @@ async function renderSearch() {
   const main = $('#main');
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   main.innerHTML = `<div class="page-head">
-    <div><h1>🔎 Recherche</h1>
+    <div><h1>Recherche</h1>
       <div class="sub">Cherche dans toutes tes boîtes d'un coup (instantané), puis clique un mail
       pour le lire ici, sans ouvrir Outlook. Synchronise tes boîtes pour des résultats à jour.</div></div></div>
     <form class="search-bar" id="search-form">
       <input type="search" id="s-q" placeholder="Sujet, expéditeur, adresse… (ex. facture, EDF, marie)"
         value="${esc(searchState.q)}" autocomplete="off">
       <button type="submit" class="btn btn-primary">Rechercher</button>
-      <button type="button" class="btn" id="s-toggle-filters">${searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres'}</button>
+      <button type="button" class="btn" id="s-toggle-filters">${searchState.showFilters ? 'Masquer les filtres' : 'Filtres'}</button>
     </form>
     <div class="search-filters ${searchState.showFilters ? '' : 'hidden'}" id="search-filters">
       <label>Boîte <select id="s-account">
@@ -6830,14 +6829,14 @@ async function renderSearch() {
       <label>Au <input type="date" id="s-before" value="${esc(searchState.before)}"></label>
       <label><input type="checkbox" id="s-unseen" ${searchState.unseen ? 'checked' : ''}> non lus seulement</label>
       <label title="Info posée à la synchronisation — les mails synchronisés avant la version « pièces jointes » ne la portent pas encore.">
-        <input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}> 📎 avec pièces jointes</label>
+        <input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}> avec pièces jointes</label>
     </div>
     <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot-clé ci-dessus, ou ouvre les filtres pour chercher par expéditeur ou par date.</div>`}</div>`;
 
   $('#s-toggle-filters').addEventListener('click', () => {
     searchState.showFilters = !searchState.showFilters;
     $('#search-filters').classList.toggle('hidden', !searchState.showFilters);
-    $('#s-toggle-filters').textContent = searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres';
+    $('#s-toggle-filters').textContent = searchState.showFilters ? 'Masquer les filtres' : 'Filtres';
   });
   $('#search-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -6885,7 +6884,7 @@ async function runSearch() {
       limit: 200,
     });
   } catch (err) {
-    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
+    el.innerHTML = `<div class="notice warn">${esc(err.message)}<br>
       Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
     return;
   }
@@ -6897,7 +6896,7 @@ function renderSearchResults() {
   const d = searchState.data;
   if (!el || !d) return;
   if (d.items.length === 0) {
-    el.innerHTML = '<div class="empty">Aucun mail trouvé avec ces critères. 🤷</div>';
+    el.innerHTML = '<div class="empty">Aucun mail trouvé avec ces critères. </div>';
     return;
   }
 
@@ -6914,7 +6913,7 @@ function renderSearchResults() {
     </div>
     ${[...groups.entries()].map(([account, rows]) => `
       <div class="panel">
-        <div class="result-group-head">📧 ${esc(account)}
+        <div class="result-group-head">${esc(account)}
           <span class="badge blue">${fmtNum(rows.length)}</span></div>
         <div class="panel-body tight">
           ${rows.map(({ item: i, idx }) => `
@@ -6922,14 +6921,14 @@ function renderSearchResults() {
               <span class="mail-date">${fmtDate(i.date)}</span>
               <span class="result-from" title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</span>
               <span class="result-subject">${esc(i.subject)}</span>
-              ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎</span>` : ''}
+              ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)"></span>` : ''}
               ${folderBadge(i)}
               ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
             </div>`).join('')}
         </div>
       </div>`).join('')}
     <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 La recherche lit uniquement les mails synchronisés sur cet appareil. Ouvrir un mail le télécharge en direct depuis la
+      La recherche lit uniquement les mails synchronisés sur cet appareil. Ouvrir un mail le télécharge en direct depuis la
       boîte ; les actions (corbeille, déplacer…) sont journalisées et le soft delete reste la règle.</div>`;
 
   el.querySelectorAll('.result-row').forEach((row) => {
@@ -6941,18 +6940,18 @@ function renderSearchResults() {
 }
 
 // ------------------------------------------------ Pièces jointes (lecture)
-// Trois gestes : 👁️ Voir (ouvre PDF/image dans un onglet, sans télécharger),
-// ⬇️ télécharger une pièce (avec retour visuel), ⬇️ Tout en .zip.
+// Trois gestes : Voir (ouvre PDF/image dans un onglet, sans télécharger),
+// ↓ télécharger une pièce (avec retour visuel), ↓ Tout en .zip.
 const VIEWABLE_RE = /\.(pdf|png|jpe?g|gif|webp|svg|bmp|txt|csv)$/i;
 
 // Icône selon le type de fichier (indice visuel rapide, façon Outlook).
 function attIcon(name) {
-  if (/\.pdf$/i.test(name)) return '📕';
-  if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name)) return '🖼️';
-  if (/\.(docx?|odt|rtf)$/i.test(name)) return '📘';
-  if (/\.(xlsx?|ods|csv)$/i.test(name)) return '📗';
-  if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return '🗜️';
-  return '📄';
+  if (/\.pdf$/i.test(name)) return '';
+  if (/\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name)) return '';
+  if (/\.(docx?|odt|rtf)$/i.test(name)) return '';
+  if (/\.(xlsx?|ods|csv)$/i.test(name)) return '';
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return '';
+  return '';
 }
 
 function renderReaderAttachments(az, item, attachments) {
@@ -6962,9 +6961,9 @@ function renderReaderAttachments(az, item, attachments) {
   // plusieurs — pour ne pas repousser le corps du mail vers le bas.
   az.innerHTML = `<div class="att-head">
       ${many ? `<button class="att-toggle" data-att-toggle title="Réduire / afficher la liste" aria-expanded="true">▾</button>` : '<span class="att-toggle-spacer"></span>'}
-      <strong>📎 ${fmtNum(attachments.length)} pièce(s) jointe(s)</strong>
+      <strong>${fmtNum(attachments.length)} pièce(s) jointe(s)</strong>
       <span class="muted att-total">· ${fmtSize(totalBytes)}</span>
-      ${many ? `<button class="btn btn-sm att-zip-btn" data-att-zip title="Télécharger toutes les pièces dans un .zip">⬇️ Tout (.zip)</button>` : ''}
+      ${many ? `<button class="btn btn-sm att-zip-btn" data-att-zip title="Télécharger toutes les pièces dans un .zip">↓ Tout (.zip)</button>` : ''}
     </div>
     <div class="att-chips" id="att-chips">
     ${attachments.map((a, ai) => {
@@ -6974,8 +6973,8 @@ function renderReaderAttachments(az, item, attachments) {
         <span class="att-ico">${attIcon(name)}</span>
         <span class="att-name">${esc(name)}</span>
         <span class="att-size">${fmtSize(a.sizeBytes)}</span>
-        ${canView ? `<button class="att-act att-view" data-att-view="${ai}" title="Voir (ouvrir dans un onglet)">👁️</button>` : ''}
-        <button class="att-act att-dl" data-att-dl="${ai}" data-att-name="${esc(name)}" title="Télécharger ${esc(name)}">⬇️</button>
+        ${canView ? `<button class="att-act att-view" data-att-view="${ai}" title="Voir (ouvrir dans un onglet)"></button>` : ''}
+        <button class="att-act att-dl" data-att-dl="${ai}" data-att-name="${esc(name)}" title="Télécharger ${esc(name)}">↓</button>
       </div>`;
     }).join('')}
     </div>`;
@@ -6991,7 +6990,7 @@ function renderReaderAttachments(az, item, attachments) {
     });
   }
 
-  // 👁️ Voir : ouvre l'URL inline dans un nouvel onglet (le navigateur affiche
+  // Voir : ouvre l'URL inline dans un nouvel onglet (le navigateur affiche
   // et met en cache). L'onglet est ouvert AVANT (évite le blocage popup).
   az.querySelectorAll('[data-att-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -6999,7 +6998,7 @@ function renderReaderAttachments(az, item, attachments) {
       window.open(api.attachmentInlineUrl(item.account, item.folder, item.uid, ai), '_blank', 'noopener');
     });
   });
-  // ⬇️ Télécharger une pièce, avec retour visuel.
+  // ↓ Télécharger une pièce, avec retour visuel.
   az.querySelectorAll('[data-att-dl]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const ai = Number(btn.dataset.attDl);
@@ -7010,7 +7009,7 @@ function renderReaderAttachments(az, item, attachments) {
       );
     });
   });
-  // ⬇️ Tout en .zip.
+  // ↓ Tout en .zip.
   const zipBtn = az.querySelector('[data-att-zip]');
   if (zipBtn) {
     zipBtn.addEventListener('click', () => {
@@ -7018,7 +7017,7 @@ function renderReaderAttachments(az, item, attachments) {
         zipBtn,
         api.attachmentsZipUrl(item.account, item.folder, item.uid),
         `pieces-jointes-${item.account}-${item.uid}.zip`,
-        '⬇️ Tout (.zip)',
+        '↓ Tout (.zip)',
       );
     });
   }
@@ -7031,7 +7030,7 @@ function renderReaderAttachments(az, item, attachments) {
 async function downloadWithFeedback(btn, url, filename, restoreLabel) {
   const original = restoreLabel ?? btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Préparation…';
+  btn.textContent = 'Préparation…';
   api.activity.begin(); // allume aussi la barre de chargement globale
   try {
     const res = await fetch(url, { credentials: 'same-origin' });
@@ -7049,10 +7048,10 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
-    btn.textContent = '✅ Téléchargé';
+    btn.textContent = 'Téléchargé';
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
   } catch (err) {
-    btn.textContent = '⚠️ Réessayer';
+    btn.textContent = 'Réessayer';
     btn.disabled = false;
     alert(`Téléchargement impossible : ${err.message}`);
     setTimeout(() => { btn.textContent = original; }, 3000);
@@ -7100,13 +7099,13 @@ async function openReader(item, row, opts = {}) {
     <div class="reader-attachments hidden" id="reader-attachments"></div>
     <div class="reader-analysis hidden" id="reader-analysis"></div>
     <div class="reader-actions" id="reader-actions">
-      ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
-      <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
-      <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
-      <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « ⭐ Mails suivis »">${item.isFlagged ? '⭐ Suivi' : '☆ Suivre'}</button>
+      ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">Répondre</button>
+      <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">Transférer</button>` : ''}
+      <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">Tâche</button>
+      <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « Mails suivis »">${item.isFlagged ? '★ Suivi' : '☆ Suivre'}</button>
       <button class="btn btn-sm" id="reader-toggle-seen" title="Change l'état lu/non lu de ce mail (aussi côté Microsoft)">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
-      <select id="reader-move" title="Déplace ce mail vers un autre dossier de la même boîte"><option value="">📦 Déplacer vers…</option></select>
-      <button class="btn btn-sm" id="reader-delete" style="color:var(--red)" title="Met ce mail à la corbeille — récupérable ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
+      <select id="reader-move" title="Déplace ce mail vers un autre dossier de la même boîte"><option value="">Déplacer vers…</option></select>
+      <button class="btn btn-sm" id="reader-delete" style="color:var(--red)" title="Met ce mail à la corbeille — récupérable ~30 jours, rien n'est effacé définitivement">Corbeille</button>
       <span class="muted" style="font-size:11.5px; margin-left:auto">soft delete — récupérable ~30 j</span>
     </div>`;
   document.body.appendChild(overlay);
@@ -7122,7 +7121,7 @@ async function openReader(item, row, opts = {}) {
         action: item.isFlagged ? 'unflag' : 'flag',
       });
       item.isFlagged = !item.isFlagged;
-      btn.textContent = item.isFlagged ? '⭐ Suivi' : '☆ Suivre';
+      btn.textContent = item.isFlagged ? '★ Suivi' : '☆ Suivre';
       refreshFlaggedBadge();
     } catch (err) {
       alert(err.message);
@@ -7160,7 +7159,7 @@ async function openReader(item, row, opts = {}) {
       const note = document.createElement('div');
       note.className = 'notice';
       note.style.marginBottom = '10px';
-      note.textContent = `📦 Ce mail avait changé de place — retrouvé dans « ${body.folder} ». L'index est recalé.`;
+      note.textContent = `Ce mail avait changé de place — retrouvé dans « ${body.folder} ». L'index est recalé.`;
       el.replaceChildren(note);
     }
     loadedText = body.text || '';
@@ -7173,7 +7172,7 @@ async function openReader(item, row, opts = {}) {
       const note = document.createElement('div');
       note.className = 'notice warn';
       note.style.marginTop = '14px';
-      note.textContent = '✂️ Mail très long : seul le début est affiché ici. L\'original complet reste dans ta boîte.';
+      note.textContent = 'Mail très long : seul le début est affiché ici. L\'original complet reste dans ta boîte.';
       el.appendChild(note);
     }
     if (body.to) {
@@ -7194,7 +7193,7 @@ async function openReader(item, row, opts = {}) {
   }).catch((err) => {
     const el = $('#reader-body');
     if (!el) return;
-    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>
+    el.innerHTML = `<div class="notice warn">${esc(err.message)}</div>
       <div class="muted" style="font-size:12.5px">Le contenu n'a pas pu être téléchargé (boîte
       injoignable ou mail déplacé). Les infos ci-dessus viennent des mails synchronisés.
       Si le mail existe toujours dans Outlook, une <a href="#/account/${esc(item.account)}">synchronisation
@@ -7302,7 +7301,7 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal" style="width:640px">
-    <div class="modal-head"><h2>✉️ ${replyRef?.mode === 'reply' ? 'Répondre' : replyRef?.mode === 'forward' ? 'Transférer' : 'Nouveau mail'}
+    <div class="modal-head"><h2>${replyRef?.mode === 'reply' ? 'Répondre' : replyRef?.mode === 'forward' ? 'Transférer' : 'Nouveau mail'}
       <span class="muted" style="font-size:12.5px; font-weight:400">depuis ${esc(account)}</span></h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body">
@@ -7313,13 +7312,13 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
       </div>
       <textarea id="c-text" rows="12" style="width:100%; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font:inherit; resize:vertical"></textarea>
       <div id="c-error"></div>
-      <div class="trash-note" style="margin-top:10px">🛟 Rien ne part sans ton clic : l'envoi demande une
+      <div class="trash-note" style="margin-top:10px">Rien ne part sans ton clic : l'envoi demande une
         confirmation, est journalisé (destinataires + objet), et une copie est déposée dans
         « Éléments envoyés ».</div>
     </div>
     <div class="modal-foot">
       <button class="btn" id="c-cancel">Annuler</button>
-      <button class="btn btn-primary" id="c-send">✉️ Envoyer</button>
+      <button class="btn btn-primary" id="c-send">Envoyer</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
@@ -7357,10 +7356,10 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
         text: textVal,
         replyTo: replyRef ?? undefined,
       });
-      $('.modal-body').innerHTML = `<div class="notice">✅ Mail envoyé à
+      $('.modal-body').innerHTML = `<div class="notice">Mail envoyé à
         <strong>${r.sentTo.map(esc).join(', ')}</strong>.<br>
         ${r.copiedTo ? `Copie déposée dans « ${esc(r.copiedTo)} ».`
-          : '⚠️ La copie dans « Éléments envoyés » n\'a pas pu être déposée (le mail est bien parti).'}</div>`;
+          : 'La copie dans « Éléments envoyés » n\'a pas pu être déposée (le mail est bien parti).'}</div>`;
       $('.modal-foot').innerHTML = '<button class="btn btn-primary" id="c-done">Fermer</button>';
       $('#c-done').addEventListener('click', () => {
         closeModal();
@@ -7369,37 +7368,32 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
       });
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = '✉️ Envoyer';
-      errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
+      btn.textContent = 'Envoyer';
+      errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">${esc(err.message)}</div>`;
     }
   });
 }
 
 // Intentions de mail (A1) — mêmes valeurs que le serveur, libellés FR.
 const INTENT_LABELS = {
-  otp: '🔑 Code de connexion',
-  invoice: '🧾 Facture / paiement',
-  shipping: '📦 Livraison',
-  appointment: '📅 Rendez-vous',
-  reminder: '⏰ Rappel / relance',
-  confirmation: '✅ Confirmation',
-  document: '📄 Document',
-  promo: '📢 Publicité / promo',
-  reply_expected: '🗣️ Réponse attendue',
-  info: 'ℹ️ Information',
+  otp: 'Code de connexion',
+  invoice: 'Facture / paiement',
+  shipping: 'Livraison',
+  appointment: 'Rendez-vous',
+  reminder: 'Rappel / relance',
+  confirmation: 'Confirmation',
+  document: 'Document',
+  promo: 'Publicité / promo',
+  reply_expected: 'Réponse attendue',
+  info: 'Information',
 };
 
-// Section « 🤖 Analyse » du panneau de lecture (L5.4) — heuristiques locales.
+// Section « Analyse » du panneau de lecture (L5.4) — heuristiques locales.
 function renderReaderAnalysis(a, item) {
   const el = $('#reader-analysis');
   if (!el) return;
   el.classList.remove('hidden');
 
-  const replyBadge =
-    a.reply.kind === 'awaiting' ? 'orange'
-    : a.reply.kind === 'you-last' ? 'blue'
-    : a.reply.kind === 'answered' ? 'green'
-    : 'gray';
   const impLine = a.importance
     ? `<div class="ra-line">${scoreBadge(a.importance.score)}
         <span>${a.importance.level === 'high' ? 'prioritaire' : a.importance.level === 'medium' ? 'à regarder' : 'peut attendre'}
@@ -7409,28 +7403,28 @@ function renderReaderAnalysis(a, item) {
   const existing = a.deadlines.existing
     .map(
       (d) => `<span class="badge ${d.status === 'confirmed' ? 'blue' : d.status === 'proposed' ? 'orange' : 'gray'}"
-        title="statut : ${esc(d.status)}">📅 ${fmtDate(d.date)}</span>`,
+        title="statut : ${esc(d.status)}">${fmtDate(d.date)}</span>`,
     )
     .join(' ');
   const detected = a.deadlines.detected
     .map(
-      (d, k) => `<span class="ra-deadline">📅 ${fmtDate(d.date)}
+      (d, k) => `<span class="ra-deadline">${fmtDate(d.date)}
         <span class="muted" style="font-size:11px" title="${esc(d.sourceText)}">(${esc(d.type)})</span>
-        <button class="btn btn-sm ra-propose" data-k="${k}">➕ Proposer</button></span>`,
+        <button class="btn btn-sm ra-propose" data-k="${k}">Proposer</button></span>`,
     )
     .join(' ');
 
   // Type de demande (B3) : question / action / réponse attendue — détecté
   // aussi sans « ? » (le texte cité du mail est ignoré).
   const requestLine = a.request && a.request.kind !== 'information'
-    ? `<div class="ra-line"><span class="badge ${a.request.kind === 'question' ? 'blue' : 'orange'}">🗣️</span>
+    ? `<div class="ra-line">
         <span>${esc(a.request.label)} <span class="muted" style="font-size:11.5px">— ${esc(a.request.why)}</span></span></div>`
     : '';
 
   // Confiance de l'analyse (B4) : faible ⇒ le mail est protégé de toute
   // suppression automatique — la raison est dans l'infobulle.
   const confidenceLine = a.confidence
-    ? `<div class="ra-line"><span class="badge ${a.confidence.level === 'high' ? 'green' : a.confidence.level === 'medium' ? 'orange' : 'gray'}">🎚️</span>
+    ? `<div class="ra-line">
         <span title="${esc(a.confidence.reason)}">Confiance de l'analyse : <strong>${esc(a.confidence.label)}</strong>
         <span class="muted" style="font-size:11.5px">— ${esc(a.confidence.reason)}${a.confidence.level === 'low' ? ' · protégé des nettoyages automatiques' : ''}</span></span></div>`
     : '';
@@ -7442,7 +7436,6 @@ function renderReaderAnalysis(a, item) {
   const c = a.classement;
   const classLine = c
     ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
-        <span class="badge gray">🏷️</span>
         <span>Classé :</span>
         <select id="ra-intent" title="Corriger l'intention de CE mail précis — ta correction n'est jamais écrasée, et elle lève le doute de l'analyse">
           <option value="">${c.intent ? '(revenir au calcul auto)' : 'pas encore classé'}</option>
@@ -7455,7 +7448,6 @@ function renderReaderAnalysis(a, item) {
           <span class="muted" id="ra-intent-note" style="font-size:11.5px"></span></span>
       </div>
       ${c.sender ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px">
-        <span class="badge gray">👤</span>
         <span>Expéditeur <span class="muted" style="font-size:11.5px">${esc(c.sender.email)}</span> :</span>
         <select id="ra-cat" title="Corriger « qui écrit » — s'applique à TOUS les mails de cet expéditeur, tout de suite, et n'est jamais écrasé par les recalculs">
           <option value="">${c.sender.category ? '(revenir au calcul auto)' : 'catégorie ?'}</option>
@@ -7464,8 +7456,8 @@ function renderReaderAnalysis(a, item) {
             .join('')}</select>
         <select id="ra-prio" title="Priorité de cet expéditeur dans le score d'importance">
           <option value="normal" ${c.sender.priority === 'normal' ? 'selected' : ''}>priorité normale</option>
-          <option value="always_important" ${c.sender.priority === 'always_important' ? 'selected' : ''}>⭐ toujours important</option>
-          <option value="never_urgent" ${c.sender.priority === 'never_urgent' ? 'selected' : ''}>🔕 jamais urgent</option>
+          <option value="always_important" ${c.sender.priority === 'always_important' ? 'selected' : ''}>toujours important</option>
+          <option value="never_urgent" ${c.sender.priority === 'never_urgent' ? 'selected' : ''}>jamais urgent</option>
         </select>
         <span class="muted" id="ra-class-note" style="font-size:11.5px">une correction s'applique à tous ses mails</span>
       </div>` : ''}`
@@ -7489,7 +7481,7 @@ function renderReaderAnalysis(a, item) {
     </div>
     <div id="ra-detail" class="hidden">
       ${impLine}
-      <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
+      <div class="ra-line"><span>${esc(a.reply.label)}</span></div>
       ${requestLine}
       ${confidenceLine}
       <div class="ra-line muted" style="font-size:11px">Règles locales — rien n'est envoyé à un service externe.</div>
@@ -7554,7 +7546,7 @@ function renderReaderAnalysis(a, item) {
         });
         btn.replaceWith(Object.assign(document.createElement('span'), {
           className: 'badge orange',
-          textContent: '✓ proposée — à valider dans 📅 Dates à confirmer',
+          textContent: '✓ proposée — à valider dans Dates à confirmer',
         }));
         refreshDeadlinesBadge();
       } catch (err) {
@@ -7642,7 +7634,7 @@ function groupOps(ops) {
 const opsState = { filter: 'all', operations: [] };
 async function renderOperations() {
   const main = $('#main');
-  main.innerHTML = `<div class="page-head"><div><h1>📜 Journal d'activité</h1>
+  main.innerHTML = `<div class="page-head"><div><h1>Journal d'activité</h1>
     <div class="sub">Tout ce qui a été fait (par toi, l'assistant ou Claude), le plus récent d'abord.</div></div></div>
     <div class="tabs" id="ops-tabs"></div>
     <div class="panel"><div class="panel-body" id="ops-body"><span class="spinner"></span></div></div>`;
