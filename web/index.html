@@ -38,7 +38,13 @@
         <nav>
           <a href="#/today" class="side-link" data-nav="today">☀️ Aujourd'hui
             <span class="badge red hidden" id="today-badge"></span></a>
-          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 État des boîtes</a>
+          <a href="#/inbox/@inbox" class="side-link" data-nav="inbox">📥 Boîte de réception</a>
+          <a href="#/replies" class="side-link" data-nav="todo">🔥 À traiter
+            <span class="badge red hidden" id="todo-badge"></span></a>
+          <a href="#/cleanup" class="side-link" data-nav="clean">🧹 Nettoyer</a>
+          <a href="#/rules" class="side-link" data-nav="organize">🗂️ Organiser</a>
+          <a href="#/calendar" class="side-link" data-nav="calendar">🗓️ Calendrier</a>
+          <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
         </nav>
       </div>
 
@@ -49,9 +55,9 @@
       </div>
 
       <div class="side-section">
-        <div class="side-title">🌐 TOUTES LES BOÎTES</div>
-        <nav>
-          <a href="#/inbox/@inbox" class="side-link" data-nav="inbox">📥 Boîte de réception</a>
+        <div class="side-title side-toggle" id="folders-toggle" title="Suivis, envoyés, brouillons, corbeille — toutes boîtes confondues">
+          <span class="side-caret-txt" id="folders-caret">▸</span> DOSSIERS MAIL</div>
+        <nav id="folders-nav" class="hidden">
           <a href="#/inbox/@flagged" class="side-link" data-nav="inbox">⭐ Mails suivis
             <span class="badge orange hidden" id="flagged-badge"></span></a>
           <a href="#/inbox/@sent" class="side-link" data-nav="inbox">📤 Envoyés</a>
@@ -61,40 +67,15 @@
       </div>
 
       <div class="side-section">
-        <div class="side-title">ANALYSE &amp; ACTIONS</div>
-        <a href="#/replies" class="side-link" data-nav="replies">↩️ À répondre
-          <span class="badge orange hidden" id="replies-badge"></span></a>
-        <a href="#/important" class="side-link" data-nav="important">⭐ À ne pas manquer
-          <span class="badge red hidden" id="important-badge"></span></a>
-        <a href="#/followups" class="side-link" data-nav="followups">⏰ À relancer
-          <span class="badge orange hidden" id="followups-badge"></span></a>
-        <a href="#/deadlines" class="side-link" data-nav="deadlines">📅 Dates à confirmer
-          <span class="badge orange hidden" id="deadlines-badge"></span></a>
-        <a href="#/calendar" class="side-link" data-nav="calendar">🗓️ Calendrier</a>
-        <a href="#/tasks" class="side-link" data-nav="tasks">☑️ Mes tâches
-          <span class="badge orange hidden" id="tasks-badge"></span></a>
-        <a href="#/cleanup" class="side-link" data-nav="cleanup">🧹 Nettoyage rapide</a>
-        <a href="#/unsubscribe" class="side-link" data-nav="unsubscribe">🚫 Désinscriptions
-          <span class="badge orange hidden" id="unsub-badge">0</span></a>
-        <a href="#/bigclean" class="side-link" data-nav="bigclean">🧺 Libérer de l'espace</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">RÈGLES &amp; AUTOMATISATION</div>
-        <a href="#/rules" class="side-link" data-nav="rules">🗂️ Classement automatique
-          <span class="badge orange hidden" id="rules-badge"></span></a>
-        <a href="#/suggestions" class="side-link" data-nav="suggestions">💡 Règles proposées
-          <span class="badge orange hidden" id="suggestions-badge"></span></a>
-        <a href="#/verify" class="side-link" data-nav="verify">🔬 Corriger l'assistant</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">OUTILS</div>
-        <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
-        <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
-        <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
-        <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
-        <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
+        <div class="side-title side-toggle" id="more-toggle">
+          <span class="side-caret-txt" id="more-caret">▸</span> PLUS</div>
+        <nav id="more-nav" class="hidden">
+          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 État des boîtes</a>
+          <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
+          <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
+          <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
+          <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
+        </nav>
       </div>
 
       <div class="side-footer">

@@ -199,17 +199,12 @@ async function showApp() {
   }).catch(() => {});
   await refreshOverview();
   installGlobalUx();
+  installSideToggles();
   route();
   startJobWatcher();
-  refreshRepliesBadge();
-  refreshFollowupsBadge();
-  refreshImportantBadge();
+  // Depuis la Phase 2, la sidebar ne porte plus qu'un badge par entrée :
+  // Aujourd'hui / À traiter (posés par renderToday) et Mails suivis.
   refreshFlaggedBadge();
-  refreshRulesBadge();
-  refreshSuggestionsBadge();
-  refreshDeadlinesBadge();
-  refreshTasksBadge();
-  refreshUnsubBadge();
 }
 
 // Badge tâches : nombre à faire (rouge si au moins une en retard).
@@ -512,15 +507,27 @@ async function refreshOverview() {
   loadSideFolders();
 }
 
+// Route → entrée de navigation. Depuis la Phase 2 de la revue UX, plusieurs
+// écrans partagent la même entrée (hub) : leurs onglets vivent dans la page.
+const NAV_BY_ROUTE = {
+  inbox: 'inbox',
+  replies: 'todo', followups: 'todo', important: 'todo', deadlines: 'todo', tasks: 'todo',
+  cleanup: 'clean', unsubscribe: 'clean', bigclean: 'clean',
+  rules: 'organize', suggestions: 'organize', verify: 'organize',
+  calendar: 'calendar', search: 'search',
+  dashboard: 'dashboard', attachments: 'attachments', operations: 'operations',
+  settings: 'settings', help: 'help',
+};
+
 function highlightNav() {
   const hash = location.hash || '#/today';
   document.querySelectorAll('.side-link').forEach((el) => el.classList.remove('active'));
   if (hash.startsWith('#/account/')) {
     const slug = decodeURIComponent(hash.split('/')[2] ?? '');
     document.querySelector(`[data-account="${CSS.escape(slug)}"]`)?.classList.add('active');
-  } else if (hash.startsWith('#/operations')) {
-    document.querySelector('[data-nav="operations"]')?.classList.add('active');
-  } else if (hash.startsWith('#/inbox')) {
+    return;
+  }
+  if (hash.startsWith('#/inbox')) {
     document.querySelectorAll('.side-folder.active').forEach((el) => el.classList.remove('active'));
     if (inboxState.account) {
       // Boîte précise : on allume le compte ET son dossier dans l'arborescence.
@@ -530,47 +537,83 @@ function highlightNav() {
           `.side-folder[data-goto-account="${CSS.escape(inboxState.account)}"][data-goto-folder="${CSS.escape(inboxState.folder || 'INBOX')}"]`,
         )
         ?.classList.add('active');
+    } else if (inboxState.role === 'inbox') {
+      document.querySelector('[data-nav="inbox"]')?.classList.add('active');
     } else {
-      // Vue unifiée : on allume l'entrée « toutes les boîtes » du bon type.
+      // Suivis / envoyés / brouillons / corbeille : dans « Dossiers mail ».
+      openSideGroup('folders');
       document.querySelector(`a[href="#/inbox/@${CSS.escape(inboxState.role)}"]`)?.classList.add('active');
     }
-  } else if (hash.startsWith('#/search')) {
-    document.querySelector('[data-nav="search"]')?.classList.add('active');
-  } else if (hash.startsWith('#/replies')) {
-    document.querySelector('[data-nav="replies"]')?.classList.add('active');
-  } else if (hash.startsWith('#/followups')) {
-    document.querySelector('[data-nav="followups"]')?.classList.add('active');
-  } else if (hash.startsWith('#/deadlines')) {
-    document.querySelector('[data-nav="deadlines"]')?.classList.add('active');
-  } else if (hash.startsWith('#/calendar')) {
-    document.querySelector('[data-nav="calendar"]')?.classList.add('active');
-  } else if (hash.startsWith('#/settings')) {
-    document.querySelector('[data-nav="settings"]')?.classList.add('active');
-  } else if (hash.startsWith('#/help')) {
-    document.querySelector('[data-nav="help"]')?.classList.add('active');
-  } else if (hash.startsWith('#/attachments')) {
-    document.querySelector('[data-nav="attachments"]')?.classList.add('active');
-  } else if (hash.startsWith('#/cleanup')) {
-    document.querySelector('[data-nav="cleanup"]')?.classList.add('active');
-  } else if (hash.startsWith('#/unsubscribe')) {
-    document.querySelector('[data-nav="unsubscribe"]')?.classList.add('active');
-  } else if (hash.startsWith('#/bigclean')) {
-    document.querySelector('[data-nav="bigclean"]')?.classList.add('active');
-  } else if (hash.startsWith('#/rules')) {
-    document.querySelector('[data-nav="rules"]')?.classList.add('active');
-  } else if (hash.startsWith('#/suggestions')) {
-    document.querySelector('[data-nav="suggestions"]')?.classList.add('active');
-  } else if (hash.startsWith('#/verify')) {
-    document.querySelector('[data-nav="verify"]')?.classList.add('active');
-  } else if (hash.startsWith('#/important')) {
-    document.querySelector('[data-nav="important"]')?.classList.add('active');
-  } else if (hash.startsWith('#/tasks')) {
-    document.querySelector('[data-nav="tasks"]')?.classList.add('active');
-  } else if (hash.startsWith('#/dashboard')) {
-    document.querySelector('[data-nav="dashboard"]')?.classList.add('active');
-  } else {
-    document.querySelector('[data-nav="today"]')?.classList.add('active');
+    return;
   }
+  const seg = hash.slice(2).split('/')[0].split('?')[0];
+  const nav = NAV_BY_ROUTE[seg] ?? 'today';
+  const link = document.querySelector(`[data-nav="${nav}"]`);
+  // L'entrée active peut vivre dans un groupe replié (« Plus ») : on l'ouvre,
+  // sinon la sélection serait invisible.
+  if (link?.closest('#more-nav')) openSideGroup('more');
+  link?.classList.add('active');
+}
+
+/** Ouvre (sans refermer) un groupe repliable de la sidebar. */
+function openSideGroup(key) {
+  const nav = $(`#${key}-nav`);
+  const caret = $(`#${key}-caret`);
+  if (nav?.classList.contains('hidden')) {
+    nav.classList.remove('hidden');
+    if (caret) caret.textContent = '▾';
+    try { localStorage.setItem(`side-${key}-open`, '1'); } catch { /* privé */ }
+  }
+}
+
+/** Bascules « Dossiers mail » et « Plus » (état mémorisé localement). */
+function installSideToggles() {
+  for (const key of ['folders', 'more']) {
+    const toggle = $(`#${key}-toggle`);
+    const nav = $(`#${key}-nav`);
+    const caret = $(`#${key}-caret`);
+    if (!toggle || !nav) continue;
+    let open = false;
+    try { open = localStorage.getItem(`side-${key}-open`) === '1'; } catch { /* privé */ }
+    nav.classList.toggle('hidden', !open);
+    if (caret) caret.textContent = open ? '▾' : '▸';
+    toggle.addEventListener('click', () => {
+      const nowOpen = nav.classList.toggle('hidden') === false;
+      if (caret) caret.textContent = nowOpen ? '▾' : '▸';
+      try { localStorage.setItem(`side-${key}-open`, nowOpen ? '1' : '0'); } catch { /* privé */ }
+    });
+  }
+}
+
+// --------------------------------------------------- Onglets des hubs (Phase 2)
+// Trois intentions, trois hubs : les anciennes routes restent valides et
+// portent simplement une barre d'onglets commune en tête d'écran.
+const HUBS = {
+  todo: [
+    ['replies', '#/replies', '↩️ À répondre'],
+    ['followups', '#/followups', '⏰ À relancer'],
+    ['important', '#/important', '⭐ À ne pas manquer'],
+    ['deadlines', '#/deadlines', '📅 Dates'],
+    ['tasks', '#/tasks', '☑️ Mes tâches'],
+  ],
+  clean: [
+    ['cleanup', '#/cleanup', '🧹 Nettoyage rapide'],
+    ['unsubscribe', '#/unsubscribe', '🚫 Désinscriptions'],
+    ['bigclean', '#/bigclean', '🧺 Libérer de l\'espace'],
+  ],
+  organize: [
+    ['rules', '#/rules', '🗂️ Classement automatique'],
+    ['suggestions', '#/suggestions', '💡 Règles proposées'],
+    ['verify', '#/verify', '🔬 Corriger l\'assistant'],
+  ],
+};
+
+function hubTabs(activeKey) {
+  const hub = Object.values(HUBS).find((tabs) => tabs.some(([key]) => key === activeKey));
+  if (!hub) return '';
+  return `<div class="tabs hub-tabs">${hub
+    .map(([key, href, label]) => `<a class="tab ${key === activeKey ? 'active' : ''}" href="${href}">${label}</a>`)
+    .join('')}</div>`;
 }
 
 // ---------------------------------------------------------------- Router
@@ -622,6 +665,12 @@ function route() {
   } else {
     renderToday();
   }
+  // Barre d'onglets du hub (Phase 2) : injectée en tête d'écran. Les renderers
+  // posent leur page-head de façon SYNCHRONE avant leur premier await — on
+  // peut donc préposer juste après l'appel.
+  const seg = hash.slice(2).split('/')[0].split('?')[0];
+  const tabs = hubTabs(seg);
+  if (tabs) $('#main').insertAdjacentHTML('afterbegin', tabs);
 }
 
 // Barre de remplissage d'une boîte (L5.18) : orange ≥ 90 %, rouge ≥ 95 %.
@@ -751,12 +800,17 @@ async function renderToday() {
   if (location.hash && !(location.hash === '#/today' || location.hash === '' || location.hash === '#/')) return;
   todayReaderRefs = [];
 
-  // Badge sidebar : nombre d'actions à faire.
-  const badge = $('#today-badge');
-  if (badge) {
+  // Badges sidebar : nombre d'actions à faire (Aujourd'hui + hub À traiter).
+  for (const badge of [$('#today-badge'), $('#todo-badge')]) {
+    if (!badge) continue;
     badge.textContent = fmtNum(t.todo.total);
     badge.classList.toggle('hidden', t.todo.total === 0);
   }
+
+  // Bandeau de mise à jour : Aujourd'hui est LA page d'accueil — c'est ici
+  // qu'il doit vivre depuis que « État des boîtes » est passé dans « Plus »
+  // (sans lui, l'utilisateur ne verrait plus jamais les mises à jour).
+  checkForUpdates($('#today-body'));
 
   const rows = [];
   for (const r of t.todo.replies) {
@@ -1504,25 +1558,36 @@ async function renderDashboard() {
   bindCleanupButtons(body);
 
   // Vérification des mises à jour en arrière-plan (une fois par affichage).
+  checkForUpdates(body);
+}
+
+/**
+ * Bandeau de mise à jour, préposé dans `container` quand une version est
+ * disponible. C'est le canal de livraison de l'utilisateur : le bandeau vit
+ * sur Aujourd'hui (la page d'accueil) ET sur État des boîtes.
+ */
+function checkForUpdates(container) {
+  if (!container) return;
   api.updateCheck().then(({ behind, commits }) => {
-    if (!behind) return;
+    if (!behind || !container.isConnected) return;
     const el = document.createElement('div');
     el.className = 'notice';
     el.innerHTML = `⬆️ <strong>Mise à jour disponible</strong> (${fmtNum(behind)} nouveauté${behind > 1 ? 's' : ''}) :
       <span class="muted">${commits.slice(0, 3).map(esc).join(' · ')}</span>
-      <button class="btn btn-primary btn-sm" id="update-btn" style="margin-left:10px">Mettre à jour maintenant</button>`;
-    body.prepend(el);
-    $('#update-btn').addEventListener('click', () => applyUpdateFlow(el));
+      <button class="btn btn-primary btn-sm update-btn" style="margin-left:10px">Mettre à jour maintenant</button>`;
+    container.prepend(el);
+    el.querySelector('.update-btn').addEventListener('click', () => applyUpdateFlow(el));
   }).catch((err) => {
     // Ne PAS rester muet : sans ça, une vérification en échec est
     // indiscernable d'un « tu es à jour » — et on reste sur une vieille
     // version sans jamais le savoir.
+    if (!container.isConnected) return;
     const el = document.createElement('div');
     el.className = 'notice warn';
     el.innerHTML = `⚠️ <strong>Impossible de vérifier les mises à jour</strong> —
       ${esc(err.message)}.<br><span class="muted" style="font-size:12.5px">Ferme Mail Assistant
-      et relance <strong>MailAssistant.bat</strong> : il récupère le code au démarrage.</span>`;
-    body.prepend(el);
+    et relance <strong>MailAssistant.bat</strong> : il récupère le code au démarrage.</span>`;
+    container.prepend(el);
   });
 }
 

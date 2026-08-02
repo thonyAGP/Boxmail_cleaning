@@ -225,6 +225,15 @@ select, input[type="date"], input[type="number"], input[type="text"], input[type
 .tab:hover { border-color: #c9d1e0; }
 .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .tab.active .badge { background: rgba(255,255,255,.2); color: #fff; }
+
+/* Onglets de hub (Phase 2) : mêmes pastilles, mais ce sont des liens. */
+a.tab { text-decoration: none; }
+.hub-tabs { margin-bottom: 16px; }
+
+/* Groupes repliables de la sidebar (Dossiers mail, Plus). */
+.side-toggle { cursor: pointer; user-select: none; }
+.side-toggle:hover { color: var(--accent); }
+.side-caret-txt { display: inline-block; width: 10px; }
 .reply-row {
   display: flex; gap: 16px; padding: 13px 18px; border-bottom: 1px solid #f0f2f7;
   align-items: flex-start;
