@@ -5,6 +5,23 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (25) — Commande « Message au locataire » (9859403)
+
+Retour : « pour les assurances périmées, il faudrait envoyer un message
+via la plateforme au bon locataire pour qu'il téléverse son attestation
+dans son espace ». Câblé : 3e kind send_tenant_message dans la file de
+commandes — modale 🏠 Rentila…, onglet « ✉️ Message au locataire »
+(bien OU locataire, sujet, corps textarea). Sur un mail « Assurance
+locataire expirée/expire dans N jours : {bien} », l'onglet est
+PRÉ-SÉLECTIONNÉ, bien extrait du sujet, message tout rédigé
+(attestation à téléverser, rubrique Documents). Recette MCP : bail
+ACTIF du bien (query_leases active=1) → tous ses locataires →
+create_message avec EXACTEMENT le texte validé ; ambiguïté = rien
+n'est envoyé. Testé Playwright : onglet actif, bien « 101 1er droite
+T3 », commande en file avec les bons params. Capture : la carte
+« Confirmer l'échéance » (rattrapage) visible derrière la modale —
+la chaîne complète mail→échéance→message tient.
+
 ## 03/08 (24) — « Quoi de neuf » : rattrapage automatique (10c73a8)
 
 Retour : « je ne vois rien de nouveau malgré la MAJ » — sa capture
