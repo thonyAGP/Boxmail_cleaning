@@ -924,6 +924,7 @@ async function renderToday() {
       Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
     ${strip}
     <div id="today-review"></div>
+    <div id="today-rentila"></div>
     <div class="today-grid">
       <div>
         <div class="panel">
@@ -998,6 +999,7 @@ async function renderToday() {
 
   // ---- Compléments asynchrones (échéances à venir, santé, activité) ----
   todayFillReview();
+  todayFillRentila();
   todayFillDeadlines();
   todayFillHealth(syncedCount, totalAccounts);
   todayFillActivity();
@@ -1023,6 +1025,49 @@ async function todayFillReview() {
         title="L'assistant te présente le courrier préparé : les importants un par un, le reste par lots homogènes — rien ne part sans ta décision">Dépouiller</button>
     </div>`;
     $('#review-start')?.addEventListener('click', () => startReviewFlow());
+  } catch {
+    if (el.isConnected) el.innerHTML = '';
+  }
+}
+
+// Carte « 🏠 Gestion locative » (connecteur Rentila, phase 1) : ce que Rentila
+// attend de toi — invisible si aucune activité Rentila récente (les autres
+// boîtes ne voient rien changer).
+let rentilaMsgRefs = [];
+async function todayFillRentila() {
+  const el = $('#today-rentila');
+  if (!el) return;
+  try {
+    const o = await api.rentilaOverview();
+    if (!el.isConnected) return;
+    const bits = [];
+    const expired = o.insurance.filter((i) => i.expired);
+    const expiring = o.insurance.filter((i) => !i.expired);
+    if (expired.length) {
+      bits.push(`<span title="${esc(expired.map((i) => i.property).join(', '))}">🛡️ <strong>${fmtNum(expired.length)}</strong> assurance(s) locataire <span style="color:var(--red)">expirée(s)</span></span>`);
+    }
+    if (expiring.length) {
+      bits.push(`<span title="${esc(expiring.map((i) => i.property).join(', '))}">🛡️ ${fmtNum(expiring.length)} assurance(s) à renouveler bientôt</span>`);
+    }
+    if (o.rentLateAt) bits.push(`<span>💶 loyers en retard signalés le ${fmtDate(o.rentLateAt)}</span>`);
+    if (o.tenantMessages.length) bits.push(`<span>💬 <strong>${fmtNum(o.tenantMessages.length)}</strong> message(s) locataire à traiter</span>`);
+    if (!bits.length && !o.deadlines.length) { el.innerHTML = ''; return; }
+
+    rentilaMsgRefs = o.tenantMessages;
+    el.innerHTML = `<div class="panel" style="margin-bottom:14px"><div class="panel-body" style="padding:10px 14px">
+      <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:13px">
+        <strong>🏠 Gestion locative</strong>
+        ${bits.join('<span class="muted">·</span>')}
+        <a class="btn btn-sm" href="#/deadlines" style="margin-left:auto">📅 Voir les échéances</a>
+      </div>
+      ${o.tenantMessages.length ? `<div style="margin-top:6px; font-size:12.5px" class="muted">
+        ${o.tenantMessages.map((m, k) => `<span class="openable" data-rentila-msg="${k}">« ${esc(m.subject)} »</span>`).join(' · ')}
+      </div>` : ''}
+    </div></div>`;
+    el.querySelectorAll('[data-rentila-msg]').forEach((sp) => sp.addEventListener('click', () => {
+      const m = rentilaMsgRefs[Number(sp.dataset.rentilaMsg)];
+      if (m) openReaderFor(m, {});
+    }));
   } catch {
     if (el.isConnected) el.innerHTML = '';
   }
@@ -1293,6 +1338,9 @@ const REVIEW_CLASS_LABELS = {
 
 function reviewReason(item) {
   const bits = [];
+  // Connecteur Rentila : la lecture structurée passe devant tout le reste
+  // (« Assurance locataire expirée — 101 1er droite T3 »).
+  if (item.rentilaLabel) bits.push(`🏠 ${item.rentilaLabel}`);
   if (item.senderCategory) bits.push(SENDER_CATEGORY_LABELS[item.senderCategory] ?? item.senderCategory);
   if (item.intent) bits.push(INTENT_LABELS[item.intent] ?? item.intent);
   if (item.aiSummary) bits.push(`IA : ${item.aiSummary}`);
@@ -1559,12 +1607,13 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
       const catLabel = g.senderCategory ? (SENDER_CATEGORY_LABELS[g.senderCategory] ?? g.senderCategory) : '';
       $('#rv-body').innerHTML = `
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
-          <span class="badge gray">🧹 Lot rangeable</span>${accountChip(g.account)}
+          <span class="badge ${g.rentila ? 'blue' : 'gray'}">${g.rentila ? '🏠 Alertes Rentila' : '🧹 Lot rangeable'}</span>${accountChip(g.account)}
           ${catLabel ? `<span class="muted" style="font-size:12px">${esc(catLabel)}</span>` : ''}</div>
-        <div style="font-size:15px; margin-bottom:2px"><strong>${fmtNum(g.count)} mails de ${esc(who)}</strong>
-          <span class="muted">— ${esc(intentLabel)}</span></div>
-        <div class="muted" style="font-size:12.5px; margin-bottom:8px">Proposition : les marquer comme vus.
-          Rien n'est supprimé — la corbeille est un choix séparé, toujours confirmé.</div>
+        <div style="font-size:15px; margin-bottom:2px"><strong>${fmtNum(g.count)} ${g.rentila ? 'notifications Rentila' : `mails de ${esc(who)}`}</strong>
+          ${g.rentila ? '' : `<span class="muted">— ${esc(intentLabel)}</span>`}</div>
+        <div class="muted" style="font-size:12.5px; margin-bottom:8px">${g.rentila
+          ? 'Les obligations détectées (assurances, révisions de loyer) sont déjà dans ton 📅 Calendrier — ces notifications peuvent être marquées vues sans rien perdre.'
+          : 'Proposition : les marquer comme vus. Rien n\'est supprimé — la corbeille est un choix séparé, toujours confirmé.'}</div>
         <div class="subject-list">${g.samples.map((s) =>
           `<div><span class="mail-date">${fmtDate(s.date)}</span> ${esc(s.subject)}</div>`).join('')}
           ${g.count > g.samples.length ? `<div class="muted">… et ${fmtNum(g.count - g.samples.length)} autre(s) du même expéditeur</div>` : ''}</div>`;

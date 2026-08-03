@@ -7,6 +7,7 @@ import { createTask } from './tasks.js';
 import { imapService } from './imap.js';
 import { resolveAccount } from './accounts.js';
 import { chunk } from './attention.js';
+import { isRentilaSender, parseRentilaMail, type RentilaMailInfo } from './rentila.js';
 
 /**
  * Dépouillement du courrier entrant (Lot 1 du plan validé le 02/08).
@@ -157,7 +158,54 @@ async function loadCandidates(): Promise<{ rows: CandidateRow[]; senderCat: Map<
   return { rows, senderCat };
 }
 
-function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null) {
+/**
+ * Classement d'un mail pour le dépouillement, connecteur Rentila compris :
+ * les notifications automatiques sont rangeables (les obligations qu'elles
+ * portent vivent déjà en échéances), les messages relayés de locataires et
+ * les alertes qui exigent un geste restent des décisions individuelles.
+ */
+function classifyRow(
+  m: CandidateRow,
+  senderCategory: string | null,
+): { cls: ReviewClass; rentila: RentilaMailInfo | null } {
+  if (isRentilaSender(m.fromEmail)) {
+    const info = parseRentilaMail({
+      subject: m.subject,
+      fromEmail: m.fromEmail,
+      fromName: m.fromName,
+      date: m.date,
+    });
+    if (info) {
+      if (info.noise) return { cls: 'range', rentila: info };
+      const needsAction =
+        info.kind === 'tenant_message' || info.kind === 'docs_missing' || info.kind === 'subscription';
+      return { cls: needsAction ? 'important' : 'read', rentila: info };
+    }
+  }
+  return {
+    cls: classify({
+      intent: m.intent,
+      aiAction: m.aiAction,
+      analysisConfidence: m.analysisConfidence,
+      senderCategory,
+    }),
+    rentila: null,
+  };
+}
+
+/** Libellé lisible d'une notification Rentila pour les listes exactes. */
+function rentilaDisplay(info: RentilaMailInfo, subject: string | null): string {
+  const base = info.property ? `${info.label} — ${info.property}` : info.label;
+  const raw = (subject ?? '').trim();
+  // Les copies/téléchargements gardent le sujet d'origine visible : le label
+  // seul ne dirait pas QUEL envoi est concerné.
+  if ((info.kind === 'outbound_copy' || info.kind === 'download_copy' || info.kind === 'support') && raw) {
+    return `${base} (« ${raw} »)`;
+  }
+  return base;
+}
+
+function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null, rentila?: RentilaMailInfo | null) {
   return {
     id: m.id,
     account: m.accountSlug,
@@ -175,6 +223,8 @@ function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null
     confidence: m.analysisConfidence,
     senderCategory,
     class: cls,
+    /** Lecture Rentila du mail (« Assurance locataire expirée — 101… »), sinon null. */
+    rentilaLabel: rentila ? rentilaDisplay(rentila, m.subject) : null,
   };
 }
 export type ReviewItem = ReturnType<typeof toItem>;
@@ -190,6 +240,8 @@ export interface ReviewLot {
   ids: number[];
   /** Échantillon (10 max) pour la liste exacte affichée avant décision. */
   samples: { id: number; subject: string; date: string | null; folder: string; uid: number }[];
+  /** true = lot « 🏠 Alertes Rentila » (toutes notifications confondues). */
+  rentila?: boolean;
 }
 export interface ReviewSingle {
   kind: 'single';
@@ -212,12 +264,10 @@ export async function reviewSummary(): Promise<{
   let read = 0;
   let range = 0;
   for (const m of rows) {
-    const cls = classify({
-      intent: m.intent,
-      aiAction: m.aiAction,
-      analysisConfidence: m.analysisConfidence,
-      senderCategory: m.fromEmail ? senderCat.get(`${m.accountSlug}|${m.fromEmail}`) ?? null : null,
-    });
+    const { cls } = classifyRow(
+      m,
+      m.fromEmail ? senderCat.get(`${m.accountSlug}|${m.fromEmail}`) ?? null : null,
+    );
     if (cls === 'important') important++;
     else if (cls === 'read') read++;
     else range++;
@@ -255,29 +305,30 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
     const senderCategory = m.fromEmail
       ? senderCat.get(`${m.accountSlug}|${m.fromEmail}`) ?? null
       : null;
-    const cls = classify({
-      intent: m.intent,
-      aiAction: m.aiAction,
-      analysisConfidence: m.analysisConfidence,
-      senderCategory,
-    });
+    const { cls, rentila } = classifyRow(m, senderCategory);
     total++;
     if (cls !== 'range' || !m.fromEmail) {
-      singles.push({ kind: 'single', item: toItem(m, cls, senderCategory) });
+      singles.push({ kind: 'single', item: toItem(m, cls, senderCategory, rentila) });
       continue;
     }
-    const key = `${m.accountSlug}|${m.fromEmail}|${m.intent ?? ''}`;
+    // Toutes les notifications Rentila d'un compte forment UN lot (peu importe
+    // l'intention) : c'est la même décision — « j'ai vu, les obligations sont
+    // déjà dans le calendrier ».
+    const key = rentila
+      ? `${m.accountSlug}|__rentila__`
+      : `${m.accountSlug}|${m.fromEmail}|${m.intent ?? ''}`;
     if (!lots.has(key)) {
       lots.set(key, {
         kind: 'lot',
         account: m.accountSlug,
         fromEmail: m.fromEmail,
-        fromName: m.fromName,
-        intent: m.intent,
-        senderCategory,
+        fromName: rentila ? 'Rentila' : m.fromName,
+        intent: rentila ? null : m.intent,
+        senderCategory: rentila ? 'notification' : senderCategory,
         count: 0,
         ids: [],
         samples: [],
+        ...(rentila ? { rentila: true } : {}),
       });
     }
     const lot = lots.get(key)!;
@@ -286,7 +337,7 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
     if (lot.samples.length < 10) {
       lot.samples.push({
         id: m.id,
-        subject: m.subject ?? '(sans sujet)',
+        subject: rentila ? rentilaDisplay(rentila, m.subject) : m.subject ?? '(sans sujet)',
         date: m.date?.toISOString() ?? null,
         folder: m.folder.path,
         uid: m.uid,
@@ -306,7 +357,10 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
     if (lot.count === 1) {
       const s = lot.samples[0];
       const row = rows.find((r) => r.id === s.id)!;
-      ordered.push({ kind: 'single', item: toItem(row, 'range', lot.senderCategory) });
+      const info = lot.rentila
+        ? parseRentilaMail({ subject: row.subject, fromEmail: row.fromEmail, fromName: row.fromName, date: row.date })
+        : null;
+      ordered.push({ kind: 'single', item: toItem(row, 'range', lot.senderCategory, info) });
     } else {
       ordered.push(lot);
     }

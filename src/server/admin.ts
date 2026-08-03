@@ -120,6 +120,7 @@ import {
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
+import { rentilaOverview } from '../services/rentila.js';
 import {
   listPolicies,
   previewPolicy,
@@ -720,6 +721,14 @@ export function buildAdminRouter(): Router {
       res.json(await reviewDecide(ids, decision as ReviewDecision));
     }),
   );
+  // Connecteur Rentila (phase 1) : synthèse « Gestion locative » — lecture seule.
+  router.get(
+    '/rentila/overview',
+    guard(async (_req, res) => {
+      res.json(await rentilaOverview());
+    }),
+  );
+
   // Apprentissage des décisions (Lot 3) : motifs répétés + « ne plus proposer ».
   router.get(
     '/review/learning',

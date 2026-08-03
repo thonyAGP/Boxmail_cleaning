@@ -1,6 +1,7 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { recordOperation } from './oplog.js';
 import { imapService } from './imap.js';
+import { isRentilaSender, parseRentilaMail } from './rentila.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -280,6 +281,7 @@ export async function detectDeadlines(
     msg: (typeof messages)[number],
     ex: ExtractedDeadline,
     source: 'sujet' | 'contenu',
+    titleOverride?: string,
   ) => {
     const existing = await db.deadline.findUnique({
       where: {
@@ -314,7 +316,7 @@ export async function detectDeadlines(
         accountSlug: account,
         messageId: msg.id,
         threadId: msg.threadId,
-        title: msg.subject ?? '(sans sujet)',
+        title: titleOverride ?? msg.subject ?? '(sans sujet)',
         date: ex.date,
         type: ex.type,
         confidence: ex.confidence,
@@ -337,6 +339,25 @@ export async function detectDeadlines(
 
   // Passe 1 : sujets (instantané).
   for (const msg of messages) {
+    // Les notifications Rentila ont leur propre grammaire (connecteur phase 1) :
+    // le sujet porte le bien et le délai (« expire dans 30 jours: 101 1er
+    // droite T3 »), mais pas de date en clair — l'extracteur générique ne
+    // verrait rien. Titre réécrit en obligation claire.
+    if (isRentilaSender(msg.fromEmail)) {
+      const info = parseRentilaMail({
+        subject: msg.subject,
+        fromEmail: msg.fromEmail,
+        fromName: msg.fromName,
+        date: msg.date,
+      });
+      if (info) {
+        if (info.due) {
+          const { title, ...ex } = info.due;
+          await record(msg, ex, 'sujet', title);
+        }
+        continue; // pas d'extraction générique sur un mail Rentila reconnu
+      }
+    }
     for (const ex of extractDeadlines(msg.subject ?? '', msg.date ?? new Date())) {
       await record(msg, ex, 'sujet');
     }
@@ -345,6 +366,9 @@ export async function detectDeadlines(
   // Passe 2 (optionnelle) : corps des mails au sujet évocateur, via IMAP.
   if (opts.deep) {
     const candidates = messages
+      // Les mails Rentila sont déjà traités par leur grammaire dédiée (passe 1)
+      // et leurs corps sont des gabarits HTML sans date supplémentaire.
+      .filter((m) => !isRentilaSender(m.fromEmail))
       .filter((m) => DEEP_SUBJECT_RE.test(m.subject ?? ''))
       .slice(0, DEEP_BODY_CAP);
     progress(`Analyse approfondie : lecture de ${candidates.length} contenus de mails…`);
