@@ -5,6 +5,27 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (24) — « Quoi de neuf » : rattrapage automatique (10c73a8)
+
+Retour : « je ne vois rien de nouveau malgré la MAJ » — sa capture
+montrait pourtant le neuf (bouton 🏠 Rentila…, alerte seule, un
+ascenseur) MAIS l'assurance expirée restait en régime B : la détection
+ne traite que les nouveaux arrivants, ses mails Rentila historiques
+n'avaient pas d'échéance → pas de proposition. Le trou de guidage
+exact spécifié au tour 5 ChatGPT.
+Livré : services/whatsnew.ts — registre de capacités versionné
+(rentila-parser-v1 ; v2 = nouvelle entrée immuable), rattrapage AUTO au
+boot si interne/réversible/journalisé (détection sujets 120 j toutes
+boîtes → échéances proposées), bilan data/whatsnew.json + journal
+(capability_backfill), échec = pas de marqueur (retenté). Routes GET
+/whatsnew + POST /whatsnew/:id/seen ; Vue du jour : carte « 🆕
+Nouveau : … [Voir] [OK] » qui disparaît une fois vue.
+LEÇON re-payée : un remplacement par node -e avait posé l'IMPORT mais
+PAS l'appel au boot (dist grep = 0) — TOUJOURS grep le dist/le fichier
+après un patch programmatique ; l'Edit direct est plus sûr.
+Testé : boot → carte « 22 mails relus, 4 échéances proposées », le
+mail assurance passe [A] confirm « Renouveler l'assurance… », OK → 0.
+
 ## 03/08 (23) — Rentila phase 2 : la file de commandes (8bbf148)
 
 Abonnement Rentila RÉACTIVÉ par l'utilisateur → le connecteur MCP
