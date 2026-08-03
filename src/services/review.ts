@@ -843,6 +843,11 @@ export interface ValidateProposalInput {
   date?: string | null;
   deadlineType?: string;
   deadlineId?: number | null;
+  /** « Déjà fait » : l'action a eu lieu — on la CONSIGNE (statut done)
+   *  au lieu de la mettre au programme. L'historique garde le fait. */
+  markDone?: boolean;
+  /** ISO — quand l'action a été faite (défaut : maintenant). */
+  doneAt?: string | null;
 }
 
 /**
@@ -874,6 +879,9 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
   const errors: string[] = [];
   let label = '';
   let decisionApplied = false;
+  const markDone = input.markDone === true;
+  const doneAt = input.doneAt ? new Date(input.doneAt) : new Date();
+  if (Number.isNaN(doneAt.getTime())) throw new Error('Date de réalisation invalide.');
 
   if (input.objectType === 'deadline') {
     const date = input.date ? new Date(input.date) : null;
@@ -890,12 +898,13 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
     if (existing?.status === 'confirmed' && m.reviewedAt) {
       return { status: 'already', label: 'échéance déjà confirmée et mail déjà dépouillé', errors };
     }
+    const targetStatus = markDone ? 'done' : 'confirmed';
     await db.$transaction(async (tx) => {
       if (existing) {
-        if (existing.status !== 'confirmed' || existing.title !== title || existing.date.getTime() !== date.getTime()) {
+        if (existing.status !== targetStatus || existing.title !== title || existing.date.getTime() !== date.getTime()) {
           await tx.deadline.update({
             where: { id: existing.id },
-            data: { title, date, status: 'confirmed' },
+            data: { title, date, status: targetStatus },
           });
         }
       } else {
@@ -907,10 +916,13 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
             title,
             date,
             type: dtype,
-            // Née d'une validation humaine explicite : directement confirmée.
-            status: 'confirmed',
+            // Née d'une validation humaine explicite : confirmée — ou déjà
+            // réglée (« déjà fait ») : l'historique garde le fait.
+            status: targetStatus,
             confidence: 1,
-            reason: 'proposée au dépouillement, validée par toi',
+            reason: markDone
+              ? `réglée avant même d'être programmée (consignée au dépouillement le ${doneAt.toLocaleDateString('fr-FR')})`
+              : 'proposée au dépouillement, validée par toi',
             sourceText: m.subject ?? '',
             fromEmail: m.fromEmail,
             fromName: m.fromName,
@@ -926,25 +938,34 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
         decisionApplied = true;
       }
     });
-    label = existing
-      ? `échéance confirmée « ${title} » (${date.toLocaleDateString('fr-FR')})`
-      : `échéance créée « ${title} » (${date.toLocaleDateString('fr-FR')})`;
+    label = markDone
+      ? `échéance « ${title} » consignée comme réglée`
+      : existing
+        ? `échéance confirmée « ${title} » (${date.toLocaleDateString('fr-FR')})`
+        : `échéance créée « ${title} » (${date.toLocaleDateString('fr-FR')})`;
   } else {
     if (m.reviewedAt) return { status: 'already', label: 'mail déjà dépouillé', errors };
     const dueDate = input.date ? new Date(input.date) : null;
-    await createTask({
+    const task = await createTask({
       title,
       account: m.accountSlug,
       messageRef: { folder: m.folder.path, uid: m.uid },
       source: 'mail',
       ...(dueDate && !Number.isNaN(dueDate.getTime()) ? { dueDate } : {}),
     });
+    if (markDone) {
+      // « Déjà fait » : la tâche naît terminée, à la date/heure indiquée —
+      // le fait reste visible dans l'historique des tâches et le journal.
+      await db.task.update({ where: { id: task.id }, data: { status: 'done', doneAt } });
+    }
     await db.message.update({
       where: { id: m.id },
       data: { reviewedAt: new Date(), reviewDecision: 'action', isSeen: true },
     });
     decisionApplied = true;
-    label = `tâche créée « ${title} »`;
+    label = markDone
+      ? `action consignée comme faite « ${title} » (le ${doneAt.toLocaleDateString('fr-FR')} à ${doneAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})`
+      : `tâche créée « ${title} »`;
   }
 
   // Effet IMAP hors transaction : l'index local fait foi, l'état distant se

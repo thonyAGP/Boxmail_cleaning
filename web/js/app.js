@@ -1745,7 +1745,23 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       // (retour utilisateur 03/08).
       onReclassified: (_item, newIntent, oldIntent) => {
         const nonAction = ['info', 'promo', 'confirmation', 'shipping', 'otp'];
-        if (!newIntent || !nonAction.includes(newIntent)) return;
+        if (newIntent && !nonAction.includes(newIntent)) {
+          // Intention ACTIONNABLE (facture, action à faire, réponse…) : la
+          // proposition doit refléter la correction tout de suite — on
+          // redemande l'étape enrichie au serveur et on re-rend sur place.
+          (async () => {
+            try {
+              const q2 = await api.reviewQueue();
+              const fresh = q2.groups.find((x) => x.kind === 'single' && x.item.id === it.id);
+              if (fresh && queue[idx] === g) {
+                queue.splice(idx, 1, fresh);
+                step();
+              }
+            } catch { /* l'étape actuelle reste utilisable telle quelle */ }
+          })();
+          return;
+        }
+        if (!newIntent) return;
         (async () => {
           try {
             await api.reviewDecide([it.id], 'seen');
@@ -1800,6 +1816,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
           counts.seen += 1;
         } else {
           const dateVal = $('#rv-p-date')?.value;
+          const doneInput = $('#rv-p-done');
           const r = await api.reviewValidate({
             messageId: it.id,
             objectType: p.objectType,
@@ -1809,6 +1826,10 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
               : (p.objectType === 'deadline' ? p.date : null),
             deadlineType: p.deadlineType,
             deadlineId: p.deadlineId ?? undefined,
+            // « Déjà fait » : on consigne l'action comme réalisée (l'historique
+            // garde le fait) au lieu de la mettre au programme.
+            markDone: !!doneInput,
+            doneAt: doneInput?.value ? new Date(doneInput.value).toISOString() : null,
           });
           counts.validated += 1;
           if (r.errors?.length) alert(`Validé, mais un effet a échoué :\n${r.errors.join('\n')}`);
@@ -1844,6 +1865,9 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
     // gestes restent disponibles en boutons secondaires, à égalité.
     const validateBtn = p
       ? `<button class="btn btn-sm btn-primary" id="rv-validate" title="${esc(p.why)} (touche Entrée)">${p.mode === 'exists' ? '✅ Continuer (mail traité)' : '✅ Valider'}</button>`
+        + (p.mode !== 'exists'
+          ? '<button class="btn btn-sm" id="rv-done" title="L\'action a déjà eu lieu : on la consigne dans l\'historique (date et heure modifiables) au lieu de la mettre au programme">✔ Déjà fait</button>'
+          : '')
       : '';
     $('#rv-foot').innerHTML = `
       <span class="muted" style="font-size:12px; margin-right:auto">Journalisé · réversible (sauf lecture)</span>
@@ -1851,6 +1875,23 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       ${B.map(([label, cls], k) => `<button class="btn btn-sm ${p ? '' : cls}" data-rv="${k}">${label}</button>`).join('')}
       <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement (touche P)">⏭️ Passer</button>`;
     $('#rv-validate')?.addEventListener('click', doValidate);
+    // « Déjà fait » : la carte bascule en mode consignation — date/heure de
+    // réalisation pré-remplies à maintenant, modifiables, puis Valider.
+    $('#rv-done')?.addEventListener('click', () => {
+      const card = document.querySelector('.prop-card');
+      if (!card || card.querySelector('#rv-p-done')) return;
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const local = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const head = card.querySelector('.prop-head');
+      if (head) head.textContent = '✔ Action déjà faite — consignée dans l\'historique';
+      card.querySelector('.prop-fields')?.insertAdjacentHTML('beforeend',
+        `<label>Fait le <input type="datetime-local" id="rv-p-done" value="${local}"></label>`);
+      const vb = $('#rv-validate');
+      if (vb) vb.textContent = '✔ Consigner comme fait';
+      $('#rv-done')?.remove();
+      $('#rv-p-done')?.focus();
+    });
     $('#rv-foot').querySelectorAll('[data-rv]').forEach((btn) => {
       btn.addEventListener('click', () => { B[Number(btn.dataset.rv)][2](); });
     });

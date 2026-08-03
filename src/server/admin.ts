@@ -745,6 +745,8 @@ export function buildAdminRouter(): Router {
           deadlineId: Number.isInteger(Number(req.body?.deadlineId)) && Number(req.body.deadlineId) > 0
             ? Number(req.body.deadlineId)
             : null,
+          markDone: req.body?.markDone === true,
+          doneAt: req.body?.doneAt ? String(req.body.doneAt) : null,
         }));
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
