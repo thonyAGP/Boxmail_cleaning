@@ -9,6 +9,7 @@ import { buildMcpServer } from './mcp/server.js';
 import { imapService } from './services/imap.js';
 import { buildAdminRouter } from './server/admin.js';
 import { startAutoSync } from './services/autosync.js';
+import { runCapabilityBackfills } from './services/whatsnew.js';
 import { startAutoBackup } from './services/backup.js';
 import { startAutoUpdate } from './services/autoupdate.js';
 import { ensureMigrationsApplied } from './db/migrate.js';
@@ -219,6 +220,10 @@ async function main() {
     startAutoUpdate();
     resumeSnippetBackfill();
     repairMojibakeOnce();
+    // « Quoi de neuf » : rattrapage automatique des nouvelles capacités
+    // (interne, réversible, journalisé), puis carte compte-rendu sur la
+    // Vue du jour — l'utilisateur n'a jamais à « relancer une analyse ».
+    runCapabilityBackfills();
   });
 
   // Arrêt propre.

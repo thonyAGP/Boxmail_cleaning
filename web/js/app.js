@@ -923,6 +923,7 @@ async function renderToday() {
     ${!t.categorized ? `<div class="notice warn">Les catégories n'ont pas encore été calculées : la partie « nettoyage » sera vide.
       Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
     ${strip}
+    <div id="today-whatsnew"></div>
     <div id="today-review"></div>
     <div id="today-rentila"></div>
     <div class="today-grid">
@@ -993,6 +994,7 @@ async function renderToday() {
   $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
 
   // ---- Compléments asynchrones (échéances à venir, santé, activité) ----
+  todayFillWhatsNew();
   todayFillReview();
   todayFillRentila();
   todayFillDeadlines();
@@ -1020,6 +1022,34 @@ async function todayFillReview() {
         title="L'assistant te présente le courrier préparé : les importants un par un, le reste par lots homogènes — rien ne part sans ta décision">Dépouiller</button>
     </div>`;
     $('#review-start')?.addEventListener('click', () => startReviewFlow());
+  } catch {
+    if (el.isConnected) el.innerHTML = '';
+  }
+}
+
+// Zone « 🆕 Quoi de neuf » (Vue du jour) : ce que l'app a APPRIS et déjà
+// rattrapé toute seule (interne, réversible, journalisé). Une carte par
+// nouveauté ; « OK » la fait disparaître définitivement — pas de centre de
+// notifications qui s'empile.
+async function todayFillWhatsNew() {
+  const el = $('#today-whatsnew');
+  if (!el) return;
+  try {
+    const { items } = await api.whatsNew();
+    if (!el.isConnected || !items.length) { if (el.isConnected) el.innerHTML = ''; return; }
+    el.innerHTML = items.map((it) => `<div class="notice" style="margin-bottom:10px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+      <span>🆕 <strong>Nouveau : ${esc(it.label)}.</strong> ${esc(it.summary)}</span>
+      <span style="margin-left:auto; display:flex; gap:8px">
+        <a class="btn btn-sm" href="#/deadlines">Voir</a>
+        <button class="btn btn-sm" data-wn-ok="${esc(it.id)}">OK</button>
+      </span></div>`).join('');
+    el.querySelectorAll('[data-wn-ok]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await api.whatsNewSeen(b.dataset.wnOk);
+        b.closest('.notice')?.remove();
+      } catch (err) { b.disabled = false; alert(err.message); }
+    }));
   } catch {
     if (el.isConnected) el.innerHTML = '';
   }

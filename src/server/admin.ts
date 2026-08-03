@@ -121,6 +121,7 @@ import { analysisProgress, analysisProgressByAccount } from '../services/analysi
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
 import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, reviewUndo, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import { rentilaOverview } from '../services/rentila.js';
+import { whatsNewUnseen, whatsNewMarkSeen } from '../services/whatsnew.js';
 import {
   createRentilaCommand,
   listRentilaCommands,
@@ -774,6 +775,25 @@ export function buildAdminRouter(): Router {
       }
       try {
         res.json(await reviewUndo(messageId));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // « Quoi de neuf » : cartes compte-rendu des rattrapages automatiques.
+  router.get(
+    '/whatsnew',
+    guard(async (_req, res) => {
+      res.json({ items: whatsNewUnseen() });
+    }),
+  );
+  router.post(
+    '/whatsnew/:id/seen',
+    guard(async (req, res) => {
+      try {
+        whatsNewMarkSeen(String(req.params.id));
+        res.json({ ok: true });
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }

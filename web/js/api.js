@@ -59,6 +59,8 @@ export const api = {
   reviewDecide: (ids, decision) => request('POST', '/review/decide', { ids, decision }),
   reviewValidate: (payload) => request('POST', '/review/validate', payload),
   reviewUndo: (messageId) => request('POST', '/review/undo', { messageId }),
+  whatsNew: () => request('GET', '/whatsnew'),
+  whatsNewSeen: (id) => request('POST', '/whatsnew/' + encodeURIComponent(id) + '/seen'),
   rentilaOverview: () => request('GET', '/rentila/overview'),
   rentilaCommands: (status) => request('GET', '/rentila/commands' + (status ? '?status=' + status : '')),
   rentilaCommandCreate: (payload) => request('POST', '/rentila/commands', payload),
