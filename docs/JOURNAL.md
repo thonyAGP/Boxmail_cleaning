@@ -5,6 +5,24 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (26) — Rentila PAR DÉFAUT sur les assurances (bbeed06)
+
+Retour : « pourquoi une étape de plus ? fais l'inverse : Rentila par
+défaut, événement/tâche en alternative ». Fait : ReviewProposal gagne
+objectType 'rentila_message' (title=sujet, body, property,
+deadlineId/Title/date = échéance liée) ; buildProposal le place EN TÊTE
+pour insurance_expired/expiring avec bien. La carte de l'étape = sujet
++ corps éditables + case « confirmer aussi l'échéance liée » (cochée).
+validateProposal('rentila_message') : transaction {création commande
+send_tenant_message approved + échéance liée proposed→confirmed si
+cochée + mail dépouillé}, une ligne de journal (« message locataire
+préparé … + échéance confirmée … + mail traité »). « Déjà fait » masqué
+sur ce type. Boutons secondaires et modale 🏠 Rentila… inchangés.
+Testé bout en bout : proposition par défaut, case présente, validation
+→ étape suivante, commande en file, échéance liée confirmée.
+NOTE test-env : les reseeds laissent des échéances orphelines (les
+seeds suppriment Message, pas Deadline) — faux positifs à ignorer.
+
 ## 03/08 (25) — Commande « Message au locataire » (9859403)
 
 Retour : « pour les assurances périmées, il faudrait envoyer un message
