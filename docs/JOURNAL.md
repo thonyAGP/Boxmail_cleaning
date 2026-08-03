@@ -5,6 +5,73 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (19) — Confrontation Claude ↔ ChatGPT + chantier 1 (8977f9a)
+
+Colère utilisateur : « pas guidé, les 3 boutons de temps sont stupides,
+je veux une review : je note, je valide, ça passe au suivant — de
+l'assistance, pas 30 % du boulot ». Demande explicite : discuter EN
+DIRECT avec ChatGPT via une fenêtre Playwright (2 tours de
+confrontation + 1 sujet). Fait : Chrome piloté par CDP (:9666, profil
+dédié, mode ChatGPT sans connexion), 3 échanges — transcript complet
+dans ux-review/confrontation-chatgpt-tri-guide.md (non versionné).
+DÉCISIONS ACTÉES (co-signées ChatGPT après confrontation) :
+1. Le temps est une INFORMATION, jamais une décision — choix 5/15 min
+   supprimés partout (livré, 8977f9a). Pas de sélecteur de priorité non
+   plus : la file EST l'autorité.
+2. Review à DEUX RÉGIMES : A (signaux convergents) = écran centré sur
+   la PROPOSITION pré-remplie éditable, Entrée valide, mail derrière
+   « Voir le mail », une phrase « pourquoi » ; B (incertain) = aucune
+   pré-sélection, honnêteté (« je ne suis pas assez sûr, lis-le »).
+   Bascule = règle booléenne : ≥ 2 signaux positifs (expéditeur
+   catégorisé ou vu ≥ 5×, intention fiable, date extraite, ≥ 3 gestes
+   cohérents, accord IA↔heuristiques) ET 0 contradiction.
+3. LISTE NOIRE jamais pré-validée : envoi de mail, corbeille, masse,
+   règles, désinscription — Entrée ne peut jamais envoyer.
+4. Nouveautés : auto-exécution SI (rien d'envoyé au distant + rien de
+   perdu + rien de visible non validé + journalisé), puis carte
+   COMPTE-RENDU « Quoi de neuf » (une par capacité, disparaît une fois
+   vue) ; sinon carte-action avec aperçu exact.
+5. Gabarits de proposition par famille (titres commençant par un VERBE :
+   « Payer EDF — 89 € avant le 14/09 », « Répondre à Myrtille »,
+   « Contacter le locataire — fuite évier ») ; Rentila en review =
+   « l'échéance existe déjà → [Voir l'échéance] [Continuer] ».
+6. Flux de session : Quoi de neuf → dépouillement → réponses → relances
+   → échéances → factures → nettoyage → « À demain », enchaîné sans
+   retour à l'accueil ; Vue du jour = « Commencer ma session » + Quoi de
+   neuf + états passifs.
+ORDRE DE CHANTIER : 1 temps supprimé (FAIT) → 2 review deux régimes +
+gabarits → 3 enchaînement des segments → 4 Vue du jour passive.
+TOURS 4-5 (Anthony s'est connecté à ChatGPT — modèle réflexion élevée ;
+la conversation sans compte a été PERDUE à la connexion, reprise avec
+récapitulatif) :
+7. Valider une proposition = DEUX effets indissociables (objet créé/
+   confirmé + mail vu), dans une transaction SQLite locale avec UNE
+   ligne de journal ; l'effet IMAP reste hors transaction (tolérance
+   actuelle). Unicité en base sourceMessageId+objectType (UPSERT).
+   Idempotence sur l'ÉTAT COMPLET (objet présent + mail non dépouillé →
+   appliquer seulement « vu »). ENTERRÉ comme gold-plating :
+   proposalVersion, obsolescence, persistance des propositions (elles se
+   régénèrent à l'affichage), operationId, file de sync différée.
+8. Échéances en review : proposée existante → « Confirmer » (même
+   enregistrement, PROPOSED→CONFIRMED) ; aucune → « Créer » (naît
+   CONFIRMED, source=review) ; confirmée existante → « existe déjà,
+   [Voir] [Continuer] ». Jamais de doublon.
+9. Clavier = accélérateur (souris d'abord) : Entrée valide ; DANS un
+   champ, Entrée sort du champ (2e Entrée valide) ; P passer, V voir le
+   mail, Échap ferme ; multiligne = Ctrl+Entrée.
+10. Lots : jamais de régime B (un incertain n'entre pas dans un lot ;
+   une contradiction extrait LE mail, pas tout le lot) ; les interdits
+   de pré-validation s'appliquent aussi aux lots.
+11. Quoi de neuf : registre EN DUR versionné (rentila-parser-v1, v2 =
+   nouvelle entrée immuable, capabilityFamily pour l'affichage),
+   marqueurs data/ (pas localStorage), carte disparaît une fois vue
+   (bilan conservé dans data/+journal), capacité à 0 mail = carte
+   courte quand même.
+LEÇON Playwright/ChatGPT : le sélecteur contenteditable générique
+attrape le CANVAS d'une réponse (saisie partie dedans → document
+corrompu, réparé par Ctrl+Z ×40) — cibler #prompt-textarea STRICT.
+Transcript des 5 tours : ux-review/confrontation-chatgpt-tri-guide.md.
+
 ## 03/08 (18) — Connecteur Rentila, phase 1 (6fb5388)
 
 Décision : écosystème de connecteurs (tour GitHub fait : Rentila_Assist,
