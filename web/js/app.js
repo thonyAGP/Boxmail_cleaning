@@ -4062,10 +4062,14 @@ async function renderDeadlines() {
   await loadDeadlines();
 }
 
-async function runDeadlineDetect() {
-  const btn = $('#deadlines-detect');
-  const zone = $('#deadlines-detect-zone');
-  const deep = $('#deadlines-deep').checked;
+// Lance la détection sur toutes les boîtes. Réutilisable depuis n'importe quel
+// écran (Dates à confirmer, Calendrier…) via opts { btn, zone, deep, onDone }.
+async function runDeadlineDetect(opts = {}) {
+  const btn = opts.btn ?? $('#deadlines-detect');
+  const zone = opts.zone ?? $('#deadlines-detect-zone');
+  const deep = opts.deep ?? ($('#deadlines-deep')?.checked ?? false);
+  const onDone = opts.onDone ?? loadDeadlines;
+  if (!btn || !zone) return;
   btn.disabled = true;
   zone.innerHTML = `<div class="notice"><span class="spinner"></span>
     Détection en cours sur toutes les boîtes${deep ? ' (lecture des contenus — plus lent)' : ''}…
@@ -4086,6 +4090,12 @@ async function runDeadlineDetect() {
     return;
   }
   const timer = setInterval(async () => {
+    // L'utilisateur a changé d'écran : on arrête de suivre (les jobs finissent
+    // seuls côté serveur, rien n'est perdu).
+    if (!zone.isConnected) {
+      clearInterval(timer);
+      return;
+    }
     let done = 0;
     let created = 0;
     let lastMsg = '';
@@ -4106,10 +4116,13 @@ async function runDeadlineDetect() {
     if (st) st.textContent = lastMsg ? ` ${lastMsg}` : '';
     if (done === jobIds.length) {
       clearInterval(timer);
-      zone.innerHTML = `<div class="notice">✅ Détection terminée :
+      const summary = `<div class="notice">✅ Détection terminée :
         <strong>${fmtNum(created)}</strong> nouvelle(s) échéance(s) proposée(s).</div>`;
+      zone.innerHTML = summary;
       btn.disabled = false;
-      await loadDeadlines();
+      // onDone reçoit le bilan : un écran qui se re-rend entièrement (le
+      // Calendrier) peut le ré-afficher après coup.
+      await onDone(summary);
     }
   }, 1200);
 }
@@ -6327,10 +6340,23 @@ async function renderCalendar() {
       <div class="sub">Tes échéances (confirmées ET proposées) et tes tâches à date, posées sur le mois.
       Clique un jour pour le détail, puis une échéance pour lire le mail d'origine.</div></div>
     <div class="head-actions">
+      <button class="btn btn-primary" id="cal-detect"
+        title="Cherche de nouvelles dates limites dans tes mails (toutes les boîtes) — les trouvailles sont PROPOSÉES, rien n'est ajouté sans toi">🔎 Analyser mes mails</button>
       <a class="btn" href="#/deadlines">📅 Gérer les échéances</a>
       <a class="btn" href="#/tasks">☑️ Gérer les tâches</a>
     </div></div>
+    <div id="cal-detect-zone"></div>
     <div id="cal-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
+  $('#cal-detect').addEventListener('click', () => runDeadlineDetect({
+    btn: $('#cal-detect'),
+    zone: $('#cal-detect-zone'),
+    deep: false,
+    onDone: async (summary) => {
+      await renderCalendar(); // recharge échéances + tâches
+      const z = $('#cal-detect-zone');
+      if (z && summary) z.innerHTML = summary;
+    },
+  }));
   try {
     const [dl, tk] = await Promise.all([api.deadlines(), api.tasks()]);
     calState.deadlines = dl.items.filter((x) => x.status !== 'dismissed');
