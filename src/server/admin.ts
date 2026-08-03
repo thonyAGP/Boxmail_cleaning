@@ -119,7 +119,7 @@ import {
 } from '../services/snippets.js';
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
-import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
+import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import { rentilaOverview } from '../services/rentila.js';
 import {
   listPolicies,
@@ -721,6 +721,37 @@ export function buildAdminRouter(): Router {
       res.json(await reviewDecide(ids, decision as ReviewDecision));
     }),
   );
+  // Chantier 2 : valider une proposition (objet métier + mail dépouillé, une transaction).
+  router.post(
+    '/review/validate',
+    guard(async (req, res) => {
+      const messageId = Number.parseInt(String(req.body?.messageId ?? ''), 10);
+      const objectType = String(req.body?.objectType ?? '');
+      if (!Number.isInteger(messageId) || messageId <= 0) {
+        res.status(400).json({ error: 'messageId requis.' });
+        return;
+      }
+      if (objectType !== 'deadline' && objectType !== 'task') {
+        res.status(400).json({ error: `Type d'objet inconnu : ${objectType}.` });
+        return;
+      }
+      try {
+        res.json(await validateProposal({
+          messageId,
+          objectType,
+          title: String(req.body?.title ?? ''),
+          date: req.body?.date ? String(req.body.date) : null,
+          deadlineType: req.body?.deadlineType ? String(req.body.deadlineType) : undefined,
+          deadlineId: Number.isInteger(Number(req.body?.deadlineId)) && Number(req.body.deadlineId) > 0
+            ? Number(req.body.deadlineId)
+            : null,
+        }));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
   // Connecteur Rentila (phase 1) : synthèse « Gestion locative » — lecture seule.
   router.get(
     '/rentila/overview',

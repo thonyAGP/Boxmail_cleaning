@@ -57,6 +57,7 @@ export const api = {
   reviewSummary: () => request('GET', '/review/summary'),
   reviewQueue: () => request('GET', '/review/queue'),
   reviewDecide: (ids, decision) => request('POST', '/review/decide', { ids, decision }),
+  reviewValidate: (payload) => request('POST', '/review/validate', payload),
   rentilaOverview: () => request('GET', '/rentila/overview'),
   reviewLearning: () => request('GET', '/review/learning'),
   reviewLearningDismiss: (key) => request('POST', '/review/learning/dismiss', { key }),

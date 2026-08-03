@@ -1331,6 +1331,37 @@ const REVIEW_CLASS_LABELS = {
   range: ['🧹 Rangeable', 'gray'],
 };
 
+// Chantier 2 : la carte de proposition (régime A — pré-remplie, éditable) ou
+// l'honnêteté du régime B (aucune pré-sélection quand les signaux manquent).
+function reviewProposalHtml(it) {
+  const p = it.proposal;
+  if (p) {
+    const isDl = p.objectType === 'deadline';
+    if (p.mode === 'exists') {
+      return `<div class="prop-card">
+        <div class="prop-head">✔ Échéance déjà en place</div>
+        <div style="font-size:13.5px; margin:2px 0"><strong>${esc(p.title)}</strong>${p.date ? ` — ${fmtDate(p.date)}` : ''}</div>
+        <div class="muted" style="font-size:12px">${esc(p.why)} <a href="#/deadlines">Voir les échéances</a></div>
+      </div>`;
+    }
+    const head = p.mode === 'confirm'
+      ? '💡 Proposition : confirmer l\'échéance'
+      : isDl ? '💡 Proposition : créer l\'échéance' : '💡 Proposition : créer la tâche';
+    return `<div class="prop-card">
+      <div class="prop-head">${head}</div>
+      <div class="prop-fields">
+        <label>Titre <input type="text" id="rv-p-title" value="${esc(p.title)}"></label>
+        <label>${isDl ? 'Date' : 'Date (optionnelle)'} <input type="date" id="rv-p-date" value="${isDl && p.date ? p.date.slice(0, 10) : ''}"></label>
+      </div>
+      <div class="muted" style="font-size:12px">Pourquoi : ${esc(p.why)} Modifie ce qu'il faut, puis Valider.</div>
+    </div>`;
+  }
+  if (it.regime === 'B') {
+    return '<div class="prop-uncertain">🤔 Je ne suis pas assez sûr pour proposer une action — lis le mail et décide.</div>';
+  }
+  return '';
+}
+
 function reviewReason(item) {
   const bits = [];
   // Connecteur Rentila : la lecture structurée passe devant tout le reste
@@ -1428,10 +1459,11 @@ async function reviewFinish(counts) {
   const el = $('#rv-screen');
   if (!el) return;
   const decided = counts.seen + counts.later + counts.keep + counts.action + counts.trash
-    + (counts.replied ?? 0) + (counts.moved ?? 0);
+    + (counts.replied ?? 0) + (counts.moved ?? 0) + (counts.validated ?? 0);
   el.innerHTML = `<div class="panel"><div class="panel-body">
     <h2 id="rv-fin-title" style="font-size:16px; margin-bottom:8px">${decided ? '✅ Session terminée' : 'Dépouillement interrompu'}</h2>
     <div style="font-size:14px">
+      ${counts.validated ? `<div>💡 ${fmtNum(counts.validated)} proposition(s) validée(s) — échéances et tâches créées</div>` : ''}
       ${counts.replied ? `<div>↩️ ${fmtNum(counts.replied)} répondu(s)</div>` : ''}
       ${counts.seen ? `<div>👁️ ${fmtNum(counts.seen)} marqué(s) vu(s)</div>` : ''}
       ${counts.action ? `<div>☑️ ${fmtNum(counts.action)} ajouté(s) à tes actions</div>` : ''}
@@ -1535,15 +1567,45 @@ function fillReviewLearning(el, learn, onChanged) {
 // #rv-title / #rv-body / #rv-foot, quel que soit l'écran qui les héberge.
 function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
   const queue = [...initialQueue];
-  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0, replied: 0, moved: 0 };
+  const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0, replied: 0, moved: 0, validated: 0 };
   let idx = 0;
   let done = false;
   const finish = () => {
     if (done) return;
     done = true;
+    document.removeEventListener('keydown', keyHandler);
     onDone?.(counts);
   };
   stopEl?.addEventListener('click', finish);
+
+  // Clavier = accélérateur (spéc. 03/08) — la souris reste le mode principal.
+  // Entrée valide la proposition ; DANS un champ, Entrée sort du champ (la
+  // 2e Entrée valide) ; P passe ; V ouvre/rouvre le mail.
+  const keyHandler = (e) => {
+    if (done || !document.getElementById('rv-title')) {
+      document.removeEventListener('keydown', keyHandler);
+      return;
+    }
+    const el = document.activeElement;
+    const tag = el?.tagName?.toLowerCase();
+    const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || el?.isContentEditable;
+    if (editing) {
+      if (e.key === 'Enter' && tag === 'input') {
+        e.preventDefault();
+        el.blur();
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('rv-validate')?.click();
+    } else if (e.key === 'p' || e.key === 'P') {
+      document.getElementById('rv-skip')?.click();
+    } else if (e.key === 'v' || e.key === 'V') {
+      document.getElementById('rv-read')?.click();
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
 
   const next = () => {
     idx += 1;
@@ -1666,6 +1728,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
         — « ${esc(it.subject)} »</div>
       ${it.snippet ? `<div class="muted" style="font-size:12.5px; margin-bottom:6px">${esc(it.snippet)}</div>` : ''}
       ${reason ? `<div class="muted" style="font-size:12px; margin-bottom:8px">Pourquoi : ${esc(reason)}</div>` : ''}
+      ${reviewProposalHtml(it)}
       <div style="margin-bottom:4px"><span class="openable" id="rv-read" style="font-size:13px">${canDock ? '📖 Rouvrir le mail' : '📖 Lire le mail avant de décider'}</span></div>`;
     // Le lien reste disponible même quand le mail est affiché d'office : si
     // l'utilisateur ferme la colonne (✕), il peut la rouvrir sans avancer.
@@ -1673,6 +1736,39 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       openReaderFor(it, canDock ? { ...readerOpts, dock: dockEl } : readerOpts));
     if (canDock) openReaderFor(it, { ...readerOpts, dock: dockEl });
     preloadNext();
+
+    // Validation d'une proposition : l'objet est créé/confirmé ET le mail est
+    // traité, d'un seul geste (transaction serveur, une ligne de journal).
+    const p = it.proposal;
+    const doValidate = async () => {
+      $('#rv-foot')?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      const vb = $('#rv-validate');
+      if (vb) vb.disabled = true;
+      try {
+        if (p.mode === 'exists') {
+          await api.reviewDecide([it.id], 'seen');
+          counts.seen += 1;
+        } else {
+          const dateVal = $('#rv-p-date')?.value;
+          const r = await api.reviewValidate({
+            messageId: it.id,
+            objectType: p.objectType,
+            title: $('#rv-p-title')?.value?.trim() || p.title,
+            date: dateVal
+              ? new Date(`${dateVal}T09:00:00`).toISOString()
+              : (p.objectType === 'deadline' ? p.date : null),
+            deadlineType: p.deadlineType,
+            deadlineId: p.deadlineId ?? undefined,
+          });
+          counts.validated += 1;
+          if (r.errors?.length) alert(`Validé, mais un effet a échoué :\n${r.errors.join('\n')}`);
+        }
+        next();
+      } catch (err) {
+        alert(err.message);
+        step();
+      }
+    };
 
     const B = [];
     if (it.class === 'important') {
@@ -1694,10 +1790,17 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       B.push(['📥 Garder', '', () => decide([it.id], 'keep', 1)]);
     }
     if (it.class === 'important') B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
+    // Avec une proposition, VALIDER devient le geste principal ; les autres
+    // gestes restent disponibles en boutons secondaires, à égalité.
+    const validateBtn = p
+      ? `<button class="btn btn-sm btn-primary" id="rv-validate" title="${esc(p.why)} (touche Entrée)">${p.mode === 'exists' ? '✅ Continuer (mail traité)' : '✅ Valider'}</button>`
+      : '';
     $('#rv-foot').innerHTML = `
       <span class="muted" style="font-size:12px; margin-right:auto">Journalisé · réversible (sauf lecture)</span>
-      ${B.map(([label, cls], k) => `<button class="btn btn-sm ${cls}" data-rv="${k}">${label}</button>`).join('')}
-      <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement">⏭️ Passer</button>`;
+      ${validateBtn}
+      ${B.map(([label, cls], k) => `<button class="btn btn-sm ${p ? '' : cls}" data-rv="${k}">${label}</button>`).join('')}
+      <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement (touche P)">⏭️ Passer</button>`;
+    $('#rv-validate')?.addEventListener('click', doValidate);
     $('#rv-foot').querySelectorAll('[data-rv]').forEach((btn) => {
       btn.addEventListener('click', () => { B[Number(btn.dataset.rv)][2](); });
     });
@@ -8422,7 +8525,7 @@ const OP_FAMILIES = {
   mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
-    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide'],
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate'],
   analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets', 'ui_review_learning_dismiss'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',

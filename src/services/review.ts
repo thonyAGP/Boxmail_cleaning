@@ -8,6 +8,7 @@ import { imapService } from './imap.js';
 import { resolveAccount } from './accounts.js';
 import { chunk } from './attention.js';
 import { isRentilaSender, parseRentilaMail, type RentilaMailInfo } from './rentila.js';
+import { extractDeadlines } from './deadlines.js';
 
 /**
  * Dépouillement du courrier entrant (Lot 1 du plan validé le 02/08).
@@ -110,6 +111,7 @@ interface CandidateRow {
   date: Date | null;
   isSeen: boolean;
   intent: string | null;
+  intentSource: string | null;
   aiAction: string | null;
   aiSummary: string | null;
   analysisConfidence: string | null;
@@ -133,7 +135,7 @@ async function loadCandidates(): Promise<{ rows: CandidateRow[]; senderCat: Map<
     select: {
       id: true, accountSlug: true, uid: true, subject: true, snippet: true,
       fromEmail: true, fromName: true, date: true, isSeen: true,
-      intent: true, aiAction: true, aiSummary: true, analysisConfidence: true,
+      intent: true, intentSource: true, aiAction: true, aiSummary: true, analysisConfidence: true,
       folder: { select: { path: true } },
     },
   });
@@ -205,6 +207,151 @@ function rentilaDisplay(info: RentilaMailInfo, subject: string | null): string {
   return base;
 }
 
+// ---------------------------------------------------------------- Propositions (chantier 2)
+// La review à deux régimes (spécifiée avec ChatGPT le 03/08) :
+//  - régime A (signaux convergents) : l'écran est centré sur une PROPOSITION
+//    pré-remplie et éditable — « Payer Foncia — avant le 15/09 » — validée
+//    d'un geste ;
+//  - régime B (incertain) : AUCUNE pré-sélection — l'assistant le dit
+//    honnêtement plutôt que de fabriquer une proposition à 30 %.
+// Bascule booléenne : ≥ 2 signaux positifs ET 0 contradiction. Pas de score.
+
+export interface ReviewProposal {
+  objectType: 'deadline' | 'task';
+  mode: 'create' | 'confirm' | 'exists';
+  title: string;
+  /** ISO — échéances uniquement. */
+  date: string | null;
+  deadlineType: string;
+  deadlineId: number | null;
+  why: string;
+}
+
+interface ExistingDeadline { id: number; status: string; title: string; date: Date }
+
+const FR_DATE = (d: Date): string => d.toLocaleDateString('fr-FR');
+
+/** « EDF » depuis le nom affiché, sinon le domaine (« foncia »), sinon générique. */
+function payeeName(m: CandidateRow): string {
+  if (m.fromName?.trim()) return m.fromName.trim();
+  const domain = m.fromEmail?.split('@')[1]?.split('.')[0];
+  return domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : 'le créancier';
+}
+
+function firstNameOf(m: CandidateRow): string {
+  const first = (m.fromName ?? '').trim().split(/\s+/)[0];
+  return first || m.fromEmail || '?';
+}
+
+/** Premier titre-verbe possible pour ce mail, ou null si aucune famille ne s'applique. */
+function buildProposal(
+  m: CandidateRow,
+  existing: ExistingDeadline | null,
+  rentila: RentilaMailInfo | null,
+): ReviewProposal | null {
+  const subject = (m.subject ?? '').replace(/\s+/g, ' ').trim() || '(sans sujet)';
+
+  if (rentila?.kind === 'tenant_message') {
+    return {
+      objectType: 'task', mode: 'create',
+      title: `Traiter avec le locataire — ${subject}`.slice(0, 200),
+      date: null, deadlineType: 'other', deadlineId: null,
+      why: 'Un locataire signale un problème qui demande probablement un suivi.',
+    };
+  }
+
+  const wantsPay = m.intent === 'invoice' || m.aiAction === 'pay';
+  const wantsReply = m.intent === 'reply_expected' || m.aiAction === 'reply';
+
+  if (wantsPay) {
+    const payee = payeeName(m);
+    if (existing?.status === 'confirmed') {
+      return {
+        objectType: 'deadline', mode: 'exists',
+        title: existing.title, date: existing.date.toISOString(),
+        deadlineType: 'payment', deadlineId: existing.id,
+        why: 'Cette facture a déjà son échéance confirmée.',
+      };
+    }
+    const date = existing?.date ?? extractDeadlines(subject, m.date ?? new Date())[0]?.date ?? null;
+    if (date) {
+      return {
+        objectType: 'deadline', mode: existing ? 'confirm' : 'create',
+        title: `Payer ${payee} — avant le ${FR_DATE(date)}`.slice(0, 200),
+        date: date.toISOString(), deadlineType: 'payment', deadlineId: existing?.id ?? null,
+        why: `J'ai reconnu une facture et trouvé une échéance au ${FR_DATE(date)}.`,
+      };
+    }
+    return {
+      objectType: 'task', mode: 'create',
+      title: `Payer ${payee}`.slice(0, 200), date: null, deadlineType: 'other', deadlineId: null,
+      why: `J'ai reconnu une facture de ${payee}, sans date d'échéance lisible.`,
+    };
+  }
+
+  if (wantsReply) {
+    return {
+      objectType: 'task', mode: 'create',
+      title: `Répondre à ${firstNameOf(m)}`.slice(0, 200),
+      date: null, deadlineType: 'other', deadlineId: null,
+      why: 'Le dernier message du fil attend probablement ta réponse.',
+    };
+  }
+
+  if (m.intent === 'appointment') {
+    if (existing?.status === 'confirmed') {
+      return {
+        objectType: 'deadline', mode: 'exists',
+        title: existing.title, date: existing.date.toISOString(),
+        deadlineType: 'appointment', deadlineId: existing.id,
+        why: 'Ce rendez-vous a déjà son échéance confirmée.',
+      };
+    }
+    const date = existing?.date ?? extractDeadlines(subject, m.date ?? new Date())[0]?.date ?? null;
+    if (!date) return null; // pas de date → rien à proposer honnêtement
+    return {
+      objectType: 'deadline', mode: existing ? 'confirm' : 'create',
+      title: `Rendez-vous : ${subject}`.slice(0, 200),
+      date: date.toISOString(), deadlineType: 'appointment', deadlineId: existing?.id ?? null,
+      why: `Une date de rendez-vous a été détectée (${FR_DATE(date)}).`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Régime A ou B ? Booléen : au moins 2 signaux positifs indépendants ET
+ * aucune contradiction entre sources fortes.
+ */
+function convergence(
+  m: CandidateRow,
+  senderCategory: string | null,
+  hasDate: boolean,
+  history: { decision: ReviewDecision; count: number; mixed: boolean } | undefined,
+): boolean {
+  const positives: string[] = [];
+  if (senderCategory) positives.push('sender');
+  const intentReliable =
+    m.intentSource === 'manual' || m.intentSource === 'rule' ||
+    (m.intent !== null && m.analysisConfidence === 'high');
+  if (intentReliable) positives.push('intent');
+  if (hasDate) positives.push('date');
+  if (history && !history.mixed && history.count >= 3) positives.push('history');
+
+  const promoLike = m.intent === 'promo' || m.intent === 'otp';
+  const trustedCat = ['bank', 'admin', 'insurance', 'person'].includes(senderCategory ?? '');
+  const noiseCat = ['newsletter', 'notification', 'social', 'ad'].includes(senderCategory ?? '');
+  const wantsReply = m.intent === 'reply_expected' || m.aiAction === 'reply';
+  const wantsPay = m.intent === 'invoice' || m.aiAction === 'pay';
+  const contradiction =
+    (promoLike && trustedCat) ||
+    (noiseCat && wantsReply) ||
+    (history?.mixed === false && history.decision === 'trash' && (wantsPay || wantsReply));
+
+  return positives.length >= 2 && !contradiction;
+}
+
 function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null, rentila?: RentilaMailInfo | null) {
   return {
     id: m.id,
@@ -225,6 +372,9 @@ function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null
     class: cls,
     /** Lecture Rentila du mail (« Assurance locataire expirée — 101… »), sinon null. */
     rentilaLabel: rentila ? rentilaDisplay(rentila, m.subject) : null,
+    /** Chantier 2 — posés par l'enrichissement de reviewQueue. */
+    regime: null as 'A' | 'B' | null,
+    proposal: null as ReviewProposal | null,
   };
 }
 export type ReviewItem = ReturnType<typeof toItem>;
@@ -365,7 +515,71 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
       ordered.push(lot);
     }
   }
-  return { groups: ordered.slice(0, 120), total };
+  const groups = ordered.slice(0, 120);
+
+  // ---- Chantier 2 : régime A/B + proposition sur les décisions individuelles.
+  const singleItems = groups
+    .filter((g): g is ReviewSingle => g.kind === 'single')
+    .map((g) => g.item)
+    .filter((it) => it.class !== 'range'); // le bruit garde son écran actuel (Vu par défaut)
+
+  if (singleItems.length > 0) {
+    // Échéances déjà connues pour ces mails (dédoublonnage : confirmer, jamais recréer).
+    const dls = await db.deadline.findMany({
+      where: {
+        messageId: { in: singleItems.map((it) => it.id) },
+        status: { in: ['proposed', 'confirmed'] },
+      },
+      orderBy: { date: 'asc' },
+      select: { id: true, messageId: true, status: true, title: true, date: true },
+    });
+    const dlByMsg = new Map<number, ExistingDeadline>();
+    for (const d of dls) {
+      // confirmée > proposée ; sinon la plus proche dans le temps.
+      const prev = dlByMsg.get(d.messageId);
+      if (!prev || (d.status === 'confirmed' && prev.status !== 'confirmed')) dlByMsg.set(d.messageId, d);
+    }
+
+    // Historique des gestes par motif (signal + contradiction).
+    const decided = await db.message.groupBy({
+      by: ['accountSlug', 'fromEmail', 'intent', 'reviewDecision'],
+      where: { reviewedAt: { not: null }, reviewDecision: { in: ['seen', 'trash', 'keep'] }, fromEmail: { not: null } },
+      _count: { _all: true },
+    });
+    const history = new Map<string, { decision: ReviewDecision; count: number; mixed: boolean }>();
+    for (const d of decided) {
+      const key = `${d.accountSlug}|${d.fromEmail}|${d.intent ?? ''}`;
+      const prev = history.get(key);
+      if (!prev) history.set(key, { decision: d.reviewDecision as ReviewDecision, count: d._count._all, mixed: false });
+      else {
+        prev.mixed = true;
+        if (d._count._all > prev.count) {
+          prev.decision = d.reviewDecision as ReviewDecision;
+          prev.count = d._count._all;
+        }
+      }
+    }
+
+    for (const it of singleItems) {
+      const row = rows.find((r) => r.id === it.id);
+      if (!row) continue;
+      const rentila = isRentilaSender(row.fromEmail)
+        ? parseRentilaMail({ subject: row.subject, fromEmail: row.fromEmail, fromName: row.fromName, date: row.date })
+        : null;
+      const existing = dlByMsg.get(it.id) ?? null;
+      const proposal = buildProposal(row, existing, rentila);
+      const hist = row.fromEmail ? history.get(`${row.accountSlug}|${row.fromEmail}|${row.intent ?? ''}`) : undefined;
+      // La grammaire Rentila est déterministe (construite sur les sujets réels) :
+      // deux signaux par construction — expéditeur identifié + motif reconnu.
+      const regimeA = proposal !== null
+        && (rentila !== null
+          || convergence(row, it.senderCategory, existing !== null || proposal.date !== null, hist));
+      it.regime = regimeA ? 'A' : 'B';
+      it.proposal = regimeA ? proposal : null;
+    }
+  }
+
+  return { groups, total };
 }
 
 // ---------------------------------------------------------------- Apprentissage
@@ -600,4 +814,139 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
   });
 
   return { count: messages.length, decision, tasksCreated, errors };
+}
+
+// ---------------------------------------------------------------- Validation (chantier 2)
+export interface ValidateProposalInput {
+  messageId: number;
+  objectType: 'deadline' | 'task';
+  title: string;
+  /** ISO — requis pour une échéance. */
+  date?: string | null;
+  deadlineType?: string;
+  deadlineId?: number | null;
+}
+
+/**
+ * Valider une proposition = DEUX effets indissociables (spéc. actée 03/08) :
+ * l'objet métier est créé/confirmé ET le mail est dépouillé — dans une même
+ * transaction SQLite, avec UNE ligne de journal. L'effet IMAP (marquer lu)
+ * reste hors transaction, tolérant comme partout. Idempotence par l'ÉTAT
+ * COMPLET : objet présent + mail non dépouillé → seule la décision est
+ * appliquée ; les deux présents → « déjà fait ».
+ */
+export async function validateProposal(input: ValidateProposalInput): Promise<{
+  status: 'done' | 'already';
+  label: string;
+  errors: string[];
+}> {
+  await ensureDbReady();
+  const title = (input.title ?? '').trim().slice(0, 300);
+  if (!title) throw new Error('Le titre est vide.');
+  const m = await db.message.findFirst({
+    where: { id: input.messageId, isDeleted: false },
+    select: {
+      id: true, accountSlug: true, uid: true, subject: true, date: true,
+      threadId: true, reviewedAt: true, fromEmail: true, fromName: true,
+      folder: { select: { path: true } },
+    },
+  });
+  if (!m) throw new Error("Mail introuvable dans l'index — resynchronise la boîte.");
+
+  const errors: string[] = [];
+  let label = '';
+  let decisionApplied = false;
+
+  if (input.objectType === 'deadline') {
+    const date = input.date ? new Date(input.date) : null;
+    if (!date || Number.isNaN(date.getTime())) throw new Error("Date d'échéance requise.");
+    const dtype = ['payment', 'document', 'appointment', 'renewal', 'other'].includes(input.deadlineType ?? '')
+      ? (input.deadlineType as string)
+      : 'other';
+    const existing = input.deadlineId
+      ? await db.deadline.findFirst({ where: { id: input.deadlineId, accountSlug: m.accountSlug } })
+      : await db.deadline.findFirst({
+          where: { accountSlug: m.accountSlug, messageId: m.id, status: { in: ['proposed', 'confirmed'] } },
+          orderBy: { date: 'asc' },
+        });
+    if (existing?.status === 'confirmed' && m.reviewedAt) {
+      return { status: 'already', label: 'échéance déjà confirmée et mail déjà dépouillé', errors };
+    }
+    await db.$transaction(async (tx) => {
+      if (existing) {
+        if (existing.status !== 'confirmed' || existing.title !== title || existing.date.getTime() !== date.getTime()) {
+          await tx.deadline.update({
+            where: { id: existing.id },
+            data: { title, date, status: 'confirmed' },
+          });
+        }
+      } else {
+        await tx.deadline.create({
+          data: {
+            accountSlug: m.accountSlug,
+            messageId: m.id,
+            threadId: m.threadId,
+            title,
+            date,
+            type: dtype,
+            // Née d'une validation humaine explicite : directement confirmée.
+            status: 'confirmed',
+            confidence: 1,
+            reason: 'proposée au dépouillement, validée par toi',
+            sourceText: m.subject ?? '',
+            fromEmail: m.fromEmail,
+            fromName: m.fromName,
+            subject: m.subject,
+          },
+        });
+      }
+      if (!m.reviewedAt) {
+        await tx.message.update({
+          where: { id: m.id },
+          data: { reviewedAt: new Date(), reviewDecision: 'seen', isSeen: true },
+        });
+        decisionApplied = true;
+      }
+    });
+    label = existing
+      ? `échéance confirmée « ${title} » (${date.toLocaleDateString('fr-FR')})`
+      : `échéance créée « ${title} » (${date.toLocaleDateString('fr-FR')})`;
+  } else {
+    if (m.reviewedAt) return { status: 'already', label: 'mail déjà dépouillé', errors };
+    const dueDate = input.date ? new Date(input.date) : null;
+    await createTask({
+      title,
+      account: m.accountSlug,
+      messageRef: { folder: m.folder.path, uid: m.uid },
+      source: 'mail',
+      ...(dueDate && !Number.isNaN(dueDate.getTime()) ? { dueDate } : {}),
+    });
+    await db.message.update({
+      where: { id: m.id },
+      data: { reviewedAt: new Date(), reviewDecision: 'action', isSeen: true },
+    });
+    decisionApplied = true;
+    label = `tâche créée « ${title} »`;
+  }
+
+  // Effet IMAP hors transaction : l'index local fait foi, l'état distant se
+  // recale à la synchronisation suivante en cas d'échec.
+  if (decisionApplied) {
+    try {
+      const rec = await resolveAccount(m.accountSlug);
+      await imapService.markEmails(rec, m.folder.path, [m.uid], ['\Seen'], []);
+    } catch (err) {
+      errors.push(`marquage lu : ${(err as Error).message}`);
+    }
+  }
+
+  await recordOperation({
+    account: m.accountSlug,
+    tool: 'ui_review_validate',
+    params: { messageId: m.id, objectType: input.objectType },
+    affectedUids: [m.uid],
+    items: [{ subject: m.subject ?? '(sans sujet)', date: m.date?.toISOString() ?? null, folder: m.folder.path, uid: m.uid }],
+    result: `dépouillement : ${label} + mail traité`,
+  });
+  return { status: 'done', label, errors };
 }

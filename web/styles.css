@@ -808,3 +808,21 @@ th.sortable:hover { color: var(--primary); }
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 10px 12px; margin-bottom: 8px; background: var(--surface-raised);
 }
+
+/* Chantier 2 : carte de proposition de la review (régime A) + honnêteté (B). */
+.prop-card {
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  background: var(--surface-raised); border-radius: var(--radius-md);
+  padding: 10px 12px; margin: 8px 0 10px;
+}
+.prop-head { font-weight: 650; font-size: 13.5px; margin-bottom: 6px; }
+.prop-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.prop-fields label {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 12px; color: var(--text-secondary);
+}
+.prop-fields input[type="text"] { min-width: 340px; }
+.prop-uncertain {
+  color: var(--text-secondary); font-size: 12.5px; margin: 6px 0 10px;
+  padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--radius-md);
+}
