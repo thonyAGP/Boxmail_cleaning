@@ -1331,6 +1331,30 @@ const REVIEW_CLASS_LABELS = {
   range: ['🧹 Rangeable', 'gray'],
 };
 
+// Bandeau d'annulation (10 s) : une action automatique vient d'être faite au
+// nom de l'utilisateur — il peut la rappeler d'un clic si c'était une erreur.
+function showUndoToast(message, onUndo, ms = 10000) {
+  document.querySelector('.undo-toast')?.remove();
+  const t = document.createElement('div');
+  t.className = 'undo-toast';
+  t.innerHTML = `<span>${esc(message)}</span>
+    <button class="btn btn-sm" id="undo-btn">↩️ Annuler</button>
+    <span class="undo-count" id="undo-count">${Math.round(ms / 1000)}</span>`;
+  document.body.appendChild(t);
+  let left = Math.round(ms / 1000);
+  const iv = setInterval(() => {
+    left -= 1;
+    const c = t.querySelector('#undo-count');
+    if (c) c.textContent = String(left);
+    if (left <= 0) { clearInterval(iv); t.remove(); }
+  }, 1000);
+  t.querySelector('#undo-btn').addEventListener('click', async () => {
+    clearInterval(iv);
+    t.remove();
+    try { await onUndo(); } catch (err) { alert(err.message); }
+  });
+}
+
 // Chantier 2 : la carte de proposition (régime A — pré-remplie, éditable) ou
 // l'honnêteté du régime B (aucune pré-sélection quand les signaux manquent).
 function reviewProposalHtml(it) {
@@ -1714,6 +1738,32 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
         try { await api.reviewDecide([it.id], 'seen'); } catch { /* répondu quand même */ }
         counts.replied += 1;
         next();
+      },
+      // Reclasser vers une intention NON actionnable (information, promo,
+      // confirmation…) vaut décision : le mail est traité et on passe au
+      // suivant — avec un bandeau « Annuler » de 10 s si c'était une erreur
+      // (retour utilisateur 03/08).
+      onReclassified: (_item, newIntent, oldIntent) => {
+        const nonAction = ['info', 'promo', 'confirmation', 'shipping', 'otp'];
+        if (!newIntent || !nonAction.includes(newIntent)) return;
+        (async () => {
+          try {
+            await api.reviewDecide([it.id], 'seen');
+            counts.seen += 1;
+            const g0 = g;
+            showUndoToast(
+              `Reclassé en ${INTENT_LABELS[newIntent] ?? newIntent} — mail traité, on passe au suivant.`,
+              async () => {
+                await api.reviewUndo(it.id);
+                await api.setMessageIntent(it.account, { folder: it.folder, uid: it.uid, intent: oldIntent });
+                counts.seen -= 1;
+                queue.splice(idx, 0, g0);
+                step();
+              },
+            );
+            next();
+          } catch (err) { alert(err.message); }
+        })();
       },
     };
     // Le mail s'affiche D'OFFICE dans la colonne de droite (retour 03/08 :
@@ -8031,7 +8081,7 @@ async function openReader(item, row, opts = {}) {
   // trouvées dans le texte affiché. Local, sans IMAP supplémentaire, sans LLM.
   const loadAnalysis = (text) => {
     api.analyzeMessage(item.account, { folder: item.folder, uid: item.uid, text })
-      .then((a) => renderReaderAnalysis(a, item))
+      .then((a) => renderReaderAnalysis(a, item, opts))
       .catch(() => {});
   };
 
@@ -8297,11 +8347,12 @@ const INTENT_LABELS = {
   document: '📄 Document',
   promo: '📢 Publicité / promo',
   reply_expected: '🗣️ Réponse attendue',
+  action_required: '⚡ Action à faire',
   info: 'ℹ️ Information',
 };
 
 // Section « 🤖 Analyse » du panneau de lecture (L5.4) — heuristiques locales.
-function renderReaderAnalysis(a, item) {
+function renderReaderAnalysis(a, item, opts = {}) {
   const el = $('#reader-analysis');
   if (!el) return;
   el.classList.remove('hidden');
@@ -8422,10 +8473,12 @@ function renderReaderAnalysis(a, item) {
   };
   $('#ra-intent')?.addEventListener('change', async (e) => {
     try {
+      const oldIntent = c?.intent ?? null;
+      const newIntent = e.target.value || null;
       const r = await api.setMessageIntent(item.account, {
         folder: item.folder,
         uid: item.uid,
-        intent: e.target.value || null,
+        intent: newIntent,
       });
       const n = $('#ra-intent-note');
       if (n) {
@@ -8436,6 +8489,9 @@ function renderReaderAnalysis(a, item) {
           : '✓ repassé en calcul automatique';
         n.style.color = 'var(--green, #16a34a)';
       }
+      // L'écran appelant peut réagir (le dépouillement : reclassé en simple
+      // information = mail traité, avec bandeau d'annulation).
+      opts.onReclassified?.(item, newIntent, oldIntent);
       // La liste derrière le lecteur doit refléter la correction tout de
       // suite : la Vue du jour se recharge quand le fil vient d'en sortir.
       if (r.replyDismissed && (location.hash === '#/today' || location.hash === '' || location.hash === '#/')) {
@@ -8486,7 +8542,7 @@ function renderReaderAnalysis(a, item) {
 // Ouvre le panneau de lecture depuis un élément « intelligence » (importants,
 // réponses, relances, échéances, brief) : construit l'item minimal et branche
 // les callbacks de rafraîchissement de l'écran appelant.
-function openReaderFor(src, { onSeen, onRemoved, dock, onReplied } = {}) {
+function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified } = {}) {
   if (!src || !src.folder || !src.uid) {
     alert('Ce mail n\'est plus dans l\'index (supprimé ou déplacé) — resynchronise la boîte.');
     return;
@@ -8503,7 +8559,7 @@ function openReaderFor(src, { onSeen, onRemoved, dock, onReplied } = {}) {
       isSeen: src.isSeen ?? true,
     },
     null,
-    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock, onReplied },
+    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock, onReplied, onReclassified },
   );
 }
 
@@ -8525,7 +8581,7 @@ const OP_FAMILIES = {
   mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
-    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate'],
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate', 'ui_review_undo'],
   analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets', 'ui_review_learning_dismiss'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',

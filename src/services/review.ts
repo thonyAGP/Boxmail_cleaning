@@ -85,7 +85,8 @@ function classify(m: {
   if (m.aiAction === 'reply' || m.aiAction === 'pay') return 'important';
   if (
     m.intent === 'invoice' || m.intent === 'reply_expected' ||
-    m.intent === 'appointment' || m.intent === 'reminder'
+    m.intent === 'appointment' || m.intent === 'reminder' ||
+    m.intent === 'action_required'
   ) {
     return 'important';
   }
@@ -295,6 +296,18 @@ function buildProposal(
       title: `Répondre à ${firstNameOf(m)}`.slice(0, 200),
       date: null, deadlineType: 'other', deadlineId: null,
       why: 'Le dernier message du fil attend probablement ta réponse.',
+    };
+  }
+
+  // « Action à faire » (voter, signer, activer…) : ni une réponse, ni une
+  // simple information — une tâche, avec le sujet (souvent déjà un impératif :
+  // « Vote now! … ») comme intitulé.
+  if (m.intent === 'action_required') {
+    return {
+      objectType: 'task', mode: 'create',
+      title: subject.replace(/^(re|fwd?|tr)\s*:\s*/i, '').slice(0, 200),
+      date: null, deadlineType: 'other', deadlineId: null,
+      why: 'Ce mail demande une action de ta part (pas une réponse).',
     };
   }
 
@@ -569,10 +582,15 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
       const existing = dlByMsg.get(it.id) ?? null;
       const proposal = buildProposal(row, existing, rentila);
       const hist = row.fromEmail ? history.get(`${row.accountSlug}|${row.fromEmail}|${row.intent ?? ''}`) : undefined;
-      // La grammaire Rentila est déterministe (construite sur les sujets réels) :
-      // deux signaux par construction — expéditeur identifié + motif reconnu.
+      // Régime A d'office quand la source est déterministe : grammaire Rentila
+      // (construite sur les sujets réels), correction MANUELLE (la vérité par
+      // définition), ou « action à faire » (règle regex validée par simulation
+      // sur les ~26 000 sujets de prod le 03/08). Sinon, convergence de
+      // signaux.
       const regimeA = proposal !== null
         && (rentila !== null
+          || row.intentSource === 'manual'
+          || row.intent === 'action_required'
           || convergence(row, it.senderCategory, existing !== null || proposal.date !== null, hist));
       it.regime = regimeA ? 'A' : 'B';
       it.proposal = regimeA ? proposal : null;
@@ -949,4 +967,31 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
     result: `dépouillement : ${label} + mail traité`,
   });
   return { status: 'done', label, errors };
+}
+
+/**
+ * Annule la décision de dépouillement d'un mail (bandeau « Annuler » de 10 s
+ * après un reclassement) : le mail redevient « à dépouiller ». L'état lu/non-lu
+ * n'est pas touché (la lecture a réellement eu lieu). Journalisé.
+ */
+export async function reviewUndo(messageId: number): Promise<{ ok: true }> {
+  await ensureDbReady();
+  const m = await db.message.findFirst({
+    where: { id: messageId, isDeleted: false },
+    select: { id: true, accountSlug: true, uid: true, subject: true, date: true, folder: { select: { path: true } } },
+  });
+  if (!m) throw new Error("Mail introuvable dans l'index.");
+  await db.message.update({
+    where: { id: m.id },
+    data: { reviewedAt: null, reviewDecision: null },
+  });
+  await recordOperation({
+    account: m.accountSlug,
+    tool: 'ui_review_undo',
+    params: { messageId: m.id },
+    affectedUids: [m.uid],
+    items: [{ subject: m.subject ?? '(sans sujet)', date: m.date?.toISOString() ?? null, folder: m.folder.path, uid: m.uid }],
+    result: 'décision annulée : le mail revient au dépouillement',
+  });
+  return { ok: true };
 }

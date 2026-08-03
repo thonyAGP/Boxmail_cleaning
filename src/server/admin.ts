@@ -119,7 +119,7 @@ import {
 } from '../services/snippets.js';
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
-import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
+import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, reviewUndo, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import { rentilaOverview } from '../services/rentila.js';
 import {
   listPolicies,
@@ -746,6 +746,23 @@ export function buildAdminRouter(): Router {
             ? Number(req.body.deadlineId)
             : null,
         }));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
+  // Annulation de décision (bandeau 10 s après un reclassement).
+  router.post(
+    '/review/undo',
+    guard(async (req, res) => {
+      const messageId = Number.parseInt(String(req.body?.messageId ?? ''), 10);
+      if (!Number.isInteger(messageId) || messageId <= 0) {
+        res.status(400).json({ error: 'messageId requis.' });
+        return;
+      }
+      try {
+        res.json(await reviewUndo(messageId));
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });
       }

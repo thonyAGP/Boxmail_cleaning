@@ -230,6 +230,7 @@ export const MESSAGE_INTENTS = [
   'document',
   'promo',
   'reply_expected',
+  'action_required',
   'info',
 ] as const;
 export type MessageIntent = (typeof MESSAGE_INTENTS)[number];
@@ -244,6 +245,11 @@ export const MESSAGE_INTENT_LABELS: Record<MessageIntent, string> = {
   document: 'Document',
   promo: 'Promotion',
   reply_expected: 'Attend une réponse',
+  // Ni une réponse à formuler, ni une simple information : un GESTE est
+  // attendu ailleurs (voter, signer, activer, renouveler…). Ajoutée le 03/08
+  // sur le cas réel eToro « Vote now! » — posée à la main via le lecteur,
+  // apprise ensuite pour les mails semblables.
+  action_required: 'Action à faire',
   info: 'Information',
 };
 
@@ -251,7 +257,7 @@ export const MESSAGE_INTENT_LABELS: Record<MessageIntent, string> = {
 // Les motifs FORTS priment sur une question ; les motifs FAIBLES (confirmation,
 // document, promo) cèdent devant un sujet qui pose une question à un humain
 // (« Peux-tu me renvoyer le contrat ? » = réponse attendue, pas « document »).
-const STRONG_INTENTS: MessageIntent[] = ['otp', 'invoice', 'shipping', 'appointment', 'reminder'];
+const STRONG_INTENTS: MessageIntent[] = ['otp', 'invoice', 'shipping', 'appointment', 'reminder', 'action_required'];
 const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
   {
     intent: 'otp',
@@ -280,8 +286,19 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
     label: 'rendez-vous ou convocation',
   },
   {
+    intent: 'action_required',
+    // Un GESTE est attendu ailleurs qu'en réponse : vote d'assemblée
+    // (« Vote now! », ProxyVote — cas réel eToro du 03/08), signature,
+    // activation. « action requise » migré depuis « rappel / relance ».
+    // « activez votre » restreint (compte/espace/carte/accès) : la simulation
+    // sur les 26 000 sujets réels attrapait sinon du marketing (« Activez
+    // votre annonce ! », « Activez votre service offert »).
+    re: /(vote now|proxy ?vote|exercer votre (droit de )?vote|voter (avant|en ligne)|assembl[ée]e (g[ée]n[ée]rale|sp[ée]ciale)[^\n]{0,30}vot|action requise|signature requise|[àa] signer avant|signez (le|votre)|activez votre (compte|espace|carte|acc[èe]s|identifiant))/i,
+    label: 'action attendue de ta part',
+  },
+  {
     intent: 'reminder',
-    re: /(\brappel\b|relance|dernier avis|n'oubliez pas|\breminder\b|action requise|en attente de votre)/i,
+    re: /(\brappel\b|relance|dernier avis|n'oubliez pas|\breminder\b|en attente de votre)/i,
     label: 'rappel ou relance',
   },
   {
