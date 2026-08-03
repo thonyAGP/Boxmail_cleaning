@@ -1063,6 +1063,11 @@ function openRentilaCommandModal(item, bodyText = '') {
   const amountMatch = `${item.subject ?? ''} ${bodyText ?? ''}`.match(/(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:€|euros?\b|eur\b)/i);
   const amount = amountMatch ? amountMatch[1].replace(',', '.') : '';
   const today = new Date().toISOString().slice(0, 10);
+  // Mail d'assurance Rentila : le bien est dans le sujet, et le bon geste est
+  // un MESSAGE au locataire (via la messagerie Rentila) lui demandant de
+  // téléverser son attestation en cours — onglet pré-sélectionné et rédigé.
+  const insMatch = (item.subject ?? '').match(/^Assurance locataire expir(?:ée pour|e dans \d+ jours)\s*:?\s*(.+)$/i);
+  const insProperty = insMatch ? insMatch[1].replace(/\s*\*\s*$/, '').trim() : '';
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal" style="width:580px">
@@ -1072,8 +1077,9 @@ function openRentilaCommandModal(item, bodyText = '') {
         au-delà de ce que montre ce formulaire. L'exécution chez Rentila se fait ensuite en disant à Claude :
         « exécute mes commandes Rentila » ; le résultat s'affichera sur la Vue du jour et au 📜 Journal.</div>
       <div class="tabs" style="margin-bottom:10px">
-        <button class="tab active" data-rc-kind="mark_rent_paid">💶 Pointer un loyer payé</button>
-        <button class="tab" data-rc-kind="create_task">☑️ Tâche côté Rentila</button>
+        <button class="tab" data-rc-kind="mark_rent_paid">💶 Pointer un loyer payé</button>
+        <button class="tab" data-rc-kind="send_tenant_message">✉️ Message au locataire</button>
+        <button class="tab" data-rc-kind="create_task">☑️ Tâche Rentila</button>
       </div>
       <div id="rc-fields"></div>
       <div id="rc-error"></div>
@@ -1086,23 +1092,40 @@ function openRentilaCommandModal(item, bodyText = '') {
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
   $('#rc-cancel').addEventListener('click', closeModal);
 
-  let kind = 'mark_rent_paid';
+  let kind = insProperty ? 'send_tenant_message' : 'mark_rent_paid';
   const renderFields = () => {
-    $('#rc-fields').innerHTML = kind === 'mark_rent_paid'
-      ? `<div class="compose-grid">
+    if (kind === 'mark_rent_paid') {
+      $('#rc-fields').innerHTML = `<div class="compose-grid">
           <label>Locataire</label><input type="text" id="rc-tenant" value="${esc(item.fromName || '')}" placeholder="Nom tel que dans Rentila">
           <label>Montant (€)</label><input type="text" id="rc-amount" value="${esc(amount)}" placeholder="vide = le loyer complet">
           <label>Payé le</label><input type="date" id="rc-date" value="${today}">
           <label>Quittance</label><label style="display:flex; gap:6px; align-items:center; font-size:13px">
             <input type="checkbox" id="rc-receipt" checked> envoyer la quittance au locataire après pointage</label>
           <label>Note</label><input type="text" id="rc-note" placeholder="optionnel — contexte utile (période, précision…)">
-        </div>`
-      : `<div class="compose-grid">
+        </div>`;
+    } else if (kind === 'send_tenant_message') {
+      const defaultBody = insProperty
+        ? `Bonjour,\n\nVotre attestation d'assurance habitation pour le logement ${insProperty} est expirée (ou arrive à expiration).\n\nMerci de téléverser votre attestation en cours de validité dans votre espace locataire Rentila, rubrique « Documents ».\n\nCordialement`
+        : 'Bonjour,\n\n\n\nCordialement';
+      $('#rc-fields').innerHTML = `<div class="compose-grid">
+          <label>Bien</label><input type="text" id="rc-property" value="${esc(insProperty)}"
+            placeholder="ex : 101 1er droite T3 — le message ira aux locataires de son bail actif">
+          <label>Ou locataire</label><input type="text" id="rc-tenant" value=""
+            placeholder="si pas de bien : nom du locataire tel que dans Rentila">
+          <label>Sujet</label><input type="text" id="rc-subject" value="${esc(insProperty ? 'Attestation d\'assurance habitation à mettre à jour' : (item.subject ?? ''))}">
+          <label>Message</label><textarea id="rc-body" rows="8" style="resize:vertical">${esc(defaultBody)}</textarea>
+        </div>
+        <div class="muted" style="font-size:12px; margin-top:6px">Envoyé via la MESSAGERIE Rentila (le locataire est notifié par
+          Rentila). Exactement ce texte — rien d'autre. En cas de doute sur le destinataire, rien ne part et tu es prévenu.</div>`;
+    } else {
+      $('#rc-fields').innerHTML = `<div class="compose-grid">
           <label>Titre</label><input type="text" id="rc-title" value="${esc(item.subject ?? '')}">
           <label>Échéance</label><input type="date" id="rc-due" value="">
           <label>Note</label><input type="text" id="rc-note" placeholder="optionnel">
         </div>`;
+    }
   };
+  overlay.querySelectorAll('[data-rc-kind]').forEach((x) => x.classList.toggle('active', x.dataset.rcKind === kind));
   overlay.querySelectorAll('[data-rc-kind]').forEach((b) => b.addEventListener('click', () => {
     kind = b.dataset.rcKind;
     overlay.querySelectorAll('[data-rc-kind]').forEach((x) => x.classList.toggle('active', x === b));
@@ -1130,6 +1153,27 @@ function openRentilaCommandModal(item, bodyText = '') {
           paidDate: $('#rc-date').value || today,
           sendReceipt: $('#rc-receipt').checked,
           note: $('#rc-note').value.trim() || null,
+          mailSubject: item.subject ?? null,
+        },
+      };
+    } else if (kind === 'send_tenant_message') {
+      const property = $('#rc-property').value.trim();
+      const tenant = $('#rc-tenant').value.trim();
+      const subject = $('#rc-subject').value.trim();
+      const body = $('#rc-body').value.trim();
+      if (!property && !tenant) { err.innerHTML = '<div class="notice warn">Indique le bien OU le locataire.</div>'; return; }
+      if (!subject || !body) { err.innerHTML = '<div class="notice warn">Sujet et message sont requis.</div>'; return; }
+      payload = {
+        kind,
+        account: item.account,
+        approved: true,
+        label: `Message Rentila — ${property || tenant} : ${subject}`,
+        params: {
+          property: property || null,
+          tenantName: tenant || null,
+          tenantEmail: null,
+          subject,
+          body,
           mailSubject: item.subject ?? null,
         },
       };

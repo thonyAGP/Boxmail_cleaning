@@ -29,6 +29,12 @@ export function registerRentilaTools(server: McpServer): void {
         "l'ambiguïté en échec ; sinon change_payment_status(status=2, received_date=paidDate) — partiel " +
         '(status=1 + partial_amount) si amount < total — puis, si sendReceipt, send_payment_receipt. ' +
         "『create_task』 params {title, dueDate?, note?} → create_task côté Rentila. " +
+        "『send_tenant_message』 params {property?, tenantName?, tenantEmail?, subject, body} → retrouver les " +
+        'DESTINATAIRES : si property est donné, le bail ACTIF de ce bien (query_leases search=property, ' +
+        'active=1) → tous ses locataires ; sinon le locataire par nom/email (search/query_tenants). ' +
+        'Puis create_message(receivers=[{id, type:"tenant"}…], subject, body) — le corps est EXACTEMENT ' +
+        'params.body (validé par l\'utilisateur), sans ajout. Bien introuvable, plusieurs baux actifs ' +
+        "candidats ou locataire ambigu → NE RIEN envoyer, rapporter l'ambiguïté en échec. " +
         "Toujours répondre en français à l'utilisateur avec ce qui a été fait, et ne JAMAIS improviser " +
         "une action non décrite par la commande. Lecture seule ici (l'écriture se fait chez Rentila).",
       inputSchema: {},

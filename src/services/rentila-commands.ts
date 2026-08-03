@@ -18,8 +18,8 @@ import { recordOperation } from './oplog.js';
  * Chaque étape est journalisée.
  */
 
-export type RentilaCommandKind = 'mark_rent_paid' | 'create_task';
-export const RENTILA_COMMAND_KINDS: RentilaCommandKind[] = ['mark_rent_paid', 'create_task'];
+export type RentilaCommandKind = 'mark_rent_paid' | 'create_task' | 'send_tenant_message';
+export const RENTILA_COMMAND_KINDS: RentilaCommandKind[] = ['mark_rent_paid', 'create_task', 'send_tenant_message'];
 
 export type RentilaCommandStatus = 'proposed' | 'approved' | 'done' | 'failed' | 'cancelled';
 
