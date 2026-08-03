@@ -1368,71 +1368,58 @@ async function renderReviewPage() {
     <div class="sub">Ton nouveau courrier, préparé : les mails importants un par un, le reste par lots homogènes.
       Rien ne part sans ta décision, tout est journalisé.</div></div>
     <div class="head-actions"><a class="btn" href="#/today">← Vue du jour</a></div></div>
-    <div id="rv-screen"><div class="empty"><span class="spinner"></span>Préparation du courrier…</div></div>`;
-  reviewIntro();
+    <div class="inbox-layout" id="rv-wrap">
+      <div id="rv-screen"><div class="empty"><span class="spinner"></span>Préparation du courrier…</div></div>
+      <div class="inbox-dock hidden" id="rv-dock"></div>
+    </div>`;
+  reviewStart();
 }
 
-// Écran d'accueil : résumé, reprise de session, choix du temps, et les
-// propositions apprises (Lot 3).
-async function reviewIntro() {
+// Démarrage DIRECT (retour utilisateur 03/08) : cliquer « Dépouiller » ne doit
+// jamais mener à un écran qui redemande de cliquer « Dépouiller ». La page
+// lance le parcours d'elle-même ; s'il n'y a rien à faire, elle le dit et
+// montre ce que l'assistant a remarqué.
+async function reviewStart() {
   const el = $('#rv-screen');
   if (!el) return;
-  let s; let q; let learn;
+  let s; let q;
   try {
-    [s, q, learn] = await Promise.all([
-      api.reviewSummary(),
-      api.reviewQueue(),
-      api.reviewLearning().catch(() => ({ notes: [], proposals: [] })),
-    ]);
+    [s, q] = await Promise.all([api.reviewSummary(), api.reviewQueue()]);
   } catch (err) {
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     return;
   }
   if (!el.isConnected) return;
-
   if (!q.groups.length) {
     el.innerHTML = `<div class="panel"><div class="panel-body">
       <div class="empty" style="font-size:15px">✅ Ton courrier est dépouillé — aucun nouveau mail n'attend une décision.
         ${s.reviewedToday ? `<div class="muted" style="font-size:12.5px; margin-top:6px">${fmtNum(s.reviewedToday)} décision(s) prise(s) aujourd'hui${s.laterCount ? ` · ${fmtNum(s.laterCount)} gardé(s) « à lire plus tard »` : ''}.</div>` : ''}
       </div></div></div>
       <div id="rv-learn"></div>`;
-    fillReviewLearning($('#rv-learn'), learn, () => reviewIntro());
+    api.reviewLearning()
+      .then((learn) => fillReviewLearning($('#rv-learn'), learn, () => reviewStart()))
+      .catch(() => {});
     return;
   }
-
-  const estAll = Math.max(1, Math.round(q.groups.reduce((n, g) => n + reviewGroupMinutes(g), 0)));
-  const resume = s.reviewedToday > 0
-    ? `<div class="notice" style="margin-bottom:10px">🔁 Tu as déjà dépouillé <strong>${fmtNum(s.reviewedToday)}</strong> mail(s) aujourd'hui — il en reste <strong>${fmtNum(s.total)}</strong>. Reprends où tu t'es arrêté.</div>`
-    : '';
-  el.innerHTML = `
-    ${resume}
-    <div class="panel"><div class="panel-body">
-      <div class="ta-hero" style="margin-bottom:12px">
-        <div><strong>📬 ${fmtNum(s.total)} nouveau(x) mail(s) attendent une décision</strong>
-          <div class="muted" style="font-size:12.5px; margin-top:2px">
-            ${s.important ? `${fmtNum(s.important)} demandent probablement une action · ` : ''}${s.read ? `${fmtNum(s.read)} méritent une lecture · ` : ''}${s.range ? `${fmtNum(s.range)} probablement rangeables d'un geste` : ''}</div></div>
-      </div>
-      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-        <button class="btn btn-primary" id="rv-all">▶️ Dépouiller</button>
-        <span class="muted" style="font-size:12.5px">Les importants arrivent en premier · ≈ ${estAll} min ·
-          arrête-toi quand tu veux, rien n'est perdu.</span>
-      </div>
-    </div></div>
-    <div id="rv-learn"></div>`;
-  $('#rv-all')?.addEventListener('click', () => reviewRun(q.groups));
-  fillReviewLearning($('#rv-learn'), learn, () => reviewIntro());
+  reviewRun(q.groups, s);
 }
 
-function reviewRun(groups) {
+function reviewRun(groups, s = null) {
   const el = $('#rv-screen');
   if (!el || !groups.length) return;
+  const estAll = Math.max(1, Math.round(groups.reduce((n, g) => n + reviewGroupMinutes(g), 0)));
   el.innerHTML = `<div class="panel">
-    <div class="panel-head"><h2 id="rv-title">📬 Dépouillement</h2>
+    <div class="panel-head"><h2 id="rv-title" style="white-space:nowrap">📬 Dépouillement</h2>
+      <span class="muted" style="font-size:12px; margin-left:auto; margin-right:10px; text-align:right">≈ ${estAll} min${s?.reviewedToday ? ` · déjà ${fmtNum(s.reviewedToday)} aujourd'hui` : ''}</span>
       <button class="btn btn-sm" id="rv-stop" title="Arrêter — rien n'est perdu : le reste sera reproposé">⏸ Arrêter</button></div>
     <div class="panel-body" id="rv-body"></div>
     <div class="rv-foot" id="rv-foot"></div>
   </div>`;
-  runReviewEngine(groups, { stopEl: $('#rv-stop'), onDone: (counts) => reviewFinish(counts) });
+  runReviewEngine(groups, {
+    stopEl: $('#rv-stop'),
+    dockEl: $('#rv-dock'),
+    onDone: (counts) => { closeReader(); reviewFinish(counts); },
+  });
 }
 
 // Fin de session : le bilan, la suite (« il en reste N »), et ce que
@@ -1470,7 +1457,7 @@ async function reviewFinish(counts) {
     nextEl.innerHTML = `<span style="font-size:13px">Il reste <strong>${fmtNum(s.total)}</strong> mail(s) à dépouiller.</span>
       <button class="btn btn-primary" id="rv-continue">▶️ Continuer</button>
       <a class="btn" href="#/today">🏠 Plus tard</a>`;
-    $('#rv-continue')?.addEventListener('click', () => reviewIntro());
+    $('#rv-continue')?.addEventListener('click', () => reviewStart());
   } else {
     if (decided) $('#rv-fin-title').textContent = '✅ Ton courrier est dépouillé';
     nextEl.innerHTML = '<a class="btn btn-primary" href="#/today">🏠 Retour à la Vue du jour</a>';
@@ -1546,7 +1533,7 @@ function fillReviewLearning(el, learn, onChanged) {
 // ---------------------------------------------------------------- Moteur d'étapes
 // Une étape par groupe (mail important seul, ou lot homogène). Écrit dans
 // #rv-title / #rv-body / #rv-foot, quel que soit l'écran qui les héberge.
-function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
+function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
   const queue = [...initialQueue];
   const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0, replied: 0, moved: 0 };
   let idx = 0;
@@ -1562,6 +1549,19 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
     idx += 1;
     if (idx >= queue.length) finish();
     else step();
+  };
+
+  // Préchauffe le contenu des 2 prochains mails individuels : au passage à
+  // l'étape suivante, le mail s'affiche sans attendre (retour 03/08).
+  const preloadNext = () => {
+    let warmed = 0;
+    for (let k = idx + 1; k < queue.length && warmed < 2; k++) {
+      const g2 = queue[k];
+      if (g2.kind === 'single') {
+        readMessageCached(g2.item.account, g2.item.folder, g2.item.uid).catch(() => {});
+        warmed++;
+      }
+    }
   };
 
   // Une décision réseau : désactive, exécute, compte, avance.
@@ -1583,6 +1583,8 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
     $('#rv-title').textContent = `📬 Courrier ${idx + 1} sur ${queue.length}`;
 
     if (g.kind === 'lot') {
+      // Pas de mail unique à afficher : la colonne de lecture se replie.
+      closeReader();
       const who = g.fromName || g.fromEmail;
       const intentLabel = g.intent ? (INTENT_LABELS[g.intent] ?? g.intent) : 'même nature';
       const catLabel = g.senderCategory ? (SENDER_CATEGORY_LABELS[g.senderCategory] ?? g.senderCategory) : '';
@@ -1652,6 +1654,10 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
         next();
       },
     };
+    // Le mail s'affiche D'OFFICE dans la colonne de droite (retour 03/08 :
+    // « autant charger la vue du mail par défaut ») — sauf écran étroit, où
+    // le lien d'ouverture en panneau reste.
+    const canDock = dockEl && dockEl.isConnected && window.innerWidth > 1100;
     $('#rv-body').innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
         <span class="badge ${clsColor}">${clsLabel}</span>${accountChip(it.account)}
@@ -1660,8 +1666,13 @@ function runReviewEngine(initialQueue, { stopEl, onDone } = {}) {
         — « ${esc(it.subject)} »</div>
       ${it.snippet ? `<div class="muted" style="font-size:12.5px; margin-bottom:6px">${esc(it.snippet)}</div>` : ''}
       ${reason ? `<div class="muted" style="font-size:12px; margin-bottom:8px">Pourquoi : ${esc(reason)}</div>` : ''}
-      <div style="margin-bottom:4px"><span class="openable" id="rv-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>`;
-    $('#rv-read')?.addEventListener('click', () => openReaderFor(it, readerOpts));
+      <div style="margin-bottom:4px"><span class="openable" id="rv-read" style="font-size:13px">${canDock ? '📖 Rouvrir le mail' : '📖 Lire le mail avant de décider'}</span></div>`;
+    // Le lien reste disponible même quand le mail est affiché d'office : si
+    // l'utilisateur ferme la colonne (✕), il peut la rouvrir sans avancer.
+    $('#rv-read')?.addEventListener('click', () =>
+      openReaderFor(it, canDock ? { ...readerOpts, dock: dockEl } : readerOpts));
+    if (canDock) openReaderFor(it, { ...readerOpts, dock: dockEl });
+    preloadNext();
 
     const B = [];
     if (it.class === 'important') {
