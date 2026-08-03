@@ -108,6 +108,12 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   « binaire » et le saute en silence) — utiliser l'échappement `\u0000`.
 - IMAP Outlook : jamais de longues listes d'UIDs (plages uniquement) ;
   jamais de repli « mail complet » dans un rattrapage de masse.
+- **NE PLUS RETIRER d'emojis existants** (dé-émojisation annulée après
+  marche arrière — l'utilisateur tient à l'identité chaleureuse ; réduire
+  seulement les cumuls emoji+pastille+badge). Lister les changements AVANT
+  toute passe de ce type.
+- Jamais de classes de modale (`modal-body`/`modal-foot`) hors d'une
+  modale : plusieurs écrans les ciblent par sélecteur global.
 
 ## Contenu des boîtes (à ne plus redécouvrir)
 
@@ -132,48 +138,18 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**Revue UX : les 3 phases livrées (02/08)**. P1 clarté : wording orienté
-action, badges à zéro masqués, états vides compacts, un bouton principal
-par écran, lecteur contenu-d'abord, journal humanisé + filtres. P2
-navigation : sidebar 7 entrées + « Dossiers mail »/« Plus » repliables,
-hubs À traiter/Nettoyer/Organiser (routes conservées, onglets injectés
-par `hubTabs()` dans `route()`), bandeau de màj AUSSI sur Aujourd'hui,
-État des boîtes = problèmes en tête. P3 assistant : file de missions
-intercatégories triée par urgence + choix du temps [5/15 min], Corriger
-l'assistant en mode « une vérification à la fois » par défaut,
-Calendrier vue « À venir » par défaut (modes en localStorage).
-**Mojibake BRANCHÉ et VÉRIFIÉ EN PROD (02/08)** : 3 622 extraits réparés
-sur 25 561 au boot de 06:03 (marqueur `data/mojibake-repair.done`).
-**Refonte visuelle (02/08)** : palette chaude tokens + sidebar bleu nuit
-groupée + Vue du jour (bandeau 5 indicateurs, 70/30) + pleine largeur +
-lecture ANCRÉE en colonne sur la Boîte de réception + badges Risque sur
-les stratégies. ⚠️ RÈGLE ACTÉE après marche arrière validée : NE PLUS
-RETIRER d'emojis existants (la dé-émojisation totale a été annulée —
-l'utilisateur veut l'identité chaleureuse ; réduire seulement les
-cumuls emoji+pastille+badges). Toujours lister les changements AVANT
-une passe de ce type.
-**DÉPOUILLEMENT COMPLET (02/08, Lots 1-2-3 du plan ChatGPT livrés)** :
-cycle « décision prise » (Message.reviewedAt/reviewDecision,
-services/review.ts, routes /review/*) ; page dédiée `#/depouillement`
-(reprise de session, choix du temps 5/15 min/tout, moteur d'étapes
-runReviewEngine) ; apprentissage des gestes répétés (2 = remarque,
-≥3 cohérents = proposition avec liste exacte, « Ne plus proposer »
-définitif, corbeille toujours confirmée, motif contredit jamais proposé) ;
-Boîte unifiée en « Décisions recommandées » par défaut. Corriger
-l'intention du dernier mail d'un fil ajuste AUSSI « À traiter »
-(dismissReply/restoreReply auto). Bug répondeurs automatiques corrigé
-(isAutoReply) ; lecture mail = HTML fidèle + images à la demande +
-resize mémorisé. Restant possible (non demandé) : brancher les motifs
-appris sur « Règles proposées »/learning.ts.
-**CONNECTEUR RENTILA phase 1 livrée (03/08)** : services/rentila.ts
-(grammaire des sujets RÉELS de prod — extraits vides, tout au sujet ;
-« via Rentila » = copies de ses envois ; sujet libre = message locataire
-à décider), échéances auto aux titres réécrits, lot « 🏠 Alertes
-Rentila » au dépouillement, carte « Gestion locative » Vue du jour.
-Détection par expéditeur = toutes boîtes. Phase 2 (écriture vers
-Rentila) en attente : accès API/MCP côté serveur « à regarder ensemble ».
-Autres connecteurs identifiés (tour GitHub) : LB2I-Fiscal-Manager
-(factures), frais Jump, CasaSync/livret (Au-marais).
-Sinon inchangé : tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
-`thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
-demandée), stratégies à activer avec l'utilisateur, C5 à faire.
+**En place** (détail et historique : docs/JOURNAL.md) : revue UX 3 phases +
+refonte visuelle, dépouillement complet (page `#/depouillement`, lots
+homogènes, apprentissage des gestes, lecteur = geste du parcours),
+lecture mail HTML fidèle + images à la demande, connecteur Rentila
+phase 1 (parseur de sujets, échéances auto, lot « Alertes Rentila »,
+carte Gestion locative — déclenché par expéditeur, toutes boîtes).
+**En attente / à faire** :
+- Rentila phase 2 (écriture) : prérequis = accès API/MCP côté serveur,
+  « à regarder ensemble » avec l'utilisateur.
+- Connecteurs suivants identifiés : LB2I-Fiscal-Manager (factures),
+  frais Jump, CasaSync/livret (Au-marais).
+- Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
+  `thony56_gtr` ~8 982 mails restants (option C3b Haiku ~4,70 $, clé
+  API pas demandée) ; récupérable 8 762 mails / 1,3 Go.
+- À VALIDER en réel : dépouillement + Rentila phase 1 sur ses boîtes.
