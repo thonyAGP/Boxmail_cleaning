@@ -930,11 +930,9 @@ async function renderToday() {
         <div class="panel">
           <div class="panel-head"><h2>À traiter aujourd'hui</h2>
             <span style="display:flex; gap:8px; align-items:center">
-              ${t.todo.total > 3 ? `<span class="muted" style="font-size:12px">Peu de temps ?</span>
-                <button class="btn btn-sm" data-todo-mins="5">5 min</button>
-                <button class="btn btn-sm" data-todo-mins="15">15 min</button>` : ''}
-              ${t.todo.total ? `<button class="btn btn-primary btn-sm" id="todo-assist"
-                title="Une action à la fois (~${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min au total), avec les bons boutons : répondre, reporter, confirmer, classer">Commencer</button>` : ''}
+              ${t.todo.total ? `<span class="muted" style="font-size:12px">≈ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min · arrête-toi quand tu veux</span>
+              <button class="btn btn-primary btn-sm" id="todo-assist"
+                title="Une action à la fois, la plus urgente d'abord, avec les bons boutons : répondre, reporter, confirmer, classer — tu t'arrêtes quand tu veux, rien n'est perdu">Commencer</button>` : ''}
             </span></div>
           <div class="panel-body tight">
             ${todoRows.length ? `<table>
@@ -988,13 +986,10 @@ async function renderToday() {
   $('#today-body').querySelectorAll('.noise-btn').forEach((btn) => {
     btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
   });
+  // Décision actée (confrontation ChatGPT 03/08) : le temps est une
+  // INFORMATION, jamais une décision — plus de choix 5/15 min, la file est
+  // triée par urgence et l'arrêt/reprise est libre.
   $('#todo-assist')?.addEventListener('click', () => startTodoAssistant(t));
-  // « Tu as combien de temps ? » : la file est bornée aux actions les plus
-  // urgentes qui tiennent dans le temps choisi (~1,5 min par action).
-  document.querySelectorAll('[data-todo-mins]').forEach((btn) => {
-    btn.addEventListener('click', () =>
-      startTodoAssistant(t, { limit: Math.max(1, Math.floor(Number(btn.dataset.todoMins) / 1.5)) }));
-  });
   $('#noise-tour')?.addEventListener('click', () => startNoiseTour(t.noise.buckets));
 
   // ---- Compléments asynchrones (échéances à venir, santé, activité) ----
@@ -1357,24 +1352,14 @@ function startReviewFlow() {
   else location.hash = '#/depouillement';
 }
 
-// Coût estimé d'une étape (en minutes) — sert à « Tu as combien de temps ? » :
-// un lot se règle d'un geste, un mail important demande de la lecture.
+// Coût estimé d'une étape (en minutes) — le temps est une INFORMATION
+// affichée à l'accueil, jamais une décision (choix 5/15 min supprimé après
+// confrontation ChatGPT du 03/08 : la reprise rend le budget inutile).
 function reviewGroupMinutes(g) {
   if (g.kind === 'lot') return 0.4;
   if (g.item.class === 'important') return 1.5;
   if (g.item.class === 'read') return 0.7;
   return 0.3;
-}
-function reviewSliceByMinutes(groups, minutes) {
-  const out = [];
-  let acc = 0;
-  for (const g of groups) {
-    const cost = reviewGroupMinutes(g);
-    if (out.length && acc + cost > minutes) break;
-    acc += cost;
-    out.push(g);
-  }
-  return out;
 }
 
 async function renderReviewPage() {
@@ -1427,17 +1412,13 @@ async function reviewIntro() {
           <div class="muted" style="font-size:12.5px; margin-top:2px">
             ${s.important ? `${fmtNum(s.important)} demandent probablement une action · ` : ''}${s.read ? `${fmtNum(s.read)} méritent une lecture · ` : ''}${s.range ? `${fmtNum(s.range)} probablement rangeables d'un geste` : ''}</div></div>
       </div>
-      <div style="font-size:13.5px; margin-bottom:8px">⏱️ Tu as combien de temps ?</div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button class="btn" data-rv-mins="5">▶️ 5 minutes</button>
-        <button class="btn" data-rv-mins="15">▶️ 15 minutes</button>
-        <button class="btn btn-primary" id="rv-all">⚡ Tout dépouiller (≈ ${estAll} min)</button>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+        <button class="btn btn-primary" id="rv-all">▶️ Dépouiller</button>
+        <span class="muted" style="font-size:12.5px">Les importants arrivent en premier · ≈ ${estAll} min ·
+          arrête-toi quand tu veux, rien n'est perdu.</span>
       </div>
-      <div class="muted" style="font-size:12px; margin-top:8px">Arrête-toi quand tu veux : rien n'est perdu, le reste sera reproposé.</div>
     </div></div>
     <div id="rv-learn"></div>`;
-  el.querySelectorAll('[data-rv-mins]').forEach((b) => b.addEventListener('click', () =>
-    reviewRun(reviewSliceByMinutes(q.groups, Number(b.dataset.rvMins)))));
   $('#rv-all')?.addEventListener('click', () => reviewRun(q.groups));
   fillReviewLearning($('#rv-learn'), learn, () => reviewIntro());
 }
