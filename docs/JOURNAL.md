@@ -5,6 +5,36 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (20) — Démarrage direct + dock + chantier 2 tranche 1 (f51c032)
+
+Retour utilisateur : « pourquoi recliquer Dépouiller sur la page ? la
+vue est à moitié vide, charge le mail par défaut et précharge la
+suite ». Livré (6afbdd0) : la page #/depouillement lance le parcours
+d'elle-même (reviewStart, plus d'écran d'accueil), le mail s'ouvre
+D'OFFICE en colonne ancrée (openReaderFor + dock #rv-dock dans une
+.inbox-layout — closeReader() sur les lots), les 2 mails suivants sont
+préchargés (readMessageCached). Lien « Rouvrir le mail » conservé.
+CHANTIER 2 TRANCHE 1 (f51c032) — la review à deux régimes est branchée :
+- review.ts : buildProposal (facture→échéance « Payer X — avant le
+  date » ou tâche sans date ; réponse→« Répondre à {prénom} » ;
+  rendez-vous ; message locataire Rentila→« Traiter avec le
+  locataire — {sujet} ») ; convergence() booléenne (≥2 signaux, 0
+  contradiction ; grammaire Rentila = régime A d'office) ;
+  enrichissement de reviewQueue (regime/proposal sur les singles non
+  range, échéances existantes par messageId, historique par groupBy).
+- validateProposal : transaction SQLite (objet + reviewedAt/décision),
+  échéance née CONFIRMED (validation humaine), confirmation du même
+  enregistrement si proposée, idempotence par état complet, IMAP hors
+  transaction, UNE ligne ui_review_validate (famille Mails).
+- UI : carte .prop-card (titre/date éditables + pourquoi), Valider
+  primaire (les autres gestes déclassés), .prop-uncertain en régime B,
+  clavier Entrée/P/V (Entrée dans un champ = sortir du champ).
+Testé seeds+Playwright : [A]×3 avec bons titres, [B]×3 honnêtes,
+validation done/already, échéance confirmée + tâches créées, Entrée
+avance. RESTE chantier 2 : familles restantes (Rentila docs_missing,
+abonnement), champs date sur tâches ?, puis chantier 3 (enchaînement
+des segments) et 4 (Vue du jour passive + Quoi de neuf).
+
 ## 03/08 (19) — Confrontation Claude ↔ ChatGPT + chantier 1 (8977f9a)
 
 Colère utilisateur : « pas guidé, les 3 boutons de temps sont stupides,
