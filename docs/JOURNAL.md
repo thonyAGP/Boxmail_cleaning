@@ -5,6 +5,32 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (21) — Reclasser = décider, « Action à faire », un ascenseur (d6cd1e4)
+
+Trois retours en direct pendant son premier vrai dépouillement :
+1. « Si je passe le mail à Information, que dois-je faire en plus ? » →
+   RIEN : reclasser vers info/promo/confirmation/livraison/otp pendant
+   le dépouillement vaut décision (mail traité, étape suivante) + bandeau
+   « ↩️ Annuler » 10 s (showUndoToast) — l'annulation efface la décision
+   (POST /review/undo, ui_review_undo) + restaure l'ancienne intention +
+   remet l'étape. Hook openReader opts.onReclassified (propagé via
+   renderReaderAnalysis(a, item, opts)).
+2. Le mail eToro « Vote now! » n'entrait dans aucune case → nouvelle
+   intention `action_required` (« ⚡ Action à faire ») : enum + libellés
+   des deux côtés, règle regex AVANT reminder (« action requise » migré),
+   STRONG_INTENTS. SIMULÉE sur les sujets réels de prod : 163 puis 151
+   après resserrage de « activez votre » (compte/espace/carte/accès —
+   sinon marketing Getaround/Total). Converge sur les 7 boîtes. En
+   review : classe important, proposition tâche (sujet en intitulé),
+   régime A d'office (règle déterministe) ; correction manuelle
+   d'intention = régime A d'office aussi.
+3. Double ascenseur → #rv-wrap .reader.docked à calc(100vh - 172px) :
+   la page ne défile plus, seul le mail défile.
+Réponse à sa question « je viens de voter, je classe en quoi ? » :
+⚡ Action à faire puis Vu — et les prochains seront proposés en tâche.
+Testé Playwright : page sans scroll, carte eToro pré-remplie,
+reclassement → « Courrier 6 sur 10 » + bandeau, Annuler → mail revenu.
+
 ## 03/08 (20) — Démarrage direct + dock + chantier 2 tranche 1 (f51c032)
 
 Retour utilisateur : « pourquoi recliquer Dépouiller sur la page ? la
