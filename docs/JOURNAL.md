@@ -5,6 +5,36 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (18) — Connecteur Rentila, phase 1 (6fb5388)
+
+Décision : écosystème de connecteurs (tour GitHub fait : Rentila_Assist,
+LB2I-Fiscal-Manager, CasaSync, frais Jump…) ; on commence par Rentila.
+Périmètre validé : détection par EXPÉDITEUR *@rentila.com (toutes boîtes
+d'office — « pourquoi se limiter » acté ; en pratique Location_Brest).
+MÉTHODE (leçon appliquée) : grammaire construite sur les SUJETS RÉELS de
+prod (scan ssh boxmail → /tmp/rentila-scan.cjs, DATABASE_URL=file:…
+requis, module en chemin absolu). Constats clés : extraits VIDES (HTML
+seul) → tout repose sur le sujet ; fromName « SARL BRIMMO via Rentila »
+= copies de SES propres envois (bruit pur) ; sujet libre = message
+relayé de la messagerie (locataire — jamais du bruit).
+Livré : services/rentila.ts (parseRentilaMail → kind/label/property/
+due/noise, 16 kinds ; rentilaOverview) ; deadlines.ts passe Rentila
+(titres réécrits en obligations, deep saute les gabarits) ; review.ts
+classifyRow partagé + lot unique « 🏠 Alertes Rentila » par compte +
+rentilaLabel sur les singles ; GET /rentila/overview ; carte Vue du
+jour « 🏠 Gestion locative » (invisible sans activité Rentila).
+Testé (seeds sujets réels + Playwright) : 3 échéances proposées aux bons
+titres/dates (expirée→aujourd'hui, +30 j, révision +30 j), overview
+complet, « Fuite évier cuisine » classé à décider, lot 8 notifications.
+L'échéance assurance remonte d'elle-même dans « À traiter aujourd'hui »
+(priorité Haute) — la boucle est bouclée sans code dédié.
+PHASE 2 (à faire, prérequis : accès API/MCP Rentila côté serveur — « on
+regardera ensemble ») : lecture bail/solde dans le lecteur, puis actions
+validées (tâche Rentila, téléversement de document, pointage loyer).
+NOTE prod : les mails Rentila DÉJÀ reçus ne créeront leurs échéances
+qu'à la prochaine détection (bouton de l'écran 📅 Dates ou sync auto
+pour les nouveaux arrivants).
+
 ## 02/08 (17) — Le lecteur devient un geste du dépouillement
 
 Retour utilisateur immédiat après livraison des Lots 2-3 : « j'ouvre le

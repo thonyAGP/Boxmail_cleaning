@@ -165,6 +165,15 @@ l'intention du dernier mail d'un fil ajuste AUSSI « À traiter »
 (isAutoReply) ; lecture mail = HTML fidèle + images à la demande +
 resize mémorisé. Restant possible (non demandé) : brancher les motifs
 appris sur « Règles proposées »/learning.ts.
+**CONNECTEUR RENTILA phase 1 livrée (03/08)** : services/rentila.ts
+(grammaire des sujets RÉELS de prod — extraits vides, tout au sujet ;
+« via Rentila » = copies de ses envois ; sujet libre = message locataire
+à décider), échéances auto aux titres réécrits, lot « 🏠 Alertes
+Rentila » au dépouillement, carte « Gestion locative » Vue du jour.
+Détection par expéditeur = toutes boîtes. Phase 2 (écriture vers
+Rentila) en attente : accès API/MCP côté serveur « à regarder ensemble ».
+Autres connecteurs identifiés (tour GitHub) : LB2I-Fiscal-Manager
+(factures), frais Jump, CasaSync/livret (Au-marais).
 Sinon inchangé : tour 3 bouclé, récupérable 8 762 mails / 1,3 Go,
 `thony56_gtr` ~8 982 restants (option C3b Haiku ~4,70 $, clé API pas
 demandée), stratégies à activer avec l'utilisateur, C5 à faire.
