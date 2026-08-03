@@ -252,6 +252,22 @@ function buildProposal(
 ): ReviewProposal | null {
   const subject = (m.subject ?? '').replace(/\s+/g, ' ').trim() || '(sans sujet)';
 
+  // Notification Rentila dont l'obligation vit DÉJÀ en échéance (créée par la
+  // détection automatique) : jamais de doublon — confirmer, ou continuer.
+  if (rentila && existing) {
+    return {
+      objectType: 'deadline',
+      mode: existing.status === 'confirmed' ? 'exists' : 'confirm',
+      title: existing.title,
+      date: existing.date.toISOString(),
+      deadlineType: 'other',
+      deadlineId: existing.id,
+      why: existing.status === 'confirmed'
+        ? 'Cette notification a déjà son échéance confirmée.'
+        : 'Cette notification a déjà été transformée en échéance — confirme-la, ou ajuste-la.',
+    };
+  }
+
   if (rentila?.kind === 'tenant_message') {
     return {
       objectType: 'task', mode: 'create',

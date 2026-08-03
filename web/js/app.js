@@ -1676,12 +1676,12 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       const catLabel = g.senderCategory ? (SENDER_CATEGORY_LABELS[g.senderCategory] ?? g.senderCategory) : '';
       $('#rv-body').innerHTML = `
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
-          <span class="badge ${g.rentila ? 'blue' : 'gray'}">${g.rentila ? '🏠 Alertes Rentila' : '🧹 Lot rangeable'}</span>${accountChip(g.account)}
+          <span class="badge ${g.rentila ? 'blue' : 'gray'}">${g.rentila ? '🏠 Rentila — copies & technique' : '🧹 Lot rangeable'}</span>${accountChip(g.account)}
           ${catLabel ? `<span class="muted" style="font-size:12px">${esc(catLabel)}</span>` : ''}</div>
-        <div style="font-size:15px; margin-bottom:2px"><strong>${fmtNum(g.count)} ${g.rentila ? 'notifications Rentila' : `mails de ${esc(who)}`}</strong>
+        <div style="font-size:15px; margin-bottom:2px"><strong>${fmtNum(g.count)} ${g.rentila ? 'notifications techniques Rentila' : `mails de ${esc(who)}`}</strong>
           ${g.rentila ? '' : `<span class="muted">— ${esc(intentLabel)}</span>`}</div>
         <div class="muted" style="font-size:12.5px; margin-bottom:8px">${g.rentila
-          ? 'Les obligations détectées (assurances, révisions de loyer) sont déjà dans ton 📅 Calendrier — ces notifications peuvent être marquées vues sans rien perdre.'
+          ? 'Uniquement les copies de tes propres envois (avis, quittances), les alertes de connexion et le technique — rien à faire, un geste suffit. Les vraies alertes (assurances, loyers, messages) passent une par une.'
           : 'Proposition : les marquer comme vus. Rien n\'est supprimé — la corbeille est un choix séparé, toujours confirmé.'}</div>
         <div class="subject-list">${g.samples.map((s) =>
           `<div><span class="mail-date">${fmtDate(s.date)}</span> ${esc(s.subject)}</div>`).join('')}

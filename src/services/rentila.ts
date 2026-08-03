@@ -131,7 +131,9 @@ export function parseRentilaMail(input: {
       kind: 'insurance_expired',
       label: 'Assurance locataire expirée',
       property,
-      noise: true,
+      // Décision individuelle (retour 03/08 : « à traiter un par un ») —
+      // seuls les envois auto/techniques restent en lot.
+      noise: false,
       due: due(refDate, 'renewal', `Renouveler l'assurance locataire — ${property}`, subject, 0.9),
     };
   }
@@ -142,7 +144,7 @@ export function parseRentilaMail(input: {
       kind: 'insurance_expiring',
       label: `Assurance locataire expire dans ${days} jours`,
       property,
-      noise: true,
+      noise: false,
       due: due(
         new Date(refDate.getTime() + days * DAY),
         'renewal',
@@ -157,7 +159,7 @@ export function parseRentilaMail(input: {
     return { kind: 'outbound_copy', label: 'Rappel assurance envoyé au locataire', property: null, noise: true, due: null };
   }
   if (/^Loyers? en retard/i.test(subject)) {
-    return { kind: 'rent_late', label: 'Loyer(s) en retard signalé(s)', property: null, noise: true, due: null };
+    return { kind: 'rent_late', label: 'Loyer(s) en retard signalé(s)', property: null, noise: false, due: null };
   }
   if ((m = subject.match(/^(Rappel\s+)?[Rr]évision de loyer pour\s+(.+)$/i))) {
     const rappel = !!m[1];
@@ -166,7 +168,7 @@ export function parseRentilaMail(input: {
       kind: 'rent_revision',
       label: rappel ? 'Rappel : révision de loyer à faire' : 'Révision de loyer à faire',
       property,
-      noise: true,
+      noise: false,
       due: due(
         new Date(refDate.getTime() + (rappel ? 7 : 30) * DAY),
         'other',
@@ -177,7 +179,7 @@ export function parseRentilaMail(input: {
     };
   }
   if (/^Intervention terminée/i.test(subject)) {
-    return { kind: 'intervention_done', label: 'Intervention terminée', property: null, noise: true, due: null };
+    return { kind: 'intervention_done', label: 'Intervention terminée', property: null, noise: false, due: null };
   }
   if ((m = subject.match(/^Intervention pour LOCATION\s+(.+)$/i))) {
     return {
@@ -202,7 +204,7 @@ export function parseRentilaMail(input: {
       kind: 'lease_signed',
       label: 'Contrat de location signé',
       property: cleanProperty(stripTrailingDate(m[1])),
-      noise: true,
+      noise: false,
       due: null,
     };
   }
