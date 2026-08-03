@@ -5,6 +5,37 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (23) — Rentila phase 2 : la file de commandes (8bbf148)
+
+Abonnement Rentila RÉACTIVÉ par l'utilisateur → le connecteur MCP
+répond (402 avant). Lectures de démonstration : 11 biens loués (46 rue
+de la République ×9 SARL BRIMMO, 28b Duperré SCI ALTOEN, Massillon +
+Yves Collet en nom propre), 15 loyers en retard (−10 207,82 € au
+total ; Myrtille Herasse −562,50 € ↔ son mail « virement de 600 € »),
+4 assurances expirées + 2 manquantes, 6 révisions, 7 baux qui expirent.
+CONSTAT d'architecture : PAS d'API publique Rentila documentée (FAQ
+muette) — le connecteur MCP est le seul canal. Donc même décision que
+l'analyse IA : AUCUN identifiant Rentila côté serveur. Architecture
+« file de commandes » :
+1. Boxmail PRÉPARE (bouton 🏠 Rentila… du lecteur → modale : Pointer un
+   loyer payé [locataire pré-rempli, montant extrait du texte, date du
+   jour, option quittance] ou Tâche Rentila) — le formulaire est
+   l'aperçu-confirmation, la commande naît « approved ».
+2. File : modèle RentilaCommand (kind/params JSON/label/status
+   proposed|approved|done|failed|cancelled), services/rentila-commands
+   .ts, routes /rentila/commands (+/approve /cancel), compteur sur la
+   carte Gestion locative (« N validée(s) — à faire exécuter par
+   Claude », échecs en rouge).
+3. Claude exécute via ses DEUX connecteurs : tool MCP
+   rentila_pending_commands (recettes par kind dans la description —
+   mark_rent_paid : retrouver locataire → loyers impayés → pointer
+   change_payment_status + quittance ; AMBIGUÏTÉ = échec rapporté,
+   jamais de pointage hasardeux) puis rentila_command_result
+   (obligatoire, succès comme échec). 4 outils journalisés (famille
+   suivi). Phrase-clé utilisateur : « exécute mes commandes Rentila ».
+Testé bout en bout : API → file → client MCP réel (SDK du projet,
+listTools + callTool) → report → done. Migration 20260803100041.
+
 ## 03/08 (22) — « Déjà fait » + lot Rentila réduit au technique
 
 (691495c) « ✔ Déjà fait » sur la carte de proposition : bascule en

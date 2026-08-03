@@ -145,8 +145,11 @@ lecture mail HTML fidèle + images à la demande, connecteur Rentila
 phase 1 (parseur de sujets, échéances auto, lot « Alertes Rentila »,
 carte Gestion locative — déclenché par expéditeur, toutes boîtes).
 **En attente / à faire** :
-- Rentila phase 2 (écriture) : prérequis = accès API/MCP côté serveur,
-  « à regarder ensemble » avec l'utilisateur.
+- Rentila phase 2 LIVRÉE (file de commandes) : Boxmail prépare/valide,
+  CLAUDE exécute via son connecteur MCP Rentila (« exécute mes commandes
+  Rentila » → rentila_pending_commands puis rentila_command_result).
+  Abonnement Rentila actif requis. Kinds : mark_rent_paid, create_task —
+  à étendre avec l'utilisateur.
 - Connecteurs suivants identifiés : LB2I-Fiscal-Manager (factures),
   frais Jump, CasaSync/livret (Au-marais).
 - Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
