@@ -5,6 +5,28 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/08 (22) — « Déjà fait » + lot Rentila réduit au technique
+
+(691495c) « ✔ Déjà fait » sur la carte de proposition : bascule en
+consignation (datetime-local pré-rempli maintenant, modifiable),
+validateProposal(markDone/doneAt) → tâche née done (doneAt) ou échéance
+née/passée 'done', journal « action consignée comme faite … + mail
+traité ». PIÈGE réparé : le patch de la route admin par node -e n'avait
+PAS matché (markDone silencieusement absent) — toujours vérifier par
+grep après un remplacement programmatique. Bug corrigé au passage :
+après correction manuelle vers une intention actionnable, la carte
+proposait l'ancienne lecture → onReclassified re-demande reviewQueue et
+re-rend l'étape sur place.
+(48dc74a) Lot Rentila redécoupé (retour : « choses différentes, un par
+un ; les copies de mes envois, on s'en fout ») : noise=false pour
+insurance_expired/expiring, rent_late, rent_revision,
+intervention_done, lease_signed → décisions individuelles ; quand la
+détection a déjà créé l'échéance → proposition « Confirmer l'échéance »
+(même enregistrement) ou « déjà confirmée → Continuer » (buildProposal,
+branche rentila+existing en tête). Le lot ne garde que outbound_copy /
+download_copy / login / tenant_connected — libellé « Rentila — copies &
+technique ». Testé : 6 singles aux bonnes propositions + lot 4x.
+
 ## 03/08 (21) — Reclasser = décider, « Action à faire », un ascenseur (d6cd1e4)
 
 Trois retours en direct pendant son premier vrai dépouillement :
