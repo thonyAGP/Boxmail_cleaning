@@ -122,6 +122,15 @@ import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/
 import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, reviewUndo, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import { rentilaOverview } from '../services/rentila.js';
 import {
+  createRentilaCommand,
+  listRentilaCommands,
+  approveRentilaCommand,
+  cancelRentilaCommand,
+  rentilaCommandCounts,
+  type RentilaCommandKind,
+  type RentilaCommandStatus,
+} from '../services/rentila-commands.js';
+import {
   listPolicies,
   previewPolicy,
   applyPolicy,
@@ -776,6 +785,58 @@ export function buildAdminRouter(): Router {
     '/rentila/overview',
     guard(async (_req, res) => {
       res.json(await rentilaOverview());
+    }),
+  );
+
+  // Connecteur Rentila (phase 2) : la file de commandes. Boxmail prépare,
+  // l'utilisateur valide ici, Claude exécute via son connecteur MCP Rentila.
+  router.get(
+    '/rentila/commands',
+    guard(async (req, res) => {
+      const status = req.query.status ? String(req.query.status) : undefined;
+      res.json({
+        items: await listRentilaCommands({ status: status as RentilaCommandStatus | undefined }),
+        counts: await rentilaCommandCounts(),
+      });
+    }),
+  );
+  router.post(
+    '/rentila/commands',
+    guard(async (req, res) => {
+      try {
+        res.json(await createRentilaCommand({
+          kind: String(req.body?.kind ?? '') as RentilaCommandKind,
+          params: (req.body?.params && typeof req.body.params === 'object') ? req.body.params : {},
+          label: String(req.body?.label ?? ''),
+          account: req.body?.account ? String(req.body.account) : null,
+          messageId: Number.isInteger(Number(req.body?.messageId)) && Number(req.body.messageId) > 0
+            ? Number(req.body.messageId)
+            : null,
+          approved: req.body?.approved === true,
+        }));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+  router.post(
+    '/rentila/commands/:id/approve',
+    guard(async (req, res) => {
+      try {
+        res.json(await approveRentilaCommand(Number.parseInt(String(req.params.id), 10)));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+  router.post(
+    '/rentila/commands/:id/cancel',
+    guard(async (req, res) => {
+      try {
+        res.json(await cancelRentilaCommand(Number.parseInt(String(req.params.id), 10)));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
     }),
   );
 

@@ -1025,6 +1025,117 @@ async function todayFillReview() {
   }
 }
 
+// Connecteur Rentila phase 2 : préparer une COMMANDE depuis un mail. Le
+// formulaire EST l'aperçu-confirmation ; l'exécution chez Rentila se fait par
+// Claude (« exécute mes commandes Rentila ») qui rapporte le résultat ici.
+function openRentilaCommandModal(item, bodyText = '') {
+  closeModal();
+  const amountMatch = `${item.subject ?? ''} ${bodyText ?? ''}`.match(/(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:€|euros?\b|eur\b)/i);
+  const amount = amountMatch ? amountMatch[1].replace(',', '.') : '';
+  const today = new Date().toISOString().slice(0, 10);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="width:580px">
+    <div class="modal-head"><h2>🏠 Commande Rentila</h2><button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:12.5px; margin-bottom:10px">Tu prépares et valides ici — rien ne part
+        au-delà de ce que montre ce formulaire. L'exécution chez Rentila se fait ensuite en disant à Claude :
+        « exécute mes commandes Rentila » ; le résultat s'affichera sur la Vue du jour et au 📜 Journal.</div>
+      <div class="tabs" style="margin-bottom:10px">
+        <button class="tab active" data-rc-kind="mark_rent_paid">💶 Pointer un loyer payé</button>
+        <button class="tab" data-rc-kind="create_task">☑️ Tâche côté Rentila</button>
+      </div>
+      <div id="rc-fields"></div>
+      <div id="rc-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="rc-cancel">Annuler</button>
+      <button class="btn btn-primary" id="rc-save">✅ Valider la commande</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  $('#rc-cancel').addEventListener('click', closeModal);
+
+  let kind = 'mark_rent_paid';
+  const renderFields = () => {
+    $('#rc-fields').innerHTML = kind === 'mark_rent_paid'
+      ? `<div class="compose-grid">
+          <label>Locataire</label><input type="text" id="rc-tenant" value="${esc(item.fromName || '')}" placeholder="Nom tel que dans Rentila">
+          <label>Montant (€)</label><input type="text" id="rc-amount" value="${esc(amount)}" placeholder="vide = le loyer complet">
+          <label>Payé le</label><input type="date" id="rc-date" value="${today}">
+          <label>Quittance</label><label style="display:flex; gap:6px; align-items:center; font-size:13px">
+            <input type="checkbox" id="rc-receipt" checked> envoyer la quittance au locataire après pointage</label>
+          <label>Note</label><input type="text" id="rc-note" placeholder="optionnel — contexte utile (période, précision…)">
+        </div>`
+      : `<div class="compose-grid">
+          <label>Titre</label><input type="text" id="rc-title" value="${esc(item.subject ?? '')}">
+          <label>Échéance</label><input type="date" id="rc-due" value="">
+          <label>Note</label><input type="text" id="rc-note" placeholder="optionnel">
+        </div>`;
+  };
+  overlay.querySelectorAll('[data-rc-kind]').forEach((b) => b.addEventListener('click', () => {
+    kind = b.dataset.rcKind;
+    overlay.querySelectorAll('[data-rc-kind]').forEach((x) => x.classList.toggle('active', x === b));
+    renderFields();
+  }));
+  renderFields();
+
+  $('#rc-save').addEventListener('click', async () => {
+    const err = $('#rc-error');
+    err.innerHTML = '';
+    let payload;
+    if (kind === 'mark_rent_paid') {
+      const tenant = $('#rc-tenant').value.trim();
+      if (!tenant) { err.innerHTML = '<div class="notice warn">Le nom du locataire est requis.</div>'; return; }
+      const amt = $('#rc-amount').value.trim().replace(',', '.');
+      payload = {
+        kind,
+        account: item.account,
+        approved: true,
+        label: `Pointer le loyer payé — ${tenant}${amt ? ` (${amt} €)` : ''}${$('#rc-receipt').checked ? ' + quittance' : ''}`,
+        params: {
+          tenantName: tenant,
+          tenantEmail: item.fromEmail ?? null,
+          amount: amt || null,
+          paidDate: $('#rc-date').value || today,
+          sendReceipt: $('#rc-receipt').checked,
+          note: $('#rc-note').value.trim() || null,
+          mailSubject: item.subject ?? null,
+        },
+      };
+    } else {
+      const title = $('#rc-title').value.trim();
+      if (!title) { err.innerHTML = '<div class="notice warn">Le titre est requis.</div>'; return; }
+      payload = {
+        kind,
+        account: item.account,
+        approved: true,
+        label: `Tâche Rentila — ${title}`,
+        params: {
+          title,
+          dueDate: $('#rc-due').value || null,
+          note: $('#rc-note').value.trim() || null,
+          mailSubject: item.subject ?? null,
+        },
+      };
+    }
+    const btn = $('#rc-save');
+    btn.disabled = true;
+    try {
+      await api.rentilaCommandCreate(payload);
+      overlay.querySelector('.modal-body').innerHTML = `<div class="notice">✅ Commande validée :
+        <strong>${esc(payload.label)}</strong>.<br>
+        Pour l'exécuter maintenant : ouvre Claude et dis <strong>« exécute mes commandes Rentila »</strong>.
+        Le résultat s'affichera sur la Vue du jour (Gestion locative) et dans le 📜 Journal.</div>`;
+      overlay.querySelector('.modal-foot').innerHTML = '<button class="btn btn-primary" id="rc-done">Fermer</button>';
+      overlay.querySelector('#rc-done').addEventListener('click', closeModal);
+    } catch (e2) {
+      btn.disabled = false;
+      err.innerHTML = `<div class="notice warn">⚠️ ${esc(e2.message)}</div>`;
+    }
+  });
+}
+
 // Carte « 🏠 Gestion locative » (connecteur Rentila, phase 1) : ce que Rentila
 // attend de toi — invisible si aucune activité Rentila récente (les autres
 // boîtes ne voient rien changer).
@@ -1033,7 +1144,10 @@ async function todayFillRentila() {
   const el = $('#today-rentila');
   if (!el) return;
   try {
-    const o = await api.rentilaOverview();
+    const [o, cmds] = await Promise.all([
+      api.rentilaOverview(),
+      api.rentilaCommands().catch(() => ({ items: [], counts: { proposed: 0, approved: 0, failed: 0 } })),
+    ]);
     if (!el.isConnected) return;
     const bits = [];
     const expired = o.insurance.filter((i) => i.expired);
@@ -1046,6 +1160,13 @@ async function todayFillRentila() {
     }
     if (o.rentLateAt) bits.push(`<span>💶 loyers en retard signalés le ${fmtDate(o.rentLateAt)}</span>`);
     if (o.tenantMessages.length) bits.push(`<span>💬 <strong>${fmtNum(o.tenantMessages.length)}</strong> message(s) locataire à traiter</span>`);
+    // Commandes Rentila (phase 2) : validées en attente d'exécution par Claude.
+    if (cmds.counts.approved) {
+      bits.push(`<span title="Ouvre Claude et dis : « exécute mes commandes Rentila »">⚙️ <strong>${fmtNum(cmds.counts.approved)}</strong> commande(s) validée(s) — à faire exécuter par Claude</span>`);
+    }
+    if (cmds.counts.failed) {
+      bits.push(`<span style="color:var(--red)" title="Détail dans le 📜 Journal d'activité">⚠️ ${fmtNum(cmds.counts.failed)} commande(s) en échec</span>`);
+    }
     if (!bits.length && !o.deadlines.length) { el.innerHTML = ''; return; }
 
     rentilaMsgRefs = o.tenantMessages;
@@ -8077,6 +8198,7 @@ async function openReader(item, row, opts = {}) {
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
+      <button class="btn btn-sm" id="reader-rentila" title="Préparer une commande Rentila depuis ce mail (pointer un loyer payé, créer une tâche côté Rentila) — tu valides, Claude l'exécute">🏠 Rentila…</button>
       <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « ⭐ Mails suivis »">${item.isFlagged ? '⭐ Suivi' : '☆ Suivre'}</button>
       <button class="btn btn-sm" id="reader-toggle-seen" title="Change l'état lu/non lu de ce mail (aussi côté Microsoft)">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
       <select id="reader-move" title="Déplace ce mail vers un autre dossier de la même boîte"><option value="">📦 Déplacer vers…</option></select>
@@ -8283,6 +8405,7 @@ async function openReader(item, row, opts = {}) {
       messageRef: { folder: item.folder, uid: item.uid },
     });
   });
+  $('#reader-rentila')?.addEventListener('click', () => openRentilaCommandModal(item, loadedText));
   $('#reader-forward')?.addEventListener('click', () => {
     openComposeModal({
       account: item.account,
@@ -8627,7 +8750,8 @@ const OP_FAMILIES = {
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',
     'restore_deadline', 'propose_deadline', 'create_task', 'task_from_deadline',
-    'complete_task', 'dismiss_task', 'reopen_task'],
+    'complete_task', 'dismiss_task', 'reopen_task',
+    'rentila_command_created', 'rentila_command_approved', 'rentila_command_cancelled', 'rentila_command_result'],
 };
 function opFamily(tool) {
   for (const [fam, tools] of Object.entries(OP_FAMILIES)) if (tools.includes(tool)) return fam;

@@ -237,6 +237,33 @@ model Deadline {
 // Tâche (L5.5) : créée à la main, depuis un mail ou depuis une échéance.
 // Références souples (pas de FK Message/Deadline : l'index est reconstructible,
 // la tâche doit survivre) ; contexte dénormalisé pour l'affichage.
+// Commandes Rentila (connecteur, phase 2 — 03/08). Boxmail PRÉPARE des ordres
+// depuis les mails reçus, l'utilisateur les VALIDE dans l'interface (aperçu),
+// et c'est Claude qui les EXÉCUTE via le connecteur MCP Rentila — aucun
+// identifiant Rentila ne vit côté serveur (même décision que pour l'analyse
+// IA : le pont passe par le forfait Claude de l'utilisateur). Le résultat est
+// rapporté ici et journalisé.
+model RentilaCommand {
+  id          Int       @id @default(autoincrement())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  // mark_rent_paid | create_task (extensible)
+  kind        String
+  // Paramètres structurés (JSON) interprétés par Claude côté Rentila
+  params      String
+  // Libellé humain montré dans l'interface et le journal
+  label       String
+  accountSlug String?
+  // Mail d'origine (référence souple, comme Deadline)
+  messageId   Int?
+  // proposed | approved | done | failed | cancelled
+  status      String    @default("proposed")
+  result      String?
+  executedAt  DateTime?
+
+  @@index([status])
+}
+
 model Task {
   id          Int       @id @default(autoincrement())
   title       String
