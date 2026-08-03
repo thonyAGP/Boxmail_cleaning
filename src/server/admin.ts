@@ -741,7 +741,7 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'messageId requis.' });
         return;
       }
-      if (objectType !== 'deadline' && objectType !== 'task') {
+      if (objectType !== 'deadline' && objectType !== 'task' && objectType !== 'rentila_message') {
         res.status(400).json({ error: `Type d'objet inconnu : ${objectType}.` });
         return;
       }
@@ -757,6 +757,9 @@ export function buildAdminRouter(): Router {
             : null,
           markDone: req.body?.markDone === true,
           doneAt: req.body?.doneAt ? String(req.body.doneAt) : null,
+          body: req.body?.body ? String(req.body.body) : null,
+          property: req.body?.property ? String(req.body.property) : null,
+          confirmDeadline: req.body?.confirmDeadline === true,
         }));
       } catch (err) {
         res.status(400).json({ error: (err as Error).message });

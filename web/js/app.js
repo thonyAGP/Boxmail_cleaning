@@ -1563,6 +1563,21 @@ function reviewProposalHtml(it) {
         <div class="muted" style="font-size:12px">${esc(p.why)} <a href="#/deadlines">Voir les échéances</a></div>
       </div>`;
     }
+    if (p.objectType === 'rentila_message') {
+      return `<div class="prop-card">
+        <div class="prop-head">💡 Proposition : ✉️ message au locataire via Rentila — ${esc(p.property ?? '')}</div>
+        <div class="prop-fields" style="flex-direction:column; align-items:stretch">
+          <label>Sujet <input type="text" id="rv-p-title" value="${esc(p.title)}"></label>
+          <label>Message <textarea id="rv-p-body" rows="6" style="resize:vertical">${esc(p.body ?? '')}</textarea></label>
+          ${p.deadlineId ? `<label style="flex-direction:row; gap:6px; align-items:center">
+            <input type="checkbox" id="rv-p-confdl" checked>
+            confirmer aussi l'échéance « ${esc(p.deadlineTitle ?? '')} »${p.date ? ` (${fmtDate(p.date)})` : ''}</label>` : ''}
+        </div>
+        <div class="muted" style="font-size:12px">Pourquoi : ${esc(p.why)}
+          Valider prépare le message (envoyé par la messagerie Rentila quand tu diras à Claude
+          « exécute mes commandes Rentila » — destinataires : les locataires du bail actif de ce bien).</div>
+      </div>`;
+    }
     const head = p.mode === 'confirm'
       ? '💡 Proposition : confirmer l\'échéance'
       : isDl ? '💡 Proposition : créer l\'échéance' : '💡 Proposition : créer la tâche';
@@ -2009,6 +2024,18 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
         if (p.mode === 'exists') {
           await api.reviewDecide([it.id], 'seen');
           counts.seen += 1;
+        } else if (p.objectType === 'rentila_message') {
+          const r = await api.reviewValidate({
+            messageId: it.id,
+            objectType: 'rentila_message',
+            title: $('#rv-p-title')?.value?.trim() || p.title,
+            body: $('#rv-p-body')?.value?.trim() || p.body,
+            property: p.property,
+            deadlineId: p.deadlineId ?? undefined,
+            confirmDeadline: $('#rv-p-confdl')?.checked ?? false,
+          });
+          counts.validated += 1;
+          if (r.errors?.length) alert(`Validé, mais un effet a échoué :\n${r.errors.join('\n')}`);
         } else {
           const dateVal = $('#rv-p-date')?.value;
           const doneInput = $('#rv-p-done');
@@ -2060,7 +2087,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
     // gestes restent disponibles en boutons secondaires, à égalité.
     const validateBtn = p
       ? `<button class="btn btn-sm btn-primary" id="rv-validate" title="${esc(p.why)} (touche Entrée)">${p.mode === 'exists' ? '✅ Continuer (mail traité)' : '✅ Valider'}</button>`
-        + (p.mode !== 'exists'
+        + (p.mode !== 'exists' && p.objectType !== 'rentila_message'
           ? '<button class="btn btn-sm" id="rv-done" title="L\'action a déjà eu lieu : on la consigne dans l\'historique (date et heure modifiables) au lieu de la mettre au programme">✔ Déjà fait</button>'
           : '')
       : '';

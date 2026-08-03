@@ -218,14 +218,21 @@ function rentilaDisplay(info: RentilaMailInfo, subject: string | null): string {
 // Bascule booléenne : ≥ 2 signaux positifs ET 0 contradiction. Pas de score.
 
 export interface ReviewProposal {
-  objectType: 'deadline' | 'task';
+  objectType: 'deadline' | 'task' | 'rentila_message';
   mode: 'create' | 'confirm' | 'exists';
+  /** Titre de l'objet — pour un message Rentila : le SUJET du message. */
   title: string;
-  /** ISO — échéances uniquement. */
+  /** ISO — échéances uniquement (ou échéance LIÉE d'un message Rentila). */
   date: string | null;
   deadlineType: string;
   deadlineId: number | null;
   why: string;
+  /** Message Rentila : corps pré-rédigé, éditable. */
+  body?: string | null;
+  /** Message Rentila : bien concerné (destinataires = locataires du bail actif). */
+  property?: string | null;
+  /** Message Rentila : titre de l'échéance liée (affichage de la case à cocher). */
+  deadlineTitle?: string | null;
 }
 
 interface ExistingDeadline { id: number; status: string; title: string; date: Date }
@@ -251,6 +258,29 @@ function buildProposal(
   rentila: RentilaMailInfo | null,
 ): ReviewProposal | null {
   const subject = (m.subject ?? '').replace(/\s+/g, ' ').trim() || '(sans sujet)';
+
+  // Assurance locataire expirée / à échoir : le bon geste est RENTILA par
+  // défaut (retour utilisateur 03/08 : « tu vois bien que c'est du Rentila »)
+  // — un message au locataire via la messagerie de la plateforme, pré-rédigé,
+  // avec la confirmation de l'échéance liée embarquée dans le même geste.
+  if (rentila && (rentila.kind === 'insurance_expired' || rentila.kind === 'insurance_expiring') && rentila.property) {
+    const expired = rentila.kind === 'insurance_expired';
+    return {
+      objectType: 'rentila_message', mode: 'create',
+      title: "Attestation d'assurance habitation à mettre à jour",
+      body: `Bonjour,\n\nVotre attestation d'assurance habitation pour le logement ${rentila.property} `
+        + (expired ? 'est expirée.' : 'arrive à expiration.')
+        + `\n\nMerci de téléverser votre attestation en cours de validité dans votre espace locataire Rentila, rubrique « Documents ».\n\nCordialement`,
+      property: rentila.property,
+      date: existing?.date.toISOString() ?? null,
+      deadlineType: 'renewal',
+      deadlineId: existing?.id ?? null,
+      deadlineTitle: existing?.title ?? null,
+      why: expired
+        ? "L'assurance de ce logement est expirée — le locataire doit téléverser sa nouvelle attestation."
+        : "L'assurance de ce logement expire bientôt — autant prévenir le locataire dès maintenant.",
+    };
+  }
 
   // Notification Rentila dont l'obligation vit DÉJÀ en échéance (créée par la
   // détection automatique) : jamais de doublon — confirmer, ou continuer.
@@ -853,7 +883,7 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
 // ---------------------------------------------------------------- Validation (chantier 2)
 export interface ValidateProposalInput {
   messageId: number;
-  objectType: 'deadline' | 'task';
+  objectType: 'deadline' | 'task' | 'rentila_message';
   title: string;
   /** ISO — requis pour une échéance. */
   date?: string | null;
@@ -864,6 +894,12 @@ export interface ValidateProposalInput {
   markDone?: boolean;
   /** ISO — quand l'action a été faite (défaut : maintenant). */
   doneAt?: string | null;
+  /** Message Rentila : corps validé (envoyé tel quel par Claude). */
+  body?: string | null;
+  /** Message Rentila : bien concerné (destinataires = bail actif). */
+  property?: string | null;
+  /** Message Rentila : confirmer aussi l'échéance liée (deadlineId). */
+  confirmDeadline?: boolean;
 }
 
 /**
@@ -959,6 +995,48 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
       : existing
         ? `échéance confirmée « ${title} » (${date.toLocaleDateString('fr-FR')})`
         : `échéance créée « ${title} » (${date.toLocaleDateString('fr-FR')})`;
+  } else if (input.objectType === 'rentila_message') {
+    // Message au locataire via la messagerie Rentila : la validation CRÉE la
+    // commande (file « à exécuter par Claude »), confirme l'échéance liée si
+    // demandé, et dépouille le mail — un seul geste, une transaction, une
+    // ligne de journal. L'envoi réel se fait par Claude (connecteur Rentila).
+    if (m.reviewedAt) return { status: 'already', label: 'mail déjà dépouillé', errors };
+    const body = (input.body ?? '').trim();
+    if (!body) throw new Error('Le message est vide.');
+    const property = (input.property ?? '').trim();
+    if (!property) throw new Error('Le bien concerné est requis.');
+    const confirmDl = input.confirmDeadline === true && Number.isInteger(input.deadlineId ?? null) && (input.deadlineId as number) > 0;
+    await db.$transaction(async (tx) => {
+      await tx.rentilaCommand.create({
+        data: {
+          kind: 'send_tenant_message',
+          params: JSON.stringify({
+            property,
+            tenantName: null,
+            tenantEmail: null,
+            subject: title,
+            body,
+            mailSubject: m.subject ?? null,
+          }),
+          label: `Message Rentila — ${property} : ${title}`.slice(0, 300),
+          accountSlug: m.accountSlug,
+          messageId: m.id,
+          status: 'approved',
+        },
+      });
+      if (confirmDl) {
+        await tx.deadline.updateMany({
+          where: { id: input.deadlineId as number, accountSlug: m.accountSlug, status: 'proposed' },
+          data: { status: 'confirmed' },
+        });
+      }
+      await tx.message.update({
+        where: { id: m.id },
+        data: { reviewedAt: new Date(), reviewDecision: 'seen', isSeen: true },
+      });
+      decisionApplied = true;
+    });
+    label = `message locataire préparé « ${title} » (${property})${confirmDl ? ' + échéance confirmée' : ''} — à faire exécuter par Claude`;
   } else {
     if (m.reviewedAt) return { status: 'already', label: 'mail déjà dépouillé', errors };
     const dueDate = input.date ? new Date(input.date) : null;
