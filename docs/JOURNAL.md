@@ -5,6 +5,19 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 05/08 (27) — Corbeille sur toutes les cartes du dépouillement
+
+Retour : « rajoute-moi systématiquement un bouton pour supprimer depuis
+la liste des emails au dépouillement ». Avant, 🗑️ Corbeille… n'existait
+que sur les lots et les mails « rangeables » (class range) ; les cartes
+« À décider » (important) et « À lire » (read) obligeaient à ouvrir le
+lecteur pour supprimer. Fait : bouton 🗑️ Corbeille… ajouté sur toutes
+les cartes individuelles (factorisé en toTrash, placé en dernier avant
+⏭️ Passer) — toujours confirm(), soft delete ~30 j, journalisé via
+decide('trash'). Aussi ce jour (hors code) : ancienne install locale
+C:\Users\leberan\boxmail-mcp supprimée du poste (autostart Démarrage
+Windows retiré) — seule la prod Oracle tourne désormais.
+
 ## 03/08 (26) — Rentila PAR DÉFAUT sur les assurances (bbeed06)
 
 Retour : « pourquoi une étape de plus ? fais l'inverse : Rentila par

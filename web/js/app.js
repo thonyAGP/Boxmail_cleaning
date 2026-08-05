@@ -2063,6 +2063,12 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       }
     };
 
+    // La corbeille est disponible sur TOUTES les cartes (demande utilisateur
+    // 05/08 : pouvoir supprimer sans ouvrir le lecteur) — toujours confirmée,
+    // soft delete récupérable ~30 jours, journalisée.
+    const toTrash = () => {
+      if (confirm(`Mettre « ${it.subject} » à la corbeille ?\n\nRécupérable ~30 jours, journalisé.`)) decide([it.id], 'trash', 1);
+    };
     const B = [];
     if (it.class === 'important') {
       // Le libellé suit le geste attendu : répondre si une réponse est attendue.
@@ -2077,12 +2083,11 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
     } else {
       B.push(['👁️ Vu', 'btn-primary', () => decide([it.id], 'seen', 1)]);
-      B.push(['🗑️ Corbeille…', '', () => {
-        if (confirm(`Mettre « ${it.subject} » à la corbeille ?\n\nRécupérable ~30 jours, journalisé.`)) decide([it.id], 'trash', 1);
-      }]);
+      B.push(['🗑️ Corbeille…', '', toTrash]);
       B.push(['📥 Garder', '', () => decide([it.id], 'keep', 1)]);
     }
     if (it.class === 'important') B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
+    if (it.class !== 'range') B.push(['🗑️ Corbeille…', '', toTrash]);
     // Avec une proposition, VALIDER devient le geste principal ; les autres
     // gestes restent disponibles en boutons secondaires, à égalité.
     const validateBtn = p
