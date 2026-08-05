@@ -14,11 +14,23 @@ import { accessTokenFor, type AccountRecord } from './accounts.js';
  * seul pour les envois SMTP).
  */
 
+export interface OutgoingAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+  /** Image « en ligne » : identifiant référencé par le HTML (src="cid:…"). */
+  cid?: string;
+}
+
 export interface OutgoingMail {
   to: string[];
   cc?: string[];
   subject: string;
   text: string;
+  /** Version HTML du corps (images en ligne) — le texte reste la version de secours. */
+  html?: string;
+  /** Pièces jointes (et images en ligne via cid). */
+  attachments?: OutgoingAttachment[];
   /** Message-ID du mail auquel on répond (fil de discussion). */
   inReplyTo?: string;
   references?: string[];
@@ -50,6 +62,8 @@ export async function composeMessage(from: string, msg: OutgoingMail): Promise<B
     cc: msg.cc?.length ? msg.cc : undefined,
     subject: msg.subject,
     text: msg.text,
+    html: msg.html || undefined,
+    attachments: msg.attachments?.length ? msg.attachments : undefined,
     inReplyTo: msg.inReplyTo,
     references: msg.references?.length ? msg.references : undefined,
     date: new Date(),

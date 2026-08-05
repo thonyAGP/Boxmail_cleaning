@@ -8524,6 +8524,11 @@ async function openReader(item, row, opts = {}) {
 }
 
 // ------------------------------------------------ Composer un mail (L5.3)
+// Pièces jointes + images en ligne (demande utilisateur 05/08) : le corps est
+// une zone éditable (pre-wrap) — on peut y coller une capture (Ctrl+V) ou
+// insérer une image au fil du texte ; les fichiers joints s'ajoutent en
+// vignettes sous le texte. Limites alignées sur le serveur : 10 fichiers,
+// 10 Mo par pièce, 15 Mo au total (images en ligne comprises).
 function openComposeModal({ account, to = '', cc = '', subject = '', text = '', replyRef = null, onSent = null }) {
   closeModal();
   const overlay = document.createElement('div');
@@ -8538,7 +8543,15 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
         <label>Cc</label><input type="text" id="c-cc" placeholder="optionnel" value="${esc(cc)}">
         <label>Objet</label><input type="text" id="c-subject" value="${esc(subject)}">
       </div>
-      <textarea id="c-text" rows="12" style="width:100%; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font:inherit; resize:vertical"></textarea>
+      <div id="c-text" class="compose-editor" contenteditable="true"></div>
+      <div class="compose-tools">
+        <button class="btn btn-sm" id="c-attach" title="Le fichier part en pièce jointe du mail">📎 Joindre des fichiers</button>
+        <button class="btn btn-sm" id="c-image" title="L'image s'insère dans le texte, à l'endroit du curseur">🖼️ Insérer une image</button>
+        <span class="muted" style="font-size:12px">ou colle une capture dans le texte (Ctrl+V)</span>
+        <input type="file" id="c-attach-input" multiple hidden>
+        <input type="file" id="c-image-input" accept="image/*" multiple hidden>
+      </div>
+      <div class="compose-atts" id="c-atts"></div>
       <div id="c-error"></div>
       <div class="trash-note" style="margin-top:10px">🛟 Rien ne part sans ton clic : l'envoi demande une
         confirmation, est journalisé (destinataires + objet), et une copie est déposée dans
@@ -8552,26 +8565,157 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
   $('#c-cancel').addEventListener('click', closeModal);
-  const ta = $('#c-text');
-  ta.value = text;
+  const editor = $('#c-text');
+  editor.textContent = text; // pre-wrap : les retours à la ligne s'affichent tels quels
   // Réponse : curseur en haut, au-dessus de la citation.
-  ta.focus();
-  ta.setSelectionRange(0, 0);
+  editor.focus();
+  const initRange = document.createRange();
+  initRange.setStart(editor.firstChild ?? editor, 0);
+  initRange.collapse(true);
+  const initSel = window.getSelection();
+  initSel.removeAllRanges();
+  initSel.addRange(initRange);
+
+  // --- Pièces jointes (fichiers) --------------------------------------------
+  const MAX_FILES = 10;
+  const MAX_FILE_BYTES = 10 * 1024 * 1024;
+  const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
+  const atts = []; // { name, type, size, dataBase64 }
+  const fmtSize = (b) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`);
+  const showErr = (msg) => {
+    $('#c-error').innerHTML = `<div class="notice warn" style="margin-top:10px">${esc(msg)}</div>`;
+  };
+  // Poids déjà engagé : fichiers joints + images en ligne (base64 ≈ ×4/3).
+  const inlineBytes = () =>
+    [...editor.querySelectorAll('img')].reduce((sum, img) => {
+      const m = /^data:[^;]*;base64,(.*)$/.exec(img.getAttribute('src') || '');
+      return sum + (m ? Math.floor(m[1].length * 0.75) : 0);
+    }, 0);
+  const totalBytes = () => atts.reduce((s, a) => s + a.size, 0) + inlineBytes();
+  const renderAtts = () => {
+    $('#c-atts').innerHTML = atts.map((a, i) =>
+      `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
+        <button data-rm="${i}" title="Retirer cette pièce jointe">✕</button></span>`).join('');
+    $('#c-atts').querySelectorAll('[data-rm]').forEach((b) =>
+      b.addEventListener('click', () => { atts.splice(Number(b.dataset.rm), 1); renderAtts(); }));
+  };
+  const readAsDataUrl = (file) => new Promise((resolveRead, rejectRead) => {
+    const r = new FileReader();
+    r.onload = () => resolveRead(r.result);
+    r.onerror = () => rejectRead(new Error(`Lecture impossible : ${file.name}`));
+    r.readAsDataURL(file);
+  });
+  const addFiles = async (files) => {
+    $('#c-error').innerHTML = '';
+    for (const f of files) {
+      if (atts.length >= MAX_FILES) { showErr(`10 pièces jointes maximum — « ${f.name} » non ajoutée.`); break; }
+      if (f.size > MAX_FILE_BYTES) { showErr(`« ${f.name} » dépasse 10 Mo — envoie-la plutôt via un lien de partage.`); continue; }
+      if (totalBytes() + f.size > MAX_TOTAL_BYTES) { showErr(`15 Mo maximum au total — « ${f.name} » non ajoutée.`); break; }
+      const dataUrl = await readAsDataUrl(f);
+      atts.push({ name: f.name, type: f.type || 'application/octet-stream', size: f.size,
+        dataBase64: String(dataUrl).split(',')[1] ?? '' });
+    }
+    renderAtts();
+  };
+  $('#c-attach').addEventListener('click', () => $('#c-attach-input').click());
+  $('#c-attach-input').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
+
+  // --- Images en ligne (au fil du texte) ------------------------------------
+  const insertInlineImage = async (file) => {
+    if (file.size > MAX_FILE_BYTES) { showErr(`« ${file.name} » dépasse 10 Mo.`); return; }
+    if (totalBytes() + file.size > MAX_TOTAL_BYTES) { showErr('15 Mo maximum au total (images comprises).'); return; }
+    const dataUrl = await readAsDataUrl(file);
+    const img = document.createElement('img');
+    img.src = String(dataUrl);
+    img.alt = file.name;
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel.rangeCount && editor.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(img);
+      range.setStartAfter(img);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      editor.appendChild(img);
+    }
+  };
+  $('#c-image').addEventListener('click', () => $('#c-image-input').click());
+  $('#c-image-input').addEventListener('change', async (e) => {
+    for (const f of [...e.target.files]) await insertInlineImage(f);
+    e.target.value = '';
+  });
+  // Coller une capture (Ctrl+V) : l'image atterrit dans le texte, au curseur.
+  editor.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return; // texte collé : comportement normal
+    e.preventDefault();
+    for (const f of files) {
+      if (f.type.startsWith('image/')) insertInlineImage(f);
+      else addFiles([f]); // un fichier non-image collé part en pièce jointe
+    }
+  });
+  // Fichier déposé sur la fenêtre : image → dans le texte, sinon pièce jointe.
+  overlay.addEventListener('dragover', (e) => e.preventDefault());
+  overlay.addEventListener('drop', (e) => {
+    e.preventDefault();
+    for (const f of [...(e.dataTransfer?.files ?? [])]) {
+      if (f.type.startsWith('image/')) insertInlineImage(f);
+      else addFiles([f]);
+    }
+  });
 
   $('#c-send').addEventListener('click', async () => {
     const toVal = $('#c-to').value.trim();
     const ccVal = $('#c-cc').value.trim();
     const subjectVal = $('#c-subject').value.trim();
-    const textVal = ta.value;
+    const textVal = editor.innerText;
+    const hasImages = !!editor.querySelector('img');
     const errEl = $('#c-error');
     errEl.innerHTML = '';
-    if (!toVal || !subjectVal || !textVal.trim()) {
+    if (!toVal || !subjectVal || (!textVal.trim() && !hasImages)) {
       errEl.innerHTML = '<div class="notice warn" style="margin-top:10px">Destinataire, objet et message sont requis.</div>';
+      return;
+    }
+    if (totalBytes() > MAX_TOTAL_BYTES) {
+      showErr('Pièces jointes et images trop lourdes : 15 Mo maximum au total.');
       return;
     }
     const nbDest = toVal.split(/[,;]/).filter((s) => s.trim()).length +
       ccVal.split(/[,;]/).filter((s) => s.trim()).length;
-    if (!confirm(`Envoyer ce mail à ${nbDest} destinataire(s) depuis ${account} ?`)) return;
+    const nbPieces = atts.length + editor.querySelectorAll('img[src^="data:"]').length;
+    if (!confirm(`Envoyer ce mail à ${nbDest} destinataire(s) depuis ${account}` +
+      `${nbPieces ? `, avec ${nbPieces} pièce(s) jointe(s) / image(s)` : ''} ?`)) return;
+
+    // Les images en ligne deviennent des pièces jointes « cid: » référencées
+    // par le HTML ; le texte brut reste la version de secours du mail.
+    const clone = editor.cloneNode(true);
+    const origImgs = [...editor.querySelectorAll('img')];
+    const inlineAtts = [];
+    clone.querySelectorAll('img').forEach((img, i) => {
+      const src = img.getAttribute('src') || '';
+      const m = /^data:([^;]+);base64,(.*)$/.exec(src);
+      if (!m) {
+        // Image externe (http…) : on la laisse telle quelle ; tout autre cas
+        // (blob local non lisible) est retiré plutôt qu'envoyé cassé.
+        if (!/^https?:/i.test(src)) img.remove();
+        return;
+      }
+      const cid = `img${i + 1}.${Date.now()}@boxmail`;
+      const ext = (m[1].split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+      inlineAtts.push({ name: img.alt || `image${i + 1}.${ext}`, type: m[1], dataBase64: m[2], cid });
+      img.setAttribute('src', `cid:${cid}`);
+      img.removeAttribute('style');
+      // Largeur lue sur l'image AFFICHÉE (la copie n'a pas encore chargé la
+      // sienne) : taille réelle si petite, plafonnée à 640 px sinon.
+      const nw = origImgs[i]?.naturalWidth || 0;
+      img.setAttribute('width', nw > 0 && nw < 640 ? String(nw) : '640');
+    });
+    const htmlVal = (hasImages || clone.innerHTML.includes('<'))
+      ? `<div style="font-family:Arial, Helvetica, sans-serif; font-size:14px; white-space:pre-wrap">${clone.innerHTML}</div>`
+      : undefined;
 
     const btn = $('#c-send');
     btn.disabled = true;
@@ -8582,6 +8726,8 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
         cc: ccVal,
         subject: subjectVal,
         text: textVal,
+        html: htmlVal,
+        attachments: [...atts.map(({ name, type, dataBase64 }) => ({ name, type, dataBase64 })), ...inlineAtts],
         replyTo: replyRef ?? undefined,
       });
       $('.modal-body').innerHTML = `<div class="notice">✅ Mail envoyé à

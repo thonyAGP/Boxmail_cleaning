@@ -5,6 +5,29 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 06/08 (28) — Pièces jointes et images en ligne dans le composeur
+
+Retour : « dans la réponse, je ne peux pas ajouter de pièce jointe, ni
+d'image dans les lignes du texte ». Fait :
+- smtp.ts : OutgoingMail gagne html? et attachments? (OutgoingAttachment
+  {filename, content, contentType?, cid?}) — MailComposer produit le bon
+  MIME (mixed > related > alternative, testé hors ligne : cid, inline,
+  texte de secours).
+- admin.ts /send : validation des pièces (10 max, 10 Mo/pièce, 15 Mo
+  total, noms nettoyés, cid contrôlé), html refusé au-delà de 500 Ko ;
+  journal ui_send_mail enrichi (noms des pièces).
+- index.ts : limite JSON dédiée 30 Mo sur la SEULE route /send (regex),
+  le reste inchangé à 4 Mo — vérifié en réel (6 Mo → 401 sur /send,
+  413 ailleurs).
+- Composeur (app.js) : textarea → div contenteditable pre-wrap ;
+  boutons 📎 Joindre des fichiers (vignettes retirables) et 🖼️ Insérer
+  une image (au curseur) ; collage Ctrl+V d'une capture → image en
+  ligne ; glisser-déposer (image → texte, autre → pièce jointe). À
+  l'envoi : images data: converties en pièces cid + HTML (pre-wrap,
+  largeur plafonnée 640 px), texte innerText en secours ; confirmation
+  mentionne le nombre de pièces. Limites contrôlées aussi côté client.
+À VALIDER en réel par l'utilisateur (l'envoi SMTP ne se teste pas en dev).
+
 ## 05/08 (27) — Corbeille sur toutes les cartes du dépouillement
 
 Retour : « rajoute-moi systématiquement un bouton pour supprimer depuis

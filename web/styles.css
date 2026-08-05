@@ -443,6 +443,22 @@ a.tab { text-decoration: none; }
 .compose-grid label { color: var(--text-secondary); font-size: 12.5px; text-align: right; }
 .compose-grid input { width: 100%; }
 
+/* Composeur : corps éditable (images au fil du texte) + pièces jointes */
+.compose-editor {
+  width: 100%; min-height: 220px; max-height: 42vh; overflow-y: auto; margin-top: 10px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  font: inherit; white-space: pre-wrap; word-break: break-word;
+}
+.compose-editor:focus { outline: none; border-color: var(--accent, #2563eb); }
+.compose-editor img { max-width: 100%; height: auto; display: block; margin: 6px 0; border-radius: 4px; }
+.compose-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.compose-atts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.att-chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; font-size: 12.5px; background: var(--surface-main);
+}
+.att-chip button { border: none; background: none; cursor: pointer; color: var(--red, #b42318); padding: 0; font-size: 13px; }
+
 /* ---------- Modale ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(18, 32, 44, .55); z-index: 100;

@@ -142,6 +142,11 @@ async function main() {
   // 'loopback' : ne croire X-Forwarded-For que si la connexion vient de
   // 127.0.0.1 (nginx local) — une requête directe ne peut pas usurper une IP.
   if (config.http.trustProxy) app.set('trust proxy', 'loopback');
+  // Les envois avec pièces jointes (base64) dépassent la limite globale de
+  // 4 Mo : limite dédiée sur la SEULE route d'envoi (le contenu est ensuite
+  // validé pièce par pièce — 10 Mo/pièce, 15 Mo au total). Le parseur global
+  // saute les corps déjà lus.
+  app.use(/^\/api\/accounts\/[^/]+\/send$/, express.json({ limit: '30mb' }));
   app.use(express.json({ limit: '4mb' }));
 
   // Health check public (utile pour le reverse proxy / monitoring). Pas de secret.

@@ -77,7 +77,7 @@ import {
 import { imapService } from '../services/imap.js';
 import { buildZip } from '../services/zip.js';
 import { toVCard, toOutlookCsv } from '../services/export.js';
-import { sendEmail, validateRecipients } from '../services/smtp.js';
+import { sendEmail, validateRecipients, type OutgoingAttachment } from '../services/smtp.js';
 import { startJob, getJob, hasRunningJob, listJobs } from '../services/jobs.js';
 import { autoSyncStatus, startSyncAllJob } from '../services/autosync.js';
 import { autoUpdateStatus } from '../services/autoupdate.js';
@@ -2305,6 +2305,54 @@ export function buildAdminRouter(): Router {
         return;
       }
 
+      // Version HTML (images en ligne) : optionnelle, le texte reste la
+      // version de secours. Refusée si démesurée (plutôt que tronquée en
+      // plein milieu d'une balise).
+      const rawHtml = typeof req.body?.html === 'string' ? req.body.html : '';
+      if (rawHtml.length > 500_000) {
+        res.status(400).json({ error: 'Le corps HTML du message est trop volumineux.' });
+        return;
+      }
+      const html = rawHtml.trim() ? rawHtml : undefined;
+
+      // Pièces jointes (et images en ligne) : base64 côté client, validées
+      // ici — 10 fichiers max, 10 Mo par pièce, 15 Mo au total (Outlook.com
+      // refuse au-delà de ~20 Mo, encodage compris).
+      const rawAtts = Array.isArray(req.body?.attachments) ? (req.body.attachments as unknown[]) : [];
+      if (rawAtts.length > 10) {
+        res.status(400).json({ error: '10 pièces jointes maximum par mail.' });
+        return;
+      }
+      const attachments: OutgoingAttachment[] = [];
+      let totalBytes = 0;
+      for (const rawAtt of rawAtts) {
+        const a = rawAtt as { name?: unknown; type?: unknown; dataBase64?: unknown; cid?: unknown };
+        const filename =
+          String(a?.name ?? '').replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 120) || 'piece-jointe';
+        const b64 = typeof a?.dataBase64 === 'string' ? a.dataBase64 : '';
+        const content = Buffer.from(b64, 'base64');
+        if (content.length === 0) {
+          res.status(400).json({ error: `Pièce jointe « ${filename} » vide ou illisible.` });
+          return;
+        }
+        if (content.length > 10 * 1024 * 1024) {
+          res.status(400).json({ error: `Pièce jointe « ${filename} » trop lourde (10 Mo max par pièce).` });
+          return;
+        }
+        totalBytes += content.length;
+        attachments.push({
+          filename,
+          content,
+          contentType:
+            typeof a?.type === 'string' && /^[\w.-]+\/[\w.+-]+$/.test(a.type) ? a.type : undefined,
+          cid: typeof a?.cid === 'string' && /^[\w.-]+@[\w.-]+$/.test(a.cid) ? a.cid : undefined,
+        });
+      }
+      if (totalBytes > 15 * 1024 * 1024) {
+        res.status(400).json({ error: 'Pièces jointes trop lourdes : 15 Mo maximum au total.' });
+        return;
+      }
+
       // Réponse/transfert : on relie le fil via le Message-ID du mail d'origine.
       const replyTo = req.body?.replyTo as
         | { folder?: unknown; uid?: unknown; mode?: unknown }
@@ -2338,6 +2386,8 @@ export function buildAdminRouter(): Router {
         cc,
         subject,
         text,
+        html,
+        attachments,
         inReplyTo,
         references,
       });
@@ -2365,9 +2415,9 @@ export function buildAdminRouter(): Router {
         account: rec.account,
         tool: 'ui_send_mail',
         folder: copiedTo ?? undefined,
-        params: { mode, to, cc, subject },
+        params: { mode, to, cc, subject, attachments: attachments.map((a) => a.filename) },
         items: [{ subject, date: new Date().toISOString() }],
-        result: `envoyé à ${recipients.join(', ')}${copiedTo ? ` (copie dans ${copiedTo})` : ' (copie Envoyés impossible)'}`,
+        result: `envoyé à ${recipients.join(', ')}${attachments.length ? ` avec ${attachments.length} pièce(s) jointe(s)` : ''}${copiedTo ? ` (copie dans ${copiedTo})` : ' (copie Envoyés impossible)'}`,
       });
       res.json({ ok: true, from, sentTo: recipients, copiedTo, mode });
     }),
