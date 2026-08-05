@@ -5,6 +5,15 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 06/08 (29) — Erreur 413 en prod : nginx limitait les corps à 1 Mo
+
+Premier essai réel des pièces jointes → « Erreur 413 » : nginx (défaut
+client_max_body_size 1m) rejetait avant l'app. Corrigé SUR LA VM
+(client_max_body_size 32m dans les deux blocs server de
+/etc/nginx/sites-enabled/boxmail, nginx -t + reload, vérifié : 6 Mo sur
+/send → 401 et plus 413). Répercuté dans deploy/nginx.conf.example, et
+message d'erreur 413 rendu parlant dans le composeur.
+
 ## 06/08 (28) — Pièces jointes et images en ligne dans le composeur
 
 Retour : « dans la réponse, je ne peux pas ajouter de pièce jointe, ni

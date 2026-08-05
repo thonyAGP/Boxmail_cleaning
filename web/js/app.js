@@ -8747,7 +8747,11 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
     } catch (err) {
       btn.disabled = false;
       btn.textContent = '✉️ Envoyer';
-      errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(err.message)}</div>`;
+      // 413 = corps refusé par le serveur/proxy avant l'app : message parlant.
+      const msg = err.status === 413
+        ? 'Message trop volumineux pour le serveur : allège les pièces jointes ou les images, puis réessaie.'
+        : err.message;
+      errEl.innerHTML = `<div class="notice warn" style="margin-top:10px">❌ ${esc(msg)}</div>`;
     }
   });
 }

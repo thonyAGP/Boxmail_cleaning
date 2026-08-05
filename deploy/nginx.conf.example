@@ -21,6 +21,11 @@ server {
     listen [::]:443 ssl http2;
     server_name mcp.lb2i.fr;
 
+    # Envois avec pièces jointes : nginx limite les corps à 1 Mo par défaut
+    # (erreur 413 avant même d'atteindre l'app). Express garde ses propres
+    # limites par route (30 Mo sur /send, 4 Mo ailleurs).
+    client_max_body_size 32m;
+
     # --- TLS (chemins gérés par certbot) ---
     ssl_certificate     /etc/letsencrypt/live/mcp.lb2i.fr/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/mcp.lb2i.fr/privkey.pem;
