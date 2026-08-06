@@ -8476,16 +8476,19 @@ async function openReader(item, row, opts = {}) {
       return;
     }
     if (await doAction(e.target, 'move', destination)) {
-      onRemoved(item, 'move');
+      // Refermer AVANT de prévenir l'écran appelant : dans le dépouillement,
+      // onRemoved avance au mail suivant et ouvre SON aperçu — le refermer
+      // après coup laissait la carte suivante sans lecture (bug 06/08).
       closeReader();
+      onRemoved(item, 'move');
     }
   });
 
   $('#reader-delete').addEventListener('click', async (e) => {
     if (!confirm('Déplacer ce mail vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)')) return;
     if (await doAction(e.target, 'delete')) {
+      closeReader(); // même ordre que « Déplacer » : refermer puis avancer
       onRemoved(item, 'delete');
-      closeReader();
     }
   });
 

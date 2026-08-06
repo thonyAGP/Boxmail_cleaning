@@ -5,6 +5,19 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 06/08 (30) — Dépouillement : aperçu manquant après Corbeille/Déplacer
+
+Retour : « certaines fois je me retrouve sans l'aperçu du mail à
+traiter ». Cause : dans le lecteur, Corbeille et Déplacer faisaient
+onRemoved(...) PUIS closeReader() — or, dans le dépouillement,
+onRemoved avance au mail suivant et ouvre SON aperçu (ancrage
+synchrone) ; le closeReader() tardif refermait donc le panneau du
+NOUVEAU mail. Fix : refermer d'abord, avancer ensuite (les deux
+gestes). Les autres enchaînements (réponse envoyée, reclassement,
+lots, fin de session) étaient déjà dans le bon ordre. Au passage :
+pièces jointes + image en ligne VALIDÉES en réel par l'utilisateur
+(envoi HomeExchange reçu avec l'image).
+
 ## 06/08 (29) — Erreur 413 en prod : nginx limitait les corps à 1 Mo
 
 Premier essai réel des pièces jointes → « Erreur 413 » : nginx (défaut
