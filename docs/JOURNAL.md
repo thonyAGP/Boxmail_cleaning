@@ -5,6 +5,44 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 07/08 (31) — Connecteur Fiscal-Manager V1 : « zéro facture perdue »
+
+Demande : Anthony paye des frais pro en carte perso puis se fait rembourser ;
+risque qu'une facture reçue par mail ne soit jamais transmise à la
+comptabilité. Design débattu avec ChatGPT (2 tours contradictoires + une
+correction d'Anthony en direct : Fiscal-Manager est sur VERCEL, pas local —
+son CLAUDE.md est périmé). Design : docs/CONNECTEUR-FISCAL-MANAGER.md,
+transcriptions dans docs/archives-chatgpt/. Principe : « Boxmail détecte,
+Fiscal-Manager qualifie », pont PULL unidirectionnel.
+
+Côté Boxmail (déployé, validé en prod) :
+- Table AccountingCandidate (métadonnées SEULEMENT — l'IMAP reste le stockage
+  durable, jamais de PDF sur le VPS) ; société proposée par boîte
+  (Brimmo/Econom/Colocar/Altoen, Location_Brest→BRIMMO, perso+Au-marais→null).
+- Détection post-sync (intent invoice + PJ pdf/jpg/png/webp, images en ligne
+  et <30 Ko écartées) + rattrapage « Quoi de neuf » 12 mois : 68 mails
+  examinés, 57 pièces prêtes.
+- API /api/v1/accounting-candidates : jeton dédié lecture seule
+  (ACCOUNTING_READ_TOKEN, jamais le bearer MCP), curseur seq monotone,
+  pièce streamée depuis l'IMAP à la demande, 410 Gone + SOURCE_MISSING si le
+  mail a disparu (jamais de disparition silencieuse). Testé : 401/403, liste,
+  curseur, 410, téléchargement réel 142 Ko, journal.
+- Protection anti-suppression : déjà couverte par la protection centrale
+  (hasAttachments + intent invoice) — aucune clause ajoutée. Relink des
+  candidats quand un mail change de dossier.
+
+Côté Fiscal-Manager (même session, repo LB2I-Fiscal-Manager) : modèle
+AccountingDocument (PDF stocké EN BASE — filesystem Vercel éphémère), pull
+idempotent par curseur (unique source+candidat+pièce, SHA-256, reprise sur
+erreur), écran « Pièces reçues » (/pieces : créer un frais pré-rempli,
+associer à un frais en attente, payé société, ignorer, société modifiable —
+« proposée » = déduite de la boîte), groupe Boxmail dans /config, repli Jump
+sur invoicePdf en base. Reste : validation réelle par Anthony.
+
+Leçon Playwright (2 colères utilisateur) : profil Chrome persistant partagé
+~/.claude/browser-profile + attendre un login STABLE (3 polls), bannière dans
+la page, jamais de close() pendant une connexion → règles dans ~/.claude/CLAUDE.md.
+
 ## 06/08 (30) — Dépouillement : aperçu manquant après Corbeille/Déplacer
 
 Retour : « certaines fois je me retrouve sans l'aperçu du mail à

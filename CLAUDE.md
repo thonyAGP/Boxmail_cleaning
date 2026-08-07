@@ -139,20 +139,17 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **En place** (détail et historique : docs/JOURNAL.md) : revue UX 3 phases +
-refonte visuelle, dépouillement complet (page `#/depouillement`, lots
-homogènes, apprentissage des gestes, lecteur = geste du parcours),
-lecture mail HTML fidèle + images à la demande, connecteur Rentila
-phase 1 (parseur de sujets, échéances auto, lot « Alertes Rentila »,
-carte Gestion locative — déclenché par expéditeur, toutes boîtes).
+refonte visuelle, dépouillement complet, lecture mail HTML fidèle,
+connecteur Rentila phases 1+2, **connecteur Fiscal-Manager V1 déployé**
+(design docs/CONNECTEUR-FISCAL-MANAGER.md : candidats pièces comptables,
+API /api/v1/accounting-candidates à jeton dédié ACCOUNTING_READ_TOKEN,
+57 pièces détectées au rattrapage ; côté FM : écran « Pièces reçues »).
 **En attente / à faire** :
-- Rentila phase 2 LIVRÉE (file de commandes) : Boxmail prépare/valide,
-  CLAUDE exécute via son connecteur MCP Rentila (« exécute mes commandes
-  Rentila » → rentila_pending_commands puis rentila_command_result).
-  Abonnement Rentila actif requis. Kinds : mark_rent_paid, create_task —
-  à étendre avec l'utilisateur.
-- Connecteurs suivants identifiés : LB2I-Fiscal-Manager (factures),
-  frais Jump, CasaSync/livret (Au-marais).
+- Connecteur Fiscal-Manager : validation réelle par Anthony (config du
+  jeton dans FM /config, premier pull, société d'Au-marais à trancher) ;
+  V2 = cron Vercel + lot mensuel Cerfrance.
+- Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
 - Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
   `thony56_gtr` ~8 982 mails restants (option C3b Haiku ~4,70 $, clé
   API pas demandée) ; récupérable 8 762 mails / 1,3 Go.
-- À VALIDER en réel : dépouillement + Rentila phase 1 sur ses boîtes.
+- À VALIDER en réel : dépouillement + Rentila sur ses boîtes.
