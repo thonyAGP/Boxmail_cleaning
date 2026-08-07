@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { imapService } from './services/imap.js';
 import { buildAdminRouter } from './server/admin.js';
+import { buildAccountingRouter } from './server/accounting.js';
 import { startAutoSync } from './services/autosync.js';
 import { runCapabilityBackfills } from './services/whatsnew.js';
 import { startAutoBackup } from './services/backup.js';
@@ -153,6 +154,10 @@ async function main() {
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'boxmail-mcp', version: '1.0.0' });
   });
+
+  // Connecteur Fiscal-Manager (V1) : 2 GET lecture seule, jeton dédié.
+  // Monté AVANT /api : sinon le routeur admin capterait le chemin.
+  app.use('/api/v1/accounting-candidates', rateLimit, buildAccountingRouter());
 
   // Interface web d'administration : API + fichiers statiques.
   app.use('/api', rateLimit, buildAdminRouter());

@@ -53,6 +53,42 @@ const CAPABILITIES: Capability[] = [
       return `${scanned} mails relus, ${created} échéance(s) proposée(s) — à confirmer dans ton Calendrier.`;
     },
   },
+  {
+    id: 'accounting-candidates-v1',
+    label: 'Je repère les factures à transmettre à la comptabilité',
+    run: async () => {
+      // Rattrapage du stock : les mails « facture » avec pièce jointe des
+      // 12 derniers mois deviennent des candidats pour l'écran « Pièces
+      // reçues » de Fiscal-Manager. Une lecture de structure IMAP par mail
+      // candidat, aucun téléchargement, rien d'irréversible.
+      const { detectAccountingCandidates } = await import('./accounting.js');
+      let created = 0;
+      let scanned = 0;
+      let failures = 0;
+      const names = await listAccountNames();
+      for (const name of names) {
+        try {
+          const rec = await getAccountRecord(name);
+          if (!rec) continue;
+          const r = await detectAccountingCandidates(rec, { sinceDays: 365, limit: 500 });
+          created += r.created;
+          scanned += r.scanned;
+        } catch (err) {
+          failures++;
+          logger.warn('rattrapage pièces comptables : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      // Toutes les boîtes en échec (serveur IMAP injoignable…) : pas de
+      // marqueur, on retentera au prochain démarrage.
+      if (names.length > 0 && failures === names.length) {
+        throw new Error('aucune boîte accessible pour le rattrapage');
+      }
+      return `${scanned} mails « facture » examinés sur 12 mois, ${created} pièce(s) comptable(s) prête(s) pour Fiscal-Manager.`;
+    },
+  },
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');

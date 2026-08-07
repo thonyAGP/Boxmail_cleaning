@@ -264,6 +264,46 @@ model RentilaCommand {
   @@index([status])
 }
 
+// Candidat « pièce comptable » (connecteur Fiscal-Manager V1 — 07/08, design
+// docs/CONNECTEUR-FISCAL-MANAGER.md). Boxmail DÉTECTE (métadonnées seulement,
+// jamais le PDF — l'IMAP reste le stockage durable) ; Fiscal-Manager tire la
+// liste par curseur (seq) puis télécharge chaque pièce à la demande.
+// candidateId = identité STABLE exposée à l'API ; le locator IMAP (dossier,
+// uid) est lu au moment du téléchargement via la ligne Message, qui est
+// relinkée quand un mail change de dossier (reconcileMoves). Un mail candidat
+// est déjà protégé de toute suppression automatique par la protection
+// centrale (hasAttachments + intent invoice/document) — voir retention.ts.
+model AccountingCandidate {
+  seq               Int      @id @default(autoincrement())
+  candidateId       String   @unique
+  accountSlug       String
+  // Message.id — référence souple, relinkée par relinkMessageReferences.
+  messageId         Int
+  internetMessageId String?
+  // Société proposée (jamais « certaine » — l'utilisateur corrige côté
+  // Fiscal-Manager). companyBasis : MAILBOX_DEFAULT | NONE.
+  companyCandidate  String?
+  companyBasis      String   @default("NONE")
+  // ACTIVE | SOURCE_MISSING (mail disparu du serveur avant l'import)
+  status            String   @default("ACTIVE")
+  detectedAt        DateTime @default(now())
+  // Contexte dénormalisé (survit aux resync, sert la liste sans jointure)
+  receivedAt        DateTime?
+  fromName          String?
+  fromEmail         String?
+  subject           String?
+  // JSON [{ attachmentId, index, filename, contentType, sizeBytes }] —
+  // index = position dans listAttachmentParts (ordre downloadAttachment).
+  attachmentsJson   String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([accountSlug, messageId])
+  // Recherché par messageId seul lors du relink des mails déplacés.
+  @@index([messageId])
+  @@index([status])
+}
+
 model Task {
   id          Int       @id @default(autoincrement())
   title       String

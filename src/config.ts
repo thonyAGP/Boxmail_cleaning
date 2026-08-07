@@ -112,6 +112,12 @@ export const config = {
     // jour tout seul — c'est justement ce qu'on veut éviter.
     autoHour: int('AUTO_UPDATE_HOUR', 4),
   },
+  accounting: {
+    // Jeton DÉDIÉ lecture seule du connecteur Fiscal-Manager (V1 — design
+    // docs/CONNECTEUR-FISCAL-MANAGER.md) : périmètre minimal, jamais le
+    // bearer MCP. Absent = API pièces comptables désactivée (503).
+    readToken: process.env.ACCOUNTING_READ_TOKEN?.trim() || null,
+  },
   limits: {
     // Plafond dur par opération de suppression (SPEC §6.3).
     maxDeletePerCall: 200,

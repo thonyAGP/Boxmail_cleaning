@@ -547,6 +547,34 @@ class ImapService {
   }
 
   /**
+   * Métadonnées des pièces jointes d'un mail (connecteur Fiscal-Manager) :
+   * bodystructure SEULE, aucun téléchargement. L'ordre renvoyé est celui de
+   * downloadAttachment (même listAttachmentParts).
+   */
+  async listAttachments(
+    rec: AccountRecord,
+    folder: string,
+    uid: number,
+  ): Promise<{ filename: string; contentType: string; sizeBytes: number; contentId: string | null }[]> {
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const info = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
+      const parts = listAttachmentParts(
+        (info && info.bodyStructure ? info.bodyStructure : null) as BodyNode | null,
+      );
+      return parts.map((p) => ({
+        filename: p.filename,
+        contentType: p.contentType,
+        sizeBytes: p.sizeBytes,
+        contentId: p.contentId,
+      }));
+    } finally {
+      lock.release();
+    }
+  }
+
+  /**
    * En-têtes de désinscription d'un mail (P2.2). Deux lignes d'en-tête, aucun
    * corps : c'est l'opération la plus légère possible côté IMAP.
    */

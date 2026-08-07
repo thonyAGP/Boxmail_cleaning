@@ -490,6 +490,21 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     });
   }
 
+  // Candidats « pièce comptable » (connecteur Fiscal-Manager V1) : les mails
+  // facture avec pièce jointe arrivés pendant CETTE sync deviennent visibles
+  // dans l'écran « Pièces reçues » de Fiscal-Manager. Une lecture de
+  // structure IMAP par nouveau candidat, aucun téléchargement.
+  try {
+    const { detectAccountingCandidates } = await import('./accounting.js');
+    const acc = await detectAccountingCandidates(rec, { indexedSince: new Date(started) });
+    if (acc.created > 0) progress(`Pièces comptables : ${acc.created} candidat(s) repéré(s).`);
+  } catch (err) {
+    logger.warn('détection des pièces comptables post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Règles de classement automatiques (L7) : UNIQUEMENT celles validées
   // avec l'option auto — non bloquant, chaque application est journalisée.
   try {
@@ -635,6 +650,11 @@ async function relinkMessageReferences(
   );
   await safeUpdate('feedback', () =>
     db.analysisFeedback.updateMany({ where: { messageId: oldId }, data: { messageId: target.id } }),
+  );
+  // Le candidat comptable suit son mail (l'unicité accountSlug+messageId peut
+  // être prise si les deux lignes ont chacune un candidat : safeUpdate ignore).
+  await safeUpdate('accounting', () =>
+    db.accountingCandidate.updateMany({ where: { messageId: oldId }, data: { messageId: target.id } }),
   );
 }
 
