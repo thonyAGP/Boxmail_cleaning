@@ -89,6 +89,44 @@ const CAPABILITIES: Capability[] = [
       return `${scanned} mails « facture » examinés sur 12 mois, ${created} pièce(s) comptable(s) prête(s) pour Fiscal-Manager.`;
     },
   },
+  {
+    id: 'attachment-reading-v1',
+    label: 'Je lis maintenant le contenu des pièces jointes',
+    run: async () => {
+      // Rattrapage du flux récent : les pièces des 90 derniers jours sont
+      // lues (texte extrait localement, rien n'est conservé). C'est ce qui
+      // évite de reclasser « payer maman » un scan de facture Sosh. Plafonné
+      // par boîte : chaque lecture est un téléchargement IMAP.
+      const { readAttachmentsForAccount } = await import('./attachments.js');
+      let read = 0;
+      let scans = 0;
+      let scanned = 0;
+      let failures = 0;
+      const names = await listAccountNames();
+      for (const name of names) {
+        try {
+          const rec = await getAccountRecord(name);
+          if (!rec) continue;
+          const r = await readAttachmentsForAccount(rec, { limit: 250, sinceDays: 90 });
+          read += r.read;
+          scans += r.scans;
+          scanned += r.scanned;
+        } catch (err) {
+          failures++;
+          logger.warn('rattrapage pièces jointes : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      if (names.length > 0 && failures === names.length) {
+        throw new Error('aucune boîte accessible pour le rattrapage');
+      }
+      return `${scanned} mail(s) à pièce jointe examinés sur 90 jours : ${read} document(s) lu(s)` +
+        `${scans ? `, ${scans} scan(s) repéré(s) (à faire lire par l'IA)` : ''}. ` +
+        'Une facture transmise par un proche est désormais reconnue au nom du VRAI fournisseur.';
+    },
+  },
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');
