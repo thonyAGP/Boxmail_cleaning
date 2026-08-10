@@ -66,6 +66,7 @@ import {
   reflectBulkInIndex,
   reflectRestoreInIndex,
 } from '../services/search.js';
+import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
   listTasks,
@@ -2012,6 +2013,27 @@ export function buildAdminRouter(): Router {
         action as 'delete' | 'move' | 'seen' | 'unseen' | 'flag' | 'unflag',
       );
       res.json({ ok: true, action, ...result });
+    }),
+  );
+
+  // « → Comptabilité » depuis un mail ouvert (10/08) : transmettre une facture
+  // à Fiscal-Manager sans attendre la détection automatique. Idempotent.
+  router.post(
+    '/accounts/:slug/messages/to-accounting',
+    guard(async (req, res) => {
+      const folder = String(req.body?.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.body?.uid ?? ''), 10);
+      if (!folder || !Number.isInteger(uid) || uid <= 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "uid" requis.' });
+        return;
+      }
+      const rec = await resolveAccount(req.params.slug);
+      const r = await sendMessageToAccounting(rec, folder, uid);
+      if (!r.ok) {
+        res.status(400).json({ error: r.reason });
+        return;
+      }
+      res.json(r);
     }),
   );
 

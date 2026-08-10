@@ -17,6 +17,7 @@
 import { randomUUID } from 'node:crypto';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
+import { documentHints } from './attachment-text.js';
 import { imapService } from './imap.js';
 import { recordOperation } from './oplog.js';
 import type { AccountRecord } from './accounts.js';
@@ -198,6 +199,82 @@ export async function detectAccountingCandidates(
 }
 
 /**
+ * Envoie UN mail vers Fiscal-Manager à la demande (10/08) — depuis le lecteur
+ * ou le dépouillement, sans attendre que la détection automatique l'ait vu.
+ * C'est le même objet que la détection produit : Fiscal-Manager le tirera au
+ * prochain « Actualiser ». Idempotent : renvoyer deux fois le même mail ne
+ * crée pas deux pièces.
+ */
+export async function sendMessageToAccounting(
+  rec: AccountRecord,
+  folder: string,
+  uid: number,
+): Promise<{ ok: boolean; already: boolean; attachments: number; reason?: string }> {
+  await ensureDbReady();
+  const m = await db.message.findFirst({
+    where: { accountSlug: rec.account, uid, isDeleted: false, folder: { path: folder } },
+    select: {
+      id: true, uid: true, subject: true, fromName: true, fromEmail: true,
+      date: true, internetMessageId: true,
+    },
+  });
+  if (!m) return { ok: false, already: false, attachments: 0, reason: "Mail introuvable dans l'index — resynchronise la boîte." };
+
+  const existing = await db.accountingCandidate.findFirst({
+    where: { accountSlug: rec.account, messageId: m.id },
+  });
+  if (existing && existing.status !== 'SKIPPED') {
+    return { ok: true, already: true, attachments: JSON.parse(existing.attachmentsJson).length };
+  }
+
+  const parts = await imapService.listAttachments(rec, folder, uid);
+  const usable = usableAttachments(parts);
+  if (usable.length === 0) {
+    return {
+      ok: false, already: false, attachments: 0,
+      reason: 'Ce mail ne porte aucune pièce exploitable (PDF, JPG, PNG) — rien à transmettre.',
+    };
+  }
+
+  const { company, basis } = companyForMailbox(rec.account);
+  const data = {
+    companyCandidate: company,
+    companyBasis: basis,
+    status: 'ACTIVE',
+    receivedAt: m.date,
+    fromName: m.fromName,
+    fromEmail: m.fromEmail,
+    subject: m.subject,
+    attachmentsJson: JSON.stringify(usable),
+  };
+  // Un candidat SKIPPED (vu sans pièce exploitable à l'époque) est réveillé
+  // plutôt que doublé — l'unicité compte+mail l'interdirait de toute façon.
+  if (existing) {
+    await db.accountingCandidate.update({ where: { seq: existing.seq }, data });
+  } else {
+    await db.accountingCandidate.create({
+      data: {
+        candidateId: randomUUID(),
+        accountSlug: rec.account,
+        messageId: m.id,
+        internetMessageId: m.internetMessageId,
+        ...data,
+      },
+    });
+  }
+  await recordOperation({
+    account: rec.account,
+    tool: 'ui_accounting_send',
+    folder,
+    params: { count: 1, attachments: usable.length },
+    affectedUids: [uid],
+    items: [{ subject: m.subject ?? '(sans sujet)', date: m.date?.toISOString() ?? null, folder, uid }],
+    result: `pièce comptable transmise à Fiscal-Manager (${usable.length} fichier(s))`,
+  });
+  return { ok: true, already: false, attachments: usable.length };
+}
+
+/**
  * Mail source disparu (supprimé par l'utilisateur avant l'import) : le
  * candidat ne disparaît JAMAIS en silence — il passe SOURCE_MISSING et
  * Fiscal-Manager l'affiche comme tel (l'API pièce répond 410). Un mail
@@ -244,6 +321,21 @@ export interface CandidateView {
     subject: string | null;
   };
   attachments: { attachmentId: string; filename: string; contentType: string; sizeBytes: number }[];
+  /**
+   * Ce que le DOCUMENT dit de lui-même (10/08), quand son texte a pu être lu.
+   * Sert à pré-remplir le frais côté Fiscal-Manager — et à ne plus confondre
+   * l'expéditeur avec le fournisseur (un proche peut transférer une facture
+   * Sosh : le fournisseur est Sosh). Ce sont des PROPOSITIONS : l'utilisateur
+   * garde la main sur chaque champ.
+   * `needsVision` = pièce scannée, à faire lire par l'IA (read_attachment).
+   */
+  document?: {
+    supplier: string | null;
+    amountTtc: number | null;
+    invoiceNumber: string | null;
+    needsVision: boolean;
+    reasons: string[];
+  };
 }
 
 export async function listCandidates(
@@ -259,8 +351,22 @@ export async function listCandidates(
   });
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
+
+  // Ce que disent les documents eux-mêmes : lu une fois pour toute la page.
+  const docs = new Map<number, { text: string | null; kind: string | null }>();
+  if (page.length) {
+    for (const m of await db.message.findMany({
+      where: { id: { in: page.map((r) => r.messageId) } },
+      select: { id: true, attachmentText: true, attachmentKind: true },
+    })) {
+      docs.set(m.id, { text: m.attachmentText, kind: m.attachmentKind });
+    }
+  }
+
   const items = page.map((r) => {
     const atts = JSON.parse(r.attachmentsJson) as CandidateAttachment[];
+    const doc = docs.get(r.messageId);
+    const hints = doc?.text ? documentHints(doc.text) : null;
     return {
       candidateId: r.candidateId,
       detectedAt: r.detectedAt.toISOString(),
@@ -280,6 +386,17 @@ export async function listCandidates(
         contentType: a.contentType,
         sizeBytes: a.sizeBytes,
       })),
+      ...(hints || doc?.kind === 'scan'
+        ? {
+            document: {
+              supplier: hints?.supplier ?? null,
+              amountTtc: hints?.amountTtc ?? null,
+              invoiceNumber: hints?.invoiceNumber ?? null,
+              needsVision: doc?.kind === 'scan',
+              reasons: hints?.reasons ?? ['pièce scannée : son contenu doit être lu par l\'IA'],
+            },
+          }
+        : {}),
     };
   });
   const last = page[page.length - 1];

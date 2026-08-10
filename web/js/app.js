@@ -3035,6 +3035,15 @@ function opLine(op) {
     case 'ui_restore_message':
       title = `↩️ <strong>${fmtNum(n)} mail(s)</strong> ramené(s) de la corbeille <span class="muted">(annulation)</span>`;
       break;
+    case 'ui_accounting_send':
+      title = `🧾 <strong>1 facture</strong> transmise à Fiscal Manager <span class="muted">(depuis un mail)</span>`;
+      break;
+    case 'accounting_detect':
+      title = `🧾 <strong>${fmtNum(n)} pièce(s) comptable(s)</strong> repérée(s) <span class="muted">(détection automatique)</span>`;
+      break;
+    case 'accounting_attachment_download':
+      title = `🧾 Pièce <strong>${esc(p.filename ?? '')}</strong> servie à Fiscal Manager`;
+      break;
     case 'ui_mark_message':
       title = `🏷️ <strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
       break;
@@ -8372,6 +8381,7 @@ async function openReader(item, row, opts = {}) {
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
+      <button class="btn btn-sm" id="reader-accounting" title="Transmet la facture de ce mail à Fiscal Manager (écran « Pièces reçues ») — sans attendre la détection automatique">🧾 Comptabilité</button>
       <button class="btn btn-sm" id="reader-rentila" title="Préparer une commande Rentila depuis ce mail (pointer un loyer payé, créer une tâche côté Rentila) — tu valides, Claude l'exécute">🏠 Rentila…</button>
       <button class="btn btn-sm" id="reader-flag" title="Les mails suivis se retrouvent dans « ⭐ Mails suivis »">${item.isFlagged ? '⭐ Suivi' : '☆ Suivre'}</button>
       <button class="btn btn-sm" id="reader-toggle-seen" title="Change l'état lu/non lu de ce mail (aussi côté Microsoft)">${item.isSeen ? 'Marquer non lu' : 'Marquer lu'}</button>
@@ -8587,6 +8597,29 @@ async function openReader(item, row, opts = {}) {
       account: item.account,
       messageRef: { folder: item.folder, uid: item.uid },
     });
+  });
+  // « → Comptabilité » : la file dédiée reste le chemin normal, mais on doit
+  // pouvoir envoyer une facture depuis le mail qu'on a sous les yeux
+  // (demande 10/08). Idempotent : renvoyer deux fois ne double rien.
+  $('#reader-accounting')?.addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    const before = btn.textContent;
+    btn.textContent = '⏳ Envoi…';
+    try {
+      const r = await api.messageToAccounting(item.account, { folder: item.folder, uid: item.uid });
+      btn.textContent = r.already ? '✅ Déjà transmis' : '✅ Transmis';
+      showUndoToast(
+        r.already
+          ? 'Cette facture était déjà dans les pièces à traiter de Fiscal Manager.'
+          : `Facture transmise (${r.attachments} fichier(s)) — elle arrivera dans « Pièces reçues » au prochain Actualiser.`,
+        null,
+      );
+    } catch (err) {
+      btn.textContent = before;
+      btn.disabled = false;
+      alert(err.message);
+    }
   });
   $('#reader-rentila')?.addEventListener('click', () => openRentilaCommandModal(item, loadedText));
   $('#reader-forward')?.addEventListener('click', () => {
@@ -9078,7 +9111,8 @@ const OP_FAMILIES = {
   mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
-    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate', 'ui_review_undo', 'ui_restore_message'],
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate', 'ui_review_undo', 'ui_restore_message',
+    'ui_accounting_send', 'accounting_detect', 'accounting_attachment_download'],
   analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets', 'ui_review_learning_dismiss'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',

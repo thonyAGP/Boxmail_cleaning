@@ -56,6 +56,20 @@ export interface AnalysisCandidate {
   date: string | null;
   isSeen: boolean;
   snippet: string;
+  /**
+   * CONTENU DES PIÈCES JOINTES (10/08). Ce qui compte ici, c'est que
+   * l'expéditeur ne dit PAS de quoi parle le document : un proche qui
+   * transfère le scan d'une facture Sosh reste un proche, mais le mail parle
+   * d'une facture Sosh. Sans ce champ, le lot était jugé sur l'expéditeur —
+   * d'où le classement « payer maman » corrigé ce jour.
+   * Absent quand le mail n'a pas de pièce lisible.
+   */
+  attachments?: {
+    /** Texte lu dans les pièces (tronqué), ou message expliquant qu'il faut les regarder. */
+    text: string;
+    /** true = pièce image/scannée : appelle read_attachment pour la LIRE toi-même. */
+    needsVision: boolean;
+  };
   /** Ce que les heuristiques croient aujourd'hui — à corriger si c'est faux. */
   guess: { intent: string | null; senderCategory: string | null; confidence: string | null };
 }
@@ -98,6 +112,41 @@ function candidateWhere(scope: AnalysisScope, account?: string) {
 }
 
 /**
+ * Bloc « pièces jointes » d'un candidat. Trois cas honnêtes :
+ *  - texte lu   → il est fourni (tronqué, il pèse dans le lot) ;
+ *  - scan/image → on le DIT et on invite à lire la pièce (read_attachment) ;
+ *  - pas encore lu → on le dit aussi, pour ne pas laisser croire qu'il n'y a
+ *    rien dans la pièce alors qu'on ne l'a simplement pas encore ouverte.
+ */
+function attachmentPayload(r: {
+  hasAttachments: boolean;
+  attachmentText: string | null;
+  attachmentKind: string | null;
+}): { attachments?: { text: string; needsVision: boolean } } {
+  if (!r.hasAttachments) return {};
+  if (r.attachmentKind === 'text' && r.attachmentText) {
+    return { attachments: { text: r.attachmentText.slice(0, 1500), needsVision: false } };
+  }
+  if (r.attachmentKind === 'scan') {
+    return {
+      attachments: {
+        text: "Pièce jointe scannée ou photographiée : son texte n'est pas extractible ici. Si le classement en dépend (facture ? de qui ? quel montant ?), appelle read_attachment sur ce mail pour la REGARDER.",
+        needsVision: true,
+      },
+    };
+  }
+  if (r.attachmentKind === 'other') {
+    return { attachments: { text: 'Pièce jointe dans un format non lu ici.', needsVision: false } };
+  }
+  return {
+    attachments: {
+      text: "Ce mail porte une pièce jointe qui n'a pas encore été lue — appelle read_attachment si son contenu change le classement.",
+      needsVision: true,
+    },
+  };
+}
+
+/**
  * Lot suivant à analyser. Charge utile VOLONTAIREMENT compacte : c'est le
  * forfait de l'utilisateur qui paie ces jetons (C3a). Les plus ANCIENS d'abord :
  * ce sont eux qui encombrent la boîte et que le rattrapage vise.
@@ -134,6 +183,9 @@ export async function nextAnalysisBatch(
         snippet: true,
         intent: true,
         analysisConfidence: true,
+        hasAttachments: true,
+        attachmentText: true,
+        attachmentKind: true,
       },
     }),
     db.message.count({ where }),
@@ -165,6 +217,7 @@ export async function nextAnalysisBatch(
       snippet:
         r.snippet ||
         "(pas de texte lisible dans ce mail — juge sur le sujet, l'expéditeur et la date ; dans le doute, confidence=low)",
+      ...attachmentPayload(r),
       guess: {
         intent: r.intent,
         senderCategory: senders.get(`${r.accountSlug}|${r.fromEmail ?? ''}`) ?? null,

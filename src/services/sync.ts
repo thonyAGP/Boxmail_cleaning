@@ -456,6 +456,22 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     });
   }
 
+  // Contenu des PIÈCES JOINTES (10/08) — AVANT la confiance et les échéances :
+  // une facture scannée par un proche ne se voit que dans la pièce, et tout ce
+  // qui suit (intention, échéance, pièce comptable) en dépend.
+  try {
+    const { readAttachmentsForAccount } = await import('./attachments.js');
+    const att = await readAttachmentsForAccount(rec, { limit: 40, sinceDays: 60 });
+    if (att.read > 0 || att.scans > 0) {
+      progress(`Pièces jointes : ${att.read} lue(s), ${att.scans} scan(s) repéré(s).`);
+    }
+  } catch (err) {
+    logger.warn('lecture des pièces jointes post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
+
   // Confiance de l'analyse (B4) : posée sur les mails qui n'en ont pas encore
   // — AVANT les automatismes, pour que « confiance faible ⇒ protégé » tienne.
   try {

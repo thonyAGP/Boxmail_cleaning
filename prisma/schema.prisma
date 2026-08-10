@@ -116,6 +116,16 @@ model Message {
   // le nettoyage et l'importance en profitent SANS être modifiés.
   // `intentSource` porte la précédence : manual > ai > auto. Un recalcul
   // heuristique (backfill 🏷️) n'écrase jamais un intent posé par l'IA.
+  // Contenu des PIÈCES JOINTES (10/08). Un mail « de maman » portant le scan
+  // d'une facture Sosh était classé « payer maman » : sans lire la pièce,
+  // l'analyse ne voit ni le vrai fournisseur, ni le montant. Rempli par le job
+  // « pièces jointes » (services/attachments.ts) — extraction de texte locale,
+  // aucun téléchargement conservé.
+  // attachmentKind : text (lu) | scan (image/PDF scanné → à lire par l'IA) |
+  // other (format non géré) ; null = jamais tenté.
+  attachmentText     String?
+  attachmentKind     String?
+  attachmentTextAt   DateTime?
   aiSummary          String?
   aiAction           String?   // reply | pay | read | archive | none
   aiVerdictAt        DateTime?

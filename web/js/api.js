@@ -189,6 +189,9 @@ export const api = {
       action,
       destination,
     }),
+  // Transmet un mail (sa facture) à Fiscal-Manager depuis le lecteur.
+  messageToAccounting: (slug, { folder, uid }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/to-accounting`, { folder, uid }),
   // Ramène des mails de la corbeille vers leur dossier (bandeau « Annuler »).
   messageRestore: (slug, { folder, uids, trashUids }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/restore`, {

@@ -7,6 +7,7 @@ import {
   senderStatsFromIndex,
   lastSyncAt,
 } from '../../services/index-stats.js';
+import { attachmentForVision } from '../../services/attachments.js';
 import { accountParam, guard, jsonResult } from '../util.js';
 
 const isoDate = z
@@ -125,6 +126,81 @@ export function registerReadTools(server: McpServer): void {
       const body = await imapService.readEmail(rec, folder, uid);
       return jsonResult({ account: rec.account, folder, ...body });
     }),
+  );
+
+  // --- read_attachment (10/08) ---
+  // Le tool qui débloque le cas « ma mère m'envoie le scan d'une facture » :
+  // l'expéditeur ne dit pas de quoi parle le document, la pièce si. Texte
+  // quand on sait le lire, IMAGE sinon — Claude la regarde et en tire le vrai
+  // fournisseur, le montant, et pour qui c'est.
+  server.registerTool(
+    'read_attachment',
+    {
+      title: 'Lire une pièce jointe',
+      description:
+        "LIT le contenu d'une pièce jointe (facture, reçu, scan). Renvoie le TEXTE quand il " +
+        "est extractible (PDF natif), avec les indices déjà repérés (fournisseur réel, " +
+        'montant TTC, numéro de facture) ; sinon renvoie l\'IMAGE elle-même, à REGARDER pour ' +
+        "en tirer ces informations. À appeler dès qu'un mail porte une pièce et que le " +
+        "classement en dépend — l'expéditeur ne dit PAS de quoi parle le document : un " +
+        "proche peut transférer la facture d'un opérateur, et c'est l'opérateur le " +
+        'fournisseur. Sans index : donne le dossier et l\'UID.',
+      inputSchema: {
+        ...accountParam,
+        folder: z.string().default('INBOX'),
+        uid: z.number().int().positive().describe('UID IMAP du message.'),
+        index: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe('Position de la pièce (voir read_email). Par défaut : la première pièce « document ».'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    guard(
+      async ({
+        account,
+        folder,
+        uid,
+        index,
+      }: {
+        account?: string;
+        folder: string;
+        uid: number;
+        index?: number;
+      }) => {
+        const rec = await resolveAccount(account);
+        const r = await attachmentForVision(rec, folder, uid, index);
+        if (r.kind === 'image') {
+          // Contenu mixte : l'image + le rappel de ce qu'on en attend.
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `Pièce « ${r.filename} » (${r.mimeType}) — regarde-la et dis : est-ce une facture ou un reçu ? ` +
+                  'de quel FOURNISSEUR (celui écrit sur le document, pas l\'expéditeur du mail) ? ' +
+                  'quel montant TTC ? à quelle date ? pour quelle société ou à titre personnel ?',
+              },
+              { type: 'image' as const, data: r.base64, mimeType: r.mimeType },
+            ],
+          };
+        }
+        if (r.kind === 'text') {
+          return jsonResult({
+            account: rec.account,
+            folder,
+            uid,
+            filename: r.filename,
+            text: r.text,
+            hints: r.hints,
+            note: 'Indices tirés du DOCUMENT lui-même — ils priment sur l\'expéditeur du mail.',
+          });
+        }
+        return jsonResult({ account: rec.account, folder, uid, readable: false, reason: r.reason });
+      },
+    ),
   );
 
   // --- get_thread ---

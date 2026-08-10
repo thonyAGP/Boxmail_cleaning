@@ -1,5 +1,6 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { AUTO_SENDER_RE } from './attention.js';
+import { documentHints } from './attachment-text.js';
 
 /**
  * Moteur de catégorisation (A1 — Cap V3, fondation de l'assistant).
@@ -395,6 +396,11 @@ export interface IntentSignals {
    * en dernier recours, si le sujet n'a rien donné — voir detectIntent.
    */
   snippet?: string | null;
+  /**
+   * Texte lu dans les PIÈCES JOINTES (10/08). Il porte plus loin que l'extrait
+   * du mail : « Bonjour, voilà la facture » ne dit rien, le PDF dit tout.
+   */
+  attachmentText?: string | null;
 }
 
 export interface IntentResult {
@@ -460,6 +466,25 @@ export function detectIntent(s: IntentSignals): IntentResult {
           reason: `offre commerciale (« ${m[0].trim()} » — dans le texte, mail de diffusion)`,
         };
       }
+    }
+  }
+
+  // Le CONTENU DE LA PIÈCE JOINTE, en dernier (10/08). Un proche qui transfère
+  // le scan d'une facture reste un proche : le sujet et le corps ne diront
+  // jamais « facture Sosh, 15,99 € ». Seul le document le dit. On ne retient
+  // que le motif le plus net — le document se présente comme une facture — et
+  // on nomme le fournisseur RÉEL dans la justification, pour que l'écran ne
+  // laisse plus croire qu'il faut payer l'expéditeur.
+  const attText = (s.attachmentText ?? '').trim();
+  if (attText) {
+    const hints = documentHints(attText);
+    if (hints.isInvoice) {
+      const who = hints.supplier ? ` de ${hints.supplier}` : '';
+      const amount = hints.amountTtc !== null ? ` — ${hints.amountTtc.toFixed(2)} €` : '';
+      return {
+        intent: 'invoice',
+        reason: `la pièce jointe est une facture${who}${amount} (lue dans le document)`,
+      };
     }
   }
 
