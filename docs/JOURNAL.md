@@ -44,6 +44,26 @@ Testé : extraction PDF compressé/non compressé, détection des scans, scénar
 « maman envoie une facture Sosh » → intent invoice « facture de Sosh —
 15.99 € », et circuit suppression → corbeille → annulation → retour.
 
+**3 retours en fin de session (10/08, corrigés et déployés)** :
+1. « À traiter aujourd'hui » était une MODALE au milieu de l'écran → c'est
+   maintenant une PAGE à deux colonnes comme le dépouillement, mail affiché
+   d'office à droite, lecteur = geste du parcours (capture vérifiée).
+2. Incohérence « ~53 min » (modale) vs « ≈ 78 min » (accueil) : deux barèmes,
+   et l'accueil comptait 52 actions quand le parcours n'en recevait que 35
+   (listes plafonnées à TOP=10 par famille). Un seul barème `todoMinutes`,
+   estimation sur ce qui sera RÉELLEMENT parcouru + mention du reste ;
+   `todo.queued` ajouté côté serveur.
+3. « c'est l'intégralité des pièces jointes qui doit être lue […] recherche
+   rapide même sur des pièces non nommées » : toutes les pièces d'un mail
+   (plus de limite à 3), toutes les pages du PDF, 4 000 → 200 000 caractères,
+   nom du fichier indexé avec le texte, et la RECHERCHE cherche dans
+   `attachmentText` (recherche générale + filtre rapide des dossiers).
+   ⚠️ Reste à faire : le rattrapage ne couvre que 90 jours / 250 mails par
+   boîte (134 mails lus au premier passage, 27 documents + 14 scans). Les
+   10 191 mails à pièce jointe déjà indexés ne sont pas tous lus — il faudra
+   un bouton de rattrapage complet (pattern des extraits) si Anthony veut la
+   recherche sur tout le fonds.
+
 ## 07/08 (31) — Connecteur Fiscal-Manager V1 : « zéro facture perdue »
 
 Demande : Anthony paye des frais pro en carte perso puis se fait rembourser ;
