@@ -44,6 +44,9 @@ export async function getCleanupCandidates(
   // Combien de mails « à conserver » chaque expéditeur a-t-il envoyés ?
   // Une seule requête groupée : un expéditeur publicitaire qui envoie aussi
   // tes tickets ne doit pas afficher un total de suppressions gonflé.
+  // Même périmètre que `rebuildSenders` : corbeille et spam exclus, sinon le
+  // « gardés » se compte sur des mails déjà jetés et ne correspond plus au
+  // total affiché à côté.
   const keepRows = senders.length
     ? await db.message.groupBy({
         by: ['fromEmail'],
@@ -51,6 +54,7 @@ export async function getCleanupCandidates(
           accountSlug: account,
           isDeleted: false,
           fromEmail: { in: senders.map((s) => s.email) },
+          folder: { role: { notIn: ['trash', 'spam'] } },
           OR: [{ hasAttachments: true }, { intent: { in: ['invoice', 'document'] } }],
         },
         _count: { _all: true },

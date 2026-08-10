@@ -5,6 +5,63 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 10/08 (34) — Nettoyage : les mesures disent d'arrêter le nettoyage
+
+Reproche de départ : « tu mélanges des boîtes, des dates, des réponses qui
+sont vieilles […] il ne fait que lister des actions possibles, il n'explique
+pas pourquoi […] newsletter avec code promo dépassé depuis 3 mois, pas la
+même chose que le même mail reçu il y a 2 jours ».
+
+Trois tours avec ChatGPT (conversation dédiée, archivée dans
+`docs/archives-chatgpt/nettoyage-2026-08-10.md`), mais surtout **sept mesures
+sur la base de production**. Synthèse complète : `docs/PLAN-NETTOYAGE.md`.
+
+**Son intuition est vérifiée** : 100 % des rendez-vous et des livraisons, 98 %
+des confirmations et des OTP, 97 % des rappels, 93 % des promos ont plus de
+30 jours. Presque tout ce qui se périme EST périmé, et le système l'ignorait.
+
+**Mais trois de mes chiffres étaient faux, et c'est le plus important.**
+Les « 1 070 mails / 421 Mo » d'Altoen et les « 615 mails Brico Privé »
+mesuraient la CORBEILLE. `rebuildSenders` agrégeait tous les dossiers :
+l'écran affichait « Brico Privé — 615 mails » alors qu'il en restait **3** en
+réception, les 623 autres étant déjà jetés. **Corrigé** (corbeille et spam
+exclus de `Sender`, même périmètre pour le « gardés » de `cleanup.ts`).
+
+**Le gisement réel, simulé à blanc sur les 18 035 mails de réception :
+966 mails nettoyables, 137 Mo sur 7 471 — moins de 2 % du volume.** Le poids
+est dans 4 645 pièces jointes et 4 048 documents, c'est-à-dire dans ce qu'il
+faut GARDER. Le nettoyage ne peut donc plus être vendu comme un gain de place.
+
+Pièges évités en simulant, comme toujours :
+- « lire la date de validité de l'offre » : **3 %** des promos portent un
+  signal exploitable dans l'extrait de 500 caractères. Idée abandonnée comme
+  pilier, gardée comme source opportuniste.
+- « sujet répété = jetable » : **FAUX**. 6 088 mails ont un sujet répété — ce
+  sont ses 13 déclarations DGFiP, ses 12 télépaiements de taxe d'habitation,
+  ses 24 ajouts de bénéficiaire bancaire, ses 21 avis de remboursement
+  mutuelle. La répétition signe un processus récurrent, pas de l'inutilité.
+- `info` (43 % de la réception) n'est pas du bruit : Mylène 411 mails,
+  Alizé 270, son agent immobilier 222… c'est sa vie.
+- des humains sont classés « newsletter/promotion » (nathalie@, ashley_keira@,
+  fanch56@) : le classifieur se trompe de NATURE, pas de nuance.
+- l'état d'activité d'une boîte ne doit **jamais** compter ce qui est REÇU
+  (recevoir est passif). Sur les seuls gestes humains : Altoen et Econom
+  passent DORMANT, les cinq autres restent protégées.
+
+**Trouvaille qui remplace la date de validité : la SUPPLANTATION.** 453 des
+905 offres ont été suivies d'au moins 10 mails plus récents du même
+expéditeur. C'est un fait comptable, pas une inférence, et ça se dit en une
+phrase : « Leroy Merlin t'a envoyé 40 offres depuis celle-ci. » Seuil retenu :
+`borne(3, 30 / cadence_médiane, 12)`, et la supplantation est une propriété du
+CYCLE DE VIE (jamais un relevé bancaire, jamais une facture).
+
+**Verdict partagé au 3ᵉ tour : continuer à perfectionner le nettoyage, c'est
+perfectionner la mauvaise fonctionnalité.** Ses boîtes ne sont pas sales, ce
+sont des archives non structurées. Le prochain chantier est « retrouver sans
+classer » — aucun mail déplacé, une organisation virtuelle en base, une
+recherche qui répond à « la dernière facture du Crédit Agricole pour Altoen ».
+Et « Nettoyage » sort du menu. **À valider avec lui avant de s'y engager.**
+
 ## 10/08 (33) — Fausses échéances : les heuristiques écrasaient l'IA
 
 Retour cinglant : « tu m'interprètes des échéances alors qu'il s'agit d'un

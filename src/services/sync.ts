@@ -795,21 +795,28 @@ export async function rebuildSenders(accountSlug: string): Promise<number> {
     first: string | number | bigint | null;
     last: string | number | bigint | null;
   };
+  // La CORBEILLE et le SPAM sont exclus du comptage (10/08). Sans ça,
+  // l'écran Nettoyage affichait « Brico Privé — 615 mails » sur Altoen alors
+  // qu'il n'en restait 3 en boîte de réception : les 623 autres étaient DÉJÀ
+  // à la corbeille. Il proposait donc de nettoyer la poubelle, et gonflait
+  // toutes les estimations (« X mails récupérables ») d'autant.
   const rows = await db.$queryRaw<Row[]>`
-    SELECT fromEmail,
-           MAX(fromName)                                   AS fromName,
-           COUNT(*)                                        AS cnt,
-           SUM(CASE WHEN isSeen = 0 THEN 1 ELSE 0 END)     AS unseen,
-           SUM(CASE WHEN hasListUnsubscribe = 1 THEN 1 ELSE 0 END) AS unsub,
-           SUM(sizeBytes)                                  AS size,
-           MIN(date)                                       AS first,
-           MAX(date)                                       AS last
-    FROM Message
-    WHERE accountSlug = ${accountSlug}
-      AND isDeleted = 0
-      AND isOutbound = 0
-      AND fromEmail IS NOT NULL
-    GROUP BY fromEmail
+    SELECT m.fromEmail                                       AS fromEmail,
+           MAX(m.fromName)                                   AS fromName,
+           COUNT(*)                                          AS cnt,
+           SUM(CASE WHEN m.isSeen = 0 THEN 1 ELSE 0 END)     AS unseen,
+           SUM(CASE WHEN m.hasListUnsubscribe = 1 THEN 1 ELSE 0 END) AS unsub,
+           SUM(m.sizeBytes)                                  AS size,
+           MIN(m.date)                                       AS first,
+           MAX(m.date)                                       AS last
+    FROM Message m
+    JOIN Folder f ON f.id = m.folderId
+    WHERE m.accountSlug = ${accountSlug}
+      AND m.isDeleted = 0
+      AND m.isOutbound = 0
+      AND m.fromEmail IS NOT NULL
+      AND f.role NOT IN ('trash', 'spam')
+    GROUP BY m.fromEmail
   `;
 
   // Expéditeurs « en conversation » : au moins un de leurs fils contient un

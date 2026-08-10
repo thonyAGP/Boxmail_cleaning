@@ -157,7 +157,13 @@ d'audit réutilisable : `docs/PROMPT-AUDIT.md`. Prochaine étape = phase 0
 - Vérifier en réel : suppression 1 clic + annulation, et le classement
   des factures scannées transmises par un proche.
 - Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
+- **Nettoyage : décision à prendre avec lui** (`docs/PLAN-NETTOYAGE.md`).
+  Mesuré le 10/08 : seulement **966 mails nettoyables / 137 Mo** sur les
+  18 035 de réception — le poids est dans les pièces jointes et documents,
+  donc dans ce qu'il faut garder. Conclusion partagée avec ChatGPT :
+  le prochain chantier est « retrouver sans classer », pas supprimer.
 - Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
   `thony56_gtr` ~8 982 mails restants (option C3b Haiku ~4,70 $, clé
-  API pas demandée) ; récupérable 8 762 mails / 1,3 Go.
+  API pas demandée). ⚠️ L'ancien chiffre « 8 762 récupérables / 1,3 Go »
+  était FAUX : il comptait la corbeille.
 - À VALIDER en réel : dépouillement + Rentila sur ses boîtes.
