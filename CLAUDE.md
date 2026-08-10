@@ -141,13 +141,16 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 **En place** (détail et historique : docs/JOURNAL.md) : revue UX 3 phases +
 refonte visuelle, dépouillement complet, lecture mail HTML fidèle,
 connecteur Rentila phases 1+2, **connecteur Fiscal-Manager V1 déployé**
-(design docs/CONNECTEUR-FISCAL-MANAGER.md : candidats pièces comptables,
-API /api/v1/accounting-candidates à jeton dédié ACCOUNTING_READ_TOKEN,
-57 pièces détectées au rattrapage ; côté FM : écran « Pièces reçues »).
+(design docs/CONNECTEUR-FISCAL-MANAGER.md), **suppression en 1 clic +
+bandeau d'annulation 10 s qui restaure vraiment**, **lecture des pièces
+jointes** (texte PDF sans dépendance, scans lus par Claude via le tool
+`read_attachment`, fournisseur/montant réels → pré-remplissage du frais).
 **En attente / à faire** :
 - Connecteur Fiscal-Manager : validation réelle par Anthony (config du
   jeton dans FM /config, premier pull, société d'Au-marais à trancher) ;
   V2 = cron Vercel + lot mensuel Cerfrance.
+- Vérifier en réel : suppression 1 clic + annulation, et le classement
+  des factures scannées transmises par un proche.
 - Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
 - Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
   `thony56_gtr` ~8 982 mails restants (option C3b Haiku ~4,70 $, clé

@@ -5,6 +5,45 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 10/08 (32) — Suppression en 1 clic, et lecture des pièces jointes
+
+**Suppression (colère utilisateur)** : « j'en ai marre de devoir trier et
+cliquer 2 fois pour supprimer. On avait dit que la suppression se faisait mais
+on gardait un bandeau de rattrapage de 10 s ». Le garde-fou n'est plus une
+question AVANT, c'est un bandeau APRÈS qui ramène VRAIMENT les mails :
+moveEmails/moveToTrash renvoient les UIDs pris dans la corbeille (COPYUID,
+RFC 4315), deux routes de restauration (`/messages/restore`,
+`/review/restore`) refont le trajet inverse et réveillent l'index avec le
+nouvel UID. Plus de confirm() dans : lecteur, dépouillement (mail seul ET
+lot), « Ce que j'ai remarqué », sélection de la boîte de réception. Annuler au
+dépouillement remet aussi le mail à SA place dans le parcours. Si le serveur
+ne rend pas les UIDs, le bandeau s'affiche SANS bouton plutôt que de promettre
+un retour impossible. Restent confirmées (aperçu explicite, pas un clic de
+trop) : modale bruit, Libérer de l'espace, passage d'une stratégie en auto,
+et les déplacements.
+
+**Pièces jointes (bug de classement)** : « tu m'as mis payer ma mère alors que
+ma mère m'a juste envoyé en scan la facture de Sosh ». L'analyse ne voyait que
+l'expéditeur — or l'expéditeur ne dit PAS de quoi parle le document.
+- `attachment-text.ts` : extraction de texte PDF SANS dépendance (zlib natif —
+  ni pdfjs ni OCR sur le VPS), + indices du document : fournisseur RÉEL,
+  montant TTC, n° de facture, nature.
+- Un scan n'est pas bricolé : c'est DIT (kind=scan) et c'est Claude qui le
+  regarde — nouveau tool MCP `read_attachment` (texte, ou l'image elle-même).
+- Message.attachmentText/Kind, lecture à la sync (40/passe, 60 j) + rattrapage
+  « Quoi de neuf » 90 j plafonné à 250/boîte (10 192 mails à PJ en base).
+- detectIntent lit la pièce en dernier recours et nomme le vrai fournisseur ;
+  jamais d'écrasement d'un intent IA/manuel. next_analysis_batch porte le
+  contenu des pièces et signale les scans — c'est ce qui manquait au lot fautif.
+- Les candidats comptables exposent fournisseur/montant/n° → Fiscal-Manager
+  pré-remplit le frais (« Lu dans le document : Sosh · 15,99 € »).
+- Bouton « 🧾 Comptabilité » dans le lecteur : envoyer une facture à
+  Fiscal-Manager sans attendre la détection (idempotent), demande du 10/08.
+
+Testé : extraction PDF compressé/non compressé, détection des scans, scénario
+« maman envoie une facture Sosh » → intent invoice « facture de Sosh —
+15.99 € », et circuit suppression → corbeille → annulation → retour.
+
 ## 07/08 (31) — Connecteur Fiscal-Manager V1 : « zéro facture perdue »
 
 Demande : Anthony paye des frais pro en carte perso puis se fait rembourser ;
