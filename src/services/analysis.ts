@@ -125,7 +125,11 @@ function attachmentPayload(r: {
 }): { attachments?: { text: string; needsVision: boolean } } {
   if (!r.hasAttachments) return {};
   if (r.attachmentKind === 'text' && r.attachmentText) {
-    return { attachments: { text: r.attachmentText.slice(0, 1500), needsVision: false } };
+    // Tronqué ICI seulement : ce lot passe par le forfait de l'utilisateur, on
+    // n'y verse pas un relevé de 200 Ko. Le DÉBUT du document porte l'en-tête,
+    // le fournisseur et le plus souvent le total — assez pour classer ; pour
+    // le reste, read_attachment donne le document entier.
+    return { attachments: { text: r.attachmentText.slice(0, 2500), needsVision: false } };
   }
   if (r.attachmentKind === 'scan') {
     return {

@@ -63,6 +63,8 @@ export interface TodaySummary {
     deadlines: DeadlineItem[];
     invoices: InvoiceItem[];
     total: number;
+    /** Actions réellement présentes dans les listes (= ce que le parcours traitera). */
+    queued: number;
   };
   important: ImportantItem[];
   canWait: { count: number; unseen: number };
@@ -223,6 +225,15 @@ export async function generateToday(): Promise<TodaySummary> {
       deadlines: deadlines.slice(0, TOP),
       invoices,
       total: replies.length + followups.length + deadlines.length + invoices.length,
+      // Ce que le parcours « Commencer » pourra RÉELLEMENT traiter : les
+      // listes sont plafonnées à TOP par famille. Sans ce chiffre, l'écran
+      // annonçait « ≈ 78 min » pour 52 actions et le parcours disait
+      // « Action 1 sur 35 » (incohérence signalée le 10/08).
+      queued:
+        Math.min(replies.length, TOP) +
+        Math.min(followups.length, TOP) +
+        Math.min(deadlines.length, TOP) +
+        invoices.length,
     },
     important: important.slice(0, 5),
     canWait: {

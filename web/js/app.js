@@ -931,7 +931,7 @@ async function renderToday() {
         <div class="panel">
           <div class="panel-head"><h2>À traiter aujourd'hui</h2>
             <span style="display:flex; gap:8px; align-items:center">
-              ${t.todo.total ? `<span class="muted" style="font-size:12px">≈ ${fmtNum(Math.max(1, Math.ceil(t.todo.total * 1.5)))} min · arrête-toi quand tu veux</span>
+              ${t.todo.total ? `<span class="muted" style="font-size:12px">${todoEstimateLabel(t)} · arrête-toi quand tu veux</span>
               <button class="btn btn-primary btn-sm" id="todo-assist"
                 title="Une action à la fois, la plus urgente d'abord, avec les bons boutons : répondre, reporter, confirmer, classer — tu t'arrêtes quand tu veux, rien n'est perdu">Commencer</button>` : ''}
             </span></div>
@@ -1360,6 +1360,36 @@ async function todayFillActivity() {
 // « je t'assiste ». L'assistant présente chaque action UNE PAR UNE avec les
 // bons boutons selon sa nature — répondre / reporter / confirmer / classer —
 // au lieu de laisser l'utilisateur naviguer dans des listes.
+// Coût estimé d'une action, en minutes — MÊME barème partout (accueil et
+// parcours), pour ne jamais afficher deux durées contradictoires. Répondre
+// coûte plus qu'écarter une échéance : le barème le dit.
+function todoMinutes({ kind }) {
+  if (kind === 'reply') return 2;
+  if (kind === 'followup') return 1.5;
+  if (kind === 'invoice') return 1.5;
+  return 1; // deadline : confirmer ou écarter
+}
+
+/**
+ * Estimation affichée sur la Vue du jour. Elle porte sur ce que « Commencer »
+ * traitera VRAIMENT : les listes sont plafonnées par famille, donc annoncer le
+ * temps du total (52) alors que le parcours n'en prend que 35 était faux — et
+ * c'est exactement ce qu'a relevé l'utilisateur le 10/08.
+ */
+function todoEstimateLabel(t) {
+  const queue = [
+    ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
+    ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
+    ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
+    ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
+  ];
+  const mins = Math.max(1, Math.round(queue.reduce((n, q) => n + todoMinutes(q), 0)));
+  const rest = t.todo.total - queue.length;
+  return rest > 0
+    ? `≈ ${fmtNum(mins)} min pour les ${fmtNum(queue.length)} plus urgentes (${fmtNum(rest)} de plus dans la liste)`
+    : `≈ ${fmtNum(mins)} min`;
+}
+
 function startTodoAssistant(t, { limit } = {}) {
   // File de missions UNIFIÉE (Phase 3) : toutes catégories mélangées, triées
   // par urgence — un retard passe devant, une échéance qui approche grimpe,
@@ -1388,29 +1418,43 @@ function startTodoAssistant(t, { limit } = {}) {
   let treated = 0;
   let passed = 0;
 
+  // PAGE, pas une modale au milieu de l'écran (retour utilisateur 10/08 :
+  // « doit être traité de la même façon que le dépouillement, à savoir
+  // affichage des mails à droite »). Même ossature que le dépouillement :
+  // colonne de gauche = la décision, colonne de droite = le mail lui-même.
   closeModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay under-reader';
-  overlay.innerHTML = `<div class="modal modal-wide">
-    <div class="modal-head"><h2 id="ta-title">▶️ On traite ensemble</h2>
-      <button class="modal-close" title="Arrêter (rien n'est perdu : les actions restantes restent listées)">✕</button></div>
-    <div class="modal-body" id="ta-body"></div>
-    <div class="modal-foot" id="ta-foot"></div>
-  </div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('.modal-close').addEventListener('click', () => { closeModal(); renderToday(); });
+  closeReader();
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head"><div><h1>▶️ On traite ensemble</h1>
+    <div class="sub">Une action à la fois, la plus urgente d'abord — le mail s'affiche à droite.
+      Tu t'arrêtes quand tu veux, rien n'est perdu.</div></div>
+    <div class="head-actions"><a class="btn" href="#/today">← Vue du jour</a></div></div>
+    <div class="inbox-layout" id="ta-wrap">
+      <div id="ta-screen"><div class="panel">
+        <div class="panel-head"><h2 id="ta-title" style="white-space:nowrap">▶️ On traite ensemble</h2>
+          <span class="muted" style="font-size:12px; margin-left:auto; margin-right:10px" id="ta-est"></span>
+          <button class="btn btn-sm" id="ta-stop" title="Arrêter — rien n'est perdu : les actions restantes restent listées">⏸ Arrêter</button></div>
+        <div class="panel-body" id="ta-body"></div>
+        <div class="rv-foot" id="ta-foot"></div>
+      </div></div>
+      <div class="inbox-dock hidden" id="ta-dock"></div>
+    </div>`;
+  const dockEl = $('#ta-dock');
+  $('#ta-stop').addEventListener('click', () => { closeReader(); location.hash = '#/today'; });
 
   const finish = () => {
     const leftOut = totalActions - queue.length;
+    closeReader();
     $('#ta-title').textContent = 'C\'est bon pour aujourd\'hui 🎉';
+    $('#ta-est').textContent = '';
     $('#ta-body').innerHTML = `<div class="empty" style="font-size:15px">
       ${treated ? `Tu as traité <strong>${fmtNum(treated)}</strong> action(s)` : 'Rien de traité cette fois'}
       ${passed ? ` · ${fmtNum(passed)} remise(s) à plus tard — elles restent dans « À faire »` : ''}.
       ${leftOut > 0 ? `<br>${fmtNum(leftOut)} action(s) moins urgente(s) attendent dans la liste — rien n'est perdu.` : ''}<br>
       <span class="muted" style="font-size:12.5px">Tout est journalisé dans le
       <a href="#/operations">📒 Journal d'activité</a>.</span></div>`;
-    $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">Fermer</button>';
-    $('#ta-close').addEventListener('click', () => { closeModal(); renderToday(); });
+    $('#ta-foot').innerHTML = '<button class="btn btn-primary" id="ta-close">← Retour à la Vue du jour</button>';
+    $('#ta-close').addEventListener('click', () => { location.hash = '#/today'; });
   };
 
   const next = (wasTreated) => {
@@ -1441,10 +1485,17 @@ function startTodoAssistant(t, { limit } = {}) {
   };
 
   function step() {
+    if (!document.getElementById('ta-title')) return; // l'utilisateur a quitté
     const { kind, x } = queue[idx];
     const [emoji, kindLabel] = KIND_LABELS[kind];
-    const minLeft = Math.max(1, Math.ceil((queue.length - idx) * 1.5));
-    $('#ta-title').textContent = `Action ${idx + 1} sur ${queue.length} · ~${minLeft} min restantes`;
+    // Un SEUL barème de temps pour toute l'application (todoMinutes) : l'écran
+    // d'accueil et ce parcours ne peuvent plus annoncer deux durées
+    // différentes pour le même travail (incohérence signalée le 10/08).
+    const minLeft = Math.max(1, Math.round(queue.slice(idx).reduce((n, q) => n + todoMinutes(q), 0)));
+    $('#ta-title').textContent = `Action ${idx + 1} sur ${queue.length}`;
+    $('#ta-est').textContent = `~${minLeft} min restantes${
+      totalActions > queue.length ? ` · ${fmtNum(totalActions - queue.length)} de plus dans la liste` : ''
+    }`;
 
     const who = kind === 'followup'
       ? (x.counterpartyName || x.counterpartyEmail || '')
@@ -1461,6 +1512,9 @@ function startTodoAssistant(t, { limit } = {}) {
       ? (x.folder && x.uid ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: x.isSeen ?? true } : null)
       : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
 
+    // Le mail s'affiche D'OFFICE à droite (même règle que le dépouillement) —
+    // sauf écran étroit, où le lien d'ouverture en panneau reste.
+    const canDock = dockEl && dockEl.isConnected && window.innerWidth > 1100;
     $('#ta-body').innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
         <span class="badge ${kind === 'reply' || kind === 'followup' ? 'orange' : kind === 'invoice' ? 'blue' : 'gray'}">${emoji} ${kindLabel}</span>
@@ -1469,13 +1523,23 @@ function startTodoAssistant(t, { limit } = {}) {
       </div>
       <div style="font-size:15px; margin-bottom:4px"><strong>${esc(who)}</strong>${who ? ' — ' : ''}« ${esc(title)} »</div>
       <div class="muted" style="font-size:12.5px; margin-bottom:12px">${explain}</div>
-      ${readerItem ? `<div style="margin-bottom:6px"><span class="openable" id="ta-read" style="font-size:13px">📖 Lire le mail avant de décider</span></div>` : ''}
+      ${readerItem ? `<div style="margin-bottom:6px"><span class="openable" id="ta-read" style="font-size:13px">${canDock ? '📖 Rouvrir le mail' : '📖 Lire le mail avant de décider'}</span></div>` : ''}
     `;
-    $('#ta-read')?.addEventListener('click', () => openReaderFor(readerItem, {}));
+    // Le lecteur est un GESTE du parcours (même règle qu'au dépouillement) :
+    // supprimer, déplacer ou répondre depuis le panneau vaut décision et fait
+    // passer à l'action suivante.
+    const readerOpts = {
+      dock: canDock ? dockEl : null,
+      onRemoved: () => next(true),
+      onReplied: () => next(true),
+    };
+    $('#ta-read')?.addEventListener('click', () => openReaderFor(readerItem, readerOpts));
+    if (readerItem && canDock) openReaderFor(readerItem, readerOpts);
+    else if (!readerItem) closeReader();
 
     const buttons = [];
     if (kind === 'reply') {
-      if (smtpEnabled && readerItem) buttons.push(['↩️ Répondre', 'btn-primary', null, () => { openReaderFor(readerItem, {}); }]);
+      if (smtpEnabled && readerItem) buttons.push(['↩️ Répondre', 'btn-primary', null, () => { openReaderFor(readerItem, readerOpts); }]);
       buttons.push(['🚫 Pas de réponse à faire', '', () => api.replyDismiss(x.account, x.threadId)]);
       buttons.push(['💤 Me le reproposer dans 3 j', '', () => api.replySnooze(x.account, x.threadId, 3)]);
     } else if (kind === 'invoice') {

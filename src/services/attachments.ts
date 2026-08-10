@@ -22,6 +22,13 @@ import type { AccountRecord } from './accounts.js';
 
 /** Plafond de téléchargement pour l'extraction de texte (le VPS est petit). */
 const MAX_FETCH_BYTES = 8 * 1024 * 1024;
+/**
+ * Texte conservé par MAIL, toutes pièces confondues. Volontairement large : la
+ * recherche doit porter sur le CONTENU des documents, y compris au milieu d'un
+ * long relevé (demande 10/08). ~200 Ko par mail au pire ; en pratique une
+ * facture pèse 2 à 5 Ko.
+ */
+const MAX_STORED_TEXT = 200_000;
 const READABLE = /(pdf|text\/plain|text\/csv)/i;
 const IMAGE = /^image\//i;
 
@@ -136,9 +143,13 @@ export async function readOne(
   const parts = await imapService.listAttachments(rec, folder, uid);
   if (parts.length === 0) return { kind: 'other', text: '', hints: null };
 
+  // TOUTES les pièces sont lues (demande 10/08), pas seulement les premières :
+  // une facture arrive souvent en 3e position derrière des logos, et la
+  // recherche doit pouvoir la trouver.
   const chunks: string[] = [];
+  let total = 0;
   let sawImage = false;
-  for (let i = 0; i < parts.length && chunks.length < 3; i++) {
+  for (let i = 0; i < parts.length && total < MAX_STORED_TEXT; i++) {
     const p = parts[i];
     // Une image « en ligne » (logo de signature) n'est pas un document.
     if (IMAGE.test(p.contentType)) {
@@ -149,12 +160,17 @@ export async function readOne(
     const dl = await imapService.downloadAttachment(rec, folder, uid, i);
     if (!dl) continue;
     const r = attachmentToText(dl.filename, dl.contentType, dl.content);
-    if (r.kind === 'text') chunks.push(`--- ${dl.filename} ---\n${r.text}`);
-    else if (r.kind === 'scan') sawImage = true;
+    if (r.kind === 'text') {
+      // Le NOM du fichier est conservé dans le texte indexé : chercher
+      // « facture.pdf » doit marcher, y compris quand le nom ne dit rien.
+      const chunk = `--- ${dl.filename} ---\n${r.text}`;
+      chunks.push(chunk);
+      total += chunk.length;
+    } else if (r.kind === 'scan') sawImage = true;
   }
 
   if (chunks.length > 0) {
-    const text = chunks.join('\n\n').slice(0, 4000);
+    const text = chunks.join('\n\n').slice(0, MAX_STORED_TEXT);
     return { kind: 'text', text, hints: documentHints(text) };
   }
   if (sawImage) return { kind: 'scan', text: '', hints: null };

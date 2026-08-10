@@ -92,6 +92,13 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         { subject: { contains: q } },
         { fromEmail: { contains: q.toLowerCase() } },
         { fromName: { contains: q } },
+        // Le TEXTE du mail et celui de ses PIÈCES JOINTES (10/08). Demande
+        // explicite : « le but est de permettre une recherche rapide même sur
+        // des pièces non nommées comme il faut » — un PDF appelé
+        // « document(3).pdf » se retrouve par ce qu'il CONTIENT (un numéro de
+        // facture, un nom de fournisseur, un montant).
+        { snippet: { contains: q } },
+        { attachmentText: { contains: q } },
       ],
     });
   }
@@ -215,6 +222,9 @@ function quickTextFilter(q: string | undefined) {
       { subject: { contains: t } },
       { fromEmail: { contains: t.toLowerCase() } },
       { fromName: { contains: t } },
+      // Cherche aussi DANS les pièces jointes : une facture nommée
+      // « document(3).pdf » se retrouve par son contenu (10/08).
+      { attachmentText: { contains: t } },
     ],
   };
 }

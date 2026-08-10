@@ -28,7 +28,15 @@ export interface AttachmentText {
   note: string;
 }
 
-const MAX_TEXT = 4000;
+/**
+ * Longueur retenue par pièce. Généreuse À DESSEIN (demande du 10/08 : « c'est
+ * l'intégralité des pièces jointes qui doit être lue, le but est de permettre
+ * une recherche rapide même sur des pièces non nommées comme il faut ») : une
+ * facture pèse 2 à 5 Ko de texte, un contrat ou un relevé beaucoup plus, et
+ * c'est justement au milieu d'un long document qu'on cherche un nom ou un
+ * numéro. Le plafond ne protège plus que des cas pathologiques.
+ */
+const MAX_TEXT = 200_000;
 // Au-delà, on ne tente rien : une pièce de 20 Mo n'a pas à occuper le VPS.
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 
@@ -106,10 +114,12 @@ export function pdfToText(buf: Buffer): AttachmentText {
   }
   const bin = buf.toString('latin1');
   let collected = '';
-  // Chaque « stream … endstream » est un morceau de page (souvent compressé).
+  // Chaque « stream … endstream » est un morceau de page (souvent compressé) :
+  // on les parcourt TOUS, pour lire le document en entier et pas seulement sa
+  // première page (la recherche doit porter sur tout le contenu).
   const re = /stream\r?\n?([\s\S]*?)endstream/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(bin)) !== null && collected.length < MAX_TEXT * 3) {
+  while ((m = re.exec(bin)) !== null && collected.length < MAX_TEXT) {
     const rawChunk = Buffer.from(m[1], 'latin1');
     // Un flux non compressé est directement du contenu ; sinon on décompresse.
     const data = /^[\s]*[\d.\-\s]*(BT|\/|q\b)/.test(m[1].slice(0, 40))
