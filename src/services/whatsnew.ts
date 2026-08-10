@@ -188,6 +188,49 @@ const CAPABILITIES: Capability[] = [
         'l\'analyse du mail disait « rien à faire » (elles restent visibles dans l\'onglet Ignorées).';
     },
   },
+  {
+    id: 'deadline-veto-visible-v1',
+    label: 'Je te montre les dates que j\'ai écartées, et pourquoi',
+    link: '#/deadlines',
+    run: async () => {
+      // Les dates écartées par la passe précédente avaient été marquées
+      // « ignorées » — indistinguables d'un choix de l'utilisateur, et donc
+      // invisibles en tant que travail fait. On leur donne leur vrai statut
+      // (« écartée par l'analyse ») pour pouvoir les montrer et les expliquer.
+      const rows = await db.deadline.findMany({
+        where: { status: 'dismissed', vetoReason: null },
+        select: { id: true, messageId: true, reason: true },
+      });
+      if (rows.length === 0) return 'Aucune date à requalifier.';
+      const msgs = new Map(
+        (
+          await db.message.findMany({
+            where: { id: { in: rows.map((r) => r.messageId) } },
+            select: { id: true, aiAction: true, analysisConfidence: true, aiSummary: true },
+          })
+        ).map((m) => [m.id, m]),
+      );
+      let moved = 0;
+      for (const r of rows) {
+        const m = msgs.get(r.messageId);
+        if (!m?.aiAction || !['read', 'archive', 'none'].includes(m.aiAction)) continue;
+        if (m.analysisConfidence !== 'high') continue;
+        await db.deadline.update({
+          where: { id: r.id },
+          data: {
+            status: 'vetoed',
+            vetoReason: 'ai_no_action',
+            reason:
+              `date trouvée dans le mail, mais l'analyse conclut « ${m.aiSummary ?? 'rien à faire'} »` +
+              ' — la date décrit un fait, pas une action de ta part',
+          },
+        });
+        moved++;
+      }
+      return `${moved} date(s) écartée(s) sont désormais consultables dans l'onglet ` +
+        '« Écartées par l\'analyse » — avec le motif, et un bouton pour les rétablir si je me suis trompé.';
+    },
+  },
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');

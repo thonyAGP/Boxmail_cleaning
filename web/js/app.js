@@ -4681,8 +4681,12 @@ function renderDeadlinesBody() {
   if (!body || !d) return;
   const now = Date.now();
   const isFuture = (x) => new Date(x.date).getTime() >= now - 86_400_000;
+  // Une proposition ÉCARTÉE n'est jamais une échéance : elle a son onglet et
+  // ne pollue aucune autre liste.
   const inTab = (x, tab) =>
-    tab === 'proposed' ? x.status === 'proposed' && isFuture(x)
+    tab === 'vetoed' ? x.status === 'vetoed'
+    : x.status === 'vetoed' ? false
+    : tab === 'proposed' ? x.status === 'proposed' && isFuture(x)
     : tab === 'confirmed' ? x.status === 'confirmed' && isFuture(x)
     : tab === 'past' ? (!isFuture(x) && x.status !== 'dismissed') || x.status === 'done'
     : x.status === 'dismissed';
@@ -4691,6 +4695,7 @@ function renderDeadlinesBody() {
     { key: 'confirmed', label: 'Confirmées', n: d.counts.confirmed },
     { key: 'past', label: 'Passées / faites', n: d.counts.past },
     { key: 'dismissed', label: 'Ignorées', n: d.counts.dismissed },
+    { key: 'vetoed', label: 'Écartées par l\'analyse', n: d.counts.vetoed ?? 0 },
   ];
   const items = d.items.filter((x) => inTab(x, deadlinesState.tab));
   const emptyMessages = {
@@ -4698,15 +4703,38 @@ function renderDeadlinesBody() {
     confirmed: 'Aucune échéance confirmée à venir.',
     past: 'Aucune échéance passée.',
     dismissed: 'Aucune échéance ignorée.',
+    vetoed: 'Aucune proposition écartée.',
   };
 
+  // Compteur de confiance (retour 10/08 : « montre-moi ton raisonnement »).
+  // Il dit ce que l'assistant a FAIT du travail de détection — sans jamais
+  // qualifier de « fausses » des dates que l'utilisateur n'a pas jugées.
+  const w = d.work;
+  const workLine = w && w.detected > 0
+    ? `<div class="notice" style="margin-bottom:10px; font-size:13px">
+        🔎 <strong>${fmtNum(w.detected)} date(s) trouvée(s)</strong> dans tes mails :
+        <strong>${fmtNum(w.kept)}</strong> retenue(s) comme échéance possible${w.vetoed
+          ? ` · <strong>${fmtNum(w.vetoed)} écartée(s)</strong> parce que l'analyse du mail
+             concluait qu'aucune action n'était attendue de toi
+             <a href="#" id="dl-see-vetoed">voir lesquelles</a>`
+          : ''}.
+        <div class="muted" style="font-size:12px; margin-top:3px">Une date écartée n'est pas
+          effacée : tu peux la rétablir si je me suis trompé.</div></div>`
+    : '';
+
   body.innerHTML = `
+    ${workLine}
     <div class="tabs">${tabs
       .map(
         (t) => `<button class="tab ${deadlinesState.tab === t.key ? 'active' : ''}" data-tab="${t.key}">
         ${t.label}${t.n > 0 ? ` <span class="badge ${t.key === 'proposed' ? 'red' : 'gray'}">${fmtNum(t.n)}</span>` : ''}</button>`,
       )
       .join('')}</div>
+    ${deadlinesState.tab === 'vetoed' ? `<div class="notice" style="margin:8px 0; font-size:12.5px">
+      Ces dates ont bien été trouvées dans tes mails, mais l'analyse du message concluait
+      qu'aucune action n'était attendue de toi — typiquement une information
+      (« le service sera indisponible le 12 mai ») ou un prélèvement automatique.
+      <strong>Rien n'est perdu</strong> : « Rétablir » la remet dans les propositions.</div>` : ''}
     <div class="panel"><div class="panel-body tight">
       ${items.length === 0
         ? `<div class="empty">${emptyMessages[deadlinesState.tab]}</div>`
@@ -4721,6 +4749,11 @@ function renderDeadlinesBody() {
       deadlinesState.tab = btn.dataset.tab;
       renderDeadlinesBody();
     });
+  });
+  $('#dl-see-vetoed')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    deadlinesState.tab = 'vetoed';
+    renderDeadlinesBody();
   });
 
   body.querySelectorAll('[data-open]').forEach((el) => {
@@ -4773,6 +4806,7 @@ function deadlineRow(x, idx) {
     x.status === 'done' ? '<span class="badge green">✓ fait</span>'
     : x.status === 'dismissed' ? '<span class="badge gray">ignorée</span>'
     : x.status === 'confirmed' ? '<span class="badge blue">confirmée</span>'
+    : x.status === 'vetoed' ? '<span class="badge gray" title="Date trouvée, mais l\'analyse du mail disait qu\'aucune action n\'était attendue">écartée par l\'analyse</span>'
     : '<span class="badge orange">à valider</span>';
   return `<div class="reply-row">
     <div class="reply-main">
@@ -9027,6 +9061,25 @@ function renderReaderAnalysis(a, item, opts = {}) {
       </div>` : ''}`
     : '';
 
+  // MONTRER LE RAISONNEMENT (retour 10/08 : « je ne crois pas à ton système
+  // d'analyse »). Quand une date a été trouvée mais que la proposition a été
+  // ÉCARTÉE, on le DIT sur le mail lui-même, avec le motif — et on laisse
+  // rétablir d'un clic. C'est ce qui permet de juger sur pièces au lieu de
+  // croire sur parole ; c'est aussi l'aveu honnête que le système a pu se
+  // tromper.
+  const vetoedLine = (a.deadlines.vetoed ?? []).length
+    ? `<div class="ra-line" style="flex-wrap:wrap; gap:6px; align-items:flex-start">
+        <span class="badge gray">🛑</span>
+        <span style="flex:1; min-width:220px">
+          <strong>${a.deadlines.vetoed.length === 1 ? 'Une date a été trouvée, mais je n\'en ai pas fait une échéance' : `${fmtNum(a.deadlines.vetoed.length)} dates trouvées, écartées`}</strong>
+          ${a.deadlines.vetoed.map((v) => `<div class="muted" style="font-size:11.5px; margin-top:2px">
+            📅 ${fmtDate(v.date)} — ${esc(v.reason)}</div>`).join('')}
+          <div class="muted" style="font-size:11.5px; margin-top:2px">Si je me trompe, rétablis-la : elle repassera dans les dates à confirmer.</div>
+        </span>
+        ${a.deadlines.vetoed.map((v) => `<button class="btn btn-sm ra-unveto" data-id="${v.id}">↩︎ Rétablir</button>`).join('')}
+      </div>`
+    : '';
+
   // Résumé en une ligne (verdict en mots + raison principale) ; le score
   // numérique et les signaux détaillés restent derrière « Voir le détail ».
   const levelWord = a.importance
@@ -9053,7 +9106,8 @@ function renderReaderAnalysis(a, item, opts = {}) {
     ${classLine}
     ${existing || detected
       ? `<div class="ra-line"><span>Dates :</span> ${existing} ${detected}</div>`
-      : ''}`;
+      : ''}
+    ${vetoedLine}`;
   $('#ra-toggle')?.addEventListener('click', () => {
     const d = $('#ra-detail');
     if (!d) return;
@@ -9123,6 +9177,25 @@ function renderReaderAnalysis(a, item, opts = {}) {
         btn.replaceWith(Object.assign(document.createElement('span'), {
           className: 'badge orange',
           textContent: '✓ proposée — à valider dans 📅 Dates à confirmer',
+        }));
+        refreshDeadlinesBadge();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // « Rétablir » une proposition que l'arbitrage avait écartée : elle
+  // repasse dans les dates à confirmer, et l'utilisateur tranche.
+  el.querySelectorAll('.ra-unveto').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api.deadlineAction(item.account, Number(btn.dataset.id), 'restore');
+        btn.replaceWith(Object.assign(document.createElement('span'), {
+          className: 'badge orange',
+          textContent: '✓ rétablie — à valider dans 📅 Dates à confirmer',
         }));
         refreshDeadlinesBadge();
       } catch (err) {

@@ -18,7 +18,7 @@ import type { AccountRecord } from './accounts.js';
  */
 
 export type DeadlineType = 'payment' | 'document' | 'appointment' | 'renewal' | 'other';
-export type DeadlineStatus = 'proposed' | 'confirmed' | 'dismissed' | 'done';
+export type DeadlineStatus = 'proposed' | 'confirmed' | 'dismissed' | 'done' | 'vetoed';
 
 export interface ExtractedDeadline {
   date: Date;
@@ -322,8 +322,39 @@ export async function detectDeadlines(
     // « information technique ponctuelle sans action durable requise ».
     // Mesure du jour : 11 échéances sur 15 portaient sur un mail que l'IA
     // jugeait SANS action. Quand l'IA a tranché, elle fait autorité.
+    // ÉCARTÉE, mais pas effacée : on enregistre la proposition avec son motif
+    // pour pouvoir l'EXPLIQUER à l'écran et la RÉTABLIR si l'arbitrage s'est
+    // trompé. Sans cette trace, l'utilisateur ne voit rien du travail fait —
+    // et n'a aucune raison de faire confiance au système (retour 10/08).
     if (aiVerdictSaysNoAction(msg)) {
       vetoedByAi++;
+      const seen = await db.deadline.findUnique({
+        where: {
+          accountSlug_messageId_date: { accountSlug: account, messageId: msg.id, date: ex.date },
+        },
+      });
+      if (!seen) {
+        await db.deadline.create({
+          data: {
+            accountSlug: account,
+            messageId: msg.id,
+            threadId: msg.threadId,
+            title: titleOverride ?? msg.subject ?? '(sans sujet)',
+            date: ex.date,
+            type: ex.type,
+            status: 'vetoed',
+            vetoReason: 'ai_no_action',
+            confidence: ex.confidence,
+            reason:
+              `date trouvée dans le ${source}, mais l'analyse du mail conclut « ` +
+              `${msg.aiSummary ?? 'rien à faire'} » — la date décrit un fait, pas une action de ta part`,
+            sourceText: ex.sourceText,
+            fromEmail: msg.fromEmail,
+            fromName: msg.fromName,
+            subject: msg.subject,
+          },
+        });
+      }
       return;
     }
     const existing = await db.deadline.findUnique({
@@ -473,6 +504,8 @@ export interface DeadlineItem {
   fromEmail: string | null;
   fromName: string | null;
   subject: string | null;
+  /** Motif d'écartement quand status = vetoed (ai_no_action…), sinon null. */
+  vetoReason: string | null;
   /** Jours restants (négatif si passée). */
   inDays: number;
   /** Localisation du mail source dans l'index (null s'il a disparu) —
@@ -520,6 +553,7 @@ function toItem(
     fromEmail: string | null;
     fromName: string | null;
     subject: string | null;
+    vetoReason?: string | null;
   },
   source?: SourceMeta,
 ): DeadlineItem {
@@ -538,6 +572,7 @@ function toItem(
     fromEmail: d.fromEmail,
     fromName: d.fromName,
     subject: d.subject,
+    vetoReason: d.vetoReason ?? null,
     inDays: Math.round((d.date.getTime() - Date.now()) / 86_400_000),
     folder: source?.folder.path ?? null,
     uid: source?.uid ?? null,
@@ -581,7 +616,12 @@ async function setStatus(
   await ensureDbReady();
   const row = await db.deadline.findFirst({ where: { id, accountSlug: account } });
   if (!row) throw new Error(`Échéance ${id} introuvable pour le compte « ${account} ».`);
-  const updated = await db.deadline.update({ where: { id }, data: { status } });
+  // Rétablir une proposition écartée efface son motif : elle redevient une
+  // proposition ordinaire, que l'utilisateur confirmera ou non.
+  const updated = await db.deadline.update({
+    where: { id },
+    data: { status, ...(status === 'proposed' ? { vetoReason: null } : {}) },
+  });
   await recordOperation({
     account,
     tool: toolName,

@@ -221,8 +221,16 @@ model Deadline {
   date        DateTime
   // payment | document | appointment | renewal | other
   type        String   @default("other")
-  // proposed | confirmed | dismissed | done
+  // proposed | confirmed | dismissed | done | vetoed
+  // « vetoed » (10/08) : une date A ÉTÉ trouvée, mais la proposition a été
+  // ÉCARTÉE par l'arbitrage — typiquement parce que l'analyse du mail disait
+  // « rien à faire ». On la garde au lieu de la faire disparaître, pour deux
+  // raisons : pouvoir EXPLIQUER la décision à l'écran (« une proposition a
+  // été écartée, voici pourquoi »), et pouvoir la RÉTABLIR si l'arbitrage
+  // s'est trompé. Ces lignes ne comptent jamais comme des échéances.
   status      String   @default("proposed")
+  /** Motif technique de l'écartement (ai_no_action…), null si non écartée. */
+  vetoReason  String?
   confidence  Float    @default(0.6)
   // Justification en français (affichée telle quelle)
   reason      String

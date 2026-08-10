@@ -1434,12 +1434,24 @@ export function buildAdminRouter(): Router {
       all.sort((a, b) => a.date.localeCompare(b.date));
       const now = Date.now();
       const isFuture = (d: { date: string }) => new Date(d.date).getTime() >= now - 86_400_000;
+      // Les propositions ÉCARTÉES (vetoed) ne comptent JAMAIS comme des
+      // échéances : elles vivent dans leur propre onglet et alimentent le
+      // compteur de confiance (« N détectées, N écartées »).
+      const vivantes = all.filter((d) => d.status !== 'vetoed');
       res.json({
         counts: {
-          proposed: all.filter((d) => d.status === 'proposed' && isFuture(d)).length,
-          confirmed: all.filter((d) => d.status === 'confirmed' && isFuture(d)).length,
-          past: all.filter((d) => (!isFuture(d) && d.status !== 'dismissed') || d.status === 'done').length,
-          dismissed: all.filter((d) => d.status === 'dismissed').length,
+          proposed: vivantes.filter((d) => d.status === 'proposed' && isFuture(d)).length,
+          confirmed: vivantes.filter((d) => d.status === 'confirmed' && isFuture(d)).length,
+          past: vivantes.filter((d) => (!isFuture(d) && d.status !== 'dismissed') || d.status === 'done').length,
+          dismissed: vivantes.filter((d) => d.status === 'dismissed').length,
+          vetoed: all.filter((d) => d.status === 'vetoed').length,
+        },
+        // Ce que l'assistant a fait du travail de détection — de quoi juger
+        // sur pièces au lieu de croire sur parole (retour 10/08).
+        work: {
+          detected: all.length,
+          kept: all.filter((d) => d.status !== 'vetoed').length,
+          vetoed: all.filter((d) => d.status === 'vetoed').length,
         },
         items: all,
       });
@@ -2232,13 +2244,29 @@ export function buildAdminRouter(): Router {
               sender,
             },
         deadlines: {
-          existing: existingRows.map((d) => ({
-            id: d.id,
-            date: d.date.toISOString(),
-            status: d.status,
-            type: d.type,
-          })),
+          // Les propositions ÉCARTÉES sont exclues d'« existing » : elles ont
+          // leur propre bloc, avec l'explication (voir ci-dessous).
+          existing: existingRows
+            .filter((d) => d.status !== 'vetoed')
+            .map((d) => ({
+              id: d.id,
+              date: d.date.toISOString(),
+              status: d.status,
+              type: d.type,
+            })),
           detected,
+          // MONTRER LE RAISONNEMENT (10/08) : une date a bien été trouvée dans
+          // ce mail, mais la proposition a été écartée — et l'utilisateur doit
+          // voir pourquoi, et pouvoir la rétablir si on s'est trompé.
+          vetoed: existingRows
+            .filter((d) => d.status === 'vetoed')
+            .map((d) => ({
+              id: d.id,
+              date: d.date.toISOString(),
+              type: d.type,
+              reason: d.reason,
+              vetoReason: d.vetoReason,
+            })),
         },
       });
     }),
