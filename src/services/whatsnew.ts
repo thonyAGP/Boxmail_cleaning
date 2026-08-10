@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { db } from '../db/client.js';
 import { logger } from '../logger.js';
 import { recordOperation } from './oplog.js';
 import { listAccountNames, getAccountRecord } from './accounts.js';
@@ -25,6 +26,14 @@ interface Capability {
   id: string;
   /** Libellé humain court, en français. */
   label: string;
+  /**
+   * Où mène le bouton « Voir » de la carte. OBLIGATOIRE et propre à chaque
+   * capacité : le bouton pointait en dur vers les échéances, si bien que
+   * « voir les factures à transmettre à la comptabilité » ouvrait le
+   * calendrier (retour utilisateur 10/08 : « c'est stupide et n'a aucun
+   * sens »). null = aucun bouton, le texte explique où regarder.
+   */
+  link: string | null;
   /** Rattrapage — DOIT être interne/réversible/journalisé. Retourne le bilan. */
   run: () => Promise<string>;
 }
@@ -33,6 +42,7 @@ const CAPABILITIES: Capability[] = [
   {
     id: 'rentila-parser-v1',
     label: 'Je sais lire les alertes Rentila',
+    link: '#/deadlines',
     run: async () => {
       // Passe SUJETS uniquement (index local, aucun IMAP) sur toutes les
       // boîtes : les notifications Rentila déjà reçues deviennent des
@@ -56,6 +66,9 @@ const CAPABILITIES: Capability[] = [
   {
     id: 'accounting-candidates-v1',
     label: 'Je repère les factures à transmettre à la comptabilité',
+    // Ces pièces vivent dans Fiscal-Manager (écran « Pièces reçues ») : aucun
+    // écran de Boxmail ne les montre, donc pas de bouton qui mènerait ailleurs.
+    link: null,
     run: async () => {
       // Rattrapage du stock : les mails « facture » avec pièce jointe des
       // 12 derniers mois deviennent des candidats pour l'écran « Pièces
@@ -92,6 +105,7 @@ const CAPABILITIES: Capability[] = [
   {
     id: 'attachment-reading-v1',
     label: 'Je lis maintenant le contenu des pièces jointes',
+    link: '#/attachments',
     run: async () => {
       // Rattrapage du flux récent : les pièces des 90 derniers jours sont
       // lues (texte extrait localement, rien n'est conservé). C'est ce qui
@@ -127,6 +141,53 @@ const CAPABILITIES: Capability[] = [
         'Une facture transmise par un proche est désormais reconnue au nom du VRAI fournisseur.';
     },
   },
+  {
+    id: 'deadline-ai-veto-v1',
+    label: 'Je ne transforme plus une information en échéance',
+    link: '#/deadlines',
+    run: async () => {
+      // Ménage du stock (10/08). Une pure information — « les paiements par
+      // carte seront indisponibles le 12 mai » — était devenue une échéance
+      // de PAIEMENT au 12 mai. Mesure : 11 échéances sur 15 portaient sur un
+      // mail que l'analyse avait pourtant classé « à lire » ou « à archiver »
+      // en confiance haute. On retire ces propositions ; les échéances
+      // CONFIRMÉES par l'utilisateur ne sont jamais touchées.
+      const proposed = await db.deadline.findMany({
+        where: { status: 'proposed' },
+        select: { id: true, messageId: true, title: true },
+      });
+      if (proposed.length === 0) return 'Aucune date proposée à revoir.';
+      const msgs = new Map(
+        (
+          await db.message.findMany({
+            where: { id: { in: proposed.map((d) => d.messageId) } },
+            select: { id: true, aiAction: true, analysisConfidence: true },
+          })
+        ).map((m) => [m.id, m]),
+      );
+      let removed = 0;
+      for (const d of proposed) {
+        const m = msgs.get(d.messageId);
+        if (!m?.aiAction) continue;
+        if (!['read', 'archive', 'none'].includes(m.aiAction)) continue;
+        if (m.analysisConfidence !== 'high') continue;
+        // « dismissed » plutôt que supprimé : réversible, et visible dans
+        // l'onglet « Ignorées » si l'utilisateur veut vérifier.
+        await db.deadline.update({ where: { id: d.id }, data: { status: 'dismissed' } });
+        removed++;
+      }
+      if (removed > 0) {
+        await recordOperation({
+          account: '*',
+          tool: 'deadline_ai_veto',
+          params: { removed, examined: proposed.length },
+          result: `${removed} fausse(s) date(s) écartée(s) : l'analyse disait « rien à faire »`,
+        });
+      }
+      return `${proposed.length} date(s) proposée(s) relues : ${removed} écartée(s) parce que ` +
+        'l\'analyse du mail disait « rien à faire » (elles restent visibles dans l\'onglet Ignorées).';
+    },
+  },
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');
@@ -137,6 +198,8 @@ export interface WhatsNewEntry {
   summary: string;
   ranAt: string;
   seen: boolean;
+  /** Destination du bouton « Voir » (null = pas de bouton). */
+  link?: string | null;
 }
 
 function readState(): WhatsNewEntry[] {
@@ -167,7 +230,10 @@ export function runCapabilityBackfills(): void {
       if (state.some((e) => e.id === cap.id)) continue;
       try {
         const summary = await cap.run();
-        state.push({ id: cap.id, label: cap.label, summary, ranAt: new Date().toISOString(), seen: false });
+        state.push({
+          id: cap.id, label: cap.label, summary, link: cap.link,
+          ranAt: new Date().toISOString(), seen: false,
+        });
         writeState(state);
         await recordOperation({
           account: '*',

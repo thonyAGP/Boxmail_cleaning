@@ -222,7 +222,32 @@ export interface DetectReport {
   bodiesRead: number;
   created: number;
   alreadyKnown: number;
+  /** Échéances NON créées parce que l'IA avait jugé le mail sans action. */
+  vetoedByAi: number;
   durationMs: number;
+}
+
+/**
+ * L'IA a-t-elle déjà tranché que ce mail n'appelle aucune action ?
+ *
+ * POURQUOI (10/08) : les heuristiques de date tournaient en parallèle de
+ * l'analyse IA et l'écrasaient. Résultat mesuré : 11 échéances sur 15
+ * portaient sur un mail que l'IA avait classé « à lire » ou « à archiver »
+ * — dont une pure information (« paiements indisponibles le 12 mai »)
+ * transformée en échéance de PAIEMENT.
+ *
+ * Règle : un verdict IA EXPLICITE et de confiance HAUTE disant « rien à
+ * faire » interdit la création d'une échéance. On reste prudent : une
+ * confiance faible ou moyenne ne bloque rien (l'heuristique garde sa chance),
+ * et les verdicts « à payer » / « à répondre » ne bloquent évidemment pas.
+ */
+function aiVerdictSaysNoAction(msg: {
+  aiAction: string | null;
+  analysisConfidence: string | null;
+}): boolean {
+  if (!msg.aiAction) return false;
+  if (!['read', 'archive', 'none'].includes(msg.aiAction)) return false;
+  return msg.analysisConfidence === 'high';
 }
 
 export async function detectDeadlines(
@@ -266,6 +291,12 @@ export async function detectDeadlines(
       fromEmail: true,
       fromName: true,
       date: true,
+      // Le VERDICT DE L'IA (10/08). Il a été payé sur le forfait de
+      // l'utilisateur et il est souvent JUSTE — c'est le détecteur qui avait
+      // tort de l'ignorer : voir aiVerdictSaysNoAction.
+      aiAction: true,
+      analysisConfidence: true,
+      aiSummary: true,
       folder: { select: { path: true } },
     },
   });
@@ -274,6 +305,7 @@ export async function detectDeadlines(
   let created = 0;
   let alreadyKnown = 0;
   let bodiesRead = 0;
+  let vetoedByAi = 0;
   const createdItems: { subject: string; date: string | null; folder?: string; uid?: number }[] =
     [];
 
@@ -283,6 +315,17 @@ export async function detectDeadlines(
     source: 'sujet' | 'contenu',
     titleOverride?: string,
   ) => {
+    // GARDE-FOU (10/08, retour utilisateur cinglant). Le mail « [SIV-PAYFIP]
+    // Paiements par carte bancaire indisponibles le 12 mai » devenait une
+    // échéance de PAIEMENT au 12 mai : le détecteur avait vu un mot et une
+    // date. Or l'IA avait déjà lu ce mail et écrit, en confiance haute :
+    // « information technique ponctuelle sans action durable requise ».
+    // Mesure du jour : 11 échéances sur 15 portaient sur un mail que l'IA
+    // jugeait SANS action. Quand l'IA a tranché, elle fait autorité.
+    if (aiVerdictSaysNoAction(msg)) {
+      vetoedByAi++;
+      return;
+    }
     const existing = await db.deadline.findUnique({
       where: {
         accountSlug_messageId_date: { accountSlug: account, messageId: msg.id, date: ex.date },
@@ -395,7 +438,10 @@ export async function detectDeadlines(
       result: `${created} échéance(s) proposée(s)`,
     });
   }
-  progress(`✅ ${created} nouvelle(s) échéance(s) proposée(s) (${alreadyKnown} déjà connues).`);
+  progress(
+    `✅ ${created} nouvelle(s) échéance(s) proposée(s) (${alreadyKnown} déjà connues` +
+      `${vetoedByAi ? `, ${vetoedByAi} écartée(s) : l'analyse disait « rien à faire »` : ''}).`,
+  );
 
   return {
     account,
@@ -403,6 +449,7 @@ export async function detectDeadlines(
     bodiesRead,
     created,
     alreadyKnown,
+    vetoedByAi,
     durationMs: Date.now() - started,
   };
 }

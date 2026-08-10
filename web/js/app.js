@@ -1040,7 +1040,7 @@ async function todayFillWhatsNew() {
     el.innerHTML = items.map((it) => `<div class="notice" style="margin-bottom:10px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
       <span>🆕 <strong>Nouveau : ${esc(it.label)}.</strong> ${esc(it.summary)}</span>
       <span style="margin-left:auto; display:flex; gap:8px">
-        <a class="btn btn-sm" href="#/deadlines">Voir</a>
+        ${it.link ? `<a class="btn btn-sm" href="${esc(it.link)}">Voir</a>` : ''}
         <button class="btn btn-sm" data-wn-ok="${esc(it.id)}">OK</button>
       </span></div>`).join('');
     el.querySelectorAll('[data-wn-ok]').forEach((b) => b.addEventListener('click', async () => {
