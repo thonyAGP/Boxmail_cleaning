@@ -5,6 +5,40 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 10/08 (33) — Fausses échéances : les heuristiques écrasaient l'IA
+
+Retour cinglant : « tu m'interprètes des échéances alors qu'il s'agit d'un
+message informant d'un arrêt du service le 12 mai […] Voilà pourquoi je ne
+crois absolument pas à ton système d'analyse sans IA ». Plus un lien absurde :
+« voir les factures à transmettre à la comptabilité » menait au calendrier.
+
+**Vérification qui change le diagnostic** : l'IA avait DÉJÀ bien jugé ce mail
+(intent info, action « à lire », confiance haute, résumé exact). C'est le
+détecteur de dates qui tournait en parallèle et l'ignorait. Mesuré sur la
+base : **11 échéances sur 15** portaient sur un mail que l'IA jugeait sans
+action, plus 3 doublons exacts.
+
+Livré et déployé : veto du verdict IA (confiance haute + « rien à faire » ⇒
+pas d'échéance), rattrapage du stock (**10 des 15 dates écartées**, statut
+réversible), et chaque carte « Quoi de neuf » porte enfin sa propre
+destination (le bouton pointait en dur vers #/deadlines).
+
+Débat dédié avec ChatGPT (conversation séparée — voir la leçon ci-dessous) :
+le défaut n'est pas l'absence d'IA mais la **confusion entre extraction et
+interprétation**. Décisions actées dans `docs/PLAN-ASSISTANT.md` § 6 bis :
+un **arbitre unique** crée les objets métier (les détecteurs ne produisent que
+des preuves) ; trois états **ASSERT / HOLD / IGNORE** ; une date n'est une
+échéance que si **ACTEUR → ACTION → CONTRAINTE** tient ; quatre types de dates
+(deadline, événement, transaction, information) ; hiérarchie d'autorité **par
+type de conclusion** ; et le mode sans IA doit perdre en rappel, jamais en
+précision.
+
+**Leçons Playwright (2 colères de plus)** : ne jamais viser « la conversation
+la plus récente » (c'était la sienne, en cours de génération — interrompue) ;
+vérifier l'URL avant d'écrire ; et surtout **un sujet = une conversation**,
+jamais deux sujets transverses dans le même fil. Règles dans
+`~/.claude/CLAUDE.md`.
+
 ## 10/08 (32) — Suppression en 1 clic, et lecture des pièces jointes
 
 **Suppression (colère utilisateur)** : « j'en ai marre de devoir trier et

@@ -149,6 +149,24 @@ MES QUESTIONS POUR CETTE PASSE :
 
 ---
 
+## Règle de navigation ChatGPT (incidents du 10/08)
+
+Ses conversations tournent en parallèle des nôtres — en couper une lui fait
+perdre son travail. Donc, **avant tout envoi** :
+
+- **UN SUJET = UNE CONVERSATION.** Ne jamais empiler deux sujets dans le même
+  fil : c'est illisible et ça consomme son contexte pour rien (colère 10/08).
+  Conversations existantes : plan global →
+  `https://chatgpt.com/c/6a79f300-1384-83eb-a64c-cc35bd6d2999`
+  (« Optimisation assistant email ») ; arbitrage des producteurs de sens →
+  `https://chatgpt.com/c/6a7a052d-2bf4-83eb-8e26-58b0ba0d5f4b`.
+  **Sujet nouveau → « Nouveau chat », avec un prompt AUTONOME.**
+- **Vérifier le titre de la page** et le comparer à celui attendu : si ça ne
+  correspond pas, **ne rien envoyer**.
+- Ne jamais cliquer dans la liste latérale ni viser « la plus récente ».
+- Si une génération est en cours : ne pas écrire par-dessus ; si elle a été
+  interrompue par erreur, cliquer « Continuer la génération ».
+
 ## Rappel de méthode (payé cher le 10/08)
 
 Ne jamais accepter un objectif chiffré proposé par un modèle sans le

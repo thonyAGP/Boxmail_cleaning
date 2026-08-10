@@ -203,6 +203,7 @@ humaines et les vraies ambiguïtés — rien d'autre.
 | # | Chantier | Critère de réussite (mesurable rétrospectivement) |
 |---|---|---|
 | **0** | **Banc de validation** : MUST_SURFACE, LIKELY_LOW_RISK, rapport découpé par sous-population | les 4 152 mails 2025-26 tous évaluables, métriques séparées connus/inconnus |
+| **0 bis** | **L'arbitre** (§ 6 bis) : plus aucun détecteur ne crée d'objet métier, ils produisent des preuves ; états ASSERT/HOLD/IGNORE ; 4 types de dates ; idempotence | plus aucun doublon d'échéance ; precision visible ≥ 97 % sur audit stratifié |
 | **1** | **Moteur 3 scores + arbre**, sans nouvelle analyse IA | ≥ 98 % des MUST_SURFACE hors Auto-Done ; 100 % des `pay` et échéances ; ≥ 95 % des réponses réelles |
 | **2** | **Inconnus & contextes** : prior par domaine, entités (société, bien, dossier), texte des pièces | sur les 1 787 inconnus : ≥ 95 % des MUST_SURFACE hors Auto-Done |
 | **3** | **Claude sélectif** sur la seule bande ambiguë | ≤ 15 % du flux ; cette tranche concentre ≥ 3× plus de MUST_SURFACE que la moyenne |
@@ -237,6 +238,95 @@ texte extrait, provenance, niveau de confiance.
 - **Ne pas viser « 100 % des pièces lues par l'IA »** : viser 100 %
   *inventoriées*, typées localement, et lecture profonde seulement des pièces
   susceptibles d'avoir de la valeur.
+
+---
+
+## 6 bis. L'arbitrage entre producteurs de sens (incident du 10/08)
+
+**Le fait déclencheur.** Le mail « [SIV-PAYFIP] Paiements par carte bancaire
+indisponibles le 12 mai 2026 » (une simple maintenance) était devenu une
+**échéance de paiement au 12 mai**. Or l'IA avait déjà lu ce mail et écrit, en
+confiance haute : « information technique ponctuelle sans action durable
+requise ». Le détecteur de dates tournait **en parallèle** de l'analyse et
+l'ignorait. Mesure : **11 échéances proposées sur 15** portaient sur un mail
+que l'IA jugeait sans action ; il y avait en plus **3 doublons exacts**.
+
+**Le diagnostic** (débat dédié, `docs/archives-chatgpt/arbitrage-*`) : le
+défaut n'est pas l'absence d'IA — elle était là et avait raison. C'est la
+**confusion entre extraction et interprétation**. Trouver « paiement » +
+« 12 mai » est une extraction ; en conclure « échéance de paiement » est une
+interprétation, et le détecteur n'avait pas le droit de la publier.
+
+### La correction structurelle
+> **Les heuristiques détectent, l'IA interprète, les preuves dures
+> établissent, et un arbitre unique décide. Aucun producteur ne publie
+> directement.**
+
+Aucun détecteur ne crée plus d'objet métier : tous produisent des
+**preuves** (`EVIDENCE`). Un **arbitre** est le seul à créer une échéance —
+ce qui règle du même coup les doublons (clé d'idempotence : `MERGE`, jamais
+`CREATE`).
+
+### Trois états au lieu de deux
+`ASSERT` (preuve suffisante) / **`HOLD`** (risque réel mais compréhension
+insuffisante — mémorisé, jamais notifié, visible dans une revue légère) /
+`IGNORE`. Le `HOLD` absorbe la zone intermédiaire : trop d'`ASSERT` détruit la
+confiance, trop d'`IGNORE` fait rater des échéances.
+
+### Une date n'est une échéance que si trois relations tiennent
+**ACTEUR → ACTION → CONTRAINTE TEMPORELLE** : quelqu'un que l'utilisateur
+représente doit faire quelque chose, et la date contraint cette action.
+- « Merci de régler cette facture avant le 12 mai » → échéance.
+- « Les paiements seront indisponibles le 12 mai » → **information**.
+- « Votre prélèvement sera effectué le 12 mai » → **transaction**, pas échéance.
+
+D'où **quatre types de dates** à distinguer, au lieu de « échéance ou pas » :
+`DEADLINE`, `EVENT`, `TRANSACTION`, `INFORMATION_DATE` (cette dernière ayant
+une durée de vie : une maintenance du 12 mai est périmée le 13).
+
+### La hiérarchie dépend de la question posée
+Il n'y a pas d'ordre universel « IA > contenu > sujet ». L'autorité change
+selon la conclusion recherchée :
+
+| Conclusion cherchée | Autorité, par ordre décroissant |
+|---|---|
+| Fait brut (date, montant, référence) | champ structuré > extraction locale > IA |
+| Nature sémantique (info / demande / obligation) | preuve structurée > IA confiance haute > heuristique contenu > heuristique sujet |
+| Nature d'une date | relation explicite action↔date > IA haute > heuristique stricte > **abstention** |
+| Action à faire | règle explicite de l'utilisateur > état réel du fil > IA haute > comportement passé > heuristique |
+| Doublon | identité déterministe > tout le reste |
+
+Le comportement passé est **fort pour personnaliser une action, nul pour
+établir un fait** : « il archive toujours ces notifications » ne permet pas de
+conclure « ce mail n'est pas une facture ».
+
+### Nuance à apporter au correctif déjà déployé
+Le veto actuel (« IA confiance haute + rien à faire ⇒ pas d'échéance ») doit
+devenir : **veto sur tous les signaux faibles, mais pas sur une preuve dure
+contradictoire**. Un PDF portant « Date d'échéance : 31/08/2026 — montant dû »
+face à un verdict IA « à lire » ne doit faire gagner ni l'un ni l'autre en
+silence : c'est un **`HOLD_CONFLICT`**, à faire vérifier.
+
+### Mesures propres à ce moteur
+`precision visible` (vraies échéances / échéances proposées, viser 97-99 %),
+`miss rate` (vraies échéances retrouvées en auditant les HOLD et IGNORE),
+`abstention rate`, `rescue rate` (part des HOLD qui étaient vraies).
+**Audits stratifiés obligatoires** (factures, administrations, banques,
+assurances, réservations, courant) : 500 newsletters faciles masqueraient
+cinq échéances fiscales ratées.
+
+### Le mode sans IA doit perdre en rappel, jamais en précision
+Il continue de détecter une facture portant explicitement « Date d'échéance »,
+mais **ne fabrique plus jamais une obligation à partir de « paiement » + une
+date**. Un mode dégradé qui invente des échéances n'est pas acceptable.
+
+### Ce qu'il faut MONTRER à Anthony (et pas argumenter)
+Sur le mail fautif, un panneau : « Aucune action requise — France Titres
+informe d'une interruption le 12 mai. Date détectée : 12 mai 2026, elle
+concerne l'indisponibilité du service, pas une échéance vous concernant.
+✓ Une proposition d'échéance a été écartée. » Et un compteur de confiance :
+« 15 dates détectées · 10 écartées après analyse contradictoire · 3 doublons
+fusionnés ». *Sans les qualifier de « fausses » tant qu'il ne l'a pas confirmé.*
 
 ---
 

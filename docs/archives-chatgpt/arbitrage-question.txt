@@ -1,0 +1,38 @@
+Question d'architecture, sujet unique et autonome. Sois critique et concret, pas de généralités.
+
+LE CONTEXTE MINIMAL
+Assistant email personnel pour un dirigeant non technique (7 boîtes, 24 945 mails, 10 ans). Node + SQLite, petit VPS. Deux producteurs de sens cohabitent :
+- des HEURISTIQUES locales (motifs sur le sujet, sur le texte, dates, montants) ;
+- une analyse par IA déjà passée sur 24 295 mails (elle écrit : une intention, une action recommandée parmi read/archive/none/reply/pay, un résumé, un niveau de confiance). Elle passe par l'abonnement Claude de l'utilisateur, donc pas de réanalyse de masse à volonté, et le serveur doit fonctionner sans elle.
+
+L'INCIDENT
+Mail de l'administration française : « [SIV - PAYFIP] Paiements par carte bancaire et prélèvement indisponibles le 12 mai 2026 ». C'est une INFORMATION : la plateforme de paiement sera en maintenance ce jour-là. Le 13 mai, ce mail ne vaut plus rien.
+Mon détecteur d'échéances en a fait : « Échéance de type PAIEMENT, 12 mai 2026, à valider ». Il a vu un mot (« paiement ») et une date.
+
+CE QUE J'AI MESURÉ ENSUITE, ET QUI EST LE VRAI SUJET
+L'IA avait DÉJÀ analysé ce mail et avait eu raison :
+  intention = information ; action = « à lire » ; confiance = HAUTE
+  résumé = « France Titres signale une interruption des paiements SIV/PayFiP le 12 mai 2026 »
+  justification = « information technique ponctuelle sans action durable requise »
+Le détecteur d'échéances tournait EN PARALLÈLE de l'analyse et l'ignorait purement et simplement.
+Généralisation mesurée sur la base : 11 échéances proposées sur 15 portaient sur un mail que l'IA avait classé read/archive/none. Il y avait en plus 3 doublons exacts d'une même échéance.
+
+CORRECTIF DÉJÀ DÉPLOYÉ
+Un verdict IA explicite ET de confiance haute disant « rien à faire » interdit désormais la création d'une échéance. Rattrapage : 10 des 15 dates proposées ont été écartées (statut « ignorée », réversible).
+
+L'utilisateur, lui, en tire une conclusion radicale : « je ne crois absolument pas à ton système d'analyse sans IA ; tu trouves un mot ou une date, le script ne sait pas interpréter, et tu classes n'importe comment ».
+
+MES QUESTIONS
+1. Qui a raison ? Lui (« il faut de l'IA partout ») ou moi (« l'IA était là, elle avait raison, et c'est mon architecture qui la jetait — le défaut est l'absence de HIÉRARCHIE entre producteurs de sens concurrents, pas l'absence d'IA ») ? Argumente, et si c'est moi, dis comment le lui démontrer par ce qu'il voit à l'écran plutôt que par des mots.
+
+2. Donne-moi la RÈGLE D'ARBITRAGE explicite et codable entre producteurs de sens qui se contredisent : heuristique de sujet, heuristique de contenu, verdict IA historique, texte des pièces jointes, comportement passé de l'utilisateur. Qui prime sur qui, dans quels cas, et avec quelles exceptions ? Je veux une hiérarchie, pas « on additionne des points ».
+
+3. Sur la nature des dates : une même date peut être « une date qui m'engage » (échéance de paiement, date limite de dépôt) ou « une date qui informe » (maintenance, changement de tarif, début de soldes). Comment distingues-tu les deux de façon fiable, sachant que le vocabulaire est identique ? Donne la règle exacte.
+
+4. L'ABSTENTION. Le vrai défaut ici n'est peut-être pas l'erreur de classement mais le fait d'AFFIRMER quelque chose qu'on n'a pas compris. Comment construire une règle d'abstention (« je ne propose rien plutôt que de proposer faux ») dans un produit dont le but est justement de réduire la charge mentale — donc où se taire a aussi un coût (rater une vraie échéance) ? Quel arbitrage, et mesuré comment ?
+
+5. Sur 24 945 mails, 17 186 ont une intention posée par l'IA, 7 751 par les heuristiques. Faut-il carrément interdire aux heuristiques de produire quoi que ce soit dès qu'un verdict IA existe, et ne les laisser travailler que sur les mails jamais analysés ? Quels sont les cas où une heuristique doit malgré tout pouvoir contredire l'IA ?
+
+6. Enfin : quel périmètre exact doit rester à un moteur local déterministe, et lequel revient à l'IA, sachant l'absence d'appels automatiques en masse et l'obligation de fonctionner sans elle ?
+
+Réponds en distinguant FAIT / INFÉRENCE / HYPOTHÈSE, et termine par la règle d'arbitrage que tu coderais, telle quelle.
