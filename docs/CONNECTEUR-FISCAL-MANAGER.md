@@ -142,6 +142,6 @@ Aucun POST/ack/webhook : Fiscal-Manager garde son curseur localement.
 
 ## Archives du débat
 
-Transcriptions complètes : `docs/archives-chatgpt/` — reply1 = critique
-initiale (11,9 k), reply2 = arbitrages sur mes 4 contestations (13,1 k),
-full-thread = delta après la correction Vercel d'Anthony.
+Transcriptions complètes : `docs/archives-chatgpt/fiscal-tour{1,2,3}*` —
+tour 1 = critique initiale, tour 2 = arbitrages sur mes 4 contestations,
+tour 3 = delta après la correction Vercel d'Anthony.

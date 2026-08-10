@@ -1,0 +1,38 @@
+J'ai codé et exécuté ton backtest sur les données réelles. Résultats — ils invalident en partie ta proposition, et je crois que ton critère de validation lui-même est biaisé. Réponds en FAIT MESURÉ / INFÉRENCE / HYPOTHÈSE, et dis où tu changes d'avis.
+
+1) LES 7 102 VERDICTS « MANQUANTS » : MYSTÈRE RÉSOLU
+Répartition complète des 24 295 verdicts : archive 9 810, read 7 010, none 6 136, reply 1 067, pay 272. Les 7 102 d'écart étaient des mails supprimés ou déplacés depuis (isDeleted=1), que ma première requête excluait. Aucune valeur inconnue.
+
+2) LA QUALITÉ HISTORIQUE DE L'IA — c'est un bon signal
+P(il a réellement répondu | verdict de l'IA), mesuré sur les fils :
+ reply   → 49 % (1 067 mails)
+ pay     → 28 % (272)
+ none    → 22 % (6 136)
+ read    → 19 % (7 010)
+ archive →  8 % (9 810)
+L'écart reply 49 % / archive 8 % est net : le stock de verdicts est exploitable tel quel, sans réanalyse.
+
+3) TON SCORE DE RELATION ÉCHOUE LE TEST QUE TU AS TOI-MÊME FIXÉ
+J'ai implémenté exactement ta formule (demi-vie 730 j, replyRate lissé +2/+6, bonus de récence, cap 40). Apprentissage sur tout ce qui est ≤ 2024-12-31, validation sur 2025-2026 (4 152 mails reçus, dont 240 réellement répondus).
+ top 10 % du score capture 29 % des réponses
+ top 20 % → 42 %
+ top 30 % → 45 %
+ top 50 % → 45 % (plateau)
+Ton objectif était ≥ 85 % dans le top 30 %. On est à 45 %.
+CAUSE PRINCIPALE MESURÉE : 1 787 des 4 152 mails de validation (43 %) viennent de correspondants JAMAIS vus avant 2025. Score de relation = 0. Le modèle est aveugle sur près de la moitié du flux entrant, et le plateau à 45 % le prouve : au-delà du top 20 %, le score n'apporte plus rien.
+
+4) MA CRITIQUE DE FOND : « PRÉDIRE LA RÉPONSE » EST UN MAUVAIS PROXY DE L'IMPORTANCE
+Deux raisons.
+(a) C'est rare : 240 réponses sur 4 152 mails, soit 5,8 %. On optimise sur un événement marginal.
+(b) C'est surtout le mauvais événement : une facture à payer, un avis d'échéance, une convocation, un relevé, un appel de fonds, une assurance qui expire — RIEN de tout ça ne se répond par mail. Ce sont pourtant exactement les mails dont l'oubli coûte cher à Anthony. Ton propre critère (« qu'est-ce qui se passe s'il ne voit pas ce message ? ») n'est PAS mesuré par le taux de réponse.
+Donc : quel critère de validation utiliserais-tu à la place, sachant que je dois pouvoir le calculer rétrospectivement sur 10 ans de données SANS interroger Anthony ? J'ai en base : lu/non lu, réponse, date de réponse, pièces jointes et leur texte, échéances détectées, verdicts IA, taille, dossier, expéditeur, et le fait qu'un mail ait été supprimé ou conservé.
+
+5) QUE FAIRE DES 43 % DE CORRESPONDANTS INCONNUS ?
+C'est le vrai trou. Un notaire qui écrit pour la première fois au sujet d'une vente en cours est capital ; une plateforme inconnue qui envoie une promo ne vaut rien. Le score de relation ne peut rien dire ni de l'un ni de l'autre.
+Que mettrais-tu à la place pour ces 43 % — sachant que je dispose du DOMAINE de l'expéditeur, du contenu du mail, du texte des pièces jointes, de la boîte réceptrice (donc de la société concernée), et éventuellement d'une entité déjà connue citée dans le message (une adresse de bien, un numéro de dossier) ?
+
+6) DEUX QUESTIONS POUR FIGER LE PLAN
+(a) Compte tenu de 3), 4) et 5), quelle est la BONNE architecture du moteur d'attention ? Donne-moi la formule ou l'arbre de décision que tu coderais maintenant, avec ses poids, en distinguant ce qui est déterministe local de ce qui appelle Claude.
+(b) Redonne-moi la roadmap corrigée — phases, ordre, et pour chacune un critère de réussite qui soit MESURABLE RÉTROSPECTIVEMENT sur mes données (pas « ≥85 % des réponses dans le top 30 % », qui vient d'échouer).
+
+Sois précis et chiffré. C'est ce qui sera mis en œuvre.

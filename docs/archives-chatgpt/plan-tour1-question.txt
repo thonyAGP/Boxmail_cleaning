@@ -1,0 +1,40 @@
+Je conçois un assistant email personnel et j'ai besoin de ton sens de l'organisation, pas de complaisance. Sois critique et concret.
+
+CONTEXTE HUMAIN (le vrai objectif)
+Anthony, 45 ans environ, non technique, dirige 5 sociétés (SAS, holding, SCI, SARL, SASU) en plus d'un emploi. 7 boîtes mail. Son objectif littéral : « me réduire ma charge neuronale et me permettre de gagner du temps pour le passer en famille ». Il ne veut PAS d'un outil qui lui présente des boutons à cliquer sans analyse préalable : il veut que le système PRENNE LES DEVANTS et lui propose des actions déjà réfléchies.
+
+L'OUTIL EXISTANT (réel, en production)
+Serveur Node/SQLite + interface web. Il sait déjà : indexer l'IMAP, extraire un snippet de texte, détecter une « intention » par heuristiques, faire analyser les mails par une IA (via l'abonnement Claude de l'utilisateur, pas de clé API serveur), détecter échéances/réponses attendues/relances, proposer des règles de classement, des stratégies de rétention (suppression = corbeille uniquement), lire le texte des pièces jointes PDF, et un écran « dépouillement » qui présente le courrier un par un (mails importants) ou par lots homogènes (bruit).
+
+LES CHIFFRES RÉELS, AUJOURD'HUI (c'est le plus important de ce message)
+- 24 945 mails indexés. Répartition : thony56_gtr (perso) 15 969, Altoen 2 284, Brimmo 2 117, Au-marais 1 856, Location_Brest 1 490, Colocar 816, Econom 413.
+- Classement des intentions : info 34 %, AUCUNE intention 24 %, document 12 %, reply_expected 8 %, confirmation 6 %, invoice 5 %, promo 4 %, reminder 4 %, appointment 2 %, otp 1 %.
+  → Autrement dit 58 % des mails sont dans « info » ou « rien ». Le classement ne discrimine quasiment pas.
+- Confiance de l'analyse : high 60 %, aucune 24 %, medium 10 %, low 5 %.
+- 24 295 verdicts IA déjà posés (l'IA a beaucoup tourné), 17 188 snippets capturés.
+- 10 191 mails portent une pièce jointe. Seulement 134 pièces ont été lues (1,3 %).
+- 3 678 expéditeurs connus, tous catégorisés automatiquement. MAIS : 11 catégories corrigées à la main, et surtout ZÉRO priorité d'expéditeur posée (le système offre « ⭐ toujours important / 🔕 jamais urgent » — jamais utilisé).
+- 114 règles de classement ont été SUGGÉRÉES par le système. ZÉRO n'est active.
+- Signal d'apprentissage accumulé : 51 « corbeille », 47 « vu », 12 « action ». C'est tout.
+- 7 stratégies de rétention activées, 9 tâches, 15 échéances, 57 pièces comptables détectées.
+
+MA LECTURE DE CES CHIFFRES (conteste-la si tu la trouves fausse)
+1. « 114 règles suggérées, 0 active » est le symptôme exact de son reproche : le système produit des propositions que personne n'adopte. Une suggestion qui n'est jamais acceptée est un échec de conception, pas un manque de discipline de l'utilisateur.
+2. « 0 priorité d'expéditeur » veut dire que le système ne sait RIEN de ce qui compte pour lui personnellement. Il devine par des règles génériques (banque, admin…), jamais par sa vie réelle.
+3. 58 % en « info/rien » : les catégories sont celles d'un logiciel (intention du message), pas celles d'un humain surchargé (« ça me coûte une action » / « ça peut mourir »).
+4. 1,3 % des pièces lues alors que 41 % des mails en portent : la matière la plus riche est ignorée.
+
+CE QUE JE TE DEMANDE, EN COMMENÇANT PAR UN POINT PRÉCIS
+(A) L'ÉCRAN « À DÉPOUILLER ». Aujourd'hui : une file, un mail (ou un lot) à la fois, quelques boutons (Vu / Corbeille / Garder / Plus tard / Passer), le mail affiché à droite. C'est déjà mieux qu'une liste, mais ça reste un défilé où l'utilisateur décide TOUT. Comment repenserais-tu cet écran pour qu'il « prenne les devants » ? Notamment :
+ - Que devrait faire le système SANS demander, et où est la limite exacte ?
+ - Comment présenter une décision déjà prise de façon qu'il puisse la contester en 1 geste, plutôt qu'une question à trancher ?
+ - Faut-il continuer à traiter mail par mail, ou raisonner par « dossiers/affaires » (un fil, un fournisseur, un bien immobilier) ?
+ - Comment récolter enfin le signal « ce qui est important pour MOI » sans lui infliger un questionnaire ?
+
+(B) Puis déroule sur le reste, en restant concret : classement intelligent, détection de l'important, suppression du bruit, pièces jointes (il évoque : classer en base, extraction avec renommage automatique), et proactivité générale.
+
+(C) Propose un DÉCOUPAGE EN PHASES, chaque phase livrant une valeur mesurable en peu de temps, avec un critère de réussite chiffré.
+
+Contraintes non négociables : suppression = corbeille uniquement (jamais définitif), tout est journalisé et réversible, aucune IA payante côté serveur (l'analyse passe par son abonnement Claude), petit VPS 1 vCPU, interface en français, il est NON TECHNIQUE (zéro ligne de commande).
+
+Commence par (A) — c'est là que je veux ta pensée la plus fine.

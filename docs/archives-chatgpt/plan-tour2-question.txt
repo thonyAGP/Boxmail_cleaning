@@ -1,0 +1,33 @@
+Excellent. J'adopte : l'inversion « voilà ce que j'ai fait, conteste » ; les 4 zones (À faire / À vérifier / Fait pour vous / À surveiller) ; les 3 axes (coût pour moi / nature / contexte) au lieu de « intention » ; le registre documentaire au hash avec renommage sur la COPIE seulement ; les deux cerveaux (local déterministe toujours dispo, Claude pour le complexe) ; et le KPI « décisions humaines pour 100 mails ».
+
+MAINTENANT JE VIENS DE FOUILLER SES 10 ANS DE MAILS. Cinq faits mesurés contredisent ou déplacent une partie de ton raisonnement. Traite-les un par un, et dis clairement quand tu changes d'avis.
+
+FAIT 1 — IL N'A JAMAIS CLASSÉ. ZÉRO DOSSIER.
+Sur les 7 boîtes, il n'existe QUE INBOX / Sent / Deleted / Drafts. Aucun dossier créé en 10 ans et 25 000 mails. 11 336 mails dorment dans la boîte de réception perso.
+→ Conséquence : je n'ai AUCUNE taxonomie humaine à imiter. Et ton concept d'« affaire » n'a aucun précédent dans son comportement. Est-ce que ça invalide les affaires, ou est-ce au contraire l'argument le plus fort pour les faire (il n'a jamais classé parce que classer à la main est insupportable) ? Et si on les fait : sur quoi amorcer, puisqu'il n'a rien à me montrer ? (Ce que je sais : 5 sociétés = 5 boîtes dédiées, plus une boîte perso et une boîte location saisonnière ; des biens immobiliers identifiables par leur adresse ; des correspondants métier récurrents.)
+
+FAIT 2 — LA NOYADE EST DATÉE, ET RÉCENTE.
+Part des mails JAMAIS ouverts, par année de réception :
+2013-2020 : 0 à 2 %. 2021 : 11 %. 2022 : 23 %. 2023 : 9 %. 2024 : 25 %. 2025 : 45 %. 2026 : 63 %.
+→ Il a tenu une boîte à zéro pendant 8 ans, puis a décroché. Le volume annuel, lui, n'a que doublé (673 en 2012 → 2 870 en 2024, 1 799 sur 2026 partiel). Donc ce n'est pas le volume qui l'a noyé. Qu'est-ce que ça t'apprend sur ce qu'il faut réparer en priorité ? Et est-ce que ça change ton ordre de phases ?
+
+FAIT 3 — LE « BRUIT » EST QUASI INEXISTANT EN NOMBRE.
+Aucun expéditeur n'est à 100 % non lu. En cherchant les expéditeurs à ≥ 40 mails dont moins de 10 % sont ouverts, je n'en trouve que QUATRE :
+Brico Privé 615 mails (340 Mo), Leroy Merlin 364 (71 Mo), HomeExchange 112 (21 Mo), kidsnclouds 49 (4 Mo).
+Total : environ 1 140 mails sur 24 945, soit 4,5 %.
+→ Ta phase 5 « autopilote bruit » viserait donc 4,5 % du volume. Est-ce qu'elle mérite encore d'être une phase ? Et surtout : si le bruit est marginal, pourquoi 63 % des mails de 2026 ne sont-ils jamais ouverts ? Ce ne sont pas des pubs. Ce sont des mails « normaux » qu'il n'arrive plus à traiter. Quelle est ta lecture ?
+
+FAIT 4 — LA PLACE N'EST PAS OÙ ON CROIT.
+12,3 Go au total. Les plus gros « expéditeurs » sont SES PROPRES ADRESSES : ses envois pèsent 4 556 + 947 + 452 + 208 + 192 Mo, soit plus de 6,3 Go — la moitié du total. Brico Privé, le pire pollueur entrant, pèse 340 Mo.
+→ Le nettoyage du bruit entrant ne libérera presque rien. Est-ce que « libérer de l'espace » doit purement et simplement sortir des objectifs du produit ? (Sachant que ses boîtes ont un quota et qu'il redoute la saturation.)
+
+FAIT 5 — LE SIGNAL D'APPRENTISSAGE EXPLICITE EST QUASI NUL, MAIS L'IMPLICITE EST ÉNORME.
+Gestes explicites dans l'outil : 51 corbeille, 47 vu, 12 action, 11 catégories corrigées, 0 priorité. C'est tout.
+En revanche l'historique implicite est riche : 8 185 échanges où il a répondu (délai moyen 6 jours), et des correspondants très nets — sa femme (566 mails), 3 conseillers du Crédit Agricole du Morbihan, 2 notaires, 2 comptables (Comptastar), un architecte, un service juridique d'assurance, des agences immobilières.
+→ Tu dis « apprendre du comportement plutôt que demander ». Mais son comportement FUTUR sera rare (il veut justement moins toucher à l'outil). Est-ce qu'il ne faut pas plutôt faire une passe unique d'apprentissage RÉTROSPECTIF sur les 10 ans (qui a été répondu, en combien de temps, avec quelles pièces) et s'en servir comme socle ? Et si oui, quel modèle de score en tirer, concrètement, avec des poids que je puisse coder de façon déterministe ?
+
+QUESTIONS COMPLÉMENTAIRES
+6. Il existe déjà 24 295 verdicts IA en base (aiAction : read 6 742, none 5 148, archive 4 025, reply 1 010, pay 268) — et pourtant 58 % des mails restent en « info » ou sans intention. Comment exploiter ce stock déjà payé plutôt que de relancer une analyse ?
+7. Le connecteur comptable existe déjà (les factures partent vers son app de gestion). Où le brancher dans ton architecture d'affaires/documents pour ne pas construire deux fois la même chose ?
+8. Donne-moi la STRUCTURE DE DONNÉES minimale (tables et champs) de la phase 1 + phase 2, telle que tu la coderais, en SQLite. Je veux pouvoir commencer demain.
+9. Enfin : rédige-moi un PROMPT RÉUTILISABLE que je pourrai relancer plusieurs fois d'affilée, avec un contexte frais à chaque fois, pour auditer et optimiser cette application. Il doit forcer une analyse des données réelles, interdire les réponses génériques, et produire à chaque passe un petit nombre de changements ordonnés par valeur/effort. Donne-le tel quel, prêt à copier.

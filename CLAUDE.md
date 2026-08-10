@@ -145,10 +145,15 @@ connecteur Rentila phases 1+2, **connecteur Fiscal-Manager V1 déployé**
 bandeau d'annulation 10 s qui restaure vraiment**, **lecture des pièces
 jointes** (texte PDF sans dépendance, scans lus par Claude via le tool
 `read_attachment`, fournisseur/montant réels → pré-remplissage du frais).
+**PLAN GLOBAL ACTÉ (10/08) : `docs/PLAN-ASSISTANT.md`** — passer de « logiciel
+de tri » à « assistant qui prend les devants » (3 tours ChatGPT + backtest sur
+les données réelles). À lire AVANT tout nouveau chantier produit. Prompt
+d'audit réutilisable : `docs/PROMPT-AUDIT.md`. Prochaine étape = phase 0
+(banc de validation MUST_SURFACE / taux de fuite), pas une fonctionnalité.
 **En attente / à faire** :
-- Connecteur Fiscal-Manager : validation réelle par Anthony (config du
-  jeton dans FM /config, premier pull, société d'Au-marais à trancher) ;
-  V2 = cron Vercel + lot mensuel Cerfrance.
+- Connecteur Fiscal-Manager : jeton saisi le 10/08 ; reste à confirmer le
+  premier pull réel et la société d'Au-marais ; V2 = cron Vercel + lot
+  mensuel Cerfrance.
 - Vérifier en réel : suppression 1 clic + annulation, et le classement
   des factures scannées transmises par un proche.
 - Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
