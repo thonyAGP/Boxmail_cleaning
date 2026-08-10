@@ -922,10 +922,12 @@ async function renderToday() {
     ${t.skippedAccounts.length ? `<div class="notice warn"><strong>Boîte(s) ignorée(s)</strong> : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
     ${!t.categorized ? `<div class="notice warn">Les catégories n'ont pas encore été calculées : la partie « nettoyage » sera vide.
       Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
-    ${strip}
+    <div id="today-brief"></div>
     <div id="today-whatsnew"></div>
     <div id="today-review"></div>
     <div id="today-rentila"></div>
+    <details class="today-more"><summary>Le détail : listes, compteurs et nettoyage</summary>
+    ${strip}
     <div class="today-grid">
       <div>
         <div class="panel">
@@ -981,8 +983,12 @@ async function renderToday() {
           <div class="panel-body compact-ops" id="today-ops"><div class="empty"><span class="spinner"></span></div></div>
         </div>
       </div>
-    </div>`;
+    </div>
+    </details>`;
 
+  // Le briefing d'abord : c'est LUI la page d'accueil. Les listes existent
+  // toujours, mais repliées — on ne les ouvre que si on veut fouiller.
+  renderBriefing(t, $('#today-brief'));
   bindTodayRows($('#today-body'));
   $('#today-body').querySelectorAll('.noise-btn').forEach((btn) => {
     btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
@@ -1037,12 +1043,18 @@ async function todayFillWhatsNew() {
   try {
     const { items } = await api.whatsNew();
     if (!el.isConnected || !items.length) { if (el.isConnected) el.innerHTML = ''; return; }
-    el.innerHTML = items.map((it) => `<div class="notice" style="margin-bottom:10px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-      <span>🆕 <strong>Nouveau : ${esc(it.label)}.</strong> ${esc(it.summary)}</span>
+    // UNE nouveauté à la fois (10/08). Quatre bandeaux empilés au-dessus du
+    // briefing, c'est exactement le bruit qu'on cherche à lui épargner : les
+    // suivantes attendront qu'il ait vu celle-ci.
+    const it = items[0];
+    const reste = items.length - 1;
+    el.innerHTML = `<div class="notice" style="margin-bottom:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+      <span>🆕 <strong>${esc(it.label)}.</strong> ${esc(it.summary)}
+        ${reste > 0 ? `<span class="muted" style="font-size:12px">(+${fmtNum(reste)} autre${reste > 1 ? 's' : ''} nouveauté${reste > 1 ? 's' : ''})</span>` : ''}</span>
       <span style="margin-left:auto; display:flex; gap:8px">
         ${it.link ? `<a class="btn btn-sm" href="${esc(it.link)}">Voir</a>` : ''}
         <button class="btn btn-sm" data-wn-ok="${esc(it.id)}">OK</button>
-      </span></div>`).join('');
+      </span></div>`;
     el.querySelectorAll('[data-wn-ok]').forEach((b) => b.addEventListener('click', async () => {
       b.disabled = true;
       try {
@@ -1360,6 +1372,228 @@ async function todayFillActivity() {
 // « je t'assiste ». L'assistant présente chaque action UNE PAR UNE avec les
 // bons boutons selon sa nature — répondre / reporter / confirmer / classer —
 // au lieu de laisser l'utilisateur naviguer dans des listes.
+// ---------------------------------------------------------------- Briefing
+// « Je me suis occupé de tes mails, j'ai besoin de toi sur trois choses. »
+//
+// Retour utilisateur 10/08 : « je me retrouve avec des listes et des boutons,
+// un truc de 1990 avec un opérateur de saisie ». Le défaut n'était pas le
+// style : c'était le MODÈLE. Un tableau de N lignes × 5 boutons transforme
+// chaque détection en tâche de vérification — un gestionnaire de workflow,
+// pas un assistant. Ici : au plus 3 décisions visibles, UNE action
+// recommandée par carte, la raison écrite en français à côté de la décision,
+// et tout le reste résumé en une ligne.
+
+/** Phrase qui explique POURQUOI ce mail est devant lui. Aucune IA appelée : on
+ *  réutilise ce qui est déjà en base (résumé, montant, échéance, ancienneté). */
+function briefWhy({ kind, x }) {
+  if (kind === 'invoice') {
+    const somme = x.amount ? `${fmtNum(x.amount)} €` : 'un montant';
+    return x.dueDate
+      ? `La facture indique ${somme} à régler avant le ${fmtDate(x.dueDate)}, et je n'ai trouvé aucun paiement.`
+      : 'Ce mail porte une facture, et je n\'ai trouvé aucun paiement correspondant.';
+  }
+  if (kind === 'reply') {
+    const qui = x.fromName || x.fromEmail || 'Ton correspondant';
+    return `${esc(qui)} t'a écrit ${daysAgo(x.waitingHours)} et aucune réponse de ta part n'apparaît depuis.`;
+  }
+  if (kind === 'followup') {
+    const qui = x.counterpartyName || x.counterpartyEmail || 'ton correspondant';
+    return `Tu as écrit à ${esc(qui)} ${daysAgo(x.waitingHours)} et personne n'a répondu.`;
+  }
+  // Échéance : la date et ce qu'elle engage — en français, pas en jargon.
+  // La « raison » stockée est de la plomberie (« le sujet mentionne … suivi
+  // d'une date · extrait : … ») : elle n'a rien à faire devant lui.
+  // Tournures choisies pour éviter tout accord bancal (« un renouvellement
+  // était attendue ») : le sujet des phrases reste neutre.
+  const quoi = {
+    payment: 'Un paiement est attendu',
+    document: 'Un document est à fournir',
+    appointment: 'Un rendez-vous est prévu',
+    renewal: 'Un renouvellement est à faire',
+  }[x.type] ?? 'Quelque chose est attendu';
+  const quand = x.inDays < 0
+    ? `pour le ${fmtDate(x.date)} — ${fmtNum(-x.inDays)} jour${x.inDays < -1 ? 's' : ''} de retard`
+    : x.inDays === 0 ? 'pour aujourd\'hui'
+    : x.inDays === 1 ? 'pour demain'
+    : `pour le ${fmtDate(x.date)}, dans ${fmtNum(x.inDays)} jours`;
+  return `${quoi} ${quand}. D'après un mail de ${esc(x.fromName || x.fromEmail || 'cet expéditeur')}.`;
+}
+
+/**
+ * Construit et affiche le briefing. `t` = la réponse de /today.
+ * Règle de conception (test à s'appliquer à chaque ajout) : est-ce que ceci
+ * demande à Anthony de GÉRER ses mails, ou est-ce que ça lui ÉVITE de les
+ * gérer ? Si c'est le premier, ça ne va pas sur cet écran.
+ */
+function renderBriefing(t, el) {
+  if (!el) return;
+  const urgency = ({ kind, x }) => {
+    if (kind === 'deadline') {
+      const j = (new Date(x.date).getTime() - Date.now()) / 86_400_000;
+      return 80 - Math.max(-10, Math.min(j, 30)) * 2;
+    }
+    const waited = Math.min((x.waitingHours ?? 0) / 24, 10);
+    if (kind === 'reply') return 50 + (x.overdue ? 50 : 0) + waited;
+    if (kind === 'invoice') return 60;
+    return 40 + (x.overdue ? 30 : 0) + waited;
+  };
+  const brut = [
+    ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
+    ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
+    ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
+    ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
+  ].sort((a, b) => urgency(b) - urgency(a));
+
+  // DÉDOUBLONNAGE. Deux échéances identiques (même sujet, même date) sont la
+  // même chose pour lui, même si ce sont deux lignes en base : les afficher
+  // deux fois donne l'impression d'un système qui radote (constaté 10/08).
+  const vus = new Set();
+  const queue = brut.filter((c) => {
+    const cle = c.kind === 'deadline'
+      ? `d|${c.x.title}|${String(c.x.date).slice(0, 10)}`
+      : c.kind === 'reply' || c.kind === 'followup'
+        ? `${c.kind}|${c.x.threadId ?? c.x.uid}`
+        : `i|${c.x.account}|${c.x.uid}`;
+    if (vus.has(cle)) return false;
+    vus.add(cle);
+    return true;
+  });
+
+  // TROIS décisions visibles, pas dix-sept. Le reste existe, mais plus tard.
+  const MAX = 3;
+  const cartes = queue.slice(0, MAX);
+  const reste = queue.length - cartes.length;
+  const heure = new Date().getHours();
+  const salut = heure < 18 ? 'Bonjour' : 'Bonsoir';
+
+  // « Je me suis occupé du reste » : ce qui n'a PAS demandé son attention.
+  const traites = (t.canWait?.count ?? 0) + (t.noise?.total ?? 0);
+
+  const carteHtml = (c, i) => {
+    const a = briefAction(c);
+    const more = briefMore(c);
+    return `<div class="brief-card" data-card="${i}">
+      <div class="brief-head">
+        <div class="brief-title">${briefTitle(c)}</div>
+        ${accountChip(c.x.account)}
+      </div>
+      <div class="brief-why">${briefWhy(c)}</div>
+      <div class="brief-foot">
+        <span class="brief-open" data-open="${i}">Voir le mail</span>
+        <span style="margin-left:auto; display:flex; gap:6px; align-items:center">
+          ${more.length ? `<button class="btn btn-sm brief-more" data-more="${i}" title="Autres possibilités">⋯</button>` : ''}
+          <button class="btn btn-primary btn-sm brief-do" data-do="${i}">${a.label}</button>
+        </span>
+      </div>
+      ${more.length ? `<div class="brief-menu hidden" data-menu="${i}">
+        ${more.map(([label], k) => `<button class="btn btn-sm" data-more-do="${i}:${k}">${esc(label)}</button>`).join('')}
+      </div>` : ''}
+    </div>`;
+  };
+
+  el.innerHTML = `
+    <div class="brief">
+      <div class="brief-hello">${salut} Anthony.</div>
+      <div class="brief-lead">${cartes.length === 0
+        ? 'Rien ne demande ton attention. Tout est sous contrôle.'
+        : `<strong>${fmtNum(cartes.length)} chose${cartes.length > 1 ? 's méritent' : ' mérite'} ton attention</strong> aujourd'hui.${
+            reste > 0 ? ` <span class="muted">${fmtNum(reste)} autre${reste > 1 ? 's' : ''} peuvent attendre.</span>` : ''
+          }`}</div>
+      ${cartes.map(carteHtml).join('')}
+      ${traites > 0 ? `<div class="brief-done">✓ Je me suis occupé de <strong>${fmtNum(traites)}</strong> autres mails sans avoir besoin de toi
+        <a href="#/operations" class="muted">voir ce que j'ai fait</a></div>` : ''}
+      ${reste > 0 ? `<div class="brief-rest"><button class="btn btn-sm" id="brief-more-all">Voir les ${fmtNum(reste)} autres</button></div>` : ''}
+    </div>`;
+
+  const refresh = () => renderToday();
+  // Une action = la carte disparaît, un bandeau « Fait · Annuler » apparaît.
+  // Pas de confirmation : tout est réversible et journalisé (c'est justement
+  // ce qui permet de supprimer les questions).
+  const agir = async (c, label, fn, node) => {
+    node.style.opacity = '0.4';
+    try {
+      await fn();
+      node.remove();
+      showUndoToast(`${label} — c'est noté.`, null);
+      const restants = el.querySelectorAll('.brief-card').length;
+      const lead = el.querySelector('.brief-lead');
+      if (lead) {
+        lead.innerHTML = restants === 0
+          ? 'Plus rien ne demande ton attention. ✅'
+          : `<strong>${fmtNum(restants)} chose${restants > 1 ? 's méritent' : ' mérite'} encore ton attention.</strong>`;
+      }
+    } catch (err) {
+      node.style.opacity = '1';
+      alert(err.message);
+    }
+  };
+
+  el.querySelectorAll('[data-do]').forEach((btn) => btn.addEventListener('click', () => {
+    const c = cartes[Number(btn.dataset.do)];
+    const a = briefAction(c);
+    const node = btn.closest('.brief-card');
+    if (a.open) { openBriefReader(c); return; }
+    agir(c, a.label.replace(/^[^\s]+\s/, ''), a.run, node);
+  }));
+  el.querySelectorAll('[data-open]').forEach((s) => s.addEventListener('click', () => {
+    openBriefReader(cartes[Number(s.dataset.open)]);
+  }));
+  el.querySelectorAll('[data-more]').forEach((b) => b.addEventListener('click', () => {
+    el.querySelector(`[data-menu="${b.dataset.more}"]`)?.classList.toggle('hidden');
+  }));
+  el.querySelectorAll('[data-more-do]').forEach((b) => b.addEventListener('click', () => {
+    const [i, k] = b.dataset.moreDo.split(':').map(Number);
+    const c = cartes[i];
+    const [label, fn] = briefMore(c)[k];
+    agir(c, label, fn, b.closest('.brief-card'));
+  }));
+  $('#brief-more-all')?.addEventListener('click', () => startTodoAssistant(t));
+  void refresh;
+}
+
+/** Ouvre le mail d'une carte dans le lecteur (le geste « Voir le mail »). */
+function openBriefReader(c) {
+  const x = c.x;
+  const ref = c.kind === 'deadline'
+    ? (x.folder && x.uid ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: true } : null)
+    : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
+  if (!ref) { alert('Le mail d\'origine n\'est plus dans l\'index.'); return; }
+  openReaderFor(ref, { onRemoved: () => renderToday(), onReplied: () => renderToday() });
+}
+
+/** Le titre de la carte : qui, et ce qu'on attend de lui — pas un objet de mail. */
+function briefTitle({ kind, x }) {
+  if (kind === 'invoice') return `${esc(x.fromName || x.fromEmail || 'Facture')} — à régler`;
+  if (kind === 'reply') return `${esc(x.fromName || x.fromEmail || '?')} attend ta réponse`;
+  if (kind === 'followup') return `${esc(x.counterpartyName || x.counterpartyEmail || '?')} ne t'a pas répondu`;
+  return esc(x.title ?? 'Échéance');
+}
+
+/** L'UNIQUE action recommandée. Le reste passe derrière le menu « ⋯ ». */
+function briefAction({ kind, x }) {
+  if (kind === 'invoice') return { label: '✓ C\'est réglé', run: () => api.messageAction(x.account, { folder: x.folder, uid: x.uid, action: 'seen' }) };
+  if (kind === 'reply') return { label: '↩️ Répondre', open: true };
+  if (kind === 'followup') return { label: '✓ Plus besoin', run: () => api.followupDismiss(x.account, x.threadId) };
+  if (x.status === 'proposed') return { label: '✓ C\'est noté', run: () => api.deadlineAction(x.account, x.id, 'confirm') };
+  return { label: '✓ C\'est fait', run: () => api.deadlineAction(x.account, x.id, 'done') };
+}
+
+/** Les autres gestes possibles, discrets — 90 % du temps jamais ouverts. */
+function briefMore({ kind, x }) {
+  const m = [];
+  if (kind === 'reply') {
+    m.push(['Pas de réponse à faire', () => api.replyDismiss(x.account, x.threadId)]);
+    m.push(['Me le rappeler dans 3 jours', () => api.replySnooze(x.account, x.threadId, 3)]);
+  } else if (kind === 'followup') {
+    m.push(['Me le rappeler dans 3 jours', () => api.followupSnooze(x.account, x.threadId, 3)]);
+  } else if (kind === 'deadline' && x.status === 'proposed') {
+    m.push(['Ce n\'est pas une échéance', () => api.deadlineAction(x.account, x.id, 'dismiss')]);
+  } else if (kind === 'invoice') {
+    m.push(['En faire une tâche', () => api.taskCreate({ title: `Payer : ${x.subject}`, account: x.account, messageRef: { folder: x.folder, uid: x.uid } })]);
+  }
+  return m;
+}
+
 // Coût estimé d'une action, en minutes — MÊME barème partout (accueil et
 // parcours), pour ne jamais afficher deux durées contradictoires. Répondre
 // coûte plus qu'écarter une échéance : le barème le dit.

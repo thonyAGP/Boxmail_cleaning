@@ -1,0 +1,44 @@
+Sujet unique et autonome : la FORME de l'interface d'un assistant email. J'ai besoin de ton sens du design d'interaction, pas de conseils génériques. Sois brutal.
+
+L'UTILISATEUR
+Anthony, 45 ans, NON TECHNIQUE, dirige 5 sociétés en plus d'un emploi, 7 boîtes mail, 25 000 mails. Son objectif littéral : « réduire ma charge neuronale et gagner du temps pour le passer en famille ». Il a tenu une boîte à zéro pendant 8 ans, puis a décroché : 2 % de mails jamais ouverts jusqu'en 2020, 45 % en 2025, 63 % en 2026. Il n'a JAMAIS créé un seul dossier de classement en 10 ans.
+
+CE QUE J'AI CONSTRUIT, ET SON VERDICT
+Une application web (SPA maison, sans framework) avec une barre latérale de 15 entrées : Aujourd'hui, Boîte de réception, À traiter, Calendrier, Nettoyage rapide, Désinscriptions, Classement automatique, Journal d'activité, Recherche, Pièces jointes, État des boîtes, Paramètres, Aide…
+Chaque écran est une LISTE de lignes, et chaque ligne porte 3 à 5 boutons d'action (Confirmer / Fait / Ignorer / Lire / Rétablir / Passer / Proposer…). Des onglets partout (Proposées, Confirmées, Passées, Ignorées, Écartées). Des compteurs, des badges, des pastilles.
+
+Aujourd'hui je viens d'ajouter — parce qu'il me reprochait de classer sans expliquer — un compteur « 22 dates trouvées : 21 retenues, 1 écartée » plus un onglet « Écartées par l'analyse » avec un bouton « Rétablir » par ligne.
+
+Son verdict, mot pour mot :
+« ce n'est vraiment pas pratique comme fonctionnement, je me retrouve avec des listes et des boutons, un truc de 1990 avec un opérateur de saisie. Ce n'est pas du tout un système intuitif guidé par IA !! »
+
+Il a raison : à sa demande « montre-moi ton raisonnement », j'ai répondu par un onglet de plus. J'ajoute de l'interface là où il faudrait en enlever.
+
+CE QUI EXISTE DÉJÀ SOUS LE CAPOT (donc utilisable)
+- Une analyse IA déjà passée sur 24 295 mails : intention, action recommandée (à lire / à archiver / rien / répondre / payer), résumé en une phrase, niveau de confiance.
+- Détection d'échéances, de réponses attendues, de relances à faire, de factures.
+- Lecture du texte des pièces jointes (PDF), extraction du fournisseur et du montant.
+- Un connecteur MCP : l'utilisateur peut PARLER à son assistant depuis l'application Claude (« fais-moi mon brief », « nettoie les newsletters »), en langage naturel. Ce canal existe et fonctionne.
+- Toutes les actions sont réversibles et journalisées ; suppression = corbeille uniquement.
+
+CONTRAINTES DURES
+- SPA maison en JavaScript vanilla, aucun framework, aucun build. Je peux tout réécrire mais pas introduire React.
+- Pas d'API IA payante côté serveur : l'IA passe par son abonnement Claude, donc PAS d'appel IA à chaque frappe ni à chaque affichage. Le serveur doit fonctionner sans IA.
+- Utilisateur non technique, interface en français, il travaille sur grand écran et sur mobile.
+
+MES QUESTIONS
+1. Qu'est-ce qui, précisément, fait « 1990 / opérateur de saisie » dans ce que je décris ? Nomme les mécanismes fautifs, pas les symptômes. Je veux comprendre la règle que je viole.
+
+2. À quoi ressemble CONCRÈTEMENT une interface d'assistant email « guidée par IA » pour cet homme-là ? Décris l'écran principal tel que tu le dessinerais : ce qu'on voit en arrivant, ce qui se passe quand il veut agir, ce qui disparaît. Sois précis — je dois pouvoir le coder.
+
+3. Faut-il carrément abandonner l'idée d'un « écran par catégorie » (réponses / dates / factures / nettoyage) au profit d'autre chose ? Si oui, quoi exactement ?
+
+4. Le canal conversationnel existe déjà (il peut parler à son assistant via Claude). Est-ce que l'interface web doit devenir une simple RESTITUTION de ce que l'assistant a fait, la conversation devenant le vrai poste de commande ? Ou est-ce une fausse piste pour quelqu'un qui n'ouvrira pas Claude tous les matins ?
+
+5. Comment « montrer le raisonnement » SANS ajouter d'écran, d'onglet ni de bouton ? C'est ma question la plus directe : il veut comprendre pourquoi le système décide, sans avoir à aller consulter quoi que ce soit.
+
+6. Quel est le NOMBRE d'éléments d'interface acceptable sur l'écran d'accueil d'un homme submergé ? Et que fait-on de tout le reste — on le supprime, on le cache, on l'atteint autrement ?
+
+7. Enfin : donne-moi une séquence de 3 changements, du plus rentable au moins rentable, que je puisse coder cette semaine et qui lui feraient dire « ah oui, là c'est différent ». Pas une refonte de six mois.
+
+Réponds en FAIT / INFÉRENCE / HYPOTHÈSE quand c'est pertinent, et privilégie le concret : des maquettes en texte, des phrases exactes à afficher, des gestes précis.
