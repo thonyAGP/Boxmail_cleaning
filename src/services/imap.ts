@@ -765,18 +765,28 @@ class ImapService {
 
   // --- Écriture -------------------------------------------------------------
 
+  /**
+   * Déplace des mails. Renvoie `newUids` = les UIDs pris par les mails DANS le
+   * dossier d'arrivée, quand le serveur répond COPYUID (RFC 4315 UIDPLUS —
+   * Outlook le fait). C'est ce qui rend l'annulation possible : sans eux, on
+   * ne saurait pas quels mails ramener de la corbeille. Absents = annulation
+   * indisponible, jamais une erreur.
+   */
   async moveEmails(
     rec: AccountRecord,
     folder: string,
     uids: number[],
     destination: string,
-  ): Promise<{ moved: number; destination: string }> {
+  ): Promise<{ moved: number; destination: string; newUids: number[] }> {
     const client = await this.getClient(rec);
     const lock = await client.getMailboxLock(folder);
     try {
-      if (uids.length === 0) return { moved: 0, destination };
-      await client.messageMove(uids, destination, { uid: true });
-      return { moved: uids.length, destination };
+      if (uids.length === 0) return { moved: 0, destination, newUids: [] };
+      const r = await client.messageMove(uids, destination, { uid: true });
+      // uidMap : Map<uid source, uid destination> — l'ordre suit les sources.
+      const map = (r as { uidMap?: Map<number, number> })?.uidMap;
+      const newUids = map ? uids.map((u) => map.get(u)).filter((u): u is number => !!u) : [];
+      return { moved: uids.length, destination, newUids };
     } finally {
       lock.release();
     }
@@ -801,17 +811,34 @@ class ImapService {
     }
   }
 
+  /**
+   * Ramène des mails de la CORBEILLE vers leur dossier d'origine (annulation
+   * d'une suppression). Le trajet inverse exact de moveToTrash : aucun mail
+   * n'est créé ni effacé, seulement redéplacé.
+   */
+  async restoreFromTrash(
+    rec: AccountRecord,
+    trashUids: number[],
+    destination: string,
+  ): Promise<{ moved: number; newUids: number[]; trash: string }> {
+    const client = await this.getClient(rec);
+    const trash = (await this.findSpecialFolder(client, '\\Trash')) ?? 'Deleted';
+    if (trashUids.length === 0) return { moved: 0, newUids: [], trash };
+    const r = await this.moveEmails(rec, trash, trashUids, destination);
+    return { moved: r.moved, newUids: r.newUids, trash };
+  }
+
   /** "Suppression" = déplacement vers Trash (soft delete, SPEC §6.2). */
   async moveToTrash(
     rec: AccountRecord,
     folder: string,
     uids: number[],
-  ): Promise<{ moved: number; destination: string }> {
+  ): Promise<{ moved: number; destination: string; newUids: number[] }> {
     const client = await this.getClient(rec);
     const trash = (await this.findSpecialFolder(client, '\\Trash')) ?? 'Deleted';
     if (folder === trash) {
       // Déjà dans la corbeille : ne rien faire (jamais d'EXPUNGE définitif en v1).
-      return { moved: 0, destination: trash };
+      return { moved: 0, destination: trash, newUids: [] };
     }
     return this.moveEmails(rec, folder, uids, trash);
   }

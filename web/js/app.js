@@ -1532,8 +1532,10 @@ function showUndoToast(message, onUndo, ms = 10000) {
   document.querySelector('.undo-toast')?.remove();
   const t = document.createElement('div');
   t.className = 'undo-toast';
+  // Sans annulation possible, le bandeau reste une confirmation de ce qui
+  // vient d'être fait — il ne montre pas un bouton qui ne tiendrait pas.
   t.innerHTML = `<span>${esc(message)}</span>
-    <button class="btn btn-sm" id="undo-btn">↩️ Annuler</button>
+    ${onUndo ? '<button class="btn btn-sm" id="undo-btn">↩️ Annuler</button>' : ''}
     <span class="undo-count" id="undo-count">${Math.round(ms / 1000)}</span>`;
   document.body.appendChild(t);
   let left = Math.round(ms / 1000);
@@ -1543,10 +1545,34 @@ function showUndoToast(message, onUndo, ms = 10000) {
     if (c) c.textContent = String(left);
     if (left <= 0) { clearInterval(iv); t.remove(); }
   }, 1000);
-  t.querySelector('#undo-btn').addEventListener('click', async () => {
+  t.querySelector('#undo-btn')?.addEventListener('click', async (e) => {
     clearInterval(iv);
-    t.remove();
-    try { await onUndo(); } catch (err) { alert(err.message); }
+    e.target.disabled = true;
+    e.target.textContent = '⏳ Restauration…';
+    try {
+      await onUndo();
+      t.remove();
+    } catch (err) {
+      t.remove();
+      alert(err.message);
+    }
+  });
+}
+
+// Suppression : UN SEUL CLIC, puis 10 s pour se rattraper (retour utilisateur
+// 10/08 : « j'en ai marre de cliquer 2 fois pour supprimer »). Le mail part en
+// corbeille — jamais effacé — et ce bandeau le RAMÈNE vraiment à sa place.
+// `undo` vient du serveur (les UIDs pris dans la corbeille) ; s'il manque, on
+// ne promet rien : simple confirmation que c'est récupérable dans Outlook.
+function offerUndoDelete(account, undo, count = 1, onRestored) {
+  const n = count > 1 ? `${fmtNum(count)} mails mis` : 'Mail mis';
+  if (!undo?.trashUids?.length) {
+    showUndoToast(`${n} à la corbeille — récupérable ~30 j dans Outlook.`, null);
+    return;
+  }
+  showUndoToast(`${n} à la corbeille.`, async () => {
+    await api.messageRestore(account, undo);
+    await onRestored?.();
   });
 }
 
@@ -1775,14 +1801,21 @@ function fillReviewLearning(el, learn, onChanged) {
   el.querySelectorAll('[data-lp-show]').forEach((b) => b.addEventListener('click', () => {
     el.querySelector(`[data-lp-list="${b.dataset.lpShow}"]`)?.classList.toggle('hidden');
   }));
+  // Un clic applique : la liste exacte est déjà sous les yeux (« Voir les N
+  // mails ») et le bouton porte le geste. Pour la corbeille, le rattrapage
+  // est le bandeau de 10 s — plus de question posée (retour 10/08).
   el.querySelectorAll('[data-lp-apply]').forEach((b) => b.addEventListener('click', async () => {
     const p = proposals[Number(b.dataset.lpApply)];
-    const who = p.fromName || p.fromEmail;
-    if (p.decision === 'trash'
-      && !confirm(`Mettre ces ${p.pendingIds.length} mail(s) de ${who} à la corbeille ?\n\nIls restent récupérables ~30 jours, et l'opération est journalisée avec la liste exacte.`)) return;
     b.disabled = true;
     try {
-      await api.reviewDecide(p.pendingIds, p.decision);
+      const r = await api.reviewDecide(p.pendingIds, p.decision);
+      if (p.decision === 'trash') {
+        const label = `${fmtNum(p.pendingIds.length)} mail(s) mis à la corbeille`;
+        showUndoToast(
+          r.undo?.length ? `${label}.` : `${label} — récupérable ~30 j dans Outlook.`,
+          r.undo?.length ? async () => { await api.reviewRestore(r.undo); onChanged?.(); } : null,
+        );
+      }
       onChanged?.();
     } catch (err) { b.disabled = false; alert(err.message); }
   }));
@@ -1861,13 +1894,30 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
   };
 
   // Une décision réseau : désactive, exécute, compte, avance.
+  // Corbeille : elle part AU PREMIER CLIC (retour utilisateur 10/08), et le
+  // bandeau de 10 s permet de la rappeler — le mail revient alors à sa place
+  // ET reprend sa position dans le parcours, comme s'il n'avait rien subi.
   const decide = async (ids, decision, nMails) => {
     $('#rv-foot').querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    const g0 = queue[idx];
     try {
       const r = await api.reviewDecide(ids, decision);
       counts[decision] += nMails;
       if (r.errors?.length) alert(`Décision enregistrée, mais un effet a échoué :\n${r.errors.join('\n')}`);
       next();
+      if (decision === 'trash') {
+        const label = nMails > 1 ? `${fmtNum(nMails)} mails mis` : 'Mail mis';
+        showUndoToast(
+          r.undo?.length ? `${label} à la corbeille.` : `${label} à la corbeille — récupérable ~30 j dans Outlook.`,
+          r.undo?.length
+            ? async () => {
+                await api.reviewRestore(r.undo);
+                counts.trash -= nMails;
+                if (g0) { queue.splice(idx, 0, g0); step(); }
+              }
+            : null,
+        );
+      }
     } catch (err) {
       alert(err.message);
       step();
@@ -1892,12 +1942,12 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
           ${g.rentila ? '' : `<span class="muted">— ${esc(intentLabel)}</span>`}</div>
         <div class="muted" style="font-size:12.5px; margin-bottom:8px">${g.rentila
           ? 'Uniquement les copies de tes propres envois (avis, quittances), les alertes de connexion et le technique — rien à faire, un geste suffit. Les vraies alertes (assurances, loyers, messages) passent une par une.'
-          : 'Proposition : les marquer comme vus. Rien n\'est supprimé — la corbeille est un choix séparé, toujours confirmé.'}</div>
+          : 'Proposition : les marquer comme vus. La corbeille reste un choix séparé — un seul clic, avec 10 s pour se raviser.'}</div>
         <div class="subject-list">${g.samples.map((s) =>
           `<div><span class="mail-date">${fmtDate(s.date)}</span> ${esc(s.subject)}</div>`).join('')}
           ${g.count > g.samples.length ? `<div class="muted">… et ${fmtNum(g.count - g.samples.length)} autre(s) du même expéditeur</div>` : ''}</div>`;
       const buttons = [`<button class="btn btn-sm btn-primary" id="rv-seen">👁️ Vu pour les ${fmtNum(g.count)}</button>`,
-        `<button class="btn btn-sm" id="rv-trash" style="color:var(--red)">🗑️ Corbeille…</button>`,
+        `<button class="btn btn-sm" id="rv-trash" style="color:var(--red)" title="Part tout de suite — 10 s pour annuler">🗑️ Corbeille</button>`,
         `<button class="btn btn-sm" id="rv-keep">📥 Garder tels quels</button>`];
       if (g.count <= g.samples.length) {
         buttons.push('<button class="btn btn-sm" id="rv-split">Décider un par un</button>');
@@ -1907,11 +1957,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
         ${buttons.join('')}
         <button class="btn btn-sm" id="rv-skip" title="Reproposé au prochain dépouillement">⏭️ Passer</button>`;
       $('#rv-seen').addEventListener('click', () => decide(g.ids, 'seen', g.count));
-      $('#rv-trash').addEventListener('click', () => {
-        if (confirm(`Mettre ces ${g.count} mail(s) de ${who} à la corbeille ?\n\nIls restent récupérables ~30 jours, et l'opération est journalisée avec la liste exacte.`)) {
-          decide(g.ids, 'trash', g.count);
-        }
-      });
+      $('#rv-trash').addEventListener('click', () => decide(g.ids, 'trash', g.count));
       $('#rv-keep').addEventListener('click', () => decide(g.ids, 'keep', g.count));
       $('#rv-split')?.addEventListener('click', () => {
         // Le lot éclate en décisions individuelles insérées à la suite.
@@ -2064,11 +2110,10 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
     };
 
     // La corbeille est disponible sur TOUTES les cartes (demande utilisateur
-    // 05/08 : pouvoir supprimer sans ouvrir le lecteur) — toujours confirmée,
-    // soft delete récupérable ~30 jours, journalisée.
-    const toTrash = () => {
-      if (confirm(`Mettre « ${it.subject} » à la corbeille ?\n\nRécupérable ~30 jours, journalisé.`)) decide([it.id], 'trash', 1);
-    };
+    // 05/08 : pouvoir supprimer sans ouvrir le lecteur). Depuis le 10/08 elle
+    // part au premier clic : le rattrapage est le bandeau de 10 s, pas une
+    // question posée à chaque mail. Soft delete, journalisée.
+    const toTrash = () => decide([it.id], 'trash', 1);
     const B = [];
     if (it.class === 'important') {
       // Le libellé suit le geste attendu : répondre si une réponse est attendue.
@@ -2083,11 +2128,11 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
     } else {
       B.push(['👁️ Vu', 'btn-primary', () => decide([it.id], 'seen', 1)]);
-      B.push(['🗑️ Corbeille…', '', toTrash]);
+      B.push(['🗑️ Corbeille', '', toTrash]);
       B.push(['📥 Garder', '', () => decide([it.id], 'keep', 1)]);
     }
     if (it.class === 'important') B.push(['🕐 Plus tard', '', () => decide([it.id], 'later', 1)]);
-    if (it.class !== 'range') B.push(['🗑️ Corbeille…', '', toTrash]);
+    if (it.class !== 'range') B.push(['🗑️ Corbeille', '', toTrash]);
     // Avec une proposition, VALIDER devient le geste principal ; les autres
     // gestes restent disponibles en boutons secondaires, à égalité.
     const validateBtn = p
@@ -2986,6 +3031,9 @@ function opLine(op) {
       break;
     case 'ui_move_message':
       title = `📦 <strong>1 mail</strong> déplacé vers <strong>${esc(p.destination ?? '?')}</strong> <span class="muted">(depuis la recherche)</span>`;
+      break;
+    case 'ui_restore_message':
+      title = `↩️ <strong>${fmtNum(n)} mail(s)</strong> ramené(s) de la corbeille <span class="muted">(annulation)</span>`;
       break;
     case 'ui_mark_message':
       title = `🏷️ <strong>1 mail</strong> marqué « ${p.flag === 'seen' ? 'lu' : 'non lu'} »`;
@@ -7772,7 +7820,7 @@ function renderInboxBulkbar() {
         (f) => f.path !== inboxState.folder && (f.messageCount > 0 || ['inbox', 'archive', 'trash'].includes(f.role)),
       );
   bar.innerHTML = `✅ <strong>${fmtNum(sel.size)}</strong> mail(s) sélectionné(s)
-    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)" title="Met les mails cochés à la corbeille après confirmation — récupérables ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
+    <button class="btn btn-sm" id="bulk-delete" style="color:var(--red)" title="Met les mails cochés à la corbeille — 10 s pour annuler, récupérables ~30 jours dans Outlook">🗑️ Corbeille</button>
     ${isUnifiedInbox() ? '' : `<select id="bulk-move"><option value="">📦 Déplacer vers…</option>
       ${others.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}</option>`).join('')}</select>`}
     <button class="btn btn-sm" id="bulk-seen" title="Marque les mails cochés comme lus (aussi côté Microsoft)">Marquer lus</button>
@@ -7782,8 +7830,10 @@ function renderInboxBulkbar() {
 
   const run = async (action, destination) => {
     const n = inboxState.selected.size;
-    if (action === 'delete' &&
-        !confirm(`Déplacer ${n} mail(s) vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)`)) return;
+    // Cocher des mails PUIS cliquer Corbeille est déjà un geste en deux temps :
+    // une question de plus n'apporte rien (retour 10/08). Le rattrapage est le
+    // bandeau de 10 s ci-dessous. Le déplacement, lui, reste confirmé : il
+    // demande une destination et n'a pas d'annulation d'un clic.
     if (action === 'move' && !confirm(`Déplacer ${n} mail(s) vers « ${destination} » ?`)) return;
     const notice = $('#inbox-notice');
     notice.innerHTML = `<div class="notice"><span class="spinner"></span>Action en cours sur ${fmtNum(n)} mail(s)…</div>`;
@@ -7800,12 +7850,15 @@ function renderInboxBulkbar() {
       let moved = 0;
       let count = 0;
       let skipped = 0;
+      // De quoi ramener chaque groupe de sa corbeille (bandeau « Annuler »).
+      const undos = [];
       for (const [gk, uids] of groups) {
         const [acct, folder] = gk.split('|');
         const r = await api.bulkAction(acct, { folder, uids, action, destination });
         moved += r.moved ?? 0;
         count += r.count ?? 0;
         skipped += r.skipped ?? 0;
+        if (action === 'delete' && r.undo?.trashUids?.length) undos.push({ account: acct, ...r.undo });
       }
       notice.innerHTML = `<div class="notice">✅ ${
         action === 'delete' ? `${fmtNum(moved)} mail(s) → corbeille (récupérables ~30 j)`
@@ -7817,6 +7870,21 @@ function renderInboxBulkbar() {
       inboxState.selected.clear();
       await loadInbox();
       refreshOverview().catch(() => {});
+      if (action === 'delete') {
+        const label = `${fmtNum(moved)} mail(s) mis à la corbeille`;
+        showUndoToast(
+          undos.length === groups.size ? `${label}.` : `${label} — récupérable ~30 j dans Outlook.`,
+          undos.length === groups.size
+            ? async () => {
+                for (const u of undos) {
+                  await api.messageRestore(u.account, { folder: u.folder, uids: u.uids, trashUids: u.trashUids });
+                }
+                await loadInbox();
+                refreshOverview().catch(() => {});
+              }
+            : null,
+        );
+      }
     } catch (err) {
       notice.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     }
@@ -8448,17 +8516,19 @@ async function openReader(item, row, opts = {}) {
     onSeen(item, seen);
   };
 
-  const doAction = async (btn, action, destination) => {
+  // Renvoie la réponse du serveur (elle porte de quoi annuler une corbeille),
+  // ou null en cas d'échec. doAction garde la forme booléenne historique.
+  const doActionResult = async (btn, action, destination) => {
     btn.disabled = true;
     try {
-      await api.messageAction(item.account, { folder: item.folder, uid: item.uid, action, destination });
-      return true;
+      return await api.messageAction(item.account, { folder: item.folder, uid: item.uid, action, destination });
     } catch (err) {
       alert(err.message);
       btn.disabled = false;
-      return false;
+      return null;
     }
   };
+  const doAction = async (btn, action, destination) => !!(await doActionResult(btn, action, destination));
 
   $('#reader-toggle-seen').addEventListener('click', async (e) => {
     const toSeen = !item.isSeen;
@@ -8484,12 +8554,16 @@ async function openReader(item, row, opts = {}) {
     }
   });
 
+  // Suppression AU PREMIER CLIC (retour utilisateur 10/08 : « j'en ai marre
+  // de cliquer 2 fois pour supprimer »). Le garde-fou n'est plus une question
+  // posée avant, mais un bandeau « Annuler » de 10 s après : le mail est
+  // seulement déplacé en corbeille, et le bandeau le ramène vraiment.
   $('#reader-delete').addEventListener('click', async (e) => {
-    if (!confirm('Déplacer ce mail vers la corbeille ?\n(Récupérable ~30 jours dans Outlook — jamais de suppression définitive.)')) return;
-    if (await doAction(e.target, 'delete')) {
-      closeReader(); // même ordre que « Déplacer » : refermer puis avancer
-      onRemoved(item, 'delete');
-    }
+    const res = await doActionResult(e.target, 'delete');
+    if (!res) return;
+    closeReader(); // même ordre que « Déplacer » : refermer puis avancer
+    onRemoved(item, 'delete');
+    offerUndoDelete(item.account, res.undo, 1);
   });
 
   // Répondre / transférer (L5.3) — pré-remplit la modale de composition.
@@ -9004,7 +9078,7 @@ const OP_FAMILIES = {
   mails: ['ui_cleanup_sender', 'bulk_delete_by_sender', 'delete_emails', 'ui_delete_message',
     'ui_move_message', 'ui_mark_message', 'ui_bulk_delete', 'ui_bulk_move', 'ui_bulk_mark',
     'move_emails', 'mark_emails', 'create_folder', 'ui_send_mail', 'apply_mail_rule',
-    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate', 'ui_review_undo'],
+    'rule_auto_apply', 'retention_auto_apply', 'grand_menage', 'ui_unsubscribe', 'ui_unsubscribe_manual', 'ui_review_decide', 'ui_review_validate', 'ui_review_undo', 'ui_restore_message'],
   analyses: ['ai_analysis', 'detect_deadlines', 'ui_analysis_feedback', 'repair_snippets', 'ui_review_learning_dismiss'],
   suivi: ['snooze_reply', 'dismiss_reply', 'restore_reply', 'snooze_followup', 'mark_followup_done',
     'restore_followup', 'confirm_deadline', 'dismiss_deadline', 'complete_deadline',

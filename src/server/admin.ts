@@ -64,6 +64,7 @@ import {
   type UnifiedRole,
   validateUids,
   reflectBulkInIndex,
+  reflectRestoreInIndex,
 } from '../services/search.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -119,7 +120,7 @@ import {
 } from '../services/snippets.js';
 import { analysisProgress, analysisProgressByAccount } from '../services/analysis.js';
 import { generateToday, listNoiseMessages, type NoiseBucket } from '../services/today.js';
-import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, reviewUndo, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
+import { reviewSummary, reviewQueue, reviewDecide, reviewLearning, reviewLearningDismiss, validateProposal, reviewUndo, reviewRestore, REVIEW_DECISIONS, type ReviewDecision } from '../services/review.js';
 import { rentilaOverview } from '../services/rentila.js';
 import { whatsNewUnseen, whatsNewMarkSeen } from '../services/whatsnew.js';
 import {
@@ -729,6 +730,19 @@ export function buildAdminRouter(): Router {
         return;
       }
       res.json(await reviewDecide(ids, decision as ReviewDecision));
+    }),
+  );
+  // Annulation d'une corbeille du dépouillement (bandeau 10 s) : les mails
+  // reviennent dans leur dossier et se represcheront au dépouillement.
+  router.post(
+    '/review/restore',
+    guard(async (req, res) => {
+      const groups = Array.isArray(req.body?.groups) ? req.body.groups : [];
+      if (groups.length === 0) {
+        res.status(400).json({ error: 'Rien à restaurer.' });
+        return;
+      }
+      res.json(await reviewRestore(groups));
     }),
   );
   // Chantier 2 : valider une proposition (objet métier + mail dépouillé, une transaction).
@@ -1690,6 +1704,9 @@ export function buildAdminRouter(): Router {
       } else {
         let moved = 0;
         let batches = 0;
+        // UIDs pris par les mails DANS la corbeille : c'est ce qui permet au
+        // bandeau « Annuler » de les ramener. Alignés sur `uids` (même ordre).
+        const trashUids: number[] = [];
         for (let i = 0; i < uids.length; i += 200) {
           const batch = uids.slice(i, i + 200);
           const r =
@@ -1698,9 +1715,16 @@ export function buildAdminRouter(): Router {
               : await imapService.moveEmails(rec, folder, batch, destination);
           moved += r.moved;
           if ('destination' in r) destinationUsed = r.destination;
+          if (action === 'delete' && r.newUids.length === batch.length) trashUids.push(...r.newUids);
           batches++;
         }
         result = { moved, batches, destination: destinationUsed };
+        // Annulation possible seulement si le serveur a donné TOUS les
+        // nouveaux UIDs : une restauration partielle serait pire que pas
+        // d'annulation du tout (l'utilisateur croirait tout récupéré).
+        if (action === 'delete' && trashUids.length === uids.length) {
+          result.undo = { folder, uids, trashUids };
+        }
       }
 
       await recordOperation({
@@ -1950,6 +1974,9 @@ export function buildAdminRouter(): Router {
           result: `soft-deleted 1 -> ${r.destination}`,
         });
         result = { deleted: r.moved, destination: r.destination };
+        // De quoi ramener le mail si l'utilisateur clique « Annuler » dans les
+        // 10 s (bandeau) : son UID dans la corbeille + son dossier d'origine.
+        if (r.newUids.length === 1) result.undo = { folder, uids: [uid], trashUids: r.newUids };
       } else if (action === 'move') {
         const r = await imapService.moveEmails(rec, folder, [uid], destination);
         await recordOperation({
@@ -1985,6 +2012,49 @@ export function buildAdminRouter(): Router {
         action as 'delete' | 'move' | 'seen' | 'unseen' | 'flag' | 'unflag',
       );
       res.json({ ok: true, action, ...result });
+    }),
+  );
+
+  // Annulation d'une suppression (bandeau 10 s — retour utilisateur 10/08 :
+  // « j'en ai marre de cliquer 2 fois pour supprimer »). La suppression part
+  // au premier clic ; ICI on fait le trajet inverse exact : les mails
+  // reviennent de la corbeille vers leur dossier d'origine. Aucun mail n'est
+  // créé ni effacé, et l'annulation est journalisée comme une opération à
+  // part entière.
+  router.post(
+    '/accounts/:slug/messages/restore',
+    guard(async (req, res) => {
+      const slug = req.params.slug;
+      const folder = String(req.body?.folder ?? '').trim();
+      const trashUids = Array.isArray(req.body?.trashUids)
+        ? (req.body.trashUids as unknown[])
+            .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+            .slice(0, 500)
+        : [];
+      const uids = Array.isArray(req.body?.uids)
+        ? (req.body.uids as unknown[])
+            .filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+            .slice(0, 500)
+        : [];
+      if (!folder || trashUids.length === 0) {
+        res.status(400).json({ error: 'Paramètres "folder" et "trashUids" requis.' });
+        return;
+      }
+      const rec = await resolveAccount(slug);
+      const r = await imapService.restoreFromTrash(rec, trashUids, folder);
+      // Réveil de l'index : les mails reprennent de nouveaux UIDs dans leur
+      // dossier d'origine (un déplacement IMAP renumérote).
+      const pairs = uids.map((oldUid, i) => ({ oldUid, newUid: r.newUids[i] }));
+      const restored = pairs.length ? await reflectRestoreInIndex(slug, folder, pairs) : 0;
+      await recordOperation({
+        account: rec.account,
+        tool: 'ui_restore_message',
+        folder,
+        params: { count: r.moved, from: r.trash },
+        affectedUids: uids,
+        result: `restauré ${r.moved} depuis ${r.trash} -> ${folder}`,
+      });
+      res.json({ ok: true, restored: r.moved, indexRestored: restored, folder });
     }),
   );
 

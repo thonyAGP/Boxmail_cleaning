@@ -448,6 +448,42 @@ export async function reflectBulkInIndex(
 }
 
 /**
+ * Annulation d'une suppression : les mails sont revenus dans leur dossier
+ * d'origine, avec de NOUVEAUX UIDs (un déplacement IMAP renumérote). On
+ * réveille les lignes de l'index (isDeleted=false) et on repointe leur UID
+ * quand le serveur nous l'a donné, pour que l'écran redevienne juste
+ * immédiatement — la sync suivante réconcilie de toute façon.
+ * Chaque ligne est traitée à part : une collision d'UID (contrainte
+ * folderId+uid) ne doit pas faire échouer la restauration entière.
+ */
+export async function reflectRestoreInIndex(
+  account: string,
+  folder: string,
+  pairs: { oldUid: number; newUid?: number }[],
+): Promise<number> {
+  await ensureDbReady();
+  let restored = 0;
+  for (const { oldUid, newUid } of pairs) {
+    try {
+      const row = await db.message.findFirst({
+        where: { accountSlug: account, uid: oldUid, folder: { path: folder } },
+        select: { id: true },
+      });
+      if (!row) continue;
+      await db.message.update({
+        where: { id: row.id },
+        data: { isDeleted: false, ...(newUid && newUid !== oldUid ? { uid: newUid } : {}) },
+      });
+      restored++;
+    } catch {
+      // UID déjà pris (la sync est passée avant nous) : la ligne existe déjà
+      // sous sa nouvelle identité, il n'y a rien à réveiller.
+    }
+  }
+  return restored;
+}
+
+/**
  * Métadonnées d'un mail de l'index (pour journaliser les actions de l'interface
  * avec le sujet/la date exacts, et vérifier que le mail visé existe bien).
  */

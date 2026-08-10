@@ -59,6 +59,9 @@ export const api = {
   reviewDecide: (ids, decision) => request('POST', '/review/decide', { ids, decision }),
   reviewValidate: (payload) => request('POST', '/review/validate', payload),
   reviewUndo: (messageId) => request('POST', '/review/undo', { messageId }),
+  // Annulation d'une corbeille (bandeau 10 s) : ramène les mails de la
+  // corbeille dans leur dossier et les remet au dépouillement.
+  reviewRestore: (groups) => request('POST', '/review/restore', { groups }),
   whatsNew: () => request('GET', '/whatsnew'),
   whatsNewSeen: (id) => request('POST', '/whatsnew/' + encodeURIComponent(id) + '/seen'),
   rentilaOverview: () => request('GET', '/rentila/overview'),
@@ -185,6 +188,13 @@ export const api = {
       uid,
       action,
       destination,
+    }),
+  // Ramène des mails de la corbeille vers leur dossier (bandeau « Annuler »).
+  messageRestore: (slug, { folder, uids, trashUids }) =>
+    request('POST', `/accounts/${encodeURIComponent(slug)}/messages/restore`, {
+      folder,
+      uids,
+      trashUids,
     }),
   rules: (slug) => request('GET', `/accounts/${encodeURIComponent(slug)}/rules`),
   rulesSuggest: (slug) => request('POST', `/accounts/${encodeURIComponent(slug)}/rules/suggest`),

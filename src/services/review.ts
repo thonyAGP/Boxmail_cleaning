@@ -773,11 +773,26 @@ export async function reviewLearningDismiss(key: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------- Décision
+/**
+ * De quoi ramener un lot mis à la corbeille (bandeau « Annuler » 10 s).
+ * Un groupe par compte+dossier d'origine ; `trashUids` sont les UIDs pris
+ * dans la corbeille (COPYUID). Absent = annulation impossible, et le bandeau
+ * ne s'affiche pas plutôt que de promettre un retour qui n'aura pas lieu.
+ */
+export interface UndoTrashGroup {
+  account: string;
+  folder: string;
+  uids: number[];
+  trashUids: number[];
+  messageIds: number[];
+}
+
 export interface DecideResult {
   count: number;
   decision: ReviewDecision;
   tasksCreated: number;
   errors: string[];
+  undo?: UndoTrashGroup[];
 }
 
 /**
@@ -804,19 +819,35 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
   let tasksCreated = 0;
 
   // Effets réels, groupés par compte + dossier.
+  const undo: UndoTrashGroup[] = [];
   if (decision === 'seen' || decision === 'trash') {
-    const byTarget = new Map<string, { account: string; folder: string; uids: number[] }>();
+    const byTarget = new Map<
+      string,
+      { account: string; folder: string; uids: number[]; messageIds: number[] }
+    >();
     for (const m of messages) {
       const key = `${m.accountSlug}|${m.folder.path}`;
-      if (!byTarget.has(key)) byTarget.set(key, { account: m.accountSlug, folder: m.folder.path, uids: [] });
+      if (!byTarget.has(key)) {
+        byTarget.set(key, { account: m.accountSlug, folder: m.folder.path, uids: [], messageIds: [] });
+      }
       byTarget.get(key)!.uids.push(m.uid);
+      byTarget.get(key)!.messageIds.push(m.id);
     }
     for (const t of byTarget.values()) {
       try {
         const rec = await resolveAccount(t.account);
+        const trashUids: number[] = [];
         for (const part of chunk(t.uids, 200)) {
           if (decision === 'seen') await imapService.markEmails(rec, t.folder, part, ['\\Seen'], []);
-          else await imapService.moveToTrash(rec, t.folder, part);
+          else {
+            const r = await imapService.moveToTrash(rec, t.folder, part);
+            if (r.newUids.length === part.length) trashUids.push(...r.newUids);
+          }
+        }
+        // Annulation proposée seulement si le serveur a rendu TOUS les UIDs de
+        // corbeille : mieux vaut pas de bandeau qu'un retour partiel.
+        if (decision === 'trash' && trashUids.length === t.uids.length) {
+          undo.push({ account: t.account, folder: t.folder, uids: t.uids, trashUids, messageIds: t.messageIds });
         }
       } catch (err) {
         errors.push(`${t.account}/${t.folder} : ${(err as Error).message}`);
@@ -877,7 +908,51 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
     result: `dépouillement : ${messages.length} mail(s) ${DECISION_LABELS[decision]}`,
   });
 
-  return { count: messages.length, decision, tasksCreated, errors };
+  return { count: messages.length, decision, tasksCreated, errors, ...(undo.length ? { undo } : {}) };
+}
+
+/**
+ * Annulation d'une mise à la corbeille faite au dépouillement (bandeau 10 s).
+ * Trajet inverse exact : les mails reviennent de la corbeille dans leur
+ * dossier d'origine, l'index est réveillé (isDeleted=false, nouvel UID) et la
+ * décision est effacée — le mail se represente au dépouillement.
+ */
+export async function reviewRestore(groups: UndoTrashGroup[]): Promise<{ restored: number }> {
+  await ensureDbReady();
+  let restored = 0;
+  for (const g of groups) {
+    if (!g?.folder || !Array.isArray(g.trashUids) || g.trashUids.length === 0) continue;
+    const rec = await resolveAccount(g.account);
+    const r = await imapService.restoreFromTrash(rec, g.trashUids.slice(0, 500), g.folder);
+    restored += r.moved;
+    // Les mails reprennent de nouveaux UIDs : on repointe ligne par ligne
+    // (une collision d'UID ne doit pas faire échouer le reste).
+    const ids = g.messageIds ?? [];
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        await db.message.update({
+          where: { id: ids[i] },
+          data: {
+            isDeleted: false,
+            reviewedAt: null,
+            reviewDecision: null,
+            ...(r.newUids[i] ? { uid: r.newUids[i] } : {}),
+          },
+        });
+      } catch {
+        /* la sync a déjà recréé la ligne sous sa nouvelle identité */
+      }
+    }
+    await recordOperation({
+      account: g.account,
+      tool: 'ui_review_undo',
+      folder: g.folder,
+      params: { count: r.moved, from: r.trash },
+      affectedUids: g.uids,
+      result: `annulation : ${r.moved} mail(s) ramené(s) de ${r.trash} vers ${g.folder}`,
+    });
+  }
+  return { restored };
 }
 
 // ---------------------------------------------------------------- Validation (chantier 2)
