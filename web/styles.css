@@ -911,3 +911,7 @@ th.sortable:hover { color: var(--primary); }
   .brief-card { padding: 14px; }
   .brief-foot { flex-wrap: wrap; }
 }
+
+/* Les trois univers : plus gros, plus aérés que le reste — ce sont les seules
+   entrées qu'Anthony doit voir en arrivant (refonte 10/08). */
+.side-main .side-link { font-size: 14.5px; padding: 9px 12px; }

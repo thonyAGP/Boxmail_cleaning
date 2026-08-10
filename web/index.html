@@ -34,59 +34,45 @@
         </div>
       </div>
 
-      <div class="side-section">
-        <div class="side-title">VUE D'ENSEMBLE</div>
+      <!-- TROIS UNIVERS, et rien d'autre à ce niveau (refonte 10/08).
+           Une barre de 15 entrées demandait à Anthony de savoir OÙ aller ;
+           un assistant doit répondre à trois questions seulement :
+             qu'est-ce qui mérite mon attention · où est ce document ·
+             qu'as-tu fait pour moi.
+           Tout le reste existe toujours, mais derrière « Plus ». -->
+      <div class="side-section side-main">
         <nav>
           <a href="#/today" class="side-link" data-nav="today">☀️ Aujourd'hui
             <span class="badge red hidden" id="today-badge"></span></a>
-          <a href="#/inbox/@inbox" class="side-link" data-nav="inbox">📥 Boîte de réception</a>
-          <a href="#/replies" class="side-link" data-nav="todo">🔥 À traiter
-            <span class="badge red hidden" id="todo-badge"></span></a>
-          <a href="#/calendar" class="side-link" data-nav="calendar">🗓️ Calendrier</a>
+          <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
+          <a href="#/operations" class="side-link" data-nav="operations">📜 Activité</a>
         </nav>
       </div>
 
       <div class="side-section">
-        <div class="side-title">COMPTES</div>
-        <nav id="accounts-nav"></nav>
-        <a class="side-link" id="add-account-btn">＋ Ajouter un compte</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title side-toggle" id="folders-toggle" title="Suivis, envoyés, brouillons, corbeille — toutes boîtes confondues">
-          <span class="side-caret-txt" id="folders-caret">▸</span> DOSSIERS MAIL</div>
-        <nav id="folders-nav" class="hidden">
+        <div class="side-title side-toggle" id="more-toggle" title="Boîtes, dossiers, nettoyage, réglages">
+          <span class="side-caret-txt" id="more-caret">▸</span> PLUS</div>
+        <nav id="more-nav" class="hidden">
+          <a href="#/replies" class="side-link" data-nav="todo">🔥 À traiter
+            <span class="badge red hidden" id="todo-badge"></span></a>
+          <a href="#/inbox/@inbox" class="side-link" data-nav="inbox">📥 Boîte de réception</a>
+          <a href="#/calendar" class="side-link" data-nav="calendar">🗓️ Calendrier</a>
+          <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
           <a href="#/inbox/@flagged" class="side-link" data-nav="inbox">⭐ Mails suivis
             <span class="badge orange hidden" id="flagged-badge"></span></a>
           <a href="#/inbox/@sent" class="side-link" data-nav="inbox">📤 Envoyés</a>
           <a href="#/inbox/@drafts" class="side-link" data-nav="inbox">📝 Brouillons</a>
           <a href="#/inbox/@trash" class="side-link" data-nav="inbox">🗑️ Corbeille</a>
+          <a href="#/cleanup" class="side-link" data-nav="clean">🧹 Nettoyage rapide</a>
+          <a href="#/unsubscribe" class="side-link" data-nav="unsubscribe">🚫 Désinscriptions</a>
+          <a href="#/rules" class="side-link" data-nav="organize">🗂️ Classement automatique</a>
+          <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 État des boîtes</a>
+          <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
+          <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
+          <div class="side-title" style="margin-top:10px">MES BOÎTES</div>
+          <nav id="accounts-nav"></nav>
+          <a class="side-link" id="add-account-btn">＋ Ajouter un compte</a>
         </nav>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">NETTOYAGE</div>
-        <a href="#/cleanup" class="side-link" data-nav="clean">🧹 Nettoyage rapide</a>
-        <a href="#/unsubscribe" class="side-link" data-nav="unsubscribe">🚫 Désinscriptions</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">AUTOMATISATION</div>
-        <a href="#/rules" class="side-link" data-nav="organize">🗂️ Classement automatique</a>
-        <a href="#/operations" class="side-link" data-nav="operations">📜 Journal d'activité</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">OUTILS</div>
-        <a href="#/search" class="side-link" data-nav="search">🔎 Recherche</a>
-        <a href="#/attachments" class="side-link" data-nav="attachments">📎 Pièces jointes</a>
-      </div>
-
-      <div class="side-section">
-        <div class="side-title">SYSTÈME</div>
-        <a href="#/dashboard" class="side-link" data-nav="dashboard">🏠 État des boîtes</a>
-        <a href="#/settings" class="side-link" data-nav="settings">⚙️ Paramètres</a>
-        <a href="#/help" class="side-link" data-nav="help">❓ Aide</a>
       </div>
 
       <div class="side-footer">

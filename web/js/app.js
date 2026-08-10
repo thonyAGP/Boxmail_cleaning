@@ -559,15 +559,19 @@ function highlightNav() {
     } else if (inboxState.role === 'inbox') {
       document.querySelector('[data-nav="inbox"]')?.classList.add('active');
     } else {
-      // Suivis / envoyés / brouillons / corbeille : dans « Dossiers mail ».
-      openSideGroup('folders');
+      // Suivis / envoyés / brouillons / corbeille : sous « Plus ».
+      openSideGroup('more');
       document.querySelector(`a[href="#/inbox/@${CSS.escape(inboxState.role)}"]`)?.classList.add('active');
     }
     return;
   }
   const seg = hash.slice(2).split('/')[0].split('?')[0];
   const nav = NAV_BY_ROUTE[seg] ?? 'today';
-  document.querySelector(`[data-nav="${nav}"]`)?.classList.add('active');
+  const lien = document.querySelector(`[data-nav="${nav}"]`);
+  lien?.classList.add('active');
+  // Si l'écran courant vit sous « Plus », le groupe s'ouvre : on ne doit
+  // jamais se retrouver sur une page sans voir d'où elle vient.
+  if (lien?.closest('#more-nav')) openSideGroup('more');
 }
 
 /** Ouvre (sans refermer) un groupe repliable de la sidebar. */
@@ -581,9 +585,11 @@ function openSideGroup(key) {
   }
 }
 
-/** Bascule « Dossiers mail » (état mémorisé localement). */
+/** Bascule des groupes repliables de la barre (état mémorisé localement). */
 function installSideToggles() {
-  for (const key of ['folders']) {
+  // « more » remplace « folders » depuis la refonte du 10/08 : la barre ne
+  // porte plus que trois entrées, tout le reste vit derrière « Plus ».
+  for (const key of ['more']) {
     const toggle = $(`#${key}-toggle`);
     const nav = $(`#${key}-nav`);
     const caret = $(`#${key}-caret`);
