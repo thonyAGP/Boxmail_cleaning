@@ -145,6 +145,13 @@ connecteur Rentila phases 1+2, **connecteur Fiscal-Manager V1 déployé**
 bandeau d'annulation 10 s qui restaure vraiment**, **lecture des pièces
 jointes** (texte PDF sans dépendance, scans lus par Claude via le tool
 `read_attachment`, fournisseur/montant réels → pré-remplissage du frais).
+**CAP ACTÉ PAR L'UTILISATEUR (11/08) : « RETROUVER SANS CLASSER »** — le
+nettoyage n'est plus le chantier (mesuré : 966 mails nettoyables seulement,
+`docs/PLAN-NETTOYAGE.md`). Ses boîtes sont des archives non structurées ; il
+ne range rien et ne rangera pas. Premier jalon LIVRÉ : noms des pièces
+jointes stockés et cherchés, recherche étendue au résumé IA, résultats
+GROUPÉS par interlocuteur, écran « Que cherches-tu ? ». Reste : le contenu
+des pièces (27 lues sur 10 191), puis la vue documentaire.
 **PLAN GLOBAL ACTÉ (10/08) : `docs/PLAN-ASSISTANT.md`** — passer de « logiciel
 de tri » à « assistant qui prend les devants » (3 tours ChatGPT + backtest sur
 les données réelles). À lire AVANT tout nouveau chantier produit. Prompt

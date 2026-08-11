@@ -5,6 +5,55 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 11/08 (35) — « Retrouver sans classer » : premier jalon livré
+
+Décision d'Anthony après le compte rendu du 10/08 : « on part sur retrouver
+sans classer ». Le nettoyage n'est plus le chantier ; le produit doit répondre
+à « où est ce document ? ».
+
+**Le manque de départ, mesuré** : aucun nom de pièce jointe n'était stocké, et
+le TEXTE des pièces n'avait été lu que sur **27 mails sur 10 191**. La
+promesse « je retrouve ton document » reposait donc sur du vide. Or la sync
+lisait déjà le nom du fichier dans le `bodyStructure` — et le jetait.
+
+**Livré** :
+- `Message.attachmentNames` ; collecte au fil de la sync (coût nul, la
+  structure est déjà lue) + job de rattrapage `attachment-names` qui ne
+  descend QUE les structures IMAP (aucune pièce téléchargée) et répare au
+  passage `hasAttachments` sur les mails indexés avant son calcul ;
+- la recherche couvre désormais le nom des pièces ET le résumé de l'analyse
+  (17 056 mails en ont un), en plus du sujet, de l'expéditeur, du texte et du
+  contenu des pièces déjà lues ;
+- chaque résultat dit **pourquoi** il ressort (« trouvé dans le nom de la
+  pièce jointe ») — son reproche constant : le produit n'explique rien ;
+- `services/find.ts` : regroupement par **entité expéditrice**. Les deux
+  adresses Leroy Merlin (mail. et news.) fusionnent ; deux adresses hotmail
+  restent deux personnes (sinon tous ses contacts fusionneraient en un groupe
+  « hotmail ») ;
+- l'écran « Recherche » devient **« Que cherches-tu ? »** : une entrée, des
+  exemples cliquables tirés de SES boîtes (quittance, avis d'imposition,
+  bail…), puis quelques interlocuteurs avec leurs fichiers en évidence — plus
+  de liste à plat de 200 lignes triées par date.
+
+**Vérifié au navigateur** sur un jeu d'essai : « quittance » remonte les mails
+Foncia dont le sujet ne dit que « Votre document est disponible » ; « leroy
+merlin » ne fait qu'UN groupe ; « imposition » ressort par le seul résumé ;
+zéro erreur JS.
+
+**Deux pièges rencontrés en production, corrigés** :
+- le client Prisma du serveur était généré avant la migration (`Unknown
+  argument attachmentNames`) — `prisma generate` ne fait pas partie du
+  `npm run build`. Et la migration exige d'ARRÊTER l'app (« database is
+  locked »), comme le disait déjà la leçon durable ;
+- la première passe réelle rapportait `appstore_lm.gif`, `quote_lm.gif`,
+  `loc_lm.gif`… : les images de décoration des newsletters noyaient le vrai
+  `723767.pdf`. Filtre posé (image non déclarée en pièce jointe, ou < 30 Ko),
+  1 996 mails remis à examiner.
+
+**Suite** : le contenu des pièces (27/10 191 lues) reste le gros manque ;
+puis la vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats),
+sans qu'aucun dossier n'ait été créé.
+
 ## 10/08 (34) — Nettoyage : les mesures disent d'arrêter le nettoyage
 
 Reproche de départ : « tu mélanges des boîtes, des dates, des réponses qui
