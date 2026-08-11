@@ -1,5 +1,5 @@
 {
- "genereLe": "2026-08-11T14:17:33.377Z",
+ "genereLe": "2026-08-11T14:22:47.038Z",
  "version": "1",
  "etiquettesGeleesLe": "2026-08-11T14:16:13.153Z",
  "total": 17779,
@@ -7,17 +7,17 @@
  "faibleRisque": 3140,
  "aTraiter": 191,
  "fuite": {
-  "nombre": 115,
-  "taux": 60.2
+  "nombre": 107,
+  "taux": 56
  },
  "fuiteStock": {
-  "nombre": 1383,
+  "nombre": 1375,
   "base": 1459,
-  "taux": 94.8
+  "taux": 94.2
  },
  "parSurface": {
-  "réponses attendues": 158,
-  "aujourd'hui": 20,
+  "réponses attendues": 189,
+  "aujourd'hui": 21,
   "importants": 115,
   "factures à traiter": 9,
   "échéances": 3
@@ -35,8 +35,8 @@
     {
      "nom": "Au-marais",
      "mustSurface": 21,
-     "fuite": 19,
-     "taux": 90.5
+     "fuite": 12,
+     "taux": 57.1
     },
     {
      "nom": "Brimmo",
@@ -65,8 +65,8 @@
     {
      "nom": "thony56_gtr",
      "mustSurface": 54,
-     "fuite": 22,
-     "taux": 40.7
+     "fuite": 21,
+     "taux": 38.9
     }
    ]
   },
@@ -76,14 +76,14 @@
     {
      "nom": "2025",
      "mustSurface": 66,
-     "fuite": 40,
-     "taux": 60.6
+     "fuite": 39,
+     "taux": 59.1
     },
     {
      "nom": "2026",
      "mustSurface": 125,
-     "fuite": 75,
-     "taux": 60
+     "fuite": 68,
+     "taux": 54.4
     }
    ]
   },
@@ -93,8 +93,8 @@
     {
      "nom": "connu",
      "mustSurface": 161,
-     "fuite": 98,
-     "taux": 60.9
+     "fuite": 90,
+     "taux": 55.9
     },
     {
      "nom": "inconnu",
@@ -110,14 +110,14 @@
     {
      "nom": "avec",
      "mustSurface": 118,
-     "fuite": 70,
-     "taux": 59.3
+     "fuite": 69,
+     "taux": 58.5
     },
     {
      "nom": "sans",
      "mustSurface": 73,
-     "fuite": 45,
-     "taux": 61.6
+     "fuite": 38,
+     "taux": 52.1
     }
    ]
   },
@@ -127,8 +127,8 @@
     {
      "nom": "analysé",
      "mustSurface": 176,
-     "fuite": 101,
-     "taux": 57.4
+     "fuite": 93,
+     "taux": 52.8
     },
     {
      "nom": "jamais analysé",
@@ -156,8 +156,8 @@
     {
      "nom": "verdict reply",
      "mustSurface": 78,
-     "fuite": 30,
-     "taux": 38.5
+     "fuite": 22,
+     "taux": 28.2
     }
    ]
   }
@@ -182,8 +182,7 @@
    "attendu": "visible",
    "trouve": true,
    "surfaces": [
-    "réponses attendues",
-    "aujourd'hui"
+    "réponses attendues"
    ],
    "verdict": "ok"
   },
