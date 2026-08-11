@@ -1,0 +1,198 @@
+{
+ "genereLe": "2026-08-11T14:17:33.377Z",
+ "version": "1",
+ "etiquettesGeleesLe": "2026-08-11T14:16:13.153Z",
+ "total": 17779,
+ "mustSurface": 5479,
+ "faibleRisque": 3140,
+ "aTraiter": 191,
+ "fuite": {
+  "nombre": 115,
+  "taux": 60.2
+ },
+ "fuiteStock": {
+  "nombre": 1383,
+  "base": 1459,
+  "taux": 94.8
+ },
+ "parSurface": {
+  "réponses attendues": 158,
+  "aujourd'hui": 20,
+  "importants": 115,
+  "factures à traiter": 9,
+  "échéances": 3
+ },
+ "decoupages": [
+  {
+   "axe": "Par boîte",
+   "tranches": [
+    {
+     "nom": "Altoen",
+     "mustSurface": 4,
+     "fuite": 2,
+     "taux": 50
+    },
+    {
+     "nom": "Au-marais",
+     "mustSurface": 21,
+     "fuite": 19,
+     "taux": 90.5
+    },
+    {
+     "nom": "Brimmo",
+     "mustSurface": 63,
+     "fuite": 42,
+     "taux": 66.7
+    },
+    {
+     "nom": "Colocar",
+     "mustSurface": 22,
+     "fuite": 10,
+     "taux": 45.5
+    },
+    {
+     "nom": "Econom",
+     "mustSurface": 6,
+     "fuite": 3,
+     "taux": 50
+    },
+    {
+     "nom": "Location_Brest",
+     "mustSurface": 21,
+     "fuite": 17,
+     "taux": 81
+    },
+    {
+     "nom": "thony56_gtr",
+     "mustSurface": 54,
+     "fuite": 22,
+     "taux": 40.7
+    }
+   ]
+  },
+  {
+   "axe": "Par année",
+   "tranches": [
+    {
+     "nom": "2025",
+     "mustSurface": 66,
+     "fuite": 40,
+     "taux": 60.6
+    },
+    {
+     "nom": "2026",
+     "mustSurface": 125,
+     "fuite": 75,
+     "taux": 60
+    }
+   ]
+  },
+  {
+   "axe": "Expéditeur",
+   "tranches": [
+    {
+     "nom": "connu",
+     "mustSurface": 161,
+     "fuite": 98,
+     "taux": 60.9
+    },
+    {
+     "nom": "inconnu",
+     "mustSurface": 30,
+     "fuite": 17,
+     "taux": 56.7
+    }
+   ]
+  },
+  {
+   "axe": "Pièce jointe",
+   "tranches": [
+    {
+     "nom": "avec",
+     "mustSurface": 118,
+     "fuite": 70,
+     "taux": 59.3
+    },
+    {
+     "nom": "sans",
+     "mustSurface": 73,
+     "fuite": 45,
+     "taux": 61.6
+    }
+   ]
+  },
+  {
+   "axe": "Verdict IA",
+   "tranches": [
+    {
+     "nom": "analysé",
+     "mustSurface": 176,
+     "fuite": 101,
+     "taux": 57.4
+    },
+    {
+     "nom": "jamais analysé",
+     "mustSurface": 15,
+     "fuite": 14,
+     "taux": 93.3
+    }
+   ]
+  },
+  {
+   "axe": "Motif",
+   "tranches": [
+    {
+     "nom": "document à conséquence",
+     "mustSurface": 66,
+     "fuite": 52,
+     "taux": 78.8
+    },
+    {
+     "nom": "verdict pay",
+     "mustSurface": 47,
+     "fuite": 33,
+     "taux": 70.2
+    },
+    {
+     "nom": "verdict reply",
+     "mustSurface": 78,
+     "fuite": 30,
+     "taux": 38.5
+    }
+   ]
+  }
+ ],
+ "temoins": [
+  {
+   "nom": "Air France — rappel d'enregistrement périmé",
+   "attendu": "absent",
+   "trouve": true,
+   "surfaces": [],
+   "verdict": "ok"
+  },
+  {
+   "nom": "PayFiP — maintenance du 12 mai",
+   "attendu": "absent",
+   "trouve": true,
+   "surfaces": [],
+   "verdict": "ok"
+  },
+  {
+   "nom": "Facture Sosh transmise par sa mère",
+   "attendu": "visible",
+   "trouve": true,
+   "surfaces": [
+    "réponses attendues",
+    "aujourd'hui"
+   ],
+   "verdict": "ok"
+  },
+  {
+   "nom": "Elisa Serrano — deux sujets dans un fil",
+   "attendu": "visible",
+   "trouve": false,
+   "surfaces": [],
+   "verdict": "mail introuvable"
+  }
+ ]
+}
