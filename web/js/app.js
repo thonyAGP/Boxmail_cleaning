@@ -8250,20 +8250,35 @@ function renderInboxBulkbar() {
 }
 
 // ---------------------------------------------------------------- Recherche (L3)
+// ============================================================ Retrouver (11/08)
+// « Retrouver sans classer ». Décision du 11/08, après mesures : ses boîtes ne
+// sont pas sales, ce sont 25 000 mails d'archives non structurées. Lui demander
+// de ranger serait le même reproche sous un autre nom — le produit doit donc
+// répondre à « où est ce document ? », pas lister des mails.
+//
+// Concrètement, l'ancienne liste à plat de 200 lignes triées par date est
+// remplacée par quelques INTERLOCUTEURS, chacun avec ce qu'il a envoyé, et
+// chaque résultat dit POURQUOI il ressort.
 const searchState = {
   q: '',
   account: '',
-  folder: '',
-  from: '',
-  subject: '',
-  since: '',
-  before: '',
-  unseen: false,
   attachments: false,
-  showFilters: false,
   data: null,
   searched: false,
+  /** Groupes dépliés (clé d'entité) — l'utilisateur en ouvre un à la fois. */
+  open: new Set(),
 };
+
+// Exemples tirés de SES boîtes : quittance, bail, avis d'imposition… Un
+// exemple concret vaut mieux qu'une explication de syntaxe.
+const EXEMPLES = [
+  ['une quittance de loyer', 'quittance'],
+  ['un avis d’imposition', 'imposition'],
+  ['un bail', 'bail'],
+  ['un remboursement mutuelle', 'remboursement'],
+  ['une facture', 'facture'],
+  ['une réservation', 'réservation'],
+];
 
 const FOLDER_LABELS = { inbox: '📥', sent: '📤 envoyés', trash: '🗑️ corbeille', spam: '⚠️ spam', archive: '📦 archive', drafts: '📝 brouillons' };
 
@@ -8273,88 +8288,93 @@ function folderBadge(i) {
   return `<span class="badge gray">${label}</span>`;
 }
 
+/** « trouvé dans le nom de la pièce jointe » — jamais un résultat sans raison. */
+function pourquoiLigne(item) {
+  if (!item.matchedIn?.length) return '';
+  const dit = {
+    'pièce jointe': 'le nom de la pièce jointe',
+    sujet: 'le sujet',
+    expéditeur: "l'expéditeur",
+    'contenu de la pièce': 'le contenu de la pièce jointe',
+    résumé: 'le résumé',
+    'texte du mail': 'le texte du mail',
+  };
+  const l = item.matchedIn.map((m) => dit[m] ?? m);
+  const txt = l.length === 1 ? l[0] : `${l.slice(0, -1).join(', ')} et ${l[l.length - 1]}`;
+  return `<div class="find-why">trouvé dans ${esc(txt)}</div>`;
+}
+
+function ficheFichier(nom) {
+  return `<span class="find-file" title="${esc(nom)}">${attIcon(nom)} ${esc(nom)}</span>`;
+}
+
 async function renderSearch() {
   const main = $('#main');
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   main.innerHTML = `<div class="page-head">
-    <div><h1>🔎 Recherche</h1>
-      <div class="sub">Cherche dans toutes tes boîtes d'un coup (instantané), puis clique un mail
-      pour le lire ici, sans ouvrir Outlook. Synchronise tes boîtes pour des résultats à jour.</div></div></div>
-    <form class="search-bar" id="search-form">
-      <input type="search" id="s-q" placeholder="Sujet, expéditeur, adresse… (ex. facture, EDF, marie)"
+    <div><h1>🔎 Que cherches-tu ?</h1>
+      <div class="sub">Une facture, un document, un échange avec quelqu'un.
+      Je cherche dans toutes tes boîtes à la fois — dans le sujet, dans le texte,
+      dans le résumé, et jusque dans le <strong>nom des pièces jointes</strong>.
+      Tu n'as rien à ranger.</div></div></div>
+    <form class="find-bar" id="find-form">
+      <input type="search" id="s-q" placeholder="ex. quittance, taxe foncière, Nathalie, bail…"
         value="${esc(searchState.q)}" autocomplete="off">
-      <button type="submit" class="btn btn-primary">Rechercher</button>
-      <button type="button" class="btn" id="s-toggle-filters">${searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres'}</button>
+      <button type="submit" class="btn btn-primary">Chercher</button>
     </form>
-    <div class="search-filters ${searchState.showFilters ? '' : 'hidden'}" id="search-filters">
-      <label>Boîte <select id="s-account">
-        <option value="">toutes</option>
+    <div class="find-examples" id="find-examples">
+      ${EXEMPLES.map(([label, q]) => `<button class="find-chip" data-q="${esc(q)}">${esc(label)}</button>`).join('')}
+    </div>
+    <div class="find-filters">
+      <label>Dans <select id="s-account">
+        <option value="">toutes mes boîtes</option>
         ${accounts.map((a) => `<option value="${esc(a)}" ${a === searchState.account ? 'selected' : ''}>${esc(a)}</option>`).join('')}
       </select></label>
-      <label>Dossier <input type="text" id="s-folder" placeholder="tous (ex. INBOX)" value="${esc(searchState.folder)}" style="width:130px"></label>
-      <label>Expéditeur <input type="text" id="s-from" placeholder="nom ou adresse" value="${esc(searchState.from)}" style="width:150px"></label>
-      <label>Sujet <input type="text" id="s-subject" placeholder="contient…" value="${esc(searchState.subject)}" style="width:150px"></label>
-      <label>Du <input type="date" id="s-since" value="${esc(searchState.since)}"></label>
-      <label>Au <input type="date" id="s-before" value="${esc(searchState.before)}"></label>
-      <label><input type="checkbox" id="s-unseen" ${searchState.unseen ? 'checked' : ''}> non lus seulement</label>
-      <label title="Info posée à la synchronisation — les mails synchronisés avant la version « pièces jointes » ne la portent pas encore.">
-        <input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}> 📎 avec pièces jointes</label>
+      <label><input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}>
+        📎 seulement ce qui porte un document</label>
     </div>
-    <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot-clé ci-dessus, ou ouvre les filtres pour chercher par expéditeur ou par date.</div>`}</div>`;
+    <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot, ou clique un exemple ci-dessus.</div>`}</div>`;
 
-  $('#s-toggle-filters').addEventListener('click', () => {
-    searchState.showFilters = !searchState.showFilters;
-    $('#search-filters').classList.toggle('hidden', !searchState.showFilters);
-    $('#s-toggle-filters').textContent = searchState.showFilters ? 'Masquer les filtres' : '⚙️ Filtres';
-  });
-  $('#search-form').addEventListener('submit', (e) => {
+  $('#find-form').addEventListener('submit', (e) => {
     e.preventDefault();
     searchState.q = $('#s-q').value.trim();
     searchState.account = $('#s-account').value;
-    searchState.folder = $('#s-folder').value.trim();
-    searchState.from = $('#s-from').value.trim();
-    searchState.subject = $('#s-subject').value.trim();
-    searchState.since = $('#s-since').value;
-    searchState.before = $('#s-before').value;
-    searchState.unseen = $('#s-unseen').checked;
     searchState.attachments = $('#s-attachments').checked;
     runSearch();
   });
-
+  main.querySelectorAll('.find-chip').forEach((b) => {
+    b.addEventListener('click', () => {
+      searchState.q = b.dataset.q;
+      $('#s-q').value = searchState.q;
+      searchState.account = $('#s-account').value;
+      searchState.attachments = $('#s-attachments').checked;
+      runSearch();
+    });
+  });
   $('#s-q').focus();
-
-  // Résultats encore en mémoire (retour sur l'écran) : on les réaffiche.
   if (searchState.data) renderSearchResults();
 }
 
 async function runSearch() {
   const el = $('#search-results');
-  const hasCriteria =
-    searchState.q || searchState.account || searchState.folder || searchState.from ||
-    searchState.subject || searchState.since || searchState.before || searchState.unseen ||
-    searchState.attachments;
-  if (!hasCriteria) {
-    el.innerHTML = '<div class="empty">Donne au moins un critère (mot-clé, expéditeur, date…).</div>';
+  if (!searchState.q) {
+    el.innerHTML = '<div class="empty">Dis-moi ce que tu cherches — un mot suffit.</div>';
     return;
   }
-  el.innerHTML = '<div class="empty"><span class="spinner"></span>Recherche…</div>';
+  el.innerHTML = '<div class="empty"><span class="spinner"></span>Je cherche…</div>';
   searchState.searched = true;
+  searchState.open = new Set();
   try {
-    searchState.data = await api.search({
+    searchState.data = await api.find({
       q: searchState.q,
       account: searchState.account,
-      folder: searchState.folder,
-      from: searchState.from,
-      subject: searchState.subject,
-      since: searchState.since,
-      before: searchState.before,
-      unseen: searchState.unseen,
       attachments: searchState.attachments,
-      limit: 200,
+      groups: 8,
+      per: 25,
     });
   } catch (err) {
     el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}<br>
-      Si les boîtes ne sont pas encore synchronisées, lance d'abord une synchronisation.</div>`;
+      Si une boîte n'est pas encore synchronisée, lance d'abord une synchronisation.</div>`;
     return;
   }
   renderSearchResults();
@@ -8364,48 +8384,72 @@ function renderSearchResults() {
   const el = $('#search-results');
   const d = searchState.data;
   if (!el || !d) return;
-  if (d.items.length === 0) {
-    el.innerHTML = '<div class="empty">Aucun mail trouvé avec ces critères. 🤷</div>';
+  if (!d.groups.length) {
+    el.innerHTML = `<div class="empty">Je n'ai rien trouvé pour « ${esc(d.query)} ».
+      <br><span class="muted">Essaie un mot plus court, ou le nom de la personne ou de l'entreprise.</span></div>`;
     return;
   }
 
-  // Groupé par compte, dans l'ordre des résultats (déjà triés par date desc).
-  const groups = new Map();
-  d.items.forEach((item, idx) => {
-    if (!groups.has(item.account)) groups.set(item.account, []);
-    groups.get(item.account).push({ item, idx });
-  });
+  const nbDocs = d.facets.withAttachments;
+  const entete = d.total > d.examined
+    ? `J'ai trouvé <strong>${fmtNum(d.total)}</strong> mails ; je te montre les plus pertinents,
+       regroupés par interlocuteur.`
+    : `<strong>${fmtNum(d.examined)}</strong> mail(s) trouvé(s), regroupés par interlocuteur.`;
 
   el.innerHTML = `
-    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px 8px">
-      <strong>${fmtNum(d.total)}</strong> mail(s) trouvé(s)${d.truncated ? ` — les ${fmtNum(d.items.length)} plus récents sont affichés (affine avec les filtres)` : ''}.
-    </div>
-    ${[...groups.entries()].map(([account, rows]) => `
-      <div class="panel">
-        <div class="result-group-head">📧 ${esc(account)}
-          <span class="badge blue">${fmtNum(rows.length)}</span></div>
-        <div class="panel-body tight">
-          ${rows.map(({ item: i, idx }) => `
-            <div class="result-row ${i.isSeen ? '' : 'unread'}" data-idx="${idx}">
-              <span class="mail-date">${fmtDate(i.date)}</span>
-              <span class="result-from" title="${esc(i.fromEmail)}">${i.isOutbound ? '<span class="badge gray">envoyé</span> ' : ''}${esc(i.fromName || i.fromEmail)}</span>
-              <span class="result-subject">${esc(i.subject)}</span>
-              ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎</span>` : ''}
-              ${folderBadge(i)}
-              ${i.isSeen ? '' : '<span class="badge orange">non lu</span>'}
-            </div>`).join('')}
-        </div>
-      </div>`).join('')}
-    <div class="panel-body muted" style="font-size:12.5px; padding:0 4px">
-      🛟 La recherche lit uniquement les mails synchronisés sur cet appareil. Ouvrir un mail le télécharge en direct depuis la
-      boîte ; les actions (corbeille, déplacer…) sont journalisées et le soft delete reste la règle.</div>`;
+    <div class="find-lead">${entete}
+      ${nbDocs ? ` <span class="muted">· ${fmtNum(nbDocs)} portent un document.</span>` : ''}</div>
+    ${d.groups.map((g) => carteGroupe(g)).join('')}
+    <div class="panel-body muted" style="font-size:12.5px; padding:4px">
+      🛟 Rien n'est déplacé ni rangé : je retrouve tes mails là où ils sont.
+      Clique une ligne pour lire le mail ici.</div>`;
 
+  el.querySelectorAll('.find-more').forEach((b) => {
+    b.addEventListener('click', () => {
+      const k = b.dataset.key;
+      if (searchState.open.has(k)) searchState.open.delete(k);
+      else searchState.open.add(k);
+      renderSearchResults();
+    });
+  });
   el.querySelectorAll('.result-row').forEach((row) => {
     row.addEventListener('click', () => {
-      const item = searchState.data.items[Number(row.dataset.idx)];
+      const g = searchState.data.groups.find((x) => x.key === row.dataset.key);
+      const item = g?.items[Number(row.dataset.idx)];
       if (item) openReader(item, row);
     });
   });
+}
+
+function carteGroupe(g) {
+  const ouvert = searchState.open.has(g.key);
+  const montres = ouvert ? g.items : g.items.slice(0, 3);
+  const reste = g.count - montres.length;
+  // Une phrase, pas un tableau de colonnes.
+  const bits = [`${fmtNum(g.count)} mail${g.count > 1 ? 's' : ''}`];
+  if (g.withAttachments) bits.push(`${fmtNum(g.withAttachments)} avec document`);
+  if (g.lastAt) bits.push(`dernier le ${fmtDate(g.lastAt)}`);
+  return `<div class="panel find-group">
+    <div class="find-group-head">
+      <div class="find-group-name">${esc(g.label)}</div>
+      <div class="find-group-meta">${bits.join(' · ')}
+        ${g.accounts.map((a) => accountChip(a)).join(' ')}</div>
+    </div>
+    ${g.fileNames.length ? `<div class="find-files">${g.fileNames.map(ficheFichier).join('')}</div>` : ''}
+    <div class="panel-body tight">
+      ${montres.map((i, idx) => `
+        <div class="result-row ${i.isSeen ? '' : 'unread'}" data-key="${esc(g.key)}" data-idx="${idx}">
+          <span class="mail-date">${fmtDate(i.date)}</span>
+          <span class="result-subject">${esc(i.subject)}</span>
+          ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎</span>` : ''}
+          ${folderBadge(i)}
+          ${pourquoiLigne(i)}
+        </div>`).join('')}
+      ${reste > 0 || ouvert
+        ? `<button class="find-more" data-key="${esc(g.key)}">${ouvert ? '▴ replier' : `▾ voir les ${fmtNum(reste)} autres`}</button>`
+        : ''}
+    </div>
+  </div>`;
 }
 
 // ------------------------------------------------ Pièces jointes (lecture)
@@ -9470,15 +9514,23 @@ function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified
   );
 }
 
-// Retire un mail supprimé/déplacé de la liste de résultats.
+// Retire un mail supprimé/déplacé des résultats. Depuis le 11/08 les
+// résultats sont GROUPÉS par interlocuteur : il faut le retirer de son
+// groupe, et faire disparaître le groupe s'il devient vide.
 function removeItemFromResults(item) {
   const d = searchState.data;
-  if (!d) return;
-  const idx = d.items.indexOf(item);
-  if (idx >= 0) {
-    d.items.splice(idx, 1);
+  if (!d?.groups) return;
+  for (const g of d.groups) {
+    const idx = g.items.indexOf(item);
+    if (idx < 0) continue;
+    g.items.splice(idx, 1);
+    g.count = Math.max(0, g.count - 1);
+    if (item.hasAttachments) g.withAttachments = Math.max(0, g.withAttachments - 1);
     d.total = Math.max(0, d.total - 1);
+    d.examined = Math.max(0, d.examined - 1);
+    break;
   }
+  d.groups = d.groups.filter((g) => g.items.length > 0);
   renderSearchResults();
 }
 

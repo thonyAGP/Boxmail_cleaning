@@ -140,6 +140,16 @@ export const api = {
     }
     return request('GET', `/search?${q}`);
   },
+  // « Retrouver sans classer » (11/08) : même index, résultat groupé par
+  // interlocuteur au lieu d'une liste à plat.
+  find: (params) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, String(v));
+    }
+    return request('GET', `/find?${q}`);
+  },
+  attachmentNamesBackfill: () => request('POST', '/attachment-names/backfill'),
   analyzeMessage: (slug, { folder, uid, text }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
   setMessageIntent: (slug, { folder, uid, intent }) =>

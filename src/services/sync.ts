@@ -110,6 +110,42 @@ export function countAttachments(node: BodyStructNode | undefined | null): numbe
 }
 
 /**
+ * NOMS des pièces jointes d'un bodyStructure (11/08). Même parcours que
+ * `countAttachments` — l'information était déjà là, on la jetait.
+ *
+ * C'est la matière première de « retrouver sans classer » : Anthony ne range
+ * rien, mais ses fournisseurs nomment leurs fichiers (« quittance_juin.pdf »,
+ * « avis_imposition_2025.pdf », « bail_signe.pdf »). Chercher ce mot doit
+ * suffire, même quand le sujet du mail ne dit rien.
+ *
+ * Les noms sont dédoublonnés et renvoyés séparés par des retours à la ligne ;
+ * chaîne vide si aucune pièce nommée.
+ */
+export function collectAttachmentNames(node: BodyStructNode | undefined | null): string {
+  if (!node) return '';
+  const noms: string[] = [];
+  const vus = new Set<string>();
+  const walk = (n: BodyStructNode) => {
+    if (n.childNodes?.length) {
+      for (const c of n.childNodes) walk(c);
+      return;
+    }
+    const brut = n.dispositionParameters?.filename ?? n.parameters?.name;
+    if (!brut) return;
+    // Un nom peut arriver encodé (RFC 2231/2047) ou avec des espaces parasites.
+    const nom = String(brut).replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!nom) return;
+    const cle = nom.toLowerCase();
+    if (vus.has(cle)) return;
+    vus.add(cle);
+    noms.push(nom);
+  };
+  walk(node);
+  // Une newsletter peut embarquer trente images nommées : on borne.
+  return noms.slice(0, 25).join('\n');
+}
+
+/**
  * Plage IMAP compacte "premier:dernier" pour un lot d'UIDs triés.
  * Une liste explicite de milliers d'UIDs dépasse la longueur de commande
  * acceptée par Outlook ("Command failed") ; une plage reste minuscule, et les
@@ -247,6 +283,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             hasListUnsubscribe: boolean;
             hasAttachments: boolean;
             attachmentCount: number;
+            attachmentNames: string | null;
             intent: string | null;
             intentReason: string | null;
           }[] = [];
@@ -270,6 +307,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const fromEmail = from?.address?.toLowerCase() ?? null;
             const flags = msg.flags ?? new Set<string>();
             const attachmentCount = countAttachments(msg.bodyStructure as BodyStructNode);
+            const attachmentNames = collectAttachmentNames(msg.bodyStructure as BodyStructNode);
             const hasListUnsubscribe =
               !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8'));
             // Intention (A1) : sur les entrants uniquement, depuis le sujet indexé.
@@ -302,6 +340,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               hasListUnsubscribe,
               hasAttachments: attachmentCount > 0,
               attachmentCount,
+              attachmentNames: attachmentNames || null,
               intent: intentInfo?.intent ?? null,
               intentReason: intentInfo?.reason ?? null,
             });
@@ -434,6 +473,28 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   // --- 5. Agrégats par expéditeur ---------------------------------------------
   progress('Calcul des statistiques expéditeurs…');
   report.sendersUpdated = await rebuildSenders(rec.account);
+
+  // NOMS des pièces jointes (11/08) — placé en TÊTE des passes de contenu :
+  // c'est la moins chère (structures seules, aucun téléchargement) et elle
+  // répare au passage `hasAttachments` sur les mails indexés avant que la
+  // sync ne le calcule. Or « ce mail porte une pièce » protège le mail dans
+  // tout le nettoyage : mieux vaut le savoir AVANT le reste.
+  // Import dynamique : attachment-names.ts dépend d'ici (countAttachments).
+  try {
+    const { backfillAttachmentNames } = await import('./attachment-names.js');
+    const noms = await backfillAttachmentNames(rec, { limit: 300, order: 'newest' });
+    if (noms.named > 0 || noms.repaired > 0) {
+      progress(
+        `Pièces jointes : ${noms.named} mail(s) documentés par nom de fichier` +
+          `${noms.repaired ? `, ${noms.repaired} corrigé(s)` : ''}.`,
+      );
+    }
+  } catch (err) {
+    logger.warn('noms des pièces post-sync en échec', {
+      account: rec.account,
+      error: (err as Error).message,
+    });
+  }
 
   // Extraits de texte (C1) des mails les plus RÉCENTS d'abord : le flux
   // courant doit toujours avoir son extrait. Placé AVANT le calcul de

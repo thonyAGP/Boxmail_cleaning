@@ -66,6 +66,7 @@ import {
   reflectBulkInIndex,
   reflectRestoreInIndex,
 } from '../services/search.js';
+import { find } from '../services/find.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1603,6 +1604,69 @@ export function buildAdminRouter(): Router {
         limit: Number.parseInt(String(req.query.limit ?? '100'), 10) || 100,
       });
       res.json(result);
+    }),
+  );
+
+  // --- « Retrouver sans classer » (11/08) ------------------------------------
+  // Même index, mais le résultat est GROUPÉ par interlocuteur au lieu d'une
+  // liste de 500 lignes triées par date. Décision du 11/08 : ses boîtes ne
+  // sont pas sales, ce sont des archives non structurées — le produit doit
+  // aider à retrouver, pas à ranger.
+  router.get(
+    '/find',
+    guard(async (req, res) => {
+      const q = String(req.query.q ?? '').trim();
+      if (!q) {
+        res.status(400).json({ error: 'Dis-moi ce que tu cherches.' });
+        return;
+      }
+      const sinceRaw = String(req.query.since ?? '').trim();
+      const since = sinceRaw ? new Date(sinceRaw) : undefined;
+      res.json(
+        await find({
+          q,
+          account: String(req.query.account ?? '').trim() || undefined,
+          withAttachments: ['1', 'true'].includes(String(req.query.attachments ?? '')),
+          since: since && !Number.isNaN(since.getTime()) ? since : undefined,
+          maxGroups: Number.parseInt(String(req.query.groups ?? '8'), 10) || 8,
+          perGroup: Number.parseInt(String(req.query.per ?? '3'), 10) || 3,
+        }),
+      );
+    }),
+  );
+
+  // Rattrapage des NOMS de pièces jointes : structures IMAP seules, aucune
+  // pièce téléchargée. C'est ce qui rend les documents retrouvables par leur
+  // nom de fichier (« quittance_juin.pdf ») quand le sujet ne dit rien.
+  router.post(
+    '/attachment-names/backfill',
+    guard(async (req, res) => {
+      if (hasRunningJob('attachment-names')) {
+        res.status(409).json({ error: 'Une lecture des noms de pièces est déjà en cours.' });
+        return;
+      }
+      const job = startJob('attachment-names', async (progress) => {
+        const { backfillAttachmentNames } = await import('../services/attachment-names.js');
+        const noms = await listAccountNames();
+        const comptes = (await Promise.all(noms.map((n) => getAccountRecord(n)))).filter(
+          (r): r is NonNullable<typeof r> => !!r,
+        );
+        let documentes = 0;
+        let repares = 0;
+        for (const rec of comptes) {
+          progress(`📎 ${rec.account}…`);
+          // Boucle jusqu'à épuisement du compte : un lot ne suffit pas sur
+          // 25 000 mails, et l'utilisateur ne doit pas avoir à recliquer.
+          for (let tour = 0; tour < 200; tour++) {
+            const r = await backfillAttachmentNames(rec, { limit: 400, onProgress: progress });
+            documentes += r.named;
+            repares += r.repaired;
+            if (r.remaining === 0 || r.scanned === 0) break;
+          }
+        }
+        return `${documentes} mail(s) documentés par le nom de leurs pièces, ${repares} corrigé(s).`;
+      });
+      res.status(202).json({ jobId: job.id });
     }),
   );
 

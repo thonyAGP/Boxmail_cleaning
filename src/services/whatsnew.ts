@@ -64,6 +64,48 @@ const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'find-by-filename-v1',
+    label: 'Je retrouve tes documents par le nom du fichier',
+    link: '#/search',
+    run: async () => {
+      // « Retrouver sans classer » (11/08). Le nom des pièces jointes était
+      // lu par la sync puis jeté : c'est pourtant lui qui dit ce qu'un mail
+      // contient quand le sujet se contente de « Votre document est
+      // disponible ». Aucune pièce n'est téléchargée ici — on ne lit que la
+      // table des matières du mail (bodyStructure).
+      const { backfillAttachmentNames } = await import('./attachment-names.js');
+      let documentes = 0;
+      let repares = 0;
+      let restants = 0;
+      const names = await listAccountNames();
+      for (const name of names) {
+        try {
+          const rec = await getAccountRecord(name);
+          if (!rec) continue;
+          // Quelques lots par boîte : le reste se fait tout seul aux syncs
+          // suivantes, sans que l'utilisateur ait à recliquer.
+          for (let tour = 0; tour < 6; tour++) {
+            const r = await backfillAttachmentNames(rec, { limit: 400 });
+            documentes += r.named;
+            repares += r.repaired;
+            restants = r.remaining;
+            if (r.remaining === 0 || r.scanned === 0) break;
+          }
+        } catch (err) {
+          logger.warn('noms des pièces : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      return (
+        `${documentes} mail(s) retrouvables par le nom de leurs pièces` +
+        `${repares ? `, ${repares} corrigé(s)` : ''}` +
+        `${restants ? ` — le reste se fait au fil des synchronisations.` : '.'}`
+      );
+    },
+  },
+  {
     id: 'accounting-candidates-v1',
     label: 'Je repère les factures à transmettre à la comptabilité',
     // Ces pièces vivent dans Fiscal-Manager (écran « Pièces reçues ») : aucun

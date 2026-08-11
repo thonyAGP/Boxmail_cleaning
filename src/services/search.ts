@@ -71,6 +71,17 @@ export interface SearchResultItem {
    * l'analyse — inutile d'envoyer 500 caractères × 500 lignes au navigateur.
    */
   snippet: string | null;
+  /** Noms des pièces jointes (11/08) — ce qu'on montre pour « retrouver ». */
+  attachmentNames: string[];
+  /** Résumé de l'analyse, en français ; null si le mail n'a pas été analysé. */
+  summary: string | null;
+  /**
+   * POURQUOI ce mail ressort (11/08) : sujet, expéditeur, pièce jointe,
+   * contenu de la pièce, texte du mail, résumé. Vide si la recherche n'avait
+   * pas de texte libre. Reproche constant de l'utilisateur : le produit
+   * « n'explique pas pourquoi ».
+   */
+  matchedIn: string[];
 }
 
 export interface SearchResult {
@@ -99,6 +110,14 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         // facture, un nom de fournisseur, un montant).
         { snippet: { contains: q } },
         { attachmentText: { contains: q } },
+        // Le NOM des pièces jointes (11/08). L'inverse du cas précédent, et
+        // de loin le plus fréquent : le mail s'appelle « Votre document est
+        // disponible » et c'est la pièce qui s'appelle « quittance_juin.pdf ».
+        { attachmentNames: { contains: q } },
+        // Le RÉSUMÉ de l'analyse (11/08) : 17 056 mails en ont un, écrit en
+        // français. Il porte souvent le mot que cherche Anthony là où le
+        // sujet ne dit rien (« relance de la banque sur le prêt Altoen »).
+        { aiSummary: { contains: q } },
       ],
     });
   }
@@ -152,6 +171,9 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         attachmentCount: true,
         sizeBytes: true,
         snippet: true,
+        attachmentNames: true,
+        attachmentText: true,
+        aiSummary: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -180,8 +202,64 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
       snippet: previewSnippet(m.snippet),
+      attachmentNames: splitNames(m.attachmentNames),
+      summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
+      matchedIn: explainMatch(q, {
+        subject: m.subject,
+        fromName: m.fromName,
+        fromEmail: m.fromEmail,
+        attachmentNames: m.attachmentNames,
+        attachmentText: m.attachmentText,
+        snippet: m.snippet,
+        aiSummary: m.aiSummary,
+      }),
     })),
   };
+}
+
+
+/** Noms de pièces stockés en une chaîne (un par ligne) → tableau affichable. */
+export function splitNames(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/\r?\n/)
+    .map((n) => n.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+/**
+ * Où le terme cherché a-t-il été trouvé ? Renvoyé au navigateur pour que
+ * chaque résultat puisse dire « trouvé dans le nom de la pièce jointe »
+ * plutôt que d'apparaître sans raison.
+ *
+ * L'ordre est celui de la CONFIANCE accordée à la correspondance : un mot
+ * dans le nom du fichier ou dans le sujet est un signal plus fort que le
+ * même mot noyé au milieu du texte.
+ */
+export function explainMatch(
+  q: string | undefined,
+  champs: {
+    subject?: string | null;
+    fromName?: string | null;
+    fromEmail?: string | null;
+    attachmentNames?: string | null;
+    attachmentText?: string | null;
+    snippet?: string | null;
+    aiSummary?: string | null;
+  },
+): string[] {
+  const terme = q?.trim().toLowerCase();
+  if (!terme) return [];
+  const contient = (v: string | null | undefined) => !!v && v.toLowerCase().includes(terme);
+  const out: string[] = [];
+  if (contient(champs.attachmentNames)) out.push('pièce jointe');
+  if (contient(champs.subject)) out.push('sujet');
+  if (contient(champs.fromName) || contient(champs.fromEmail)) out.push('expéditeur');
+  if (contient(champs.attachmentText)) out.push('contenu de la pièce');
+  if (contient(champs.aiSummary)) out.push('résumé');
+  if (contient(champs.snippet)) out.push('texte du mail');
+  return out;
 }
 
 export interface FolderListing {
@@ -284,6 +362,8 @@ export async function listUnifiedInbox(
         attachmentCount: true,
         sizeBytes: true,
         snippet: true,
+        attachmentNames: true,
+        aiSummary: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -313,6 +393,11 @@ export async function listUnifiedInbox(
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
       snippet: previewSnippet(m.snippet),
+      // Le nom des pieces sert AUSSI dans les listes de dossier : c'est
+      // souvent lui qui dit ce qu'un mail contient (11/08).
+      attachmentNames: splitNames(m.attachmentNames),
+      summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
+      matchedIn: [],
     })),
   };
 }
@@ -367,6 +452,8 @@ export async function listFolderMessages(
         attachmentCount: true,
         sizeBytes: true,
         snippet: true,
+        attachmentNames: true,
+        aiSummary: true,
         folder: { select: { path: true, role: true } },
       },
     }),
@@ -396,6 +483,11 @@ export async function listFolderMessages(
       attachmentCount: m.attachmentCount,
       sizeBytes: m.sizeBytes,
       snippet: previewSnippet(m.snippet),
+      // Le nom des pieces sert AUSSI dans les listes de dossier : c'est
+      // souvent lui qui dit ce qu'un mail contient (11/08).
+      attachmentNames: splitNames(m.attachmentNames),
+      summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
+      matchedIn: [],
     })),
   };
 }

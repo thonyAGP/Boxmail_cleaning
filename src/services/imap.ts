@@ -622,6 +622,44 @@ class ImapService {
    * Retourne uid → texte brut décodé (HTML aplati), borné à 4000 caractères ;
    * le nettoyage fin (texte cité, espaces) appartient à services/snippets.ts.
    */
+  /**
+   * Structures SEULES pour un lot d'UIDs (11/08), sans télécharger un octet
+   * de contenu. Volontairement l'opération la moins chère possible — un FETCH
+   * BODYSTRUCTURE sur une plage — parce qu'elle doit passer sur les ~25 000
+   * mails déjà indexés pour rendre les documents retrouvables par leur nom.
+   *
+   * Couche transport uniquement : l'interprétation (compter les pièces, lire
+   * leurs noms) reste dans `sync.ts`, qui dépend d'ici et non l'inverse.
+   */
+  async fetchBodyStructures(
+    rec: AccountRecord,
+    folder: string,
+    uids: number[],
+  ): Promise<Map<number, unknown>> {
+    const out = new Map<number, unknown>();
+    if (uids.length === 0) return out;
+    const wanted = new Set(uids);
+    const sorted = [...uids].sort((a, b) => a - b);
+
+    const client = await this.getClient(rec);
+    const lock = await client.getMailboxLock(folder);
+    try {
+      // Plage compacte, jamais une longue liste d'UIDs (limite de commande
+      // Outlook) ; les UIDs non demandés que la plage ramène sont ignorés.
+      for await (const msg of client.fetch(
+        `${sorted[0]}:${sorted[sorted.length - 1]}`,
+        { uid: true, bodyStructure: true },
+        { uid: true },
+      )) {
+        if (!wanted.has(msg.uid)) continue;
+        out.set(msg.uid, msg.bodyStructure ?? null);
+      }
+    } finally {
+      lock.release();
+    }
+    return out;
+  }
+
   async fetchSnippets(
     rec: AccountRecord,
     folder: string,

@@ -102,6 +102,14 @@ model Message {
   // resynchronisés à neuf (l'info n'est pas rejouée sur l'existant).
   hasAttachments     Boolean   @default(false)
   attachmentCount    Int       @default(0)
+  // NOMS des pièces jointes, séparés par des retours à la ligne (11/08).
+  // La sync lit déjà le bodyStructure pour compter les pièces : le nom était
+  // là et on le jetait. C'est la clé de « retrouver sans classer » — on
+  // cherche « bail », « quittance », « avis d'imposition » et on tombe sur le
+  // fichier, même quand le sujet du mail ne dit rien.
+  // null = jamais capturé (mails indexés avant cette version) ; le job
+  // « noms des pièces » les rattrape sans télécharger aucune pièce.
+  attachmentNames    String?
   // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
   // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
   // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le
