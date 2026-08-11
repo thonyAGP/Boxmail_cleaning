@@ -9550,7 +9550,10 @@ function renderReaderAnalysis(a, item, opts = {}) {
     const intro = `<div class="ech-lead"><strong>${esc(d.displayName)}</strong> —
       ${fmtNum(d.totalMessages)} message(s) échangé(s)${d.totalSent ? `, dont ${fmtNum(d.totalSent)} de toi` : ''}
       ${d.subjects.length > 1 ? `· <strong>${fmtNum(d.subjects.length)} sujets distincts</strong>` : ''}
-      ${d.accounts.length > 1 ? `· ${d.accounts.map((a) => accountChip(a)).join(' ')}` : ''}</div>`;
+      ${d.accounts.length > 1 ? `· ${d.accounts.map((a) => accountChip(a)).join(' ')}` : ''}</div>
+      ${d.alsoFromDomain?.length ? `<div class="ech-voisins">Chez le même interlocuteur, d'autres adresses t'écrivent :
+        ${d.alsoFromDomain.map((v) => `<button class="ech-voisin" data-mail="${esc(v.email)}"
+          title="${esc(v.email)}">${esc(v.displayName)} (${fmtNum(v.count)})</button>`).join(' ')}</div>` : ''}`;
     zone.innerHTML = intro + d.subjects.map((sj, i) => `
       <div class="ech-sujet">
         <div class="ech-head">
@@ -9572,6 +9575,16 @@ function renderReaderAnalysis(a, item, opts = {}) {
         </div>
       </div>`).join('');
 
+    // Sauter à une autre adresse de la même maison (Yousign pour Comptastar…).
+    zone.querySelectorAll('.ech-voisin').forEach((b) => {
+      b.addEventListener('click', () => {
+        const bouton = $('#ra-echanges');
+        if (!bouton) return;
+        bouton.dataset.email = b.dataset.mail;
+        zone.classList.add('hidden');
+        bouton.click();
+      });
+    });
     zone.querySelectorAll('.ech-open').forEach((b) => {
       b.addEventListener('click', () => {
         zone.querySelector(`[data-msgs="${b.dataset.s}"]`)?.classList.toggle('hidden');

@@ -48,9 +48,25 @@ export interface SujetEchange {
   messages: MessageEchange[];
 }
 
+/** Autre adresse de la MÊME maison (le dossier ne passe pas par une seule). */
+export interface VoisinDomaine {
+  email: string;
+  displayName: string;
+  count: number;
+  lastAt: string | null;
+}
+
 export interface Correspondance {
   email: string;
   displayName: string;
+  /**
+   * Autres interlocuteurs du même domaine (11/08). Cas déclencheur : le
+   * dossier « approbation des comptes » passe par elisa.s@comptastar.fr ET
+   * par Yousign, et chercher une seule adresse rate la moitié du dossier.
+   * Vide pour les domaines grand public : deux adresses gmail sont deux
+   * personnes sans rapport.
+   */
+  alsoFromDomain: VoisinDomaine[];
   /** Boîtes dans lesquelles cette personne apparaît. */
   accounts: string[];
   totalMessages: number;
@@ -107,6 +123,7 @@ export async function correspondance(opts: {
     return {
       email,
       displayName: email,
+      alsoFromDomain: [],
       accounts: [],
       totalMessages: 0,
       totalSent: 0,
@@ -161,6 +178,7 @@ export async function correspondance(opts: {
   return {
     email,
     displayName: nom,
+    alsoFromDomain: await voisinsDuDomaine(email, opts.account),
     accounts: [...new Set(tous.map((m) => m.accountSlug))],
     totalMessages: tous.length,
     totalSent: envoyes.length,
@@ -218,4 +236,41 @@ function versEchange(m: Ligne): MessageEchange {
     attachmentNames: splitNames(m.attachmentNames),
     hasAttachments: m.hasAttachments,
   };
+}
+
+/** Domaines grand public : deux adresses n'y sont pas la même maison. */
+const DOMAINES_PERSO =
+  /^(hotmail|gmail|live|outlook|yahoo|msn|orange|wanadoo|free|sfr|laposte|icloud|me|aol)\./i;
+
+async function voisinsDuDomaine(email: string, account?: string): Promise<VoisinDomaine[]> {
+  const domaine = email.split('@')[1] ?? '';
+  if (!domaine || DOMAINES_PERSO.test(domaine)) return [];
+  const rows = await db.message.findMany({
+    where: {
+      isDeleted: false,
+      isOutbound: false,
+      fromEmail: { endsWith: '@' + domaine, not: email },
+      folder: { role: { notIn: ['spam', 'trash'] } },
+      ...(account ? { accountSlug: account } : {}),
+    },
+    orderBy: { date: 'desc' },
+    take: 300,
+    select: { fromEmail: true, fromName: true, date: true },
+  });
+  const parAdresse = new Map<string, VoisinDomaine>();
+  for (const r of rows) {
+    const e = (r.fromEmail ?? '').toLowerCase();
+    if (!e) continue;
+    const v = parAdresse.get(e) ?? {
+      email: e,
+      displayName: r.fromName || e,
+      count: 0,
+      lastAt: null as string | null,
+    };
+    v.count++;
+    const d = r.date?.toISOString() ?? null;
+    if (d && (!v.lastAt || d > v.lastAt)) v.lastAt = d;
+    parAdresse.set(e, v);
+  }
+  return [...parAdresse.values()].sort((a, b) => b.count - a.count).slice(0, 6);
 }
