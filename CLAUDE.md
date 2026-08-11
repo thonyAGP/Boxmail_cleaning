@@ -155,6 +155,12 @@ connecteur Fiscal-Manager V1 (docs/CONNECTEUR-FISCAL-MANAGER.md), suppression
 veto IA sur les échéances. Cadre produit : `docs/PLAN-ASSISTANT.md` (à lire
 avant tout nouveau chantier) ; audit réutilisable : `docs/PROMPT-AUDIT.md`.
 
+**Capacité : PLUS DE SUJET (11/08).** Il a souscrit M365 Basic → 100 Go de
+messagerie sur sa boîte principale, contre 13,6 Go pour ses sept boîtes
+réunies. Le plan d'archive froide (`docs/PLAN-ARCHIVE.md`) est CLASSÉ ; ne
+pas le relancer. Son OneDrive, lui, est plein — deux sauvegardes de
+téléphone de 42,5 et 31,5 Go — mais c'est hors Boxmail.
+
 **À faire** :
 - Suite « retrouver » : contenu des pièces (27 lues sur 10 191 — c'est le gros
   manque), puis vue documentaire (Factures · Banque · Fiscal · Immobilier ·

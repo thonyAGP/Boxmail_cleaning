@@ -1,5 +1,26 @@
 # Archive froide — libérer de la place sans modifier un seul mail
 
+> ## ⛔ CHANTIER CLASSÉ LE 11/08 — NE PAS RELANCER SANS RAISON NOUVELLE
+>
+> Anthony a souscrit Microsoft 365 Basic : sa boîte principale passe de 15 Go
+> a **100 Go de messagerie**. Ses sept boîtes réunies pèsent 13,6 Go, dont 9,1
+> pour la perso. La pression disque sur le MAIL a donc totalement disparu, et
+> avec elle la seule raison d'être de ce plan.
+>
+> Son vrai problème est ailleurs : son **OneDrive** (100 Go) est rempli par
+> **deux sauvegardes de téléphone de 42,5 Go et 31,5 Go**, essentiellement des
+> photos déjà présentes dans Google Photos. Rien à voir avec Boxmail.
+>
+> Ce document reste valable comme ÉTUDE : les mesures, le contrat technique
+> (octets bruts, empreinte vérifiée avant de toucher à l'original, machine à
+> états sans instant sans copie) et les pièges Microsoft resteront vrais le
+> jour où la question se reposera. Mais rien n'est à coder aujourd'hui.
+>
+> Ce qui SURVIT de ce travail et reste utile : le pointage des doublons
+> (déduplication d'abord cognitive) et la lecture du contenu des pièces, tous
+> deux livrés et indépendants de la question de capacité.
+
+
 > Idée d'Anthony (11/08) : « une autre possibilité serait, si la taille devient
 > préoccupante, de créer une boîte d'archive qui permette d'y stocker les
 > pièces les plus volumineuses en rangeant les mails par boîte. Au minimum cela
