@@ -151,6 +151,13 @@ export const api = {
   },
   attachmentNamesBackfill: () => request('POST', '/attachment-names/backfill'),
   attachmentTextBackfill: (order) => request('POST', '/attachment-text/backfill', { order }),
+  duplicates: (params = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '' && v !== false) q.set(k, String(v));
+    }
+    return request('GET', `/attachments/duplicates?${q}`);
+  },
   analyzeMessage: (slug, { folder, uid, text }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
   setMessageIntent: (slug, { folder, uid, intent }) =>

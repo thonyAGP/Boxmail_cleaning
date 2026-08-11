@@ -6346,7 +6346,21 @@ async function renderAttachments() {
         depuis <input type="date" id="a-since" value="${esc(attachState.since)}"></label>
       <button type="submit" class="btn btn-primary">Chercher</button>
     </form>
+    <div class="dup-block" id="dup-block">
+      <button class="dup-toggle" id="dup-toggle">📑 Voir les fichiers que tu as en plusieurs exemplaires</button>
+      <div id="dup-body" class="hidden"></div>
+    </div>
     <div id="attach-results"></div>`;
+
+  $('#dup-toggle').addEventListener('click', () => {
+    const b = $('#dup-body');
+    const ouvert = !b.classList.contains('hidden');
+    b.classList.toggle('hidden', ouvert);
+    $('#dup-toggle').textContent = ouvert
+      ? '📑 Voir les fichiers que tu as en plusieurs exemplaires'
+      : '📑 Masquer les exemplaires multiples';
+    if (!ouvert && !b.dataset.charge) chargerDoublons();
+  });
 
   $('#attach-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -6360,6 +6374,79 @@ async function renderAttachments() {
   // Premier affichage : les plus récents, sans critère.
   if (attachState.data) renderAttachResults();
   else runAttachSearch();
+}
+
+// Fichiers présents en plusieurs exemplaires (11/08) — demande d'Anthony.
+// On ne supprime RIEN : le but est d'abord de VOIR « 1 document, 4 fois »
+// au lieu de croiser quatre fois le même fichier sans s'en rendre compte.
+async function chargerDoublons() {
+  const el = $('#dup-body');
+  if (!el) return;
+  el.dataset.charge = '1';
+  el.innerHTML = '<div class="empty"><span class="spinner"></span>Comparaison des pièces…</div>';
+  let d;
+  try {
+    d = await api.duplicates({ account: attachState.account, limit: 30 });
+  } catch (err) {
+    el.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!d.groups.length) {
+    el.innerHTML = `<div class="empty">Aucun fichier en double repéré pour l'instant.
+      ${d.pending ? `<br><span class="muted">${fmtNum(d.pending)} mail(s) restent à examiner.</span>` : ''}</div>`;
+    return;
+  }
+  const certain = d.totals.confirmedGroups
+    ? `Dont <strong>${fmtNum(d.totals.confirmedGroups)}</strong> vérifiés au fichier près.`
+    : `Je n'ai pas encore vérifié les fichiers un à un : ce sont des ressemblances fortes, pas des certitudes.`;
+  el.innerHTML = `
+    <div class="dup-lead">Tu as <strong>${fmtNum(d.totals.extraCopies)}</strong> exemplaires en trop,
+      qui occupent <strong>${fmtSize(d.totals.wastedBytes)}</strong>. ${certain}
+      ${d.pending ? `<br><span class="muted">J'ai examiné ${fmtNum(d.examined)} mails ; ${fmtNum(d.pending)} restent à voir, le total va donc monter.</span>` : ''}
+      <br><span class="muted">Je ne supprime rien : c'est un constat, pas une proposition.</span></div>
+    ${d.groups.map((g, i) => `
+      <div class="dup-row">
+        <div class="dup-head">
+          <span class="dup-name" title="${esc(g.fileName)}">${attIcon(g.fileName)} ${esc(g.fileName)}</span>
+          <span class="badge ${g.certitude === 'confirme' ? 'green' : 'gray'}"
+            title="${g.certitude === 'confirme' ? 'Fichiers identiques, vérifiés' : 'Même nom et même taille — très probablement le même fichier'}">
+            ${g.certitude === 'confirme' ? 'identiques' : 'probable'}</span>
+        </div>
+        <div class="dup-meta">${fmtNum(g.count)} exemplaires de ${fmtSize(g.sizeBytes)} ·
+          <strong>${fmtSize(g.wastedBytes)}</strong> occupés en trop ·
+          ${g.accounts.map((a) => accountChip(a)).join(' ')}
+          <button class="dup-open" data-i="${i}">voir les ${fmtNum(g.count)} mails</button></div>
+        <div class="dup-occ hidden" data-occ="${i}">
+          ${g.occurrences.map((o, j) => `
+            <div class="result-row" data-g="${i}" data-o="${j}">
+              <span class="mail-date">${fmtDate(o.date)}</span>
+              <span class="result-from">${esc(o.fromName)}</span>
+              <span class="result-subject">${esc(o.subject)}</span>
+              ${accountChip(o.account)}
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}`;
+
+  el.querySelectorAll('.dup-open').forEach((b) => {
+    b.addEventListener('click', () => {
+      const occ = el.querySelector(`[data-occ="${b.dataset.i}"]`);
+      occ.classList.toggle('hidden');
+    });
+  });
+  el.querySelectorAll('.dup-occ .result-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const o = d.groups[Number(row.dataset.g)].occurrences[Number(row.dataset.o)];
+      // Le lecteur attend la forme d'un résultat de recherche.
+      openReader({
+        account: o.account, folder: o.folder, folderRole: 'inbox', uid: o.uid,
+        messageId: o.messageId, subject: o.subject, fromName: o.fromName,
+        fromEmail: '', date: o.date, isSeen: true, isFlagged: false, isOutbound: false,
+        hasAttachments: true, attachmentCount: 1, attachmentNames: [], summary: null,
+        matchedIn: [], snippet: null, intent: null, sizeBytes: 0, hasListUnsubscribe: false,
+        threadId: null,
+      }, row);
+    });
+  });
 }
 
 async function runAttachSearch() {

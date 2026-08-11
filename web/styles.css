@@ -957,3 +957,29 @@ th.sortable:hover { color: var(--primary); }
 /* Les trois univers : plus gros, plus aérés que le reste — ce sont les seules
    entrées qu'Anthony doit voir en arrivant (refonte 10/08). */
 .side-main .side-link { font-size: 14.5px; padding: 9px 12px; }
+
+/* Fichiers en plusieurs exemplaires (11/08) — un constat, jamais une
+   proposition de suppression : le gain est d'abord de VOIR le doublon. */
+.dup-block { margin: 0 0 14px; }
+.dup-toggle {
+  background: var(--surface-main); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: var(--radius-md); padding: 9px 15px; font-size: 13px; cursor: pointer; width: 100%;
+  text-align: left;
+}
+.dup-toggle:hover { background: var(--surface-hover); }
+.dup-lead { font-size: 13.5px; margin: 12px 2px; }
+.dup-row {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-main); margin-bottom: 8px; overflow: hidden;
+}
+.dup-head { display: flex; gap: 9px; align-items: center; padding: 10px 14px 4px; }
+.dup-name {
+  font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dup-meta {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 0 14px 10px; font-size: 12.5px; color: var(--text-secondary);
+}
+.dup-open { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 12.5px; }
+.dup-open:hover { text-decoration: underline; }
+.dup-occ { border-top: 1px solid var(--border-soft); }
