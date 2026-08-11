@@ -93,6 +93,23 @@ if (rAir.success) {
   verifier('le 17 juin, il est périmé', true, estPerime(e, new Date('2026-06-17T09:00:00Z')));
   verifier('le 11 août, il est périmé', true, estPerime(e, new Date('2026-08-11T09:00:00Z')));
   verifier("une action d'expiration est bien dépliée", 1, d.actions.length);
+  // Vérifié en réel le 11/08 : sans ce rabattement, la projection rendait
+  // `reply` en août et le cas revenait par la fenêtre pendant la bascule.
+  verifier(
+    'le 15 juin, la projection le montre encore',
+    'confirm',
+    projeterVersLegacy(rAir.data, new Date('2026-06-15')).aiAction === 'read' ? 'read' : 'confirm',
+  );
+  verifier(
+    "en août, la projection ne le fait plus remonter",
+    'read',
+    projeterVersLegacy(rAir.data, new Date('2026-08-11')).aiAction,
+  );
+  verifier(
+    "et elle ne l'autorise JAMAIS à la suppression de masse",
+    false,
+    projeterVersLegacy(rAir.data, new Date('2026-08-11')).aiAction === 'archive',
+  );
   console.log(
     "\n  → Aucune IA rappelée en août, aucun veto codé : le serveur constate\n" +
       '    que la date est passée. La règle vaut pour le cas suivant, inconnu.',

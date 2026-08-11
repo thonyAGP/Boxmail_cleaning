@@ -511,6 +511,29 @@ export interface Deplie {
   }[];
 }
 
+/**
+ * État de péremption calculé directement depuis un verdict, sans passer par la
+ * base. Sert à la projection de compatibilité, qui doit connaître la
+ * péremption au moment même où elle écrit.
+ */
+export function etatDepuisVerdict(v: Verdict): EtatAttention {
+  return {
+    attentionMode: v.attention?.mode ?? null,
+    attentionUntil: versDate(v.attention?.until),
+    attentionPrecision: v.attention?.until?.precision ?? null,
+    actions: (v.actions ?? []).map((a) => ({
+      expiresAt: versDate(a.expiresAt),
+      expiresPrecision: a.expiresAt?.precision ?? null,
+      dueAt: versDate(a.dueAt),
+    })),
+    events: (v.events ?? []).map((e) => ({
+      startsAt: versDate(e.startsAt),
+      endsAt: versDate(e.endsAt),
+      startsPrecision: e.startsAt?.precision ?? null,
+    })),
+  };
+}
+
 /** Déplie le verdict en lignes prêtes pour la base. Pure, testable seule. */
 export function deplier(v: Verdict): Deplie {
   return {
@@ -601,7 +624,10 @@ export function deplier(v: Verdict): Deplie {
  * nettoyage automatique (retention.ts), et `archive` autorise une suppression
  * de masse. Dans le doute, on choisit donc `low` et on évite `archive`.
  */
-export function projeterVersLegacy(v: Verdict): {
+export function projeterVersLegacy(
+  v: Verdict,
+  maintenant: Date = new Date(),
+): {
   intent: string | null;
   aiAction: string | null;
   analysisConfidence: 'high' | 'medium' | 'low';
@@ -614,8 +640,20 @@ export function projeterVersLegacy(v: Verdict): {
     actions.some((a) => a.kind === k && (a.actor ?? 'unknown') === 'user');
 
   // --- aiAction
+  //
+  // LA PÉREMPTION D'ABORD. Sans elle, un rappel d'enregistrement pour un vol
+  // du 16 juin ressortait `reply` en août : la projection ignorait le calcul
+  // qu'elle venait elle-même de faire, et le cas Air France revenait par la
+  // fenêtre pendant toute la durée de la bascule. Vérifié en réel le 11/08.
+  //
+  // On rabat sur `read` et jamais sur `archive` : `archive` autorise une
+  // suppression de masse (retention.ts), et un mail périmé n'est pas pour
+  // autant un mail jetable — une facture périmée reste une archive précieuse.
+  const perime = estPerime(etatDepuisVerdict(v), maintenant);
+
   let aiAction: string | null;
-  if (aUser('pay')) aiAction = 'pay';
+  if (perime) aiAction = 'read';
+  else if (aUser('pay')) aiAction = 'pay';
   else if (aUser('reply') || aUser('confirm') || aUser('provide_document') || aUser('sign'))
     aiAction = 'reply';
   else if (
