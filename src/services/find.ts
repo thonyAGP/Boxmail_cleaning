@@ -60,11 +60,36 @@ const POIDS: Record<string, number> = {
   'texte du mail': 1,
 };
 
-function scoreItem(it: SearchResultItem): number {
+/** Échappe un terme pour l'insérer dans une expression régulière. */
+function echappe(t: string): string {
+  return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Le terme est-il un VRAI mot, ou un morceau perdu au milieu d'un autre ?
+ *
+ * Constaté sur les vraies boîtes : chercher « RIB » remontait « Cabinet
+ * Ribéroux » et « bnpparibascardif ». La base ne sait faire qu'un `contains`,
+ * mais rien n'oblige à classer ces résultats aussi haut qu'une vraie
+ * correspondance : on vérifie ici que le terme commence sur une frontière de
+ * mot (espace, tiret, souligné, point…).
+ */
+function motEntier(terme: string, ...champs: (string | null | undefined)[]): boolean {
+  if (!terme) return false;
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${echappe(terme)}`, 'iu');
+  return champs.some((c) => !!c && re.test(c));
+}
+
+function scoreItem(it: SearchResultItem, terme = ''): number {
   let s = 0;
   for (const m of it.matchedIn) s += POIDS[m] ?? 1;
   // À pertinence égale, un document vaut mieux qu'une notification.
   if (it.hasAttachments) s += 1;
+  // Un vrai mot vaut bien plus qu'un fragment : sinon « RIB » fait remonter
+  // « Ribéroux » avant le mail qui porte réellement un RIB.
+  if (terme && motEntier(terme, it.subject, it.fromName, it.summary, ...it.attachmentNames)) {
+    s += 4;
+  }
   return s;
 }
 
@@ -146,7 +171,7 @@ export async function find(opts: FindOptions): Promise<FindResult> {
 
   const groupes: FindGroup[] = [];
   for (const [key, arr] of parGroupe) {
-    arr.sort((a, b) => scoreItem(b) - scoreItem(a) || (b.date ?? '').localeCompare(a.date ?? ''));
+    arr.sort((a, b) => scoreItem(b, q) - scoreItem(a, q) || (b.date ?? '').localeCompare(a.date ?? ''));
     const dates = arr.map((i) => i.date).filter((d): d is string => !!d).sort();
     // Nom affiché : le plus fréquent parmi les expéditeurs du groupe (un même
     // service écrit tantôt « Leroy Merlin », tantôt « LEROY MERLIN Brest »).
@@ -181,7 +206,10 @@ export async function find(opts: FindOptions): Promise<FindResult> {
   // Classement des groupes : la PERTINENCE d'abord (où le mot a été trouvé),
   // le volume ensuite — un groupe de 2 mails peut être la bonne réponse.
   const scoreGroupe = (g: FindGroup) => {
-    const meilleurs = g.items.reduce((s, i) => s + scoreItem(i), 0);
+    const meilleurs = g.items.reduce((s, i) => s + scoreItem(i, q), 0);
+    // Le volume compte, mais peu : un groupe de 2 mails peut être la bonne
+    // réponse, et 48 mails d'un « Cabinet Ribéroux » ne doivent pas écraser
+    // le seul mail qui porte vraiment un RIB.
     return meilleurs + Math.min(g.count, 20) / 10 + (g.withAttachments ? 1 : 0);
   };
   groupes.sort((a, b) => scoreGroupe(b) - scoreGroupe(a) || (b.lastAt ?? '').localeCompare(a.lastAt ?? ''));
