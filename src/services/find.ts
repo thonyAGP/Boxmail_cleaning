@@ -74,10 +74,19 @@ function echappe(t: string): string {
  * correspondance : on vérifie ici que le terme commence sur une frontière de
  * mot (espace, tiret, souligné, point…).
  */
-function motEntier(terme: string, ...champs: (string | null | undefined)[]): boolean {
-  if (!terme) return false;
-  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${echappe(terme)}`, 'iu');
-  return champs.some((c) => !!c && re.test(c));
+function qualiteMot(terme: string, ...champs: (string | null | undefined)[]): 0 | 1 | 2 {
+  if (!terme) return 0;
+  const t = echappe(terme);
+  const bord = '[^\\p{L}\\p{N}]';
+  // Mot entier : « RIB Headlight Audit.pdf », « quittance_juin.pdf ».
+  const exact = new RegExp(`(^|${bord})${t}($|${bord})`, 'iu');
+  // Simple début de mot : « Ribéroux » quand on cherche « RIB ». Utile (on
+  // veut que « factur » trouve « facture »), mais nettement moins probant.
+  const debut = new RegExp(`(^|${bord})${t}`, 'iu');
+  const ok = (re: RegExp) => champs.some((c) => !!c && re.test(c));
+  if (ok(exact)) return 2;
+  if (ok(debut)) return 1;
+  return 0;
 }
 
 function scoreItem(it: SearchResultItem, terme = ''): number {
@@ -86,10 +95,9 @@ function scoreItem(it: SearchResultItem, terme = ''): number {
   // À pertinence égale, un document vaut mieux qu'une notification.
   if (it.hasAttachments) s += 1;
   // Un vrai mot vaut bien plus qu'un fragment : sinon « RIB » fait remonter
-  // « Ribéroux » avant le mail qui porte réellement un RIB.
-  if (terme && motEntier(terme, it.subject, it.fromName, it.summary, ...it.attachmentNames)) {
-    s += 4;
-  }
+  // « Cabinet Ribéroux » (48 mails) avant le mail qui porte vraiment un RIB.
+  const q = qualiteMot(terme, it.subject, it.fromName, it.summary, ...it.attachmentNames);
+  s += q === 2 ? 6 : q === 1 ? 1 : 0;
   return s;
 }
 
