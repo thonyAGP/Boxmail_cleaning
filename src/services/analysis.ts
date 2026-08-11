@@ -9,6 +9,13 @@ import {
   type SenderCategory,
   type ConfidenceLevel,
 } from './categorize.js';
+import {
+  zVerdict,
+  deplier,
+  projeterVersLegacy,
+  SCHEMA_VERSION,
+  type Verdict as VerdictSemantique,
+} from './verdict.js';
 
 /**
  * Analyse fine par l'IA (C2 — Série C).
@@ -530,4 +537,206 @@ export async function analysisProgressByAccount(): Promise<AccountAnalysisProgre
       pct: wt === 0 ? 0 : Math.round((an / wt) * 100),
     };
   });
+}
+
+// ============================================================================
+// LE VERDICT SÉMANTIQUE (lot 1 de la refonte — 11/08)
+// ============================================================================
+
+export interface SemanticApplyResult {
+  applied: number;
+  skipped: number;
+  /** Verdicts refusés, un par un — jamais le lot entier. */
+  rejections: { id: number; why: string }[];
+  /**
+   * Ce qui a été DÉGRADÉ sans échouer : une valeur hors liste fermée est
+   * ramenée à `other`/`unknown` plutôt que de faire tomber le lot. On le dit,
+   * sinon la dégradation reste invisible et le contrat dérive en silence.
+   */
+  warnings: { id: number; what: string }[];
+}
+
+/**
+ * Applique des verdicts sémantiques : stocke le brut, en déplie les
+ * projections, et alimente les quatre colonnes plates le temps que les
+ * consommateurs basculent.
+ *
+ * TROIS DÉFAUTS DE `applyVerdicts` CORRIGÉS ICI, relevés en cartographiant le
+ * pipeline le 11/08 :
+ *
+ * 1. Écritures GROUPÉES en transaction. L'ancien chemin faisait N `UPDATE`
+ *    séquentiels hors transaction, sur SQLite en `connection_limit=1` — c'est
+ *    le chemin lent du rattrapage. Le patron par lots existait déjà dans
+ *    snippets.ts, il n'avait jamais été repris ici.
+ * 2. Pas d'écrasement par un verdict vide. L'ancien réécrivait toujours
+ *    `aiSummary` et `aiAction` : un verdict partiel effaçait donc un résumé
+ *    antérieur, tout en posant `aiVerdictAt` — ce qui sortait définitivement
+ *    le mail du vivier sans l'avoir jugé.
+ * 3. Refus REMONTÉS. Un libellé de dossier rejeté ne laissait aucune trace :
+ *    Claude n'apprenait jamais que son verdict avait été écarté.
+ *
+ * PRÉCÉDENCE. Une correction manuelle n'est jamais écrasée — mais elle ne
+ * bloque plus le stockage du verdict. Ce que l'IA a compris du mail est un
+ * FAIT ; ce que le produit en fait est une PROJECTION. Seule la projection
+ * s'incline devant la correction d'Anthony.
+ */
+export async function applySemanticVerdicts(
+  bruts: unknown[],
+  opts: { model?: string; promptVersion?: string; inputVersion?: string } = {},
+): Promise<SemanticApplyResult> {
+  await ensureDbReady();
+  const model = opts.model ?? 'claude (session MCP)';
+  const promptVersion = opts.promptVersion ?? '1';
+  const inputVersion = opts.inputVersion ?? '1';
+  const now = new Date();
+  const out: SemanticApplyResult = { applied: 0, skipped: 0, rejections: [], warnings: [] };
+  if (bruts.length === 0) return out;
+
+  // 1. Validation, un verdict à la fois. Un seul mauvais champ ne doit pas
+  //    jeter le travail des 99 autres mails : l'analyse tourne sur le forfait
+  //    d'Anthony, on ne la lui fait pas payer deux fois.
+  const valides: VerdictSemantique[] = [];
+  for (const brut of bruts) {
+    const r = zVerdict.safeParse(brut);
+    if (!r.success) {
+      const id =
+        typeof (brut as { id?: unknown })?.id === 'number' ? (brut as { id: number }).id : -1;
+      out.rejections.push({
+        id,
+        why: r.error.issues
+          .map((i) => `${i.path.join('.')} : ${i.message}`)
+          .join(' ; ')
+          .slice(0, 300),
+      });
+      out.skipped++;
+      continue;
+    }
+    valides.push(r.data);
+  }
+  if (valides.length === 0) return out;
+
+  const messages = new Map(
+    (
+      await db.message.findMany({
+        where: { id: { in: valides.map((v) => v.id) } },
+        select: {
+          id: true,
+          accountSlug: true,
+          subject: true,
+          date: true,
+          intentSource: true,
+        },
+      })
+    ).map((m) => [m.id, m]),
+  );
+
+  const journal = new Map<string, { subject: string; date: string | null }[]>();
+
+  // 2. Écriture par paquets. 25 mails par transaction : assez pour que SQLite
+  //    respire, assez peu pour qu'un échec ne fasse pas tomber un lot de 100.
+  const PAQUET = 25;
+  for (let i = 0; i < valides.length; i += PAQUET) {
+    const paquet = valides.slice(i, i + PAQUET);
+    const operations: unknown[] = [];
+
+    for (const v of paquet) {
+      const msg = messages.get(v.id);
+      if (!msg) {
+        out.rejections.push({ id: v.id, why: 'mail introuvable' });
+        out.skipped++;
+        continue;
+      }
+      const d = deplier(v);
+      const legacy = projeterVersLegacy(v);
+
+      if (d.entete.attentionMode === null || d.entete.attentionMode === 'unknown') {
+        out.warnings.push({
+          id: v.id,
+          what: "aucune fenêtre d'attention : ce mail ne pourra jamais se périmer tout seul",
+        });
+      }
+
+      const enfant = { messageId: msg.id };
+
+      operations.push(
+        // Rejouer un verdict REMPLACE le précédent : la cascade emporte les
+        // projections, on ne les empile pas.
+        db.mailVerdict.deleteMany({ where: { messageId: msg.id } }),
+        db.mailVerdict.create({
+          data: {
+            messageId: msg.id,
+            raw: JSON.stringify(v),
+            schemaVersion: SCHEMA_VERSION,
+            promptVersion,
+            inputVersion,
+            model,
+            analysisStatus: d.entete.analysisStatus,
+            inputCoverage: d.entete.inputCoverage,
+            purpose: d.entete.purpose,
+            subtype: d.entete.subtype,
+            summary: d.entete.summary,
+            attentionMode: d.entete.attentionMode,
+            attentionUntil: d.entete.attentionUntil,
+            attentionPrecision: d.entete.attentionPrecision,
+            attentionBasis: d.entete.attentionBasis,
+            actions: { create: d.actions.map((a) => ({ ...a, ...enfant })) },
+            events: { create: d.events.map((e) => ({ ...e, ...enfant })) },
+            documents: { create: d.documents.map((x) => ({ ...x, ...enfant })) },
+            mentions: { create: d.mentions.map((m) => ({ ...m, ...enfant })) },
+            contexts: { create: d.contexts.map((c) => ({ ...c, ...enfant })) },
+            uncertainties: { create: d.uncertainties.map((u) => ({ ...u, ...enfant })) },
+          },
+        }),
+        // 3. Projection de compatibilité — un ÉCHAFAUDAGE, retiré au lot 6.
+        //    `aiSummary` n'est réécrit que s'il y a quelque chose à écrire :
+        //    un verdict sans résumé n'efface pas le résumé précédent.
+        db.message.update({
+          where: { id: msg.id },
+          data: {
+            ...(msg.intentSource === 'manual'
+              ? {}
+              : {
+                  intent: legacy.intent,
+                  intentReason: 'analyse sémantique',
+                  intentSource: 'ai',
+                }),
+            analysisConfidence: legacy.analysisConfidence,
+            analysisConfidenceReason: "dérivée du doute déclaré par l'analyse",
+            aiAction: legacy.aiAction,
+            ...(legacy.aiSummary ? { aiSummary: legacy.aiSummary } : {}),
+            aiVerdictAt: now,
+            aiModel: model,
+          },
+        }),
+      );
+
+      const arr = journal.get(msg.accountSlug) ?? [];
+      if (arr.length < 200) {
+        arr.push({ subject: msg.subject ?? '(sans sujet)', date: msg.date?.toISOString() ?? null });
+      }
+      journal.set(msg.accountSlug, arr);
+      out.applied++;
+    }
+
+    if (operations.length > 0) {
+      await db.$transaction(operations as never);
+    }
+  }
+
+  for (const [account, items] of journal) {
+    await recordOperation({
+      account,
+      tool: 'ai_analysis_semantique',
+      params: { model, verdicts: items.length, schemaVersion: SCHEMA_VERSION, promptVersion },
+      result: `${items.length} verdict(s) sémantique(s) enregistrés`,
+      items,
+    });
+  }
+
+  logger.info('verdicts sémantiques appliqués', {
+    applied: out.applied,
+    skipped: out.skipped,
+    warnings: out.warnings.length,
+  });
+  return out;
 }

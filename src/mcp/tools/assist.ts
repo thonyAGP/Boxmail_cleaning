@@ -17,9 +17,11 @@ import {
   AI_ACTIONS,
   analysisProgress,
   applyVerdicts,
+  applySemanticVerdicts,
   nextAnalysisBatch,
   type Verdict,
 } from '../../services/analysis.js';
+import { zVerdict } from '../../services/verdict.js';
 import { MESSAGE_INTENTS } from '../../services/categorize.js';
 import { resolveAccount } from '../../services/accounts.js';
 import { recordOperation } from '../../services/oplog.js';
@@ -370,6 +372,62 @@ export function registerAssistTools(server: McpServer): void {
     },
     guard(async (args: { verdicts: Verdict[] }) => {
       const result = await applyVerdicts(args.verdicts, { model: 'claude (session MCP)' });
+      const progress = await analysisProgress();
+      return jsonResult({ ...result, progress });
+    }),
+  );
+
+  server.registerTool(
+    'submit_semantic_batch',
+    {
+      title: 'Renvoyer les verdicts sémantiques',
+      description:
+        "LE TOOL À UTILISER pour rendre une analyse (remplace submit_analysis_batch, " +
+        'conservé le temps de la bascule). ' +
+        'PRINCIPE : tu décris ce que le mail VEUT DIRE ; le serveur en déduit ' +
+        "les usages. Ne réponds donc JAMAIS à « faut-il l'afficher », « faut-il " +
+        "créer une échéance », « faut-il archiver » : ce sont des décisions de " +
+        'produit, pas des faits lus. ' +
+        'ACTIONS — la question décisive est QUI doit agir (`actor`). Une facture ' +
+        "que sa mère transfère est émise par l'opérateur : l'action de paiement " +
+        "ne vise PAS sa mère. Si personne n'est acteur, ne mets aucune action. " +
+        'DEUX DATES À NE PAS CONFONDRE : `dueAt` est la date qui OBLIGE à agir ' +
+        '(un paiement dû le 15 reste à faire le 16) ; `expiresAt` est la date ' +
+        "après laquelle agir n'a PLUS DE SENS (un enregistrement pour un vol du " +
+        "16 juin ne sert plus à rien le 17). C'est `expiresAt` qui permet au " +
+        "serveur d'oublier un mail tout seul, sans qu'on te redemande. " +
+        "ATTENTION — `attention.mode` dit combien de temps ce mail mérite d'être " +
+        "montré : `until_time` avec une date, `while_action_open`, " +
+        '`while_event_future`, `none` si rien ne le justifie, `persistent` si ' +
+        "ça reste vrai indéfiniment. Attention n'est PAS conservation : une " +
+        'facture de 2019 a `attention: none` et reste une archive précieuse. ' +
+        'PREUVES — tout montant, numéro, date ou identifiant doit porter une ' +
+        'citation du texte (`evidence.quote`) et sa source. Extrais ce que tu ' +
+        'VOIS ; infère seulement si nécessaire, et dis-le (`certainty`). ' +
+        "ENTITÉS — donne les noms tels qu'écrits (`nameRaw`), avec leur rôle " +
+        "(`sent_by` = qui envoie, `issued_by` = qui émet le document, " +
+        "`concerns`, `billed_to`). N'invente aucun identifiant canonique : le " +
+        "serveur tient l'identité. N'extrais QUE les entités qui participent au " +
+        'sens du message — pas les marques du bas de page ni le siège social ' +
+        'des mentions légales. ' +
+        'DOUTE — mets une `uncertainty` en disant ce qui te manque ' +
+        '(`truncated_input`, `missing_attachment`…) et comment le lever : ' +
+        'ça déclenche une relecture ciblée au lieu de tout relire. ' +
+        "NE DEMANDE PAS D'IMPORTANCE, de priorité, de note sur 10 ni de " +
+        "recommandation de suppression : ce n'est pas ce que tu lis, c'est ce " +
+        'que le produit décide. ' +
+        'Un verdict mal formé est refusé SEUL, jamais le lot entier ; une ' +
+        'valeur hors liste est ramenée à `other`/`unknown` et signalée dans ' +
+        '`warnings`.',
+      inputSchema: {
+        verdicts: z.array(zVerdict).min(1).max(100).describe('Un verdict par mail jugé.'),
+      },
+      annotations: { destructiveHint: false, idempotentHint: true },
+    },
+    guard(async (args: { verdicts: unknown[] }) => {
+      const result = await applySemanticVerdicts(args.verdicts, {
+        model: 'claude (session MCP)',
+      });
       const progress = await analysisProgress();
       return jsonResult({ ...result, progress });
     }),

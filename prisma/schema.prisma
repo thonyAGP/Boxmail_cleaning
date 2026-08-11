@@ -166,6 +166,7 @@ model Message {
   account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
   folder  Folder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
   thread  Thread? @relation(fields: [threadId], references: [id])
+  verdict MailVerdict?
 
   @@unique([folderId, uid])
   @@index([accountSlug, fromEmail])
@@ -575,6 +576,224 @@ model Dossier {
   messages    DossierMessage[]
 
   @@index([status])
+}
+
+/// Verdict sémantique d'un mail (11/08) — le socle de la refonte de l'analyse.
+///
+/// POURQUOI. Jusqu'ici le verdict de l'IA s'écrasait dans quatre colonnes
+/// plates de Message (intent, aiAction, analysisConfidence, aiSummary), et 21
+/// services appliquaient par-dessus leurs propres règles écrites à la main.
+/// D'où le reproche d'Anthony : « ta conception est à corriger à chaque
+/// nouveau cas et en oublie systématiquement ».
+///
+/// LE POINT NON NÉGOCIABLE : `raw` est le verdict d'origine, IMMUABLE. Tout le
+/// reste — les colonnes ci-dessous et les tables Verdict* — n'en est qu'une
+/// PROJECTION, recalculable. Parce que dans six mois on voudra changer le
+/// briefing sans changer ce que l'IA avait compris du mail.
+///
+/// Les colonnes dépliées ici obéissent à une règle : elles n'existent que si
+/// un moteur filtre ou trie dessus. Le reste vit dans `raw`.
+model MailVerdict {
+  id             Int      @id @default(autoincrement())
+  messageId      Int      @unique
+  /// Le JSON rendu par l'IA, tel quel. Ne se réécrit jamais.
+  raw            String
+  /// Forme du verdict. Sert à sélectionner quoi relire, sans tout relire.
+  schemaVersion  Int      @default(1)
+  /// Version des consignes données à l'IA.
+  promptVersion  String   @default("1")
+  /// Version de ce qu'on lui a ENVOYÉ (500 car. ? 2 500 ? pièces ? fil ?).
+  inputVersion   String   @default("1")
+  model          String?
+  /// complete | partial | failed
+  analysisStatus String   @default("complete")
+  /// Ce que l'IA a réellement pu voir — l'aveu de ce qui lui manquait.
+  inputCoverage  String?
+  /// Fonction du message (liste fermée courte et stable).
+  purpose        String?
+  /// Sous-type LIBRE : flight_check_in_reminder, temporary_service_outage…
+  /// C'est lui qui absorbe les cas nouveaux sans migration ni réanalyse.
+  subtype        String?
+  summary        String?
+  /// Fenêtre d'attention — c'est ici que se règle la péremption, sans veto.
+  /// persistent | until_time | while_action_open | while_event_future |
+  /// until_superseded | none | unknown
+  attentionMode  String?
+  attentionUntil DateTime?
+  /// Précision de la date ci-dessus : « mai » n'est pas « le 12 mai à 14 h ».
+  attentionPrecision String?
+  attentionBasis String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  message       Message              @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  actions       VerdictAction[]
+  events        VerdictEvent[]
+  documents     VerdictDocument[]
+  mentions      EntityMention[]
+  contexts      VerdictContext[]
+  uncertainties VerdictUncertainty[]
+
+  /// Le briefing cherche « ce qui n'est pas encore périmé ».
+  @@index([attentionMode, attentionUntil])
+  /// La réanalyse par vagues sélectionne sur les versions.
+  @@index([schemaVersion, promptVersion])
+  @@index([purpose])
+}
+
+/// Ce qui est attendu, DE QUI, pour quand, et jusqu'à quand ça a du sens.
+///
+/// `dueAt` ≠ `expiresAt`, et c'est toute la correction du cas Air France :
+/// un paiement dû le 15 juin reste à faire le 16 ; un enregistrement pour un
+/// vol du 16 juin n'a plus aucun sens le 17.
+model VerdictAction {
+  id        Int      @id @default(autoincrement())
+  verdictId Int
+  /// Dénormalisé : tous les moteurs partent du mail, pas du verdict.
+  messageId Int
+  /// pay | reply | sign | provide_document | book | call | attend | renew |
+  /// declare | confirm | review | other
+  kind      String
+  label     String?
+  /// user | sender | third_party | unknown — QUI doit agir. Sans ce champ,
+  /// « maman transmet une facture Sosh » devenait « payer maman ».
+  actor     String   @default("unknown")
+  /// required | requested | optional | informational
+  strength  String   @default("requested")
+  dueAt          DateTime?
+  duePrecision   String?
+  expiresAt      DateTime?
+  expiresPrecision String?
+  amount    Float?
+  currency  String?
+  reference String?
+  /// explicit | strong_inference | weak_inference | unknown
+  certainty String   @default("unknown")
+  /// Citation du texte : la règle anti-invention.
+  evidence       String?
+  evidenceSource String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  /// « qu'est-ce qui est dû, et bientôt ? » — la requête du briefing.
+  @@index([kind, actor, dueAt])
+  @@index([expiresAt])
+}
+
+/// Rendez-vous, voyage, fenêtre de service. `participation` distingue « il y
+/// est » de « on l'informe que ça a lieu » — c'est ce qui évitait de
+/// transformer « paiements indisponibles le 12 mai » en échéance.
+model VerdictEvent {
+  id        Int      @id @default(autoincrement())
+  verdictId Int
+  messageId Int
+  /// appointment | travel | service_window | delivery | meeting | other
+  kind      String
+  label     String?
+  startsAt  DateTime?
+  startsPrecision String?
+  endsAt    DateTime?
+  /// participant | informational | unknown
+  participation String @default("unknown")
+  certainty String   @default("unknown")
+  evidence  String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([kind, startsAt])
+}
+
+/// Facture, devis, contrat, avis d'imposition… `issuer` est QUI ÉMET, jamais
+/// qui envoie le mail.
+model VerdictDocument {
+  id        Int      @id @default(autoincrement())
+  verdictId Int
+  messageId Int
+  /// invoice | quote | contract | receipt | tax_notice | statement |
+  /// certificate | report | id_document | legal_notice | other
+  kind      String
+  label     String?
+  issuer    String?
+  issueDate DateTime?
+  dueDate   DateTime?
+  amount    Float?
+  currency  String?
+  reference String?
+  certainty String   @default("unknown")
+  evidence  String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([kind, issueDate])
+  /// Le connecteur comptable cherche les factures d'un émetteur donné.
+  @@index([issuer])
+}
+
+/// MENTION d'entité, jamais identité. L'IA propose « 46 rue de la
+/// République », puis « Immeuble République » : le serveur tiendra l'identité
+/// (lot 3), à partir de ces mentions et des identifiants.
+model EntityMention {
+  id        Int    @id @default(autoincrement())
+  verdictId Int
+  messageId Int
+  /// person | company | property | vehicle | contract | service | account | other
+  kind      String
+  nameRaw   String
+  /// sent_by | issued_by | concerns | billed_to | pays | represents |
+  /// mentioned | other
+  role      String @default("mentioned")
+  /// SIRET, n° de contrat, plaque… ce qui permet de recoller sans orthographe.
+  identifier String?
+  certainty String @default("unknown")
+  evidence  String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([kind, nameRaw])
+  @@index([identifier])
+}
+
+/// Le dossier, en MENTION. Résolu localement vers un identifiant stable au
+/// lot 3 — le regroupement se fera sur l'identifiant, jamais sur la chaîne.
+model VerdictContext {
+  id        Int    @id @default(autoincrement())
+  verdictId Int
+  messageId Int
+  /// property | company | affair | vehicle | reference | other
+  kind      String
+  label     String
+  certainty String @default("unknown")
+  evidence  String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([kind, label])
+}
+
+/// Le doute, exploitable : il dit COMMENT le lever. C'est ce qui permet la
+/// seconde passe ciblée (2 à 5 % des mails) au lieu de tout relire.
+model VerdictUncertainty {
+  id        Int     @id @default(autoincrement())
+  verdictId Int
+  messageId Int
+  fieldPath String?
+  /// not_present | ambiguous | truncated_input | missing_attachment |
+  /// missing_thread_context | conflicting_evidence
+  reason    String
+  description String?
+  /// full_body | attachment_text | thread_context | manual_review | none
+  resolvableWith String?
+
+  verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  /// La sélection de la passe B part d'ici.
+  @@index([reason, resolvableWith])
 }
 
 /// Rattachement d'un mail à un dossier (un mail peut en citer plusieurs).
