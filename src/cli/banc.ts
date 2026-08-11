@@ -304,6 +304,26 @@ async function surfaces(comptes: string[]): Promise<Map<number, Set<string>>> {
     for (const it of t.todo.replies) marquer(it.messageId, "aujourd'hui");
     for (const it of t.important) marquer(it.messageId, "aujourd'hui");
     for (const it of t.todo.deadlines) marquer(it.messageId, "aujourd'hui");
+    for (const it of t.todo.followups) marquer(it.messageId, "aujourd'hui");
+    // « Factures à traiter » : la surface qui porte justement les motifs les
+    // plus en fuite (verdict pay, document à conséquence). L'oublier ici
+    // ferait accuser le produit de ne pas montrer ce qu'il montre.
+    // InvoiceItem est identifié par (compte, dossier, uid) et non par
+    // messageId — d'où la résolution ci-dessous.
+    const cles = t.todo.invoices.map((i) => ({ account: i.account, folder: i.folder, uid: i.uid }));
+    if (cles.length) {
+      const rows = await db.message.findMany({
+        where: {
+          OR: cles.map((c) => ({
+            accountSlug: c.account,
+            uid: c.uid,
+            folder: { path: c.folder },
+          })),
+        },
+        select: { id: true },
+      });
+      for (const r of rows) marquer(r.id, 'factures à traiter');
+    }
   } catch (e) {
     console.error(`  ! aujourd'hui : ${(e as Error).message}`);
   }
@@ -593,7 +613,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `\nTaux de fuite : ${mesure.fuite.taux} % (${mesure.fuite.nombre} / ${mesure.mustSurface})`,
+    `\nTaux de fuite : ${mesure.fuite.taux} % (${mesure.fuite.nombre} / ${mesure.aTraiter} à traiter)`,
   );
   const echecs = mesure.temoins.filter((t) => t.verdict === 'échec');
   if (echecs.length) console.log(`Témoins en échec : ${echecs.map((t) => t.nom).join(', ')}`);
