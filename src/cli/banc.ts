@@ -236,7 +236,9 @@ async function etiqueter(): Promise<Etiquette[]> {
     return {
       id: Number(l.id),
       compte: l.compte,
-      annee: l.annee ?? 0,
+      // Number() n'est pas décoratif : SQLite rend les CAST … AS INTEGER sous
+      // forme de BigInt, que JSON.stringify refuse de sérialiser.
+      annee: Number(l.annee ?? 0),
       mustSurface: motifs.length > 0,
       resolu: repondu || Number(l.decide) > 0 || Number(l.echeanceClose) > 0,
       faibleRisque: l.verdict === 'archive' && !repondu && !echeance && !doc,
