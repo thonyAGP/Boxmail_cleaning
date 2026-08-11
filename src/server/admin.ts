@@ -1670,6 +1670,59 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  // Rattrapage du CONTENU des pièces jointes. Contrairement aux noms (qui ne
+  // coûtent qu'une lecture de structure), il faut ici TÉLÉCHARGER chaque
+  // document — d'où le plafond de volume par lot et la reprise automatique.
+  // Rien n'est conservé sur disque : seul le texte extrait est indexé.
+  router.post(
+    '/attachment-text/backfill',
+    guard(async (req, res) => {
+      if (hasRunningJob('attachment-text')) {
+        res.status(409).json({ error: 'Une lecture des documents est déjà en cours.' });
+        return;
+      }
+      const ordre = req.body?.order === 'oldest' ? ('oldest' as const) : ('newest' as const);
+      const job = startJob('attachment-text', async (progress, setMeta) => {
+        setMeta({ order: ordre });
+        const { readAttachmentsForAccount } = await import('../services/attachments.js');
+        const noms = await listAccountNames();
+        let lus = 0;
+        let scans = 0;
+        let octets = 0;
+        let restants = 0;
+        for (const nom of noms) {
+          const rec = await getAccountRecord(nom);
+          if (!rec) continue;
+          progress(`📄 ${nom}…`);
+          for (let tour = 0; tour < 60; tour++) {
+            const r = await readAttachmentsForAccount(rec, {
+              limit: 120,
+              order: ordre,
+              // ~150 Mo par lot : de quoi avancer franchement sans monopoliser
+              // le VPS ni la boîte IMAP.
+              maxBytes: 150 * 1024 * 1024,
+              onProgress: progress,
+            });
+            lus += r.read;
+            scans += r.scans;
+            octets += r.bytes;
+            restants = r.remaining;
+            progress(
+              `${nom} : ${r.read} document(s) lu(s), ${r.scans} scan(s), ${r.remaining} restant(s).`,
+            );
+            if (r.scanned === 0 || r.remaining === 0) break;
+          }
+        }
+        return (
+          `${lus} document(s) lisibles indexés, ${scans} scan(s) repéré(s), ` +
+          `${Math.round(octets / 1048576)} Mo parcourus` +
+          `${restants ? ` — ${restants} mail(s) restants, à reprendre.` : '.'}`
+        );
+      });
+      res.status(202).json({ jobId: job.id });
+    }),
+  );
+
   // --- Boîte de réception navigable (L5.2) -----------------------------------------
   // Liste paginée des mails d'un dossier, depuis l'INDEX (instantané).
   // Boîte unifiée (L5.6) : les INBOX de tous les comptes en un seul flux.

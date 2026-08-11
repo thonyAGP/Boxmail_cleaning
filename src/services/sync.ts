@@ -532,7 +532,14 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   // qui suit (intention, échéance, pièce comptable) en dépend.
   try {
     const { readAttachmentsForAccount } = await import('./attachments.js');
-    const att = await readAttachmentsForAccount(rec, { limit: 40, sinceDays: 60 });
+    // Cadence relevée le 11/08 : à 40 mails sur 60 jours, le fonds (7 019
+    // mails à pièce jointe) n'était JAMAIS attaqué — 27 documents lus en
+    // tout. Sans borne de date et avec un plafond de volume, chaque sync
+    // grignote le stock ; le rattrapage complet reste lançable à la main.
+    const att = await readAttachmentsForAccount(rec, {
+      limit: 60,
+      maxBytes: 40 * 1024 * 1024,
+    });
     if (att.read > 0 || att.scans > 0) {
       progress(`Pièces jointes : ${att.read} lue(s), ${att.scans} scan(s) repéré(s).`);
     }

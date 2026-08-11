@@ -64,6 +64,49 @@ const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'read-documents-v1',
+    label: 'Je lis le contenu de tes documents',
+    link: '#/search',
+    run: async () => {
+      // Le gros manque de « retrouver » : mesuré le 11/08, le texte des
+      // pièces n'avait été extrait que sur 27 mails sur 7 019. Contrairement
+      // aux NOMS (une simple lecture de structure), il faut ici télécharger
+      // chaque document — d'où le plafond de volume et la reprise
+      // automatique. Rien n'est conservé : seul le texte extrait est indexé.
+      const { readAttachmentsForAccount } = await import('./attachments.js');
+      let lus = 0;
+      let scans = 0;
+      let restants = 0;
+      const names = await listAccountNames();
+      for (const name of names) {
+        try {
+          const rec = await getAccountRecord(name);
+          if (!rec) continue;
+          for (let tour = 0; tour < 4; tour++) {
+            const r = await readAttachmentsForAccount(rec, {
+              limit: 120,
+              maxBytes: 100 * 1024 * 1024,
+            });
+            lus += r.read;
+            scans += r.scans;
+            restants = r.remaining;
+            if (r.scanned === 0 || r.remaining === 0) break;
+          }
+        } catch (err) {
+          logger.warn('lecture des documents : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      return (
+        `${lus} document(s) lus et indexés (factures, devis, quittances…), ` +
+        `${scans} scan(s) repéré(s)` +
+        `${restants ? ` — ${restants} restants, je continue au fil des synchronisations.` : '.'}`
+      );
+    },
+  },
+  {
     id: 'find-by-filename-v1',
     label: 'Je retrouve tes documents par le nom du fichier',
     link: '#/search',

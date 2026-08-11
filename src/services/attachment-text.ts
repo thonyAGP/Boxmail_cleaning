@@ -144,6 +144,115 @@ export function pdfToText(buf: Buffer): AttachmentText {
 }
 
 /** Aiguillage par type de pièce. Les images sont des scans par nature. */
+// --------------------------------------------------------------------------
+// Documents Office (docx / xlsx / pptx) — 11/08
+//
+// Ce sont des archives ZIP contenant du XML. On a déjà zlib pour les PDF :
+// il ne manquait qu'un lecteur d'archive. Mesuré sur ses boîtes : 222 pièces
+// concernées (132 .xlsx, 90 .docx) — dont « Conditions générales de vente.docx »
+// arrivé avec un devis. Sans ça, ces documents restaient introuvables.
+// --------------------------------------------------------------------------
+
+/** Une entrée d'archive ZIP, lue depuis l'annuaire central (tailles fiables). */
+type EntreeZip = { nom: string; debut: number; compresse: number; methode: number };
+
+function lireAnnuaireZip(buf: Buffer): EntreeZip[] {
+  // Fin d'annuaire central (EOCD) : signature 0x06054b50, cherchée à rebours
+  // (un commentaire d'archive peut la décaler de quelques octets).
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66_000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return [];
+  const nb = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  const out: EntreeZip[] = [];
+  for (let i = 0; i < nb && p + 46 <= buf.length; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break;
+    const methode = buf.readUInt16LE(p + 10);
+    const compresse = buf.readUInt32LE(p + 20);
+    const lgNom = buf.readUInt16LE(p + 28);
+    const lgExtra = buf.readUInt16LE(p + 30);
+    const lgComm = buf.readUInt16LE(p + 32);
+    const offLocal = buf.readUInt32LE(p + 42);
+    const nom = buf.toString('utf8', p + 46, p + 46 + lgNom);
+    // L'en-tête local porte ses propres longueurs : c'est lui qui donne le
+    // début réel des données.
+    if (offLocal + 30 <= buf.length && buf.readUInt32LE(offLocal) === 0x04034b50) {
+      const lgNomL = buf.readUInt16LE(offLocal + 26);
+      const lgExtraL = buf.readUInt16LE(offLocal + 28);
+      out.push({ nom, debut: offLocal + 30 + lgNomL + lgExtraL, compresse, methode });
+    }
+    p += 46 + lgNom + lgExtra + lgComm;
+  }
+  return out;
+}
+
+/** Texte brut d'un fragment XML Office : les balises sautent, le texte reste. */
+function texteDuXml(xml: string): string {
+  return xml
+    // Fin de paragraphe / de ligne / de cellule → saut de ligne. Sans `si`
+    // et `t`, les cellules d'un tableur se collaient (« Quittance 2026842,00 »
+    // au lieu de deux valeurs distinctes) et fabriquaient de faux mots.
+    .replace(/<\/(w:p|a:p|w:tr|row|si|t|w:t|a:t)>/gi, '\n')
+    .replace(/<w:tab\b[^>]*\/?>/gi, '\t')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+export function officeToText(buf: Buffer): AttachmentText {
+  let entrees: EntreeZip[];
+  try {
+    entrees = lireAnnuaireZip(buf);
+  } catch {
+    return { kind: 'other', text: '', note: 'Archive Office illisible.' };
+  }
+  if (entrees.length === 0) return { kind: 'other', text: '', note: 'Archive Office vide ou abîmée.' };
+
+  // Les parties qui portent du texte utile, dans l'ordre de lecture.
+  const utiles = entrees.filter((e) =>
+    /^word\/document\.xml$/i.test(e.nom) ||
+    /^word\/(header|footer)\d*\.xml$/i.test(e.nom) ||
+    /^xl\/sharedStrings\.xml$/i.test(e.nom) ||
+    /^ppt\/slides\/slide\d+\.xml$/i.test(e.nom) ||
+    /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(e.nom));
+  if (utiles.length === 0) return { kind: 'other', text: '', note: 'Archive sans partie textuelle connue.' };
+
+  const morceaux: string[] = [];
+  let total = 0;
+  for (const e of utiles) {
+    if (total >= MAX_TEXT) break;
+    const brut = buf.subarray(e.debut, e.debut + e.compresse);
+    // 0 = stocké tel quel, 8 = dégonflé (les deux seuls cas d'Office).
+    let xml: string;
+    try {
+      if (e.methode === 0) xml = brut.toString('utf8');
+      else {
+        const d = inflateRawSync(brut);
+        xml = d.toString('utf8');
+      }
+    } catch {
+      continue;
+    }
+    const t = tidy(texteDuXml(xml));
+    if (t) {
+      morceaux.push(t);
+      total += t.length;
+    }
+  }
+  const text = morceaux.join('\n').slice(0, MAX_TEXT);
+  return text
+    ? { kind: 'text', text, note: 'Document Office lu (texte extrait).' }
+    : { kind: 'other', text: '', note: 'Document Office sans texte exploitable.' };
+}
+
 export function attachmentToText(
   filename: string,
   contentType: string,
@@ -152,6 +261,14 @@ export function attachmentToText(
   const ct = (contentType || '').toLowerCase();
   const name = (filename || '').toLowerCase();
   if (ct.includes('pdf') || name.endsWith('.pdf')) return pdfToText(buf);
+  // Office moderne (ZIP + XML). Les vieux formats binaires .doc/.xls ne sont
+  // pas traités : trop peu nombreux ici pour justifier un décodeur OLE.
+  if (
+    ct.includes('openxmlformats-officedocument') ||
+    /\.(docx|xlsx|pptx)$/.test(name)
+  ) {
+    return officeToText(buf);
+  }
   if (ct.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|tiff?)$/.test(name)) {
     return {
       kind: 'scan',

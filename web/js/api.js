@@ -150,6 +150,7 @@ export const api = {
     return request('GET', `/find?${q}`);
   },
   attachmentNamesBackfill: () => request('POST', '/attachment-names/backfill'),
+  attachmentTextBackfill: (order) => request('POST', '/attachment-text/backfill', { order }),
   analyzeMessage: (slug, { folder, uid, text }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
   setMessageIntent: (slug, { folder, uid, intent }) =>

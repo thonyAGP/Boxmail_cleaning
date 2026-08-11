@@ -29,7 +29,13 @@ const MAX_FETCH_BYTES = 8 * 1024 * 1024;
  * facture pèse 2 à 5 Ko.
  */
 const MAX_STORED_TEXT = 200_000;
-const READABLE = /(pdf|text\/plain|text\/csv)/i;
+const READABLE = /(pdf|text\/plain|text\/csv|openxmlformats-officedocument)/i;
+/**
+ * Certains serveurs annoncent `application/octet-stream` pour un PDF ou un
+ * .docx : sans ce repli par extension, ces pièces n'étaient jamais lues
+ * (constaté sur ses boîtes — 222 fichiers Office et une part des PDF).
+ */
+const READABLE_NAME = /\.(pdf|txt|csv|md|docx|xlsx|pptx)$/i;
 const IMAGE = /^image\//i;
 
 export interface ReadReport {
@@ -37,6 +43,10 @@ export interface ReadReport {
   read: number;
   scans: number;
   failures: number;
+  /** Volume approximatif descendu (taille des mails traités). */
+  bytes: number;
+  /** Mails à pièce jointe encore jamais regardés sur ce compte. */
+  remaining: number;
 }
 
 /**
@@ -46,14 +56,24 @@ export interface ReadReport {
  */
 export async function readAttachmentsForAccount(
   rec: AccountRecord,
-  opts: { limit?: number; sinceDays?: number; onlyMissing?: boolean } = {},
+  opts: {
+    limit?: number;
+    sinceDays?: number;
+    onlyMissing?: boolean;
+    /** Plafond de volume par appel : le VPS ne doit pas descendre 6 Go d'un coup. */
+    maxBytes?: number;
+    /** 'newest' (defaut) pour le flux courant, 'oldest' pour purger le fonds. */
+    order?: 'newest' | 'oldest';
+    onProgress?: (message: string) => void;
+  } = {},
 ): Promise<ReadReport> {
   await ensureDbReady();
-  const report: ReadReport = { scanned: 0, read: 0, scans: 0, failures: 0 };
+  const report: ReadReport = { scanned: 0, read: 0, scans: 0, failures: 0, bytes: 0, remaining: 0 };
   const limit = Math.min(opts.limit ?? 60, 500);
+  const maxBytes = opts.maxBytes ?? Number.POSITIVE_INFINITY;
+  const progress = opts.onProgress ?? (() => {});
 
-  const messages = await db.message.findMany({
-    where: {
+  const where = {
       accountSlug: rec.account,
       hasAttachments: true,
       isDeleted: false,
@@ -63,14 +83,18 @@ export async function readAttachmentsForAccount(
       ...(opts.sinceDays
         ? { date: { gte: new Date(Date.now() - opts.sinceDays * 86_400_000) } }
         : {}),
-    },
-    orderBy: { date: 'desc' },
+  };
+
+  const messages = await db.message.findMany({
+    where,
+    orderBy: { date: opts.order === 'oldest' ? 'asc' : 'desc' },
     take: limit,
     select: {
       id: true,
       uid: true,
       subject: true,
       fromEmail: true,
+      sizeBytes: true,
       hasListUnsubscribe: true,
       intent: true,
       intentSource: true,
@@ -79,7 +103,11 @@ export async function readAttachmentsForAccount(
   });
 
   for (const m of messages) {
+    // Plafond de volume : on s'arrête PROPREMENT, les mails restants seront
+    // repris au prochain lot (rien n'est perdu, `remaining` dit la verite).
+    if (report.bytes >= maxBytes) break;
     report.scanned++;
+    report.bytes += m.sizeBytes ?? 0;
     try {
       const r = await readOne(rec, m.folder.path, m.uid);
       await db.message.update({
@@ -126,7 +154,11 @@ export async function readAttachmentsForAccount(
         error: (err as Error).message,
       });
     }
+    if (report.scanned % 25 === 0) {
+      progress(`${report.scanned} mail(s) examinés, ${report.read} document(s) lu(s)…`);
+    }
   }
+  report.remaining = await db.message.count({ where });
   return report;
 }
 
@@ -156,7 +188,8 @@ export async function readOne(
       if (!p.contentId && p.sizeBytes >= 30_000) sawImage = true;
       continue;
     }
-    if (!READABLE.test(p.contentType) || p.sizeBytes > MAX_FETCH_BYTES) continue;
+    const lisible = READABLE.test(p.contentType) || READABLE_NAME.test(p.filename ?? '');
+    if (!lisible || p.sizeBytes > MAX_FETCH_BYTES) continue;
     const dl = await imapService.downloadAttachment(rec, folder, uid, i);
     if (!dl) continue;
     const r = attachmentToText(dl.filename, dl.contentType, dl.content);
