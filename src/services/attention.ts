@@ -91,6 +91,27 @@ export const AUTO_SENDER_RE =
   /(no[-._]?reply|nepasrepondre|ne[-._]?pas[-._]?repondre|do[-._]?not[-._]?reply|notification|mailer-daemon|newsletter|automat|postmaster)/i;
 
 /**
+ * Intentions où l'analyse dit ELLE-MÊME qu'une réponse est attendue. Aucune
+ * heuristique de structure — l'adresse de l'expéditeur, la forme du fil — n'a
+ * le droit de les faire taire.
+ *
+ * MESURÉ LE 11/08, et c'est la raison d'être de cette constante. Le banc a
+ * trouvé 115 mails qui méritaient d'être vus et n'apparaissaient nulle part.
+ * 48 d'entre eux venaient d'une adresse écartée par AUTO_SENDER_RE : vilogi
+ * (son syndic), dgfip (les impôts), airbnb et homeexchange (sa location
+ * saisonnière), gocardless, foncia, pacifica. Sa location tourne sur des
+ * adresses de notification ; une expression régulière sur l'expéditeur les
+ * faisait disparaître alors que l'analyse avait écrit « attend une réponse ».
+ *
+ * Ce garde-fou existait déjà plus bas dans getUnansweredEmails, mais il était
+ * INATTEIGNABLE : le filtre d'adresse s'appliquait soixante lignes plus tôt,
+ * à la collecte. Il était donc du code mort depuis sa naissance — écrit
+ * précisément pour « un message de voyageur Airbnb », et incapable de le
+ * sauver. D'où sa remontée ici, au niveau du module.
+ */
+export const ATTEND_REPONSE = new Set(['reply_expected', 'action_required']);
+
+/**
  * Sujet de RÉPONSE AUTOMATIQUE (répondeur, absence du bureau, accusé
  * d'orientation). Bug réel 02/08 : l'utilisateur répond, le répondeur du
  * destinataire renvoie « Ceci est une réponse automatique… » une minute plus
@@ -320,7 +341,11 @@ export async function getUnansweredEmails(
   const byThread = new Map<number, (typeof raw)[number]>();
   for (const m of raw) {
     if (m.threadId === null || m.date === null || !m.fromEmail) continue;
-    if (AUTO_SENDER_RE.test(m.fromEmail)) continue;
+    // L'adresse de l'expéditeur ne prime PAS sur la lecture du mail : une
+    // demande de réservation Airbnb part de `automated@airbnb.com`, et une
+    // relance de son syndic de `notification@vilogi.com`. Quand l'analyse a
+    // conclu qu'une réponse est attendue, on garde le mail.
+    if (AUTO_SENDER_RE.test(m.fromEmail) && !ATTEND_REPONSE.has(m.intent ?? '')) continue;
     // Filet pour les mails indexés avant la colonne isAutoReply.
     if (isAutoReplySubject(m.subject)) continue;
     // Règle utilisateur : les avis « relevé à disposition » et les avis
@@ -354,12 +379,6 @@ export async function getUnansweredEmails(
     'reminder',
     'appointment',
   ]);
-  /**
-   * Intentions où l'analyse dit ELLE-MÊME qu'une réponse est attendue : le
-   * veto ci-dessous ne doit jamais les emporter. Cas réel : un message de
-   * voyageur Airbnb porte `reply_expected` alors que le verdict vaut « none ».
-   */
-  const ATTEND_REPONSE = new Set(['reply_expected', 'action_required']);
   const senderCat = new Map<string, string | null>();
   {
     const emails = [...new Set([...byThread.values()].map((m) => m.fromEmail as string))];
