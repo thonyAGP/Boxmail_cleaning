@@ -245,10 +245,33 @@ export interface DetectReport {
 function aiVerdictSaysNoAction(msg: {
   aiAction: string | null;
   analysisConfidence: string | null;
+  /** Catégorie de l'expéditeur : une PERSONNE ne subit jamais le veto élargi. */
+  senderCategory?: string | null;
 }): boolean {
   if (!msg.aiAction) return false;
   if (!['read', 'archive', 'none'].includes(msg.aiAction)) return false;
-  return msg.analysisConfidence === 'high';
+  if (msg.analysisConfidence === 'high') return true;
+  // Élargissement demandé le 11/08 : une confiance MOYENNE suffit quand
+  // l'expéditeur n'est pas une personne. Cas déclencheur : « Ce qui évolue sur
+  // votre facture d'électricité » restait une échéance alors que l'analyse
+  // disait « à lire ». Sur un automate, le risque d'écarter à tort est
+  // faible ; sur un humain, il ne l'est pas — et la proposition écartée reste
+  // de toute façon visible et rétablissable d'un clic.
+  return msg.analysisConfidence === 'medium' && msg.senderCategory !== 'person';
+}
+
+/** Catégorie de l'expéditeur d'un mail (null si inconnue). */
+async function categorieExpediteur(messageId: number): Promise<string | null> {
+  const m = await db.message.findUnique({
+    where: { id: messageId },
+    select: { accountSlug: true, fromEmail: true },
+  });
+  if (!m?.fromEmail) return null;
+  const s = await db.sender.findFirst({
+    where: { accountSlug: m.accountSlug, email: m.fromEmail },
+    select: { category: true },
+  });
+  return s?.category ?? null;
 }
 
 /**
@@ -275,7 +298,9 @@ export async function revoirEcheancesProposees(): Promise<{ revues: number; ecar
       where: { id: d.messageId },
       select: { aiAction: true, analysisConfidence: true },
     });
-    if (!msg || !aiVerdictSaysNoAction(msg)) continue;
+    if (!msg) continue;
+    const senderCategory = await categorieExpediteur(d.messageId);
+    if (!aiVerdictSaysNoAction({ ...msg, senderCategory })) continue;
     await db.deadline.update({
       where: { id: d.id },
       data: { status: 'vetoed', vetoReason: 'ai_no_action' },

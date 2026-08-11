@@ -9429,7 +9429,10 @@ function renderReaderAnalysis(a, item, opts = {}) {
           <option value="never_urgent" ${c.sender.priority === 'never_urgent' ? 'selected' : ''}>🔕 jamais urgent</option>
         </select>
         <span class="muted" id="ra-class-note" style="font-size:11.5px">une correction s'applique à tous ses mails</span>
-      </div>` : ''}`
+        <button class="btn btn-sm" id="ra-echanges" data-email="${esc(c.sender.email)}"
+          title="Voir tout ce que vous vous êtes écrit, regroupé par sujet">📚 Nos échanges</button>
+      </div>
+      <div id="ra-echanges-body" class="hidden"></div>` : ''}`
     : '';
 
   // MONTRER LE RAISONNEMENT (retour 10/08 : « je ne crois pas à ton système
@@ -9518,6 +9521,78 @@ function renderReaderAnalysis(a, item, opts = {}) {
       }
     } catch (err) { alert(err.message); }
   });
+  // « Nos échanges » (11/08) : tout l'historique avec cette personne, groupé
+  // par SUJET. Déclencheur : un mail portait deux dossiers à la fois (comptes
+  // à signer + AG extraordinaire) et il était impossible de décider sans voir
+  // ce qui avait déjà été dit.
+  $('#ra-echanges')?.addEventListener('click', async (e) => {
+    const zone = $('#ra-echanges-body');
+    if (!zone) return;
+    if (!zone.classList.contains('hidden')) {
+      zone.classList.add('hidden');
+      e.target.textContent = '📚 Nos échanges';
+      return;
+    }
+    zone.classList.remove('hidden');
+    e.target.textContent = '📚 Masquer';
+    zone.innerHTML = '<div class="empty"><span class="spinner"></span>Je rassemble vos échanges…</div>';
+    let d;
+    try {
+      d = await api.correspondence(e.target.dataset.email);
+    } catch (err) {
+      zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+      return;
+    }
+    if (!d.subjects.length) {
+      zone.innerHTML = '<div class="empty">Aucun autre échange retrouvé avec cette personne.</div>';
+      return;
+    }
+    const intro = `<div class="ech-lead"><strong>${esc(d.displayName)}</strong> —
+      ${fmtNum(d.totalMessages)} message(s) échangé(s)${d.totalSent ? `, dont ${fmtNum(d.totalSent)} de toi` : ''}
+      ${d.subjects.length > 1 ? `· <strong>${fmtNum(d.subjects.length)} sujets distincts</strong>` : ''}
+      ${d.accounts.length > 1 ? `· ${d.accounts.map((a) => accountChip(a)).join(' ')}` : ''}</div>`;
+    zone.innerHTML = intro + d.subjects.map((sj, i) => `
+      <div class="ech-sujet">
+        <div class="ech-head">
+          <span class="ech-titre">${esc(sj.subject)}</span>
+          ${sj.waitingOnUs ? '<span class="badge orange" title="Le dernier message est le sien">à toi de jouer</span>' : ''}
+        </div>
+        <div class="ech-meta">${fmtNum(sj.count)} message(s)
+          ${sj.sent ? `· ${fmtNum(sj.sent)} réponse(s) de toi` : '· jamais répondu'}
+          ${sj.withAttachments ? `· ${fmtNum(sj.withAttachments)} avec document` : ''}
+          · du ${fmtDate(sj.firstAt)} au ${fmtDate(sj.lastAt)}
+          <button class="ech-open" data-s="${i}">voir les messages</button></div>
+        <div class="ech-msgs hidden" data-msgs="${i}">
+          ${sj.messages.map((m, j) => `
+            <div class="result-row ${m.isOutbound ? 'ech-sortant' : ''}" data-s="${i}" data-m="${j}">
+              <span class="mail-date">${fmtDate(m.date)}</span>
+              <span class="result-subject">${m.isOutbound ? '<span class="badge gray">toi</span> ' : ''}${esc(m.subject)}</span>
+              ${m.hasAttachments ? '<span class="badge gray">📎</span>' : ''}
+            </div>`).join('')}
+        </div>
+      </div>`).join('');
+
+    zone.querySelectorAll('.ech-open').forEach((b) => {
+      b.addEventListener('click', () => {
+        zone.querySelector(`[data-msgs="${b.dataset.s}"]`)?.classList.toggle('hidden');
+      });
+    });
+    zone.querySelectorAll('.ech-msgs .result-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        const m = d.subjects[Number(row.dataset.s)].messages[Number(row.dataset.m)];
+        openReader({
+          account: m.account, folder: m.folder, folderRole: m.folderRole, uid: m.uid,
+          messageId: m.messageId, subject: m.subject, fromName: d.displayName,
+          fromEmail: d.email, date: m.date, isSeen: m.isSeen, isFlagged: false,
+          isOutbound: m.isOutbound, hasAttachments: m.hasAttachments,
+          attachmentCount: m.attachmentNames.length, attachmentNames: m.attachmentNames,
+          summary: null, matchedIn: [], snippet: m.snippet, intent: null,
+          sizeBytes: 0, hasListUnsubscribe: false, threadId: null,
+        }, row);
+      });
+    });
+  });
+
   $('#ra-cat')?.addEventListener('change', async (e) => {
     try {
       await api.senderSetCategory(item.account, c.sender.email, e.target.value || null);

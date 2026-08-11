@@ -68,6 +68,7 @@ import {
 } from '../services/search.js';
 import { find } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
+import { correspondance } from '../services/correspondance.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1734,6 +1735,27 @@ export function buildAdminRouter(): Router {
           account: String(req.query.account ?? '').trim() || undefined,
           limit: Number.parseInt(String(req.query.limit ?? '40'), 10) || 40,
           minBytes: Number.parseInt(String(req.query.min ?? ''), 10) || undefined,
+        }),
+      );
+    }),
+  );
+
+  // « Nos échanges » avec un interlocuteur (11/08), groupés par CONVERSATION.
+  // Né d'un cas réel : un mail portait DEUX sujets (comptes à signer + AG
+  // extraordinaire) et il fallait l'historique pour trancher.
+  router.get(
+    '/correspondence',
+    guard(async (req, res) => {
+      const email = String(req.query.email ?? '').trim();
+      if (!email) {
+        res.status(400).json({ error: 'Adresse manquante.' });
+        return;
+      }
+      res.json(
+        await correspondance({
+          email,
+          account: String(req.query.account ?? '').trim() || undefined,
+          limit: Number.parseInt(String(req.query.limit ?? '12'), 10) || 12,
         }),
       );
     }),

@@ -983,3 +983,25 @@ th.sortable:hover { color: var(--primary); }
 .dup-open { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 12.5px; }
 .dup-open:hover { text-decoration: underline; }
 .dup-occ { border-top: 1px solid var(--border-soft); }
+
+/* « Nos échanges » avec un interlocuteur (11/08) — groupés par SUJET, parce
+   qu'un même correspondant peut mener deux dossiers en parallèle. */
+#ra-echanges-body { margin: 8px 0 4px; }
+.ech-lead { font-size: 12.5px; margin: 4px 2px 10px; color: var(--text-secondary); }
+.ech-sujet {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-main); margin-bottom: 7px; overflow: hidden;
+}
+.ech-head { display: flex; gap: 8px; align-items: center; padding: 9px 13px 3px; }
+.ech-titre {
+  font-weight: 600; font-size: 13px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.ech-meta {
+  display: flex; gap: 7px; align-items: center; flex-wrap: wrap;
+  padding: 0 13px 9px; font-size: 12px; color: var(--text-secondary);
+}
+.ech-open { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 12px; }
+.ech-open:hover { text-decoration: underline; }
+.ech-msgs { border-top: 1px solid var(--border-soft); }
+.ech-sortant { background: var(--surface-muted); }

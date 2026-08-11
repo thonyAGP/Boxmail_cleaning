@@ -149,6 +149,12 @@ export const api = {
     }
     return request('GET', `/find?${q}`);
   },
+  correspondence: (email, account) =>
+    request(
+      'GET',
+      '/correspondence?' +
+        new URLSearchParams({ email, ...(account ? { account } : {}) }),
+    ),
   attachmentNamesBackfill: () => request('POST', '/attachment-names/backfill'),
   attachmentTextBackfill: (order) => request('POST', '/attachment-text/backfill', { order }),
   duplicates: (params = {}) => {
