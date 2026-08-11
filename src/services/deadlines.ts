@@ -1,5 +1,6 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { recordOperation } from './oplog.js';
+import { logger } from '../logger.js';
 import { imapService } from './imap.js';
 import { isRentilaSender, parseRentilaMail } from './rentila.js';
 import type { AccountRecord } from './accounts.js';
@@ -248,6 +249,41 @@ function aiVerdictSaysNoAction(msg: {
   if (!msg.aiAction) return false;
   if (!['read', 'archive', 'none'].includes(msg.aiAction)) return false;
   return msg.analysisConfidence === 'high';
+}
+
+/**
+ * Repasse le veto sur les échéances DÉJÀ créées (11/08).
+ *
+ * Le veto du 10/08 ne s'appliquait qu'au moment de la détection : les
+ * propositions nées avant lui — ou avant que l'analyse du mail n'existe —
+ * restaient affichées. Constaté en réel : « Votre facture mobile Free est
+ * disponible » figurait encore parmi les échéances alors que l'analyse
+ * conclut « à lire, rien à faire », avec une confiance forte.
+ *
+ * Ne touche QUE les propositions (`proposed`) : une échéance que l'utilisateur
+ * a confirmée lui appartient, on ne la lui retire jamais dans son dos.
+ */
+export async function revoirEcheancesProposees(): Promise<{ revues: number; ecartees: number }> {
+  await ensureDbReady();
+  const lignes = await db.deadline.findMany({
+    where: { status: 'proposed' },
+    select: { id: true, messageId: true, title: true },
+  });
+  let ecartees = 0;
+  for (const d of lignes) {
+    const msg = await db.message.findUnique({
+      where: { id: d.messageId },
+      select: { aiAction: true, analysisConfidence: true },
+    });
+    if (!msg || !aiVerdictSaysNoAction(msg)) continue;
+    await db.deadline.update({
+      where: { id: d.id },
+      data: { status: 'vetoed', vetoReason: 'ai_no_action' },
+    });
+    ecartees++;
+    logger.info('échéance écartée après relecture du verdict', { id: d.id, titre: d.title });
+  }
+  return { revues: lignes.length, ecartees };
 }
 
 export async function detectDeadlines(

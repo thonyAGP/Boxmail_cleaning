@@ -592,7 +592,14 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
   // `indexedSince` limite le travail aux mails arrivés pendant CETTE sync :
   // sans lui, le scan des contenus relirait les mêmes mails toutes les 30 min.
   try {
-    const { detectDeadlines } = await import('./deadlines.js');
+    const { detectDeadlines, revoirEcheancesProposees } = await import('./deadlines.js');
+    // Relecture des propositions déjà affichées (11/08) : le veto ne jouait
+    // qu'à la détection, donc une échéance née avant lui — ou avant que
+    // l'analyse du mail n'existe — restait à l'écran pour toujours.
+    const revue = await revoirEcheancesProposees();
+    if (revue.ecartees > 0) {
+      progress(`Dates : ${revue.ecartees} proposition(s) écartée(s) après relecture de l'analyse.`);
+    }
     const det = await detectDeadlines(rec, {
       sinceDays: 30,
       deep: true,
