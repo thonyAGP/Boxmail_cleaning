@@ -145,6 +145,42 @@ function lireCMap(texte: string, dans: TableUnicode): void {
   }
 }
 
+/**
+ * Une chaîne littérale `(…)` peut elle aussi contenir des CODES et non des
+ * lettres (11/08). C'est le cas des factures IKEA : `(\x001\x00B\x00H\x00F)`
+ * vaut « Page », chaque caractère étant un code sur DEUX octets d'une police
+ * Type0. Sans ce décodage, on lisait des octets nuls et donc rien du tout.
+ *
+ * On tente le décodage par la table et on ne le retient que s'il explique
+ * l'essentiel de la chaîne — sinon on garde le texte brut, qui est le cas
+ * normal des PDF simples.
+ */
+function litteralVersTexte(brut: string, t: TableUnicode | null): string {
+  if (!t || t.map.size === 0) return brut;
+  const essai = (largeur: 1 | 2): { texte: string; ratio: number } => {
+    if (largeur === 2 && brut.length % 2 !== 0) return { texte: '', ratio: 0 };
+    let texte = '';
+    let mappes = 0;
+    let total = 0;
+    for (let i = 0; i + largeur <= brut.length; i += largeur) {
+      const code =
+        largeur === 2 ? (brut.charCodeAt(i) << 8) | brut.charCodeAt(i + 1) : brut.charCodeAt(i);
+      total++;
+      const c = t.map.get(code);
+      if (c !== undefined) {
+        texte += c;
+        mappes++;
+      }
+    }
+    return { texte, ratio: total ? mappes / total : 0 };
+  };
+  const r = essai(t.largeur);
+  // 60 % : assez pour reconnaître une police à codes, assez peu pour ne pas
+  // massacrer une chaîne normale dont quelques caractères seraient dans la table.
+  if (r.ratio >= 0.6) return r.texte;
+  return brut;
+}
+
 function textFromContent(content: string, table: TableUnicode | null = null): string {
   const out: string[] = [];
   const re =
@@ -161,14 +197,14 @@ function textFromContent(content: string, table: TableUnicode | null = null): st
   while ((m = re.exec(content)) !== null) {
     const tok = m[0];
     if (tok.startsWith('(')) {
-      pending.push(
-        tok
-          .slice(1, -1)
-          // Séquences d'échappement PDF (RFC : \n \r \t \b \f \( \) \\ \ooo).
-          .replace(/\\([nrtbf()\\])/g, (_s, c: string) =>
-            ({ n: '\n', r: '\n', t: '\t', b: '', f: '\n', '(': '(', ')': ')', '\\': '\\' })[c] ?? c)
-          .replace(/\\([0-7]{1,3})/g, (_s, o: string) => String.fromCharCode(Number.parseInt(o, 8))),
-      );
+      const brut = tok
+        .slice(1, -1)
+        // Séquences d'échappement PDF (RFC : \n \r \t \b \f \( \) \\ \ooo).
+        .replace(/\\([nrtbf()\\])/g, (_s, c: string) =>
+          ({ n: '\n', r: '\n', t: '\t', b: '', f: '\n', '(': '(', ')': ')', '\\': '\\' })[c] ?? c)
+        .replace(/\\([0-7]{1,3})/g, (_s, o: string) => String.fromCharCode(Number.parseInt(o, 8)));
+      // La chaîne peut contenir des CODES et non des lettres (cas IKEA).
+      pending.push(litteralVersTexte(brut, table));
     } else if (tok.startsWith('<')) {
       // Chaîne hexadécimale : le cas de toutes les factures modernes.
       pending.push(motsHexVersTexte(tok.slice(1, -1), table));
