@@ -309,6 +309,9 @@ export async function getUnansweredEmails(
       date: true,
       isSeen: true,
       intent: true,
+      // Verdict de l'analyse (11/08) : sans lui, les heuristiques décidaient
+      // seules — et se trompaient. Voir le veto ci-dessous.
+      aiAction: true,
       folder: { select: { path: true } },
     },
   });
@@ -334,7 +337,29 @@ export async function getUnansweredEmails(
   // confirmations Crédit Agricole…) — c'est ce qui minait la confiance dans
   // l'écran. Les mails de PERSONNES restent listés quoi qu'ils contiennent :
   // l'artisan qui envoie sa facture attend parfois bel et bien un retour.
-  const NO_REPLY_INTENTS = new Set(['otp', 'invoice', 'shipping', 'confirmation', 'promo', 'document']);
+  //
+  // `reminder` et `appointment` ajoutés le 11/08 après un retour cinglant :
+  // « Enregistrez-vous pour votre voyage du 16/06/2026 » d'Air France était
+  // présenté comme la PREMIÈRE des trois priorités du jour — un mail
+  // automatique, pour un vol passé depuis deux mois. Un rappel envoyé par une
+  // entreprise n'attend jamais de réponse ; celui d'une PERSONNE, si, et la
+  // garde `category !== 'person'` juste en dessous continue de le protéger.
+  const NO_REPLY_INTENTS = new Set([
+    'otp',
+    'invoice',
+    'shipping',
+    'confirmation',
+    'promo',
+    'document',
+    'reminder',
+    'appointment',
+  ]);
+  /**
+   * Intentions où l'analyse dit ELLE-MÊME qu'une réponse est attendue : le
+   * veto ci-dessous ne doit jamais les emporter. Cas réel : un message de
+   * voyageur Airbnb porte `reply_expected` alors que le verdict vaut « none ».
+   */
+  const ATTEND_REPONSE = new Set(['reply_expected', 'action_required']);
   const senderCat = new Map<string, string | null>();
   {
     const emails = [...new Set([...byThread.values()].map((m) => m.fromEmail as string))];
@@ -347,10 +372,26 @@ export async function getUnansweredEmails(
     }
   }
   for (const [threadId, m] of [...byThread]) {
+    const estUnePersonne = senderCat.get(m.fromEmail as string) === 'person';
+    // Une PERSONNE n'est jamais écartée : elle peut attendre une réponse quoi
+    // qu'elle envoie.
+    if (estUnePersonne) continue;
+    if (m.intent && NO_REPLY_INTENTS.has(m.intent)) {
+      byThread.delete(threadId);
+      continue;
+    }
+    // VETO DE L'ANALYSE (11/08). Même leçon que pour les fausses échéances la
+    // veille : quand l'IA a lu le mail et conclut qu'il n'y a rien à faire
+    // (lire, archiver, rien), une heuristique de structure — « le dernier
+    // message du fil est entrant » — ne doit pas la contredire. Le mail
+    // Air France portait le verdict « rappel d'enregistrement classique » et
+    // finissait quand même en tête du briefing.
+    // On ne l'applique JAMAIS quand l'analyse annonce elle-même une réponse
+    // attendue : sinon on masquerait un message de voyageur Airbnb.
     if (
-      m.intent &&
-      NO_REPLY_INTENTS.has(m.intent) &&
-      senderCat.get(m.fromEmail as string) !== 'person'
+      m.aiAction &&
+      ['archive', 'none', 'read'].includes(m.aiAction) &&
+      !ATTEND_REPONSE.has(m.intent ?? '')
     ) {
       byThread.delete(threadId);
     }
