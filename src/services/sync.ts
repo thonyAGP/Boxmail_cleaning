@@ -86,6 +86,7 @@ type BodyStructNode = {
   disposition?: string;
   dispositionParameters?: { filename?: string };
   parameters?: { name?: string };
+  size?: number;
   childNodes?: BodyStructNode[];
 };
 
@@ -132,6 +133,15 @@ export function collectAttachmentNames(node: BodyStructNode | undefined | null):
     }
     const brut = n.dispositionParameters?.filename ?? n.parameters?.name;
     if (!brut) return;
+    // Décoration de newsletter, écartée (constaté en réel dès la première
+    // passe : un mail Leroy Merlin apportait « appstore_lm.gif »,
+    // « quote_lm.gif », « loc_lm.gif »… noyant le vrai « 723767.pdf »).
+    // Règle : une image NON déclarée en pièce jointe, ou minuscule, est un
+    // élément de mise en page. Une photo de facture, elle, arrive bien en
+    // disposition « attachment » — même règle que usableAttachments().
+    const estImage = (n.type ?? '').toLowerCase().startsWith('image/');
+    const jointe = n.disposition?.toLowerCase() === 'attachment';
+    if (estImage && (!jointe || (n.size ?? 0) < 30_000)) return;
     // Un nom peut arriver encodé (RFC 2231/2047) ou avec des espaces parasites.
     const nom = String(brut).replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!nom) return;
