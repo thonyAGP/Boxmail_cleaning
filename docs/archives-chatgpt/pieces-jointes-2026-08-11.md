@@ -466,3 +466,533 @@ Je passerais immédiatement à FTS5 et au couple document / attachment_instance.
 Pour les doublons : nom+taille = candidat ; SHA-256 = doublon. Jamais autrement.
 
 Et pour la suppression : jamais de chirurgie MIME via IMAP. Graph rend la chose techniquement propre sur Outlook.com, mais comme les boîtes ne sont pas pleines, je construirais aujourd'hui la déduplication visuelle et la mesure du gain, pas la mutation de dix ans d'archives. Le rapport risque/bénéfice n'est pas encore favorable.
+---
+
+## Deuxième question — la boîte d'archive (idée de l'utilisateur)
+
+```
+Suite du même sujet. L'utilisateur propose une TROISIÈME voie, et je la trouve meilleure que les deux qu'on a discutées. Je viens de la chiffrer.
+
+SON IDÉE
+Plutôt que de supprimer une pièce jointe (chirurgie MIME) ou de renoncer, créer une BOÎTE MAIL D'ARCHIVE dédiée — un compte gratuit séparé — et y DÉPLACER les mails les plus lourds, rangés par boîte d'origine. Le mail n'est pas modifié, il change juste d'endroit. Ça libèrerait la place là où elle manque, en profitant du stockage gratuit d'un compte supplémentaire.
+
+CE QUE ÇA DONNE SUR SES DONNÉES RÉELLES
+Volume par boîte (index local) :
+  thony56_gtr (perso) 9,10 Go — Brimmo 1,56 — Location_Brest 1,20 — Altoen 0,84 — Au-marais 0,52 — Colocar 0,31 — Econom 0,08. Total ~13,6 Go.
+Ce que déplacerait une archive selon le seuil :
+  > 20 Mo :    35 mails →  0,79 Go ( 6 % du total)
+  > 10 Mo :   297 mails →  4,42 Go (32 %)
+  >  5 Mo :   673 mails →  7,00 Go (51 %)
+  >  2 Mo : 1 391 mails →  9,28 Go (68 %)
+En se limitant au lourd ET ancien (plus de 2 ans) : 262 mails de plus de 10 Mo = 3,92 Go.
+
+Autrement dit : déplacer 262 mails libère 3,9 Go. À comparer avec tout ce dont on a parlé jusqu'ici — le nettoyage complet ne libérait que 137 Mo, et la déduplication ~1,4 Go. C'est un Pareto écrasant : 1,6 % des mails portent 32 % du poids.
+
+Contrainte : Outlook.com n'annonce PAS le quota en IMAP (commande QUOTA refusée), donc je ne peux pas lire son taux d'occupation réel ni déclencher sur « boîte presque pleine ». Je ne connais que le volume que j'ai indexé.
+
+MES QUESTIONS
+1. Le déplacement entre DEUX COMPTES n'est pas un MOVE IMAP : c'est télécharger le message complet, l'APPEND dans le compte d'archive, puis mettre l'original à la corbeille. Le message reste-t-il vraiment intact (signature, en-têtes, pièces) ? Qu'est-ce que je perds au passage, et que dois-je impérativement préserver à l'APPEND (INTERNALDATE, drapeaux, quoi d'autre) ? Est-ce que tu considères ça comme sûr, contrairement à la chirurgie MIME que tu déconseillais ?
+2. Quel seuil retenir, et sur quel critère ? Taille seule, ou taille × ancienneté ? Faut-il exclure des catégories entières (un fil encore actif, un mail auquel il n'a pas répondu, une facture de l'année en cours) ?
+3. Le fil de discussion : si j'archive UN mail d'un échange et pas les autres, est-ce que je casse quelque chose d'important pour lui ? Faut-il raisonner par fil entier ?
+4. La recherche : mon outil indexe déjà plusieurs boîtes et sait chercher dans toutes à la fois. Le compte d'archive devient donc juste une boîte de plus, et le mail reste retrouvable. Est-ce que ça suffit, ou faut-il autre chose pour qu'il ne perde jamais un document (par exemple garder dans la boîte d'origine un mail-repère qui pointe vers l'archive) ?
+5. Le transfert : 4,4 Go à descendre puis à remonter depuis un petit VPS, sur des comptes Outlook.com qui limitent le débit. Comment structurerais-tu ça pour que ce soit reprenable, vérifiable, et sans perte possible ? Quel ordre d'opérations garantit qu'on ne supprime JAMAIS avant d'avoir la certitude que la copie est arrivée ?
+6. Y a-t-il un piège que je ne vois pas — sur la durée de vie d'un compte gratuit inactif, sur les limites d'un compte Outlook.com, ou sur le fait de concentrer 4 Go d'archives dans un compte qui devient un point de défaillance unique ?
+7. Compte tenu de tout ça, quel est le bon ordre : déduplication d'abord (1,4 Go, sans rien déplacer), ou archivage d'abord (3,9 Go, en déplaçant 262 mails) ?
+
+Réponds concrètement, et dis-moi franchement si tu déconseilles.
+```
+
+## Réponse
+
+Oui, cette troisième voie est nettement meilleure que la chirurgie MIME. Je la retiendrais comme stratégie de capacité, avec une réserve majeure : elle ne fonctionne vraiment que si tu acceptes qu’après une période de sécurité, l’original disparaisse définitivement de la boîte source.
+
+Et j’ai trouvé deux contraintes Outlook.com qui empêchent d’en faire naïvement « un compte gratuit de 15 Go pour déporter 10 Go ».
+
+FAIT : un compte Outlook.com gratuit a 15 Go de boîte mail, mais aussi seulement 5 Go de stockage cloud Microsoft, et les pièces jointes Outlook.com comptent dans ces 5 Go. Si cette seconde limite est dépassée, Outlook.com peut cesser d’envoyer/recevoir alors même que les 15 Go de boîte mail ne sont pas atteints. 
+Support Microsoft
++1
+
+Donc ton compte d’archive gratuit n’est pas réellement un coffre mail de 15 Go de pièces jointes.
+
+1. APPEND inter-comptes : oui, je considère ça suffisamment sûr
+
+FAIT : IMAP APPEND prend un message RFC 5322 complet et crée un nouveau message dans la boîte cible. Il accepte séparément les flags et l’INTERNALDATE. Si tu ne fournis pas l’INTERNALDATE, il prend la date actuelle, donc il faut absolument la recopier. 
+IETF Datatracker
++1
+
+La bonne source n'est surtout pas un MIME que tu reparses puis reconstruis. C'est :
+
+source IMAP
+BODY.PEEK[]      -> octets RFC822 bruts
+
+puis exactement ces octets en entrée du :
+
+destination IMAP
+APPEND
+
+Dans ce cas, tu ne touches ni aux headers, ni aux boundaries MIME, ni aux pièces jointes.
+
+Je préserverais séparément :
+
+RAW MESSAGE       obligatoire
+INTERNALDATE      obligatoire
+
+\Seen             oui
+\Answered         oui
+\Flagged          oui
+\Draft            oui si présent
+
+\Deleted          NON
+\Recent           NON
+
+keywords custom   seulement si destination les supporte
+
+Le nouvel UID sera nécessairement différent : l'UID identifie le nouveau message dans sa nouvelle mailbox. Un APPEND réussi peut retourner son nouvel APPENDUID. 
+IETF Datatracker
+
+En revanche, tu perds forcément l'identité de stockage d'origine :
+
+account source
+mailbox source
+UIDVALIDITY source
+UID source
+
+        ≠
+
+account archive
+mailbox archive
+UIDVALIDITY archive
+UID archive
+
+Donc ces quatre valeurs doivent rester dans SQLite comme provenance historique.
+
+Ma garantie serait plus forte que le protocole
+
+Le RFC autorise même un serveur incapable de conserver correctement certains contenus 8 bits à effectuer une conversion MIME réversible. 
+IETF Datatracker
+
+Je ne veux même pas de ça dans ton produit.
+
+Je poserais :
+
+sha256(raw_source) == sha256(raw_destination)
+
+comme condition obligatoire avant de toucher à l'original.
+
+Si c'est vrai, tu sais alors beaucoup plus que « APPEND a réussi » :
+
+les headers + MIME + pièces + Message-ID + signature embarquée sont exactement les mêmes octets.
+
+Donc :
+
+APPEND OK
+mais SHA différent
+=> ARCHIVAGE ÉCHOUÉ
+=> original totalement intact
+
+C'est précisément pour cela que je considère cette technique beaucoup plus sûre que la chirurgie d'une pièce jointe.
+
+Le premier piège : ta Corbeille
+
+Avec ton contrat actuel :
+
+suppression = Corbeille, jamais EXPUNGE
+
+le gain n'est pas immédiat.
+
+Outlook.com compte les éléments de Deleted Items dans le quota jusqu'à ce qu'ils soient supprimés définitivement ou automatiquement supprimés après 30 jours. 
+Support Microsoft
+
+Donc ton fonctionnement réel serait :
+
+J0
+archive vérifiée
+original -> Éléments supprimés
+
+J0 à J30
+0 Go réellement récupéré sur cet original
+mais rollback très simple
+
+~J30
+Outlook purge automatiquement
+espace récupéré
+
+Ça me convient puisque tu précises que les boîtes ne sont pas encore pleines.
+
+Mais il faut modifier le vocabulaire du garde-fou :
+
+Jamais de suppression définitive effectuée par l'assistant. Toute migration reste récupérable dans la boîte source pendant la période Outlook, et indéfiniment depuis la copie d'archive vérifiée.
+
+Si ton invariant signifie réellement « aucun original ne devra jamais être définitivement supprimé », alors cette solution ne peut pas libérer durablement de capacité.
+
+2. Le seuil : surtout pas taille × ancienneté
+
+Je ne ferais pas un score continu. Je ferais des portes d'éligibilité, puis taille décroissante.
+
+Ta première cohorte est pratiquement déjà trouvée :
+
+message_size >= 10 MiB
+AND age >= 2 ans
+
+262 messages → 3,92 Go.
+
+C'est excellent.
+
+Puis j'ajouterais pour la V1 :
+
+AND aucune action ouverte
+AND aucune réponse attendue connue
+AND non Flagged
+AND conversation inactive depuis >= 12 mois
+
+Je n'utiliserais pas \Seen comme protection : sur dix ans de boîte, lu/non-lu est un très mauvais proxy de valeur.
+
+Et je n'exclurais pas :
+
+facture
+contrat
+acte
+document fiscal
+
+Ils sont précisément parmi les meilleurs candidats à l'archive : on veut les conserver, pas les supprimer.
+
+Donc la logique est :
+
+éligibilité métier d'abord
+puis ORDER BY message_size DESC
+
+pas :
+
+score = taille × ancienneté
+
+qui pourrait donner des effets absurdes.
+
+3. Je ne déplacerais pas les fils entiers
+
+INFÉRENCE : si tu retires un message d'une conversation du compte A et qu'il passe dans le compte Archive, Outlook du compte A ne peut évidemment plus afficher ce message dans la conversation native.
+
+Donc oui, le fil Outlook sera visuellement incomplet.
+
+Mais déplacer tout le thread pour éviter ça serait une mauvaise réaction.
+
+Un thread peut contenir :
+
+2018 : PDF de 18 Mo
+2018 : "merci"
+2019 : échange
+2026 : nouvelle demande active
+
+Tu finirais par déplacer le courrier actif pour accompagner un PDF de 2018.
+
+Je préfère :
+
+archive au niveau MESSAGE
+mais continuité au niveau CONVERSATION dans ton assistant
+
+Ton UI devrait afficher par exemple :
+
+Conversation avec le notaire
+7 messages ici · 2 anciens messages archivés
+
+Et lorsque l'utilisateur ouvre le fil, les neuf apparaissent chronologiquement.
+
+Là ton assistant devient meilleur qu'Outlook plutôt que d'essayer de préserver artificiellement son modèle.
+
+Pour la première version, ta règle conversation inactive depuis 12 mois réduit déjà énormément le problème.
+
+4. Surtout pas de « mail-repère »
+
+Je le déconseille très fortement.
+
+Tu transformerais :
+
+« je n'altère pas les boîtes »
+
+en :
+
+« j'injecte des faux mails dans les archives pour expliquer où sont les vrais ».
+
+C'est du bruit permanent.
+
+Tu as déjà SQLite. Fais plutôt de la migration une notion de premier ordre :
+
+logical_message
+---------------
+id
+origin_account
+origin_mailbox
+origin_uidvalidity
+origin_uid
+
+current_account
+current_mailbox
+current_uidvalidity
+current_uid
+
+archived_at
+raw_sha256
+migration_id
+
+Résultat de recherche :
+
+Facture IKEA.pdf
+Reçue sur Altoen le 12/03/2022
+Archivée le 11/08/2026
+[Ouvrir le mail]
+
+L'utilisateur ne devrait même pas avoir besoin de savoir physiquement dans quelle boîte elle vit.
+
+Et surtout, ne réindexe pas le mail archivé comme un second mail : rattache la nouvelle occurrence au même logical_message_id, sinon ton archivage va créer lui-même des doublons de recherche pendant les 30 jours où les deux copies coexistent.
+
+5. Le transfert : je ferais une machine à états très stricte
+
+Pas un script du genre :
+
+JavaScript
+fetch()
+append()
+moveToTrash()
+
+mais :
+
+SELECTED
+   ↓
+SOURCE_FETCHED
+   ↓
+SOURCE_HASHED
+   ↓
+DEST_APPENDING
+   ↓
+DEST_APPENDED
+   ↓
+DEST_REFETCHED
+   ↓
+DEST_VERIFIED
+   ↓
+SOURCE_TO_TRASH
+   ↓
+QUARANTINED
+   ↓
+COMPLETE
+
+SOURCE_FETCHED doit contenir au minimum :
+
+source account
+source mailbox
+UIDVALIDITY
+UID
+
+RFC822.SIZE
+INTERNALDATE
+FLAGS
+Message-ID
+
+raw SHA-256
+
+Je téléchargerais un seul .eml temporaire à la fois sur le VPS.
+
+Puis :
+
+APPEND raw.eml
+    flags = original_flags_without_deleted
+    internalDate = original_internalDate
+
+Ensuite re-FETCH depuis l'archive, pas confiance au simple OK :
+
+sha256(destination_raw) === sha256(source_raw)
+destination_size === source_size
+INTERNALDATE cohérent
+flags cohérents
+
+Et seulement après :
+
+DB:
+DEST_VERIFIED = true
+
+COMMIT
+
+puis source -> Deleted Items
+
+Ainsi tous les crashs sont sûrs :
+
+crash avant APPEND
+=> original seul
+
+crash pendant APPEND
+=> original existe toujours
+
+crash après APPEND
+=> au pire deux exemplaires
+
+crash après VERIFY
+=> au pire deux exemplaires
+
+crash après MOVE source
+=> archive vérifiée + original dans Corbeille
+
+Il n'existe aucun état où zéro copie existe.
+
+Il y a un cas vicieux : « APPEND réussi mais réponse perdue »
+
+Connexion coupée exactement après que Microsoft a enregistré le message, mais avant que ton VPS reçoive OK [APPENDUID ...].
+
+Au redémarrage, tu ne sais pas si APPEND a réussi.
+
+Il ne faut surtout pas refaire aveuglément l'APPEND.
+
+Recherche d'abord dans la destination :
+
+Message-ID
++ RFC822.SIZE
++ INTERNALDATE proche
+
+puis téléchargement du/des candidat(s)
++ comparaison SHA-256
+
+Si le hash existe déjà :
+
+=> reprendre à DEST_VERIFIED
+
+C'est ce détail qui rend le job réellement idempotent.
+
+Attention aussi aux très gros mails
+
+Il existe une extension IMAP APPENDLIMIT permettant au serveur d'annoncer la taille maximale acceptable ; si elle n'est pas annoncée, cela ne signifie pas qu'il n'existe aucune limite. Un APPEND trop gros peut encore échouer. 
+RFC Editor
++1
+
+Donc :
+
+si CAPABILITY contient APPENDLIMIT:
+    precheck taille
+
+sinon:
+    tenter
+    gérer proprement NO / TOOBIG
+
+Outlook.com annonce actuellement 25 Mo comme limite pour les pièces jointes lors de l'envoi, mais je ne transposerais surtout pas ce chiffre à IMAP APPEND : ce sont deux opérations différentes. 
+Support Microsoft
+
+Tes 35 messages >20 Mo sont donc justement ceux que je testerais lors du pilote.
+
+6. Le compte gratuit est le point qui me plaît le moins
+
+Il y a deux vrais problèmes.
+
+FAIT : quota double. L'archive gratuite a 15 Go de mail mais 5 Go de Microsoft Storage, et les pièces jointes Outlook sont comptées dans les deux univers de stockage. Dépasser les 5 Go peut bloquer l'email. 
+Support Microsoft
+
+Donc je n'enverrais pas directement les 4,42 Go >10 Mo dans un compte neuf.
+
+Je ferais plutôt :
+
+phase pilote : <= 3,0 Go
+
+puis contrôle humain de Paramètres > Stockage du compte archive.
+
+Ensuite seulement tu continues.
+
+INFÉRENCE : pour un compte gratuit dédié, je mettrais un plafond interne d'environ 3,5 Go de pièces/inline indexées, pas 5 Go. Ce n'est pas une limite Microsoft : c'est une marge de sécurité produit.
+
+Deuxième problème, beaucoup plus dangereux pour une archive :
+
+FAIT : Microsoft exige de se connecter à la boîte Outlook.com au moins une fois par période d'un an ; sinon la boîte Outlook.com peut être fermée et ses emails supprimés. Le compte Microsoft global a quant à lui une règle générale de deux ans, mais Outlook.com a cette exigence spécifique d'un an. 
+Support Microsoft
++1
+
+Donc il faut un invariant produit :
+
+ARCHIVE ACCOUNT:
+last_interactive_signin < 10 months
+
+avec rappel obligatoire.
+
+Je ne supposerais pas qu'une connexion IMAP OAuth périodique satisfait cette exigence : la documentation parle explicitement d'une connexion à la boîte Outlook.com. Je prévoirais une vraie ouverture Outlook.com annuelle.
+
+Et je n'irais surtout pas construire :
+
+archive1@hotmail...
+archive2@hotmail...
+archive3@hotmail...
+archive4@hotmail...
+
+pour multiplier artificiellement les quotas.
+
+Les conditions Microsoft interdisent notamment de contourner les restrictions d'accès/usage/disponibilité. Je n'ai trouvé aucune disposition disant qu'un second compte personnel d'archive est interdit ; je ne prétends donc pas que ton idée viole les règles. Mais une architecture de sharding destinée à multiplier les quotas gratuits deviendrait contractuellement et opérationnellement beaucoup plus contestable. 
+Microsoft
+
+Un compte archive, oui. Une ferme de comptes gratuits, non.
+
+Enfin :
+
+le compte archive est une relocalisation, pas une sauvegarde.
+
+Après disparition de la copie source, sa perte devient la perte du mail.
+
+Je conserverais donc au minimum le SHA-256 de chaque .eml archivé et j'effectuerais périodiquement un contrôle d'intégrité.
+
+7. Archive ou déduplication d'abord ?
+
+Il faut distinguer analyse des doublons et action sur les doublons.
+
+Je ferais dans cet ordre :
+
+1. Hash / détection des doublons
+   immédiatement
+   car peu risqué et utile à tout le reste.
+
+2. Aucun nettoyage physique des pièces jointes.
+
+3. Pilote d'archivage :
+   >10 MiB
+   >2 ans
+   conversation inactive
+   aucune action en cours
+
+4. Maximum ~3 Go au premier passage.
+
+5. Contrôle du stockage réel Outlook.com.
+
+6. Puis extension éventuelle jusqu'aux ~262 messages.
+
+7. Déduplication visuelle dans la recherche.
+
+Car ta « déduplication = 1,4 Go » a une faiblesse conceptuelle :
+
+repérer 1,4 Go de doublons ne libère pas 1,4 Go.
+
+Pour les libérer il faut ensuite soit supprimer des mails, soit retirer leurs pièces, donc retomber sur les problèmes précédents.
+
+Alors que ton archivage :
+
+262 messages → potentiel de ~3,92 Go relocalisés
+
+est une action physique simple et cohérente.
+
+Mon verdict
+
+Je recommande cette voie, contrairement à la chirurgie MIME.
+
+Mais je la renommerais mentalement :
+
+migration vérifiée vers stockage froid
+
+et non « déplacement de mails ».
+
+Le contrat que je signerais est :
+
+Jamais modifier le message.
+Jamais toucher à la source avant copie.
+Jamais croire APPEND sur parole.
+SHA-256 RAW source == destination obligatoire.
+INTERNALDATE préservé.
+Provenance conservée dans SQLite.
+Source ensuite en Corbeille seulement.
+Recherche unifiée masque le changement de boîte.
+Pas de thread entier.
+Pas de mail-repère.
+Pas de ferme de comptes gratuits.
+
+Et ton >10 Mo + >2 ans = 262 mails / 3,92 Go me paraît précisément le bon premier périmètre fonctionnel. Le seul changement que je lui imposerais est de ne pas envoyer d'un coup 3,92 Go vers un compte gratuit sans surveiller sa limite Microsoft Storage de 5 Go. C'est désormais le facteur limitant le plus important de la proposition. 
+Support Microsoft
++1
