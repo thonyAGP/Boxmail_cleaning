@@ -127,6 +127,23 @@ model Message {
   // null = jamais capturé (mails indexés avant cette version).
   snippet            String?
   snippetAt          DateTime?
+  // Texte préparé POUR L'ANALYSE (11/08) : ~2 200 caractères SÉLECTIONNÉS,
+  // structure en paragraphes conservée, passages sautés signalés par « […] ».
+  //
+  // Colonne DISTINCTE de `snippet`, et ce n'est pas un doublon. `snippet` sert
+  // l'affichage et vaut 500 caractères aplatis ; surtout, `snippet IS NOT NULL`
+  // est la définition même de « analysable » dans candidateWhere. Le remettre à
+  // null pour le rallonger sortirait le mail du vivier d'analyse — les deux
+  // critères se contredisent dès qu'on veut rallonger l'existant.
+  //
+  // POURQUOI 2 200 : la demande est très souvent en fin de message (« merci de
+  // nous retourner le document signé avant le 30 »), et un mail d'agence
+  // commence par trois paragraphes de politesse. À 500 caractères aplatis, on
+  // gardait le préambule et on jetait la demande.
+  analysisInput      String?
+  // Version de ce qu'on a ENVOYÉ. Distincte du schéma du verdict et des
+  // consignes : c'est ce triplet qui permet de choisir quoi relire.
+  analysisInputVersion String?
   // Verdict de l'analyse IA (C2). CHOIX STRUCTURANT : l'IA n'écrit pas dans un
   // monde parallèle — elle renseigne AUSSI les champs existants (intent,
   // analysisConfidence, et la catégorie de l'expéditeur), pour que « Aujourd'hui »,

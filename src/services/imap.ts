@@ -667,7 +667,13 @@ class ImapService {
   ): Promise<Map<number, string>> {
     const out = new Map<number, string>();
     if (uids.length === 0) return out;
-    const RAW_MAX_CHARS = 4000;
+    // Le texte descendu, APRÈS conversion HTML→texte (voir plus bas : la
+    // conversion précède la coupe, ce sont donc des caractères lisibles et non
+    // du balisage). Relevé de 4 000 à 20 000 le 11/08 : la partie est de toute
+    // façon téléchargée en entier, et il faut de la matière pour CHOISIR
+    // 2 200 caractères pertinents — notamment la fin du message, où se trouve
+    // très souvent la demande.
+    const RAW_MAX_CHARS = 20_000;
     const wanted = new Set(uids);
     const sorted = [...uids].sort((a, b) => a - b);
 

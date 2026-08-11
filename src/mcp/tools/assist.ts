@@ -269,8 +269,23 @@ export function registerAssistTools(server: McpServer): void {
         'ÉPUISÉS, le tool bascule TOUT SEUL sur le reste des mails sans ' +
         'verdict (le champ `scope` de la réponse dit lequel a servi) — ' +
         'décision de l’utilisateur : l’IA lit TOUT, les règles se déduisent ' +
-        'de ses verdicts. Un extrait « (pas de texte lisible…) » se juge sur ' +
-        'le sujet et l’expéditeur, confidence=low dans le doute. ' +
+        'de ses verdicts. ' +
+        'CE QUE PORTE CHAQUE MAIL (11/08) : `snippet` = jusqu’à 2 200 ' +
+        'caractères CHOISIS dans le corps, structure conservée — un « […] » ' +
+        'signale un passage sauté, dis-le alors en `uncertainty` ' +
+        '(`truncated_input`) au lieu d’affirmer. `to.accountRole` : `direct` ' +
+        'si le titulaire de la boîte est destinataire, `non_liste` sinon — un ' +
+        'mail où il n’est pas destinataire n’attend presque jamais de réponse ' +
+        'de lui. `thread.repliedAfter` : true = il a DÉJÀ répondu après ce ' +
+        'mail, le sujet est clos. `attachmentNames` : les noms de fichiers ' +
+        'disent souvent l’émetteur et la nature. `documentHints` : ce que le ' +
+        'serveur a déjà lu localement dans la pièce (fournisseur, montant, ' +
+        'n° de facture) — fiable, appuie-toi dessus. ' +
+        '`folder` et `uid` te permettent d’appeler read_email ou ' +
+        'read_attachment sur CE mail quand le classement en dépend vraiment. ' +
+        'RENVOIE LES VERDICTS AVEC submit_semantic_batch. ' +
+        'Un mail sans texte lisible se juge sur le sujet, l’expéditeur et les ' +
+        'noms de pièces ; déclare-le en `uncertainty`. ' +
         'Annonce l’avancement de temps en temps, pas à chaque lot.',
       inputSchema: {
         ...accountParam,

@@ -178,6 +178,134 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
   return `${text.slice(0, maxChars).trimEnd()}…`;
 }
 
+/**
+ * Version de ce qu'on ENVOIE à l'analyse. Distincte du schéma du verdict et
+ * des consignes : trois choses qui évoluent séparément, et c'est ce triplet
+ * qui permet de sélectionner quoi relire sans tout relire.
+ *
+ *   1 — l'extrait de 500 caractères, aplati (l'historique)
+ *   2 — 2 200 caractères SÉLECTIONNÉS, structure conservée
+ */
+export const INPUT_VERSION = '2';
+
+/** Budget de caractères envoyé à l'analyse pour le corps du mail. */
+export const ANALYSIS_INPUT_CHARS = 2200;
+
+/**
+ * Prépare le texte envoyé à l'analyse : 1 500 à 2 500 caractères CHOISIS,
+ * et non les 2 200 premiers.
+ *
+ * POURQUOI PAS SIMPLEMENT COUPER PLUS LOIN. La demande est très souvent en fin
+ * de message — « merci de nous retourner le document signé avant le 30 » — et
+ * un mail d'agence commence par trois paragraphes de politesse. Couper au
+ * kilomètre garde le préambule et jette la demande. Mesuré sur ses boîtes : les
+ * mails à deux sujets (un document à signer ET une assemblée générale) sont
+ * systématiquement tronqués sur le premier.
+ *
+ * CE QUE CETTE FONCTION N'EST PAS. Elle ne classe rien et ne décide rien : elle
+ * choisit ce que l'IA aura sous les yeux. C'est la part déterministe du
+ * partage — « si deux programmeurs obtiennent la réponse sans comprendre une
+ * phrase, c'est au serveur ». Un paragraphe mal noté dégrade la qualité de
+ * l'entrée ; il ne produit jamais un classement faux en silence. C'est
+ * précisément pourquoi une heuristique est acceptable ICI et ne l'était pas
+ * dans les moteurs.
+ *
+ * LA STRUCTURE EST CONSERVÉE, contrairement à `cleanSnippet` qui aplatit tout
+ * en une ligne. À 500 caractères c'était sans conséquence ; à 2 200, les
+ * paragraphes sont ce qui permet de choisir.
+ */
+export function selectionnerPourAnalyse(raw: string, budget = ANALYSIS_INPUT_CHARS): string {
+  if (!raw) return '';
+
+  // Même assainissement que l'extrait : un demi-caractère de substitution isolé
+  // rend la chaîne inencodable et fait échouer l'écriture pour TOUTE la boîte.
+  const sain = reparerMojibake(raw)
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  const source = ressembleAduHtml(sain) ? htmlEnTexte(sain) : sain;
+
+  // Mêmes replis que cleanSnippet : un transfert peut n'être QUE du texte cité,
+  // et tout retirer ne laisserait rien.
+  let corps = stripSignature(stripQuotedText(source));
+  if (corps.trim().length < 40) corps = stripSignature(source);
+  if (corps.trim().length < 40) corps = source;
+
+  const paragraphes = corps
+    .replace(/\r/g, '')
+    .split(/\n\s*\n|\n(?=\s*[-•*–]\s)/)
+    .map((p) =>
+      p
+        .split('\n')
+        .map((l) => l.replace(/[ \t ]+/g, ' ').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim(),
+    )
+    .filter((p) => p.length > 0);
+
+  if (paragraphes.length === 0) return '';
+  const total = paragraphes.reduce((n, p) => n + p.length + 1, 0);
+  if (total <= budget) return paragraphes.join('\n');
+
+  // Ce qui fait la valeur d'un paragraphe : un chiffre, une date, une somme,
+  // une référence, une question, une formule de demande. Volontairement large.
+  const PORTEUR =
+    /(\d)|(€|EUR|euros?)|(\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b)|(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)|(merci de|veuillez|pouvez-vous|pourriez-vous|nous vous prions|il convient|avant le|au plus tard|dès que|dans l'attente|ci-joint|ci-joints|joint|référence|dossier|contrat|facture|échéance|signer|signature|régler|paiement|virement|rendez-vous|confirmer)|(\?)/i;
+
+  const notes = paragraphes.map((p, i) => {
+    let note = PORTEUR.test(p) ? 2 : 0;
+    // Le début porte l'objet ; la fin porte la demande. Les deux comptent plus
+    // que le milieu, indépendamment de leur contenu.
+    if (i === 0) note += 3;
+    if (i === paragraphes.length - 1) note += 2;
+    if (i === paragraphes.length - 2) note += 1;
+    // Un paragraphe très court est souvent une salutation ou un intertitre.
+    if (p.length < 25) note -= 1;
+    return note;
+  });
+
+  // On retient par note décroissante, puis on RÉTABLIT L'ORDRE DU MAIL : la
+  // chronologie d'un message porte du sens, un texte recomposé dans le
+  // désordre en perdrait.
+  const ordre = paragraphes.map((_, i) => i).sort((a, b) => notes[b] - notes[a] || a - b);
+  const retenus = new Set<number>();
+  let reste = budget;
+  for (const i of ordre) {
+    const cout = paragraphes[i].length + 1;
+    if (cout > reste) {
+      // Le tout premier paragraphe est gardé même tronqué : sans lui, l'IA
+      // ignore de quoi parle le mail.
+      if (retenus.size === 0) {
+        retenus.add(i);
+        reste = 0;
+      }
+      continue;
+    }
+    retenus.add(i);
+    reste -= cout;
+    if (reste < 40) break;
+  }
+
+  const sortie: string[] = [];
+  let trou = false;
+  for (let i = 0; i < paragraphes.length; i++) {
+    if (retenus.has(i)) {
+      // Un passage sauté est SIGNALÉ. L'IA doit savoir qu'elle ne voit pas
+      // tout : c'est ce qui lui permet de déclarer `truncated_input` et de
+      // déclencher une relecture ciblée plutôt que d'affirmer à tort.
+      if (trou) sortie.push('[…]');
+      const p = paragraphes[i];
+      sortie.push(p.length > budget ? `${p.slice(0, budget).trimEnd()}…` : p);
+      trou = false;
+    } else {
+      trou = true;
+    }
+  }
+  if (trou) sortie.push('[…]');
+  return sortie.join('\n');
+}
+
 export interface BackfillOptions {
   /** Nombre de mails traités dans cette passe (défaut 300, max 2000). */
   limit?: number;
@@ -226,7 +354,19 @@ export async function backfillSnippets(
     accountSlug: rec.account,
     isDeleted: false,
     isOutbound: false,
-    snippet: null,
+    // Deux raisons de descendre le texte d'un mail (11/08) : il n'a aucun
+    // extrait, OU son texte d'analyse date d'une version antérieure.
+    //
+    // On ne pouvait PAS régler ça en remettant `snippet` à null pour forcer une
+    // recapture : `snippet IS NOT NULL` est la définition même de « analysable »
+    // (candidateWhere), donc vider la colonne aurait sorti le mail du vivier
+    // d'analyse. Les deux critères se contredisaient dès qu'on voulait
+    // rallonger l'existant — d'où une colonne distincte et sa version.
+    OR: [
+      { snippet: null },
+      { analysisInputVersion: null },
+      { analysisInputVersion: { not: INPUT_VERSION } },
+    ],
     // Corbeille et spam : rien à comprendre là-dedans.
     folder: { is: { role: { notIn: ['trash', 'spam'] } } },
     ...(sinceDays !== null
@@ -240,9 +380,13 @@ export async function backfillSnippets(
   // jamais avancer. On note donc la TENTATIVE (`snippetAt`) même en échec, et
   // on ne réessaie ces mails qu'après un délai. Rien n'est perdu : ils
   // restent comptés dans `remaining` et seront repris plus tard.
+  // `AND` et non un second `OR` : deux clés `OR` au même niveau, la seconde
+  // écraserait la première et le filtre de reprise disparaîtrait en silence.
   const selectWhere = {
     ...where,
-    OR: [{ snippetAt: null }, { snippetAt: { lt: new Date(Date.now() - RETRY_AFTER_MS) } }],
+    AND: [
+      { OR: [{ snippetAt: null }, { snippetAt: { lt: new Date(Date.now() - RETRY_AFTER_MS) } }] },
+    ],
   };
 
   const pending = await db.message.findMany({
@@ -286,7 +430,7 @@ export async function backfillSnippets(
     `${pending.length} mail(s) sans extrait dans ${byFolder.size} dossier(s) — récupération du texte…`,
   );
 
-  const updates: { id: number; snippet: string }[] = [];
+  const updates: { id: number; snippet: string; analysisInput: string }[] = [];
   const intentUpdates: { id: number; intent: string; reason: string }[] = [];
   /** Mails d'un dossier en panne : tentative datée, extrait laissé vide. */
   const failed: number[] = [];
@@ -305,9 +449,13 @@ export async function backfillSnippets(
         // null) pour marquer « déjà tenté » — sinon ce mail reviendrait à
         // chaque passe et le rattrapage n'avancerait jamais.
         const snippet = raw ? cleanSnippet(raw) : '';
+        // Le texte d'analyse se calcule dans la MÊME descente : la partie
+        // texte est déjà téléchargée, en tirer 2 200 caractères choisis ne
+        // coûte pas un aller-retour IMAP de plus.
+        const analysisInput = raw ? selectionnerPourAnalyse(raw) : '';
         if (snippet) result.filled++;
         else result.empty++;
-        updates.push({ id: m.id, snippet });
+        updates.push({ id: m.id, snippet, analysisInput });
 
         // L'extrait sert tout de suite, sans IA : quand le SUJET seul n'a rien
         // donné (intention « info »), on rejoue la détection avec le texte.
@@ -350,7 +498,15 @@ export async function backfillSnippets(
       updates.slice(i, i + 100).map((u) =>
         db.message.update({
           where: { id: u.id },
-          data: { snippet: u.snippet, snippetAt: now },
+          data: {
+            snippet: u.snippet,
+            snippetAt: now,
+            analysisInput: u.analysisInput,
+            // La version est posée MÊME quand le texte est vide : sinon le
+            // mail repasserait à chaque tour et le rattrapage tournerait en
+            // rond, exactement comme l'anti-boucle du 29/07.
+            analysisInputVersion: INPUT_VERSION,
+          },
         }),
       ),
     );

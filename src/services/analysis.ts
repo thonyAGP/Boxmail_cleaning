@@ -16,6 +16,7 @@ import {
   SCHEMA_VERSION,
   type Verdict as VerdictSemantique,
 } from './verdict.js';
+import { documentHints } from './attachment-text.js';
 
 /**
  * Analyse fine par l'IA (C2 — Série C).
@@ -58,11 +59,45 @@ export interface AnalysisCandidate {
   /** Identifiant à renvoyer tel quel dans le verdict. */
   id: number;
   account: string;
+  /**
+   * Dossier et UID (11/08). Sans eux, l'invitation « appelle read_attachment
+   * sur ce mail » était impossible à suivre : le lot ne portait que l'id
+   * interne, alors que read_email et read_attachment prennent (compte,
+   * dossier, uid). Le tool disait « approfondis si tu hésites » sans donner
+   * de quoi le faire.
+   */
+  folder: string;
+  uid: number;
   from: string;
+  /**
+   * À qui le mail est adressé, et surtout le RÔLE du compte : destinataire
+   * direct, ou simplement présent dans la diffusion. Un mail où Anthony n'est
+   * pas destinataire n'attend presque jamais de réponse de lui — c'est une
+   * des deux informations les plus rentables qu'on ne lui envoyait pas.
+   */
+  to: { addresses: string[]; accountRole: 'direct' | 'non_liste' | 'inconnu' };
   subject: string;
   date: string | null;
   isSeen: boolean;
+  /** Le texte préparé pour l'analyse (2 200 caractères choisis), ou l'extrait. */
   snippet: string;
+  /**
+   * Noms des pièces jointes. Trois mots qui portent un signal énorme :
+   * `FACTURE_SOSH_052026.pdf` dit l'émetteur, la nature et la période.
+   */
+  attachmentNames?: string[];
+  /**
+   * Ce que le serveur a déjà déduit localement des pièces (fournisseur,
+   * montant TTC, numéro de facture). C'était calculé puis JETÉ : le serveur
+   * savait « Sosh, 42,30 €, facture n° X » et ne le mettait pas dans le lot.
+   */
+  documentHints?: { supplier?: string; amountTtc?: number; invoiceNumber?: string };
+  /**
+   * Le fil, en métadonnées et non en messages : combien d'échanges, et
+   * surtout A-T-IL RÉPONDU APRÈS ce mail. C'est ce qui distingue « en
+   * attente » de « déjà traité », sans envoyer un octet de plus.
+   */
+  thread?: { messageCount: number; repliedAfter: boolean };
   /**
    * CONTENU DES PIÈCES JOINTES (10/08). Ce qui compte ici, c'est que
    * l'expéditeur ne dit PAS de quoi parle le document : un proche qui
@@ -125,6 +160,25 @@ function candidateWhere(scope: AnalysisScope, account?: string) {
  *  - pas encore lu → on le dit aussi, pour ne pas laisser croire qu'il n'y a
  *    rien dans la pièce alors qu'on ne l'a simplement pas encore ouverte.
  */
+/**
+ * Répartit un budget de caractères entre les pièces d'un mail, au lieu de le
+ * laisser consommer par la première.
+ *
+ * Le texte stocké a la forme `--- nom ---\n<contenu>`, les pièces séparées par
+ * une ligne vide. On rend à chacune une part égale, en signalant ce qui a été
+ * coupé — l'IA doit savoir qu'elle ne voit pas tout pour pouvoir déclarer
+ * `truncated_input` plutôt que d'affirmer à tort.
+ */
+function repartirTexteDesPieces(texte: string, budget: number): string {
+  if (texte.length <= budget) return texte;
+  const blocs = texte.split(/\n\n(?=--- )/);
+  if (blocs.length <= 1) return `${texte.slice(0, budget).trimEnd()}\n[…]`;
+  const part = Math.max(200, Math.floor(budget / blocs.length));
+  return blocs
+    .map((b) => (b.length <= part ? b : `${b.slice(0, part).trimEnd()}\n[…]`))
+    .join('\n\n');
+}
+
 function attachmentPayload(r: {
   hasAttachments: boolean;
   attachmentText: string | null;
@@ -132,11 +186,15 @@ function attachmentPayload(r: {
 }): { attachments?: { text: string; needsVision: boolean } } {
   if (!r.hasAttachments) return {};
   if (r.attachmentKind === 'text' && r.attachmentText) {
-    // Tronqué ICI seulement : ce lot passe par le forfait de l'utilisateur, on
-    // n'y verse pas un relevé de 200 Ko. Le DÉBUT du document porte l'en-tête,
-    // le fournisseur et le plus souvent le total — assez pour classer ; pour
-    // le reste, read_attachment donne le document entier.
-    return { attachments: { text: r.attachmentText.slice(0, 2500), needsVision: false } };
+    // Le budget est RÉPARTI entre les pièces, il n'est plus consommé par la
+    // première. Sur un mail à quatre pièces, l'en-tête « --- logo.png --- »
+    // puis le début du premier document épuisaient les 2 500 caractères : les
+    // pièces 2 à n étaient invisibles à l'analyse alors qu'elles étaient en
+    // base. Le DÉBUT de chaque document porte l'émetteur et le plus souvent le
+    // total — assez pour classer ; read_attachment donne le reste.
+    return {
+      attachments: { text: repartirTexteDesPieces(r.attachmentText, 2500), needsVision: false },
+    };
   }
   if (r.attachmentKind === 'scan') {
     return {
@@ -186,15 +244,21 @@ export async function nextAnalysisBatch(
       select: {
         id: true,
         accountSlug: true,
+        uid: true,
+        folder: { select: { path: true } },
+        threadId: true,
         subject: true,
         fromName: true,
         fromEmail: true,
+        toEmails: true,
         date: true,
         isSeen: true,
         snippet: true,
+        analysisInput: true,
         intent: true,
         analysisConfidence: true,
         hasAttachments: true,
+        attachmentNames: true,
         attachmentText: true,
         attachmentKind: true,
       },
@@ -215,27 +279,111 @@ export async function nextAnalysisBatch(
     }
   }
 
+  // Adresse de chaque compte : sert à dire si Anthony est destinataire direct.
+  const adresses = new Map(
+    (await db.account.findMany({ select: { slug: true, emailAddress: true } })).map((a) => [
+      a.slug,
+      a.emailAddress.toLowerCase(),
+    ]),
+  );
+
+  // Le fil, en deux requêtes pour tout le lot — jamais une par mail. On veut
+  // deux choses seulement : la taille du fil, et « a-t-il répondu APRÈS ».
+  const threadIds = [...new Set(rows.map((r) => r.threadId).filter((t): t is number => t !== null))];
+  const tailleFil = new Map<number, number>();
+  const sortantsParFil = new Map<number, Date[]>();
+  if (threadIds.length) {
+    for (const t of await db.thread.findMany({
+      where: { id: { in: threadIds } },
+      select: { id: true, messageCount: true },
+    })) {
+      tailleFil.set(t.id, t.messageCount);
+    }
+    for (const m of await db.message.findMany({
+      where: { threadId: { in: threadIds }, isOutbound: true, date: { not: null } },
+      select: { threadId: true, date: true },
+    })) {
+      if (m.threadId === null || m.date === null) continue;
+      sortantsParFil.set(m.threadId, [...(sortantsParFil.get(m.threadId) ?? []), m.date]);
+    }
+  }
+
   return {
     scope,
     remaining: Math.max(0, total - rows.length),
-    items: rows.map((r) => ({
-      id: r.id,
-      account: r.accountSlug,
-      from: r.fromName ? `${r.fromName} <${r.fromEmail ?? ''}>` : (r.fromEmail ?? ''),
-      subject: r.subject ?? '(sans sujet)',
-      date: r.date ? r.date.toISOString().slice(0, 10) : null,
-      isSeen: r.isSeen,
-      snippet:
-        r.snippet ||
-        "(pas de texte lisible dans ce mail — juge sur le sujet, l'expéditeur et la date ; dans le doute, confidence=low)",
-      ...attachmentPayload(r),
-      guess: {
-        intent: r.intent,
-        senderCategory: senders.get(`${r.accountSlug}|${r.fromEmail ?? ''}`) ?? null,
-        confidence: r.analysisConfidence,
-      },
-    })),
+    items: rows.map((r) => {
+      const destinataires = lireDestinataires(r.toEmails);
+      const moi = adresses.get(r.accountSlug);
+      const accountRole: 'direct' | 'non_liste' | 'inconnu' =
+        destinataires.length === 0
+          ? 'inconnu'
+          : moi && destinataires.some((d) => d.includes(moi))
+            ? 'direct'
+            : 'non_liste';
+
+      const noms = (r.attachmentNames ?? '').split('\n').map((n) => n.trim()).filter(Boolean);
+      const indices =
+        r.attachmentKind === 'text' && r.attachmentText ? documentHints(r.attachmentText) : null;
+
+      const repondu =
+        r.threadId !== null && r.date !== null
+          ? (sortantsParFil.get(r.threadId) ?? []).some((d) => d > r.date!)
+          : false;
+
+      return {
+        id: r.id,
+        account: r.accountSlug,
+        folder: r.folder.path,
+        uid: r.uid,
+        from: r.fromName ? `${r.fromName} <${r.fromEmail ?? ''}>` : (r.fromEmail ?? ''),
+        to: { addresses: destinataires.slice(0, 8), accountRole },
+        subject: r.subject ?? '(sans sujet)',
+        date: r.date ? r.date.toISOString().slice(0, 10) : null,
+        isSeen: r.isSeen,
+        // Le texte préparé pour l'analyse d'abord ; l'extrait de 500
+        // caractères tant que la recapture n'est pas passée sur ce mail.
+        snippet:
+          r.analysisInput ||
+          r.snippet ||
+          "(pas de texte lisible dans ce mail — juge sur le sujet, l'expéditeur et la date ; dis-le dans uncertainties)",
+        ...(noms.length ? { attachmentNames: noms.slice(0, 12) } : {}),
+        ...(indices?.supplier || indices?.amountTtc || indices?.invoiceNumber
+          ? {
+              documentHints: {
+                ...(indices.supplier ? { supplier: indices.supplier } : {}),
+                ...(indices.amountTtc ? { amountTtc: indices.amountTtc } : {}),
+                ...(indices.invoiceNumber ? { invoiceNumber: indices.invoiceNumber } : {}),
+              },
+            }
+          : {}),
+        ...(r.threadId !== null
+          ? { thread: { messageCount: tailleFil.get(r.threadId) ?? 1, repliedAfter: repondu } }
+          : {}),
+        ...attachmentPayload(r),
+        guess: {
+          intent: r.intent,
+          senderCategory: senders.get(`${r.accountSlug}|${r.fromEmail ?? ''}`) ?? null,
+          confidence: r.analysisConfidence,
+        },
+      };
+    }),
   };
+}
+
+/** `toEmails` est une chaîne JSON (SQLite n'a pas de type natif). */
+function lireDestinataires(brut: string | null): string[] {
+  if (!brut) return [];
+  try {
+    const v = JSON.parse(brut);
+    if (Array.isArray(v)) return v.map((x) => String(x).toLowerCase()).filter(Boolean);
+  } catch {
+    // Ancien format ou chaîne libre : on retombe sur une séparation simple.
+    return brut
+      .split(/[,;]/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 export interface Verdict {
