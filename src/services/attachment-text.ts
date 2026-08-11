@@ -59,9 +59,96 @@ function inflate(buf: Buffer): Buffer | null {
  * chaînes hexadécimales `<…>` (polices à encodage propre, illisibles sans la
  * table de correspondance : mieux vaut rien que du charabia).
  */
-function textFromContent(content: string): string {
+/**
+ * Table de correspondance code → caractère, extraite des flux `/ToUnicode`
+ * du PDF (11/08).
+ *
+ * POURQUOI : les factures modernes n'écrivent pas leur texte en clair. Elles
+ * utilisent des chaînes HEXADÉCIMALES `<00440045005600490053>` avec une police
+ * « sous-ensemble » dont les codes n'ont aucun rapport avec l'alphabet. Sans
+ * cette table, on ne lit rien — constaté en production : les factures IKEA
+ * rendaient 32 caractères, c'est-à-dire uniquement leur nom de fichier.
+ *
+ * Le PDF fournit lui-même la table (`beginbfchar` / `beginbfrange`). On les
+ * fusionne toutes : c'est approximatif quand deux polices se contredisent,
+ * mais sur une facture il n'y en a qu'une ou deux et le gain est décisif.
+ */
+type TableUnicode = { map: Map<number, string>; largeur: 1 | 2 };
+
+function motsHexVersTexte(hex: string, t: TableUnicode | null): string {
+  const propre = hex.replace(/[^0-9a-fA-F]/g, '');
+  if (propre.length === 0) return '';
+  const pas = (t?.largeur ?? 2) * 2;
+  let out = '';
+  for (let i = 0; i + pas <= propre.length; i += pas) {
+    const code = Number.parseInt(propre.slice(i, i + pas), 16);
+    const c = t?.map.get(code);
+    if (c !== undefined) out += c;
+    // Sans table, un code sur un octet est souvent du latin1 direct.
+    else if (pas === 2 && code >= 32 && code < 127) out += String.fromCharCode(code);
+    else if (pas === 4 && code >= 32 && code < 0xfffd) out += String.fromCharCode(code);
+  }
+  return out;
+}
+
+/** Décode une destination `<0041>` ou `<00410042>` (UTF-16BE) en texte. */
+function destVersTexte(hex: string): string {
+  const p = hex.replace(/[^0-9a-fA-F]/g, '');
+  let out = '';
+  for (let i = 0; i + 4 <= p.length; i += 4) {
+    const v = Number.parseInt(p.slice(i, i + 4), 16);
+    if (v > 0 && v !== 0xfffd) out += String.fromCharCode(v);
+  }
+  // Certaines tables donnent des destinations sur un seul octet.
+  if (!out && p.length === 2) {
+    const v = Number.parseInt(p, 16);
+    if (v >= 32) out = String.fromCharCode(v);
+  }
+  return out;
+}
+
+function lireCMap(texte: string, dans: TableUnicode): void {
+  // beginbfchar : paires « <source> <destination> »
+  for (const bloc of texte.match(/beginbfchar([\s\S]*?)endbfchar/g) ?? []) {
+    for (const m of bloc.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+      const src = m[1];
+      if (src.length >= 4) dans.largeur = 2;
+      const c = destVersTexte(m[2]);
+      if (c) dans.map.set(Number.parseInt(src, 16), c);
+    }
+  }
+  // beginbfrange : « <lo> <hi> <dest> » ou « <lo> <hi> [<d1> <d2> …] »
+  for (const bloc of texte.match(/beginbfrange([\s\S]*?)endbfrange/g) ?? []) {
+    for (const m of bloc.matchAll(
+      /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(?:<([0-9a-fA-F]+)>|\[([\s\S]*?)\])/g,
+    )) {
+      const lo = Number.parseInt(m[1], 16);
+      const hi = Number.parseInt(m[2], 16);
+      if (m[1].length >= 4) dans.largeur = 2;
+      // Garde-fou : une plage aberrante ferait exploser la mémoire.
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo || hi - lo > 65_535) continue;
+      if (m[3]) {
+        const base = destVersTexte(m[3]);
+        if (!base) continue;
+        const premier = base.charCodeAt(base.length - 1);
+        for (let c = lo; c <= hi; c++) {
+          dans.map.set(c, base.slice(0, -1) + String.fromCharCode(premier + (c - lo)));
+        }
+      } else if (m[4]) {
+        const items = [...m[4].matchAll(/<([0-9a-fA-F]+)>/g)];
+        items.forEach((it, i) => {
+          const c = destVersTexte(it[1]);
+          if (c) dans.map.set(lo + i, c);
+        });
+      }
+    }
+  }
+}
+
+function textFromContent(content: string, table: TableUnicode | null = null): string {
   const out: string[] = [];
-  const re = /\((?:\\.|[^\\()])*\)|\bTJ\b|\bTj\b|\bTD\b|\bTd\b|\bT\*\b|\bET\b/gs;
+  const re =
+    /\((?:\\.|[^\\()])*\)|<[0-9a-fA-F\s]+>|\bTJ\b|\bTj\b|\bTD\b|\bTd\b|\bT\*\b|\bET\b/gs;
   let m: RegExpExecArray | null;
   let pending: string[] = [];
   const flush = (sep: string) => {
@@ -82,6 +169,9 @@ function textFromContent(content: string): string {
             ({ n: '\n', r: '\n', t: '\t', b: '', f: '\n', '(': '(', ')': ')', '\\': '\\' })[c] ?? c)
           .replace(/\\([0-7]{1,3})/g, (_s, o: string) => String.fromCharCode(Number.parseInt(o, 8))),
       );
+    } else if (tok.startsWith('<')) {
+      // Chaîne hexadécimale : le cas de toutes les factures modernes.
+      pending.push(motsHexVersTexte(tok.slice(1, -1), table));
     } else if (tok === 'TD' || tok === 'Td' || tok === 'T*' || tok === 'ET') {
       flush('\n');
     }
@@ -113,22 +203,36 @@ export function pdfToText(buf: Buffer): AttachmentText {
     return { kind: 'other', text: '', note: 'PDF trop volumineux pour être lu ici.' };
   }
   const bin = buf.toString('latin1');
-  let collected = '';
-  // Chaque « stream … endstream » est un morceau de page (souvent compressé) :
-  // on les parcourt TOUS, pour lire le document en entier et pas seulement sa
-  // première page (la recherche doit porter sur tout le contenu).
+  // Chaque « stream … endstream » est un morceau du document (souvent
+  // compressé) : on les parcourt TOUS — le contenu des pages, mais aussi les
+  // tables de correspondance des polices.
   const re = /stream\r?\n?([\s\S]*?)endstream/g;
+  const flux: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(bin)) !== null && collected.length < MAX_TEXT) {
+  while ((m = re.exec(bin)) !== null && flux.length < 3000) {
     const rawChunk = Buffer.from(m[1], 'latin1');
-    // Un flux non compressé est directement du contenu ; sinon on décompresse.
     const data = /^[\s]*[\d.\-\s]*(BT|\/|q\b)/.test(m[1].slice(0, 40))
       ? rawChunk
       : inflate(rawChunk);
-    if (!data) continue;
-    const s = data.toString('latin1');
-    if (!s.includes('Tj') && !s.includes('TJ')) continue;
-    collected += textFromContent(s) + '\n';
+    if (data) flux.push(data.toString('latin1'));
+  }
+
+  // 1re passe : les tables `/ToUnicode`. Elles doivent être connues AVANT de
+  // décoder le texte, sinon les chaînes hexadécimales restent illisibles.
+  const table: TableUnicode = { map: new Map(), largeur: 2 };
+  for (const s of flux) {
+    if (s.includes('beginbfchar') || s.includes('beginbfrange')) lireCMap(s, table);
+  }
+  const avecTable = table.map.size > 0;
+
+  // 2e passe : le texte. Les opérateurs sont cherchés comme des MOTS : sans
+  // ça, un « TJ » présent par hasard dans un flux de métadonnées faisait
+  // analyser n'importe quoi (constaté : un PDF rendait « fr-FR fr-FR fr-FR »).
+  let collected = '';
+  for (const s of flux) {
+    if (collected.length >= MAX_TEXT) break;
+    if (!/\b(Tj|TJ)\b/.test(s)) continue;
+    collected += textFromContent(s, avecTable ? table : null) + '\n';
   }
   const text = tidy(collected);
   // Un PDF de scan porte une image et (parfois) deux mots de garde : sous ce
