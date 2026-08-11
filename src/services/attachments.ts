@@ -13,6 +13,7 @@
  * Claude qui la regardera à la demande (read_attachment).
  */
 
+import { createHash } from 'node:crypto';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService } from './imap.js';
@@ -28,7 +29,13 @@ const MAX_FETCH_BYTES = 8 * 1024 * 1024;
  * long relevé (demande 10/08). ~200 Ko par mail au pire ; en pratique une
  * facture pèse 2 à 5 Ko.
  */
-const MAX_STORED_TEXT = 200_000;
+const MAX_STORED_TEXT = 400_000;
+/**
+ * Budget PAR PIÈCE (11/08). Avant, le plafond n'existait qu'au niveau du
+ * mail : un premier PDF bavard consommait tout le quota et rendait les trois
+ * pièces suivantes invisibles à la recherche. Chaque pièce a désormais sa part.
+ */
+const MAX_TEXT_PAR_PIECE = 120_000;
 const READABLE = /(pdf|text\/plain|text\/csv|openxmlformats-officedocument)/i;
 /**
  * Certains serveurs annoncent `application/octet-stream` pour un PDF ou un
@@ -95,6 +102,7 @@ export async function readAttachmentsForAccount(
       subject: true,
       fromEmail: true,
       sizeBytes: true,
+      attachmentMeta: true,
       hasListUnsubscribe: true,
       intent: true,
       intentSource: true,
@@ -110,12 +118,37 @@ export async function readAttachmentsForAccount(
     report.bytes += m.sizeBytes ?? 0;
     try {
       const r = await readOne(rec, m.folder.path, m.uid);
+      // On complète la fiche des pièces avec l'empreinte, en rapprochant par
+      // NOM de fichier : la fiche vient de la structure du mail, l'empreinte du
+      // téléchargement, et leurs index ne se correspondent pas.
+      let meta: string | null = m.attachmentMeta;
+      if (r.digests.length && m.attachmentMeta) {
+        try {
+          const fiche = JSON.parse(m.attachmentMeta) as { n: string; s: number; h?: string }[];
+          const parNom = new Map(r.digests.map((d) => [d.n.toLowerCase(), d]));
+          let change = false;
+          for (const piece of fiche) {
+            const d = parNom.get((piece.n ?? '').toLowerCase());
+            if (d && piece.h !== d.h) {
+              piece.h = d.h;
+              // Taille RÉELLE du fichier décodé : bien plus fiable que celle
+              // annoncée par IMAP, qui compte l'encodage base64.
+              piece.s = d.s;
+              change = true;
+            }
+          }
+          if (change) meta = JSON.stringify(fiche);
+        } catch {
+          /* fiche illisible : on la laisse telle quelle */
+        }
+      }
       await db.message.update({
         where: { id: m.id },
         data: {
           attachmentKind: r.kind,
           attachmentText: r.text || null,
           attachmentTextAt: new Date(),
+          ...(meta !== m.attachmentMeta ? { attachmentMeta: meta } : {}),
         },
       });
       if (r.kind === 'text') report.read++;
@@ -171,9 +204,22 @@ export async function readOne(
   rec: AccountRecord,
   folder: string,
   uid: number,
-): Promise<{ kind: 'text' | 'scan' | 'other'; text: string; hints: DocumentHints | null }> {
+): Promise<{
+  kind: 'text' | 'scan' | 'other';
+  text: string;
+  hints: DocumentHints | null;
+  /**
+   * Empreinte SHA-256 des pièces RÉELLEMENT descendues (11/08). Calculée au
+   * passage d'un téléchargement déjà nécessaire à l'extraction : coût réseau
+   * supplémentaire nul. C'est la seule preuve qu'un fichier est le MÊME —
+   * « même nom + même taille » ne fait qu'un candidat, la taille annoncée par
+   * IMAP étant celle du fichier ENCODÉ et non du fichier d'origine.
+   */
+  digests: { n: string; h: string; s: number }[];
+}> {
+  const digests: { n: string; h: string; s: number }[] = [];
   const parts = await imapService.listAttachments(rec, folder, uid);
-  if (parts.length === 0) return { kind: 'other', text: '', hints: null };
+  if (parts.length === 0) return { kind: 'other', text: '', hints: null, digests };
 
   // TOUTES les pièces sont lues (demande 10/08), pas seulement les premières :
   // une facture arrive souvent en 3e position derrière des logos, et la
@@ -192,11 +238,16 @@ export async function readOne(
     if (!lisible || p.sizeBytes > MAX_FETCH_BYTES) continue;
     const dl = await imapService.downloadAttachment(rec, folder, uid, i);
     if (!dl) continue;
+    digests.push({
+      n: dl.filename,
+      h: createHash('sha256').update(dl.content).digest('hex').slice(0, 32),
+      s: dl.content.length,
+    });
     const r = attachmentToText(dl.filename, dl.contentType, dl.content);
     if (r.kind === 'text') {
       // Le NOM du fichier est conservé dans le texte indexé : chercher
       // « facture.pdf » doit marcher, y compris quand le nom ne dit rien.
-      const chunk = `--- ${dl.filename} ---\n${r.text}`;
+      const chunk = `--- ${dl.filename} ---\n${r.text.slice(0, MAX_TEXT_PAR_PIECE)}`;
       chunks.push(chunk);
       total += chunk.length;
     } else if (r.kind === 'scan') sawImage = true;
@@ -204,10 +255,10 @@ export async function readOne(
 
   if (chunks.length > 0) {
     const text = chunks.join('\n\n').slice(0, MAX_STORED_TEXT);
-    return { kind: 'text', text, hints: documentHints(text) };
+    return { kind: 'text', text, hints: documentHints(text), digests };
   }
-  if (sawImage) return { kind: 'scan', text: '', hints: null };
-  return { kind: 'other', text: '', hints: null };
+  if (sawImage) return { kind: 'scan', text: '', hints: null, digests };
+  return { kind: 'other', text: '', hints: null, digests };
 }
 
 /**

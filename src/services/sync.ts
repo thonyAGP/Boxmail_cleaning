@@ -154,9 +154,14 @@ export function collectAttachmentInfo(
     // Règle : une image NON déclarée en pièce jointe, ou minuscule, est un
     // élément de mise en page. Une photo de facture, elle, arrive bien en
     // disposition « attachment » — même règle que usableAttachments().
+    //
+    // CORRECTION 11/08 : une pièce explicitement JOINTE n'est jamais écartée
+    // pour sa taille. La règle précédente jetait toute image jointe de moins
+    // de 30 Ko — or un PNG de 18 Ko peut être un QR code, une signature ou un
+    // justificatif. Seule une image EN LIGNE et petite est de la décoration.
     const estImage = (n.type ?? '').toLowerCase().startsWith('image/');
     const jointe = n.disposition?.toLowerCase() === 'attachment';
-    if (estImage && (!jointe || (n.size ?? 0) < 30_000)) return;
+    if (estImage && !jointe && (n.size ?? 0) < 30_000) return;
     // Un nom peut arriver encodé (RFC 2231/2047) ou avec des espaces parasites.
     const nom = String(brut).replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!nom) return;
