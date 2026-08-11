@@ -242,6 +242,20 @@ export interface Verdict {
   confidence?: string;
   /** Pourquoi — affiché tel quel à l'utilisateur. */
   reason?: string;
+  /**
+   * DOSSIER auquel ce mail se rattache (11/08) — libellé LIBRE, tel que
+   * l'analyse le lit dans le mail : « 46 rue de la République »,
+   * « Affaire ODAS », « Renault Trafic AB-123-CD », « Location Mounia ».
+   *
+   * C'est volontairement une chaîne libre et non une liste fermée : le
+   * reproche qui a fait naître ce champ est qu'un vocabulaire codé en dur
+   * « est à corriger à chaque nouveau cas et en oublie systématiquement ».
+   * Le serveur ne connaît aucun dossier d'avance ; il enregistre ce que
+   * l'analyse a compris.
+   */
+  dossier?: string | null;
+  /** bien | affaire | vehicule | societe | personne | autre — facultatif. */
+  dossierKind?: string | null;
 }
 
 export interface ApplyResult {
@@ -350,6 +364,26 @@ export async function applyVerdicts(
       },
     });
     out.applied++;
+
+    // Rattachement au DOSSIER. Volontairement tolérant : un libellé vague ou
+    // trop court est simplement ignoré (cleDossier renvoie null), sans faire
+    // échouer le verdict — l'analyse n'a pas à connaître nos règles de forme.
+    if (v.dossier) {
+      try {
+        const { rattacher } = await import('./dossiers.js');
+        await rattacher({
+          messageId: v.id,
+          label: v.dossier,
+          kind: v.dossierKind ?? undefined,
+          source: 'ia',
+        });
+      } catch (err) {
+        logger.warn('rattachement au dossier en échec', {
+          id: v.id,
+          error: (err as Error).message,
+        });
+      }
+    }
 
     const arr = journal.get(msg.accountSlug) ?? [];
     if (arr.length < 200) {

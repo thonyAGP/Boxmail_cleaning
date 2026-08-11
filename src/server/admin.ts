@@ -69,6 +69,7 @@ import {
 import { find } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance } from '../services/correspondance.js';
+import { listerDossiers, propager } from '../services/dossiers.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1758,6 +1759,35 @@ export function buildAdminRouter(): Router {
           limit: Number.parseInt(String(req.query.limit ?? '12'), 10) || 12,
         }),
       );
+    }),
+  );
+
+  // DOSSIERS (11/08) : les sujets de vie qui traversent les interlocuteurs.
+  // Leur vocabulaire vient de l'ANALYSE, jamais d'une règle codée ici.
+  router.get(
+    '/dossiers',
+    guard(async (req, res) => {
+      res.json(await listerDossiers({ limit: Number.parseInt(String(req.query.limit ?? '40'), 10) || 40 }));
+    }),
+  );
+
+  // Propagation : rattacher aux dossiers connus les mails qui les citent sans
+  // avoir été analysés — le vocabulaire vient de l'IA, la recherche est
+  // mécanique et gratuite.
+  router.post(
+    '/dossiers/spread',
+    guard(async (req, res) => {
+      if (hasRunningJob('dossiers')) {
+        res.status(409).json({ error: 'Un rattachement est déjà en cours.' });
+        return;
+      }
+      const id = Number.parseInt(String(req.body?.id ?? ''), 10) || undefined;
+      const job = startJob('dossiers', async (progress) => {
+        progress('Rattachement des mails aux dossiers connus…');
+        const r = await propager(id);
+        return `${r.dossiers} dossier(s) parcourus, ${r.ajouts} rattachement(s).`;
+      });
+      res.status(202).json({ jobId: job.id });
     }),
   );
 

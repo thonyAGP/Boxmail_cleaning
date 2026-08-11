@@ -308,7 +308,19 @@ export function registerAssistTools(server: McpServer): void {
         'L’IA ne supprime RIEN ici : elle classe. Une correction manuelle de ' +
         'l’utilisateur n’est jamais écrasée. Tout est journalisé et réversible. ' +
         'Les verdicts hors énumération sont refusés un par un et renvoyés dans ' +
-        '`rejections` : corriger et renvoyer ceux-là seulement.',
+        '`rejections` : corriger et renvoyer ceux-là seulement. ' +
+        'DOSSIER (11/08) : renseigne `dossier` avec le SUJET DE VIE auquel le ' +
+        'mail se rattache, en texte libre et tel que TU le lis — un bien ' +
+        '(« 46 rue de la République »), une affaire (« Affaire ODAS / RG ' +
+        '2025-000456 »), un véhicule, une société, un locataire, un chantier. ' +
+        'Aucun vocabulaire n’est imposé : c’est précisément parce que des ' +
+        'règles codées d’avance oublient les cas nouveaux que ce champ existe. ' +
+        'Écris le libellé le plus STABLE et le plus court qui identifie le ' +
+        'dossier (l’adresse plutôt que « travaux salle de bain 2e étage »), et ' +
+        'toujours la MÊME orthographe d’un mail à l’autre — c’est ce qui les ' +
+        'regroupe. Laisse VIDE si le mail ne concerne aucun dossier ' +
+        'identifiable, ou s’il est trop générique (une publicité, un relevé ' +
+        'bancaire courant) : mieux vaut rien qu’un dossier fourre-tout.',
       inputSchema: {
         verdicts: z
           .array(
@@ -333,6 +345,21 @@ export function registerAssistTools(server: McpServer): void {
                 .optional()
                 .describe('Ta sûreté. low = le mail reste protégé.'),
               reason: z.string().max(300).optional().describe('Pourquoi, en français.'),
+              dossier: z
+                .string()
+                .max(160)
+                .nullable()
+                .optional()
+                .describe(
+                  'Sujet de vie auquel ce mail se rattache, en TEXTE LIBRE ' +
+                    '(« 46 rue de la République », « Affaire ODAS »). Même ' +
+                    'orthographe d’un mail à l’autre. Vide si aucun.',
+                ),
+              dossierKind: z
+                .enum(['bien', 'affaire', 'vehicule', 'societe', 'personne', 'autre'])
+                .nullable()
+                .optional()
+                .describe('Nature du dossier, si elle est évidente.'),
             }),
           )
           .min(1)

@@ -118,6 +118,7 @@ model Message {
   // Séparée de `attachmentNames` pour que la recherche continue de porter sur
   // des noms propres, sans tomber sur des chiffres de taille.
   attachmentMeta     String?
+  dossiers           DossierMessage[]
   // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
   // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
   // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le
@@ -539,4 +540,54 @@ model Sender {
   // Les stratégies de rétention filtrent sur la catégorie : sans cet index,
   // l'aperçu « newsletters » prenait 7,5 s sur 35 000 mails, 65 ms avec.
   @@index([accountSlug, category])
+}
+
+/// Dossier (11/08) — un SUJET DE VIE qui traverse les interlocuteurs.
+///
+/// Demande : « va jusqu'au dossier ». Un bien immobilier passe par l'agence,
+/// le notaire, la banque, le syndic, l'assureur, l'architecte, le fournisseur
+/// d'énergie… Regrouper par expéditeur éclate le dossier ; le regrouper par
+/// ADRESSE ou par NUMÉRO DE RÉFÉRENCE le reconstitue. Mesuré sur ses vraies
+/// boîtes : « 46 rue de la République » apparaît chez 45 correspondants
+/// différents et dans 4 de ses boîtes.
+///
+/// DURABLE, et c'est tout l'enjeu : ce qui est stocké, c'est la CLÉ. Un mail
+/// qui arrive demain et qui cite l'adresse rejoint le dossier tout seul, à la
+/// synchronisation — sans qu'on ait à rejouer une recherche.
+model Dossier {
+  id          Int      @id @default(autoincrement())
+  /// Clé normalisée (accents retirés, liaisons supprimées) — l'identité stable.
+  key         String   @unique
+  /// bien | reference
+  kind        String   @default("bien")
+  /// Nom affiché, renommable par l'utilisateur sans casser la clé.
+  label       String
+  /// Variantes d'écriture rencontrées, en JSON — sert au rattachement.
+  aliases     String?
+  /// auto = proposé ; confirmed = validé ; hidden = écarté par l'utilisateur.
+  status      String   @default("auto")
+  messageCount Int     @default(0)
+  firstAt     DateTime?
+  lastAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages    DossierMessage[]
+
+  @@index([status])
+}
+
+/// Rattachement d'un mail à un dossier (un mail peut en citer plusieurs).
+model DossierMessage {
+  dossierId Int
+  messageId Int
+  /// Où la clé a été vue : subject | summary | snippet | attachment
+  source    String   @default("subject")
+  createdAt DateTime @default(now())
+
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([dossierId, messageId])
+  @@index([messageId])
 }
