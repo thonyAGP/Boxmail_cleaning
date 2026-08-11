@@ -1,0 +1,26 @@
+[
+  {
+    "nom": "Air France — rappel d'enregistrement périmé",
+    "sujetContient": "nregistr",
+    "attendu": "absent",
+    "note": "Vol du 16/06/2026. Est arrivé première priorité du jour deux mois après. Le mail n'attend rien de lui : il doit disparaître par péremption, pas par une règle sur l'expéditeur."
+  },
+  {
+    "nom": "PayFiP — maintenance du 12 mai",
+    "sujetContient": "PAYFIP",
+    "attendu": "absent",
+    "note": "« Paiements par carte bancaire indisponibles le 12 mai 2026 » est devenu une échéance de paiement. Une date d'information n'est pas une obligation."
+  },
+  {
+    "nom": "Facture Sosh transmise par sa mère",
+    "sujetContient": "Sosh",
+    "attendu": "visible",
+    "note": "Doit apparaître, mais rattaché à Sosh — pas « payer maman ». Le banc vérifie la visibilité ; l'émetteur se vérifie dans le verdict."
+  },
+  {
+    "nom": "Elisa Serrano — deux sujets dans un fil",
+    "sujetContient": "Serrano",
+    "attendu": "visible",
+    "note": "Un document à signer ET une AG extraordinaire dans la même correspondance. Un extrait de 500 caractères n'en voit qu'un."
+  }
+]
