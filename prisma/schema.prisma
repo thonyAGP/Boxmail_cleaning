@@ -110,6 +110,14 @@ model Message {
   // null = jamais capturé (mails indexés avant cette version) ; le job
   // « noms des pièces » les rattrape sans télécharger aucune pièce.
   attachmentNames    String?
+  // Fiche des pièces : JSON [{ n: nom, s: taille en octets }] (11/08).
+  // La taille exacte vient de la même lecture de structure que les noms — elle
+  // ne coûte rien de plus. Elle sert à repérer les DOUBLONS sans se tromper :
+  // « photo.jpg » présent dans 7 mails, ce sont 7 photos différentes ; le même
+  // nom AVEC la même taille au octet près, c'est le même fichier.
+  // Séparée de `attachmentNames` pour que la recherche continue de porter sur
+  // des noms propres, sans tomber sur des chiffres de taille.
+  attachmentMeta     String?
   // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
   // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
   // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le

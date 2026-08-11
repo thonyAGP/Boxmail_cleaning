@@ -1,7 +1,7 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService } from './imap.js';
-import { countAttachments, collectAttachmentNames } from './sync.js';
+import { countAttachments, collectAttachmentInfo } from './sync.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -102,7 +102,14 @@ export async function backfillAttachmentNames(
     `${pending.length} mail(s) à examiner dans ${parDossier.size} dossier(s) — lecture des structures…`,
   );
 
-  const maj: { id: number; names: string; count: number; has: boolean; repaired: boolean }[] = [];
+  const maj: {
+    id: number;
+    names: string;
+    meta: string | null;
+    count: number;
+    has: boolean;
+    repaired: boolean;
+  }[] = [];
 
   for (const [chemin, messages] of parDossier) {
     try {
@@ -116,14 +123,22 @@ export async function backfillAttachmentNames(
         // Mail absent de la réponse (supprimé entre-temps) : on le marque vu,
         // sinon il revient à chaque passe.
         const node = structures.get(m.uid) ?? null;
-        const names = collectAttachmentNames(node as never);
+        const info = collectAttachmentInfo(node as never);
+        const names = info.map((x) => x.n).join('\n');
         const count = countAttachments(node as never);
         const has = count > 0;
         const repaired = has !== m.hasAttachments || count !== m.attachmentCount;
         if (names) result.named++;
         else result.empty++;
         if (repaired) result.repaired++;
-        maj.push({ id: m.id, names, count, has, repaired });
+        maj.push({
+          id: m.id,
+          names,
+          meta: info.length ? JSON.stringify(info) : null,
+          count,
+          has,
+          repaired,
+        });
       }
     } catch (err) {
       logger.warn('noms des pièces : dossier ignoré', {
@@ -145,6 +160,7 @@ export async function backfillAttachmentNames(
           where: { id: u.id },
           data: {
             attachmentNames: u.names,
+            attachmentMeta: u.meta,
             ...(u.repaired ? { hasAttachments: u.has, attachmentCount: u.count } : {}),
           },
         }),

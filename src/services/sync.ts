@@ -123,8 +123,23 @@ export function countAttachments(node: BodyStructNode | undefined | null): numbe
  * chaîne vide si aucune pièce nommée.
  */
 export function collectAttachmentNames(node: BodyStructNode | undefined | null): string {
-  if (!node) return '';
-  const noms: string[] = [];
+  return collectAttachmentInfo(node)
+    .map((p) => p.n)
+    .join('\n');
+}
+
+/**
+ * Nom ET TAILLE de chaque pièce (11/08). La taille vient de la même lecture
+ * de structure : elle ne coûte rien de plus, et c'est elle qui permet de
+ * distinguer un vrai doublon d'une homonymie — « photo.jpg » présent dans
+ * sept mails, ce sont sept photos différentes ; le même nom AVEC la même
+ * taille à l'octet près, c'est le même fichier.
+ */
+export function collectAttachmentInfo(
+  node: BodyStructNode | undefined | null,
+): { n: string; s: number }[] {
+  if (!node) return [];
+  const noms: { n: string; s: number }[] = [];
   const vus = new Set<string>();
   const walk = (n: BodyStructNode) => {
     if (n.childNodes?.length) {
@@ -148,11 +163,11 @@ export function collectAttachmentNames(node: BodyStructNode | undefined | null):
     const cle = nom.toLowerCase();
     if (vus.has(cle)) return;
     vus.add(cle);
-    noms.push(nom);
+    noms.push({ n: nom, s: Math.max(0, Math.trunc(n.size ?? 0)) });
   };
   walk(node);
   // Une newsletter peut embarquer trente images nommées : on borne.
-  return noms.slice(0, 25).join('\n');
+  return noms.slice(0, 25);
 }
 
 /**
@@ -294,6 +309,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             hasAttachments: boolean;
             attachmentCount: number;
             attachmentNames: string | null;
+            attachmentMeta: string | null;
             intent: string | null;
             intentReason: string | null;
           }[] = [];
@@ -317,7 +333,8 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const fromEmail = from?.address?.toLowerCase() ?? null;
             const flags = msg.flags ?? new Set<string>();
             const attachmentCount = countAttachments(msg.bodyStructure as BodyStructNode);
-            const attachmentNames = collectAttachmentNames(msg.bodyStructure as BodyStructNode);
+            const piecesInfo = collectAttachmentInfo(msg.bodyStructure as BodyStructNode);
+            const attachmentNames = piecesInfo.map((x) => x.n).join('\n');
             const hasListUnsubscribe =
               !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8'));
             // Intention (A1) : sur les entrants uniquement, depuis le sujet indexé.
@@ -351,6 +368,7 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               hasAttachments: attachmentCount > 0,
               attachmentCount,
               attachmentNames: attachmentNames || null,
+              attachmentMeta: piecesInfo.length ? JSON.stringify(piecesInfo) : null,
               intent: intentInfo?.intent ?? null,
               intentReason: intentInfo?.reason ?? null,
             });
