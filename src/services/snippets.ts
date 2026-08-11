@@ -253,15 +253,43 @@ export function selectionnerPourAnalyse(raw: string, budget = ANALYSIS_INPUT_CHA
   const PORTEUR =
     /(\d)|(€|EUR|euros?)|(\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b)|(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)|(merci de|veuillez|pouvez-vous|pourriez-vous|nous vous prions|il convient|avant le|au plus tard|dès que|dans l'attente|ci-joint|ci-joints|joint|référence|dossier|contrat|facture|échéance|signer|signature|régler|paiement|virement|rendez-vous|confirmer)|(\?)/i;
 
+  // Part d'un paragraphe occupée par des liens et du balisage. C'est le seul
+  // discriminant fiable entre le message et l'habillage, et il ne dépend
+  // d'aucun vocabulaire : un pied de page de plateforme est fait de liens, la
+  // phrase d'un humain n'en a pas.
+  const densiteLiens = (p: string): number => {
+    const liens = p.match(/<[^>]*>|https?:\/\/\S+/g) ?? [];
+    return p.length ? liens.join('').length / p.length : 0;
+  };
+
+  // MESURÉ SUR SES VRAIS MAILS (11/08). Sur une notification HomeExchange, le
+  // message utile — « vous avez vu mon message ? Le départ est demain » — est
+  // une ligne courte au milieu, tandis que l'avertissement de paiement, le
+  // bloc « Besoin d'aide ? » et les liens sociaux sont longs et truffés de
+  // mots porteurs. Mon score les faisait gagner : l'IA aurait reçu 2 200
+  // caractères d'habillage et raté la seule phrase qui compte.
+  //
+  // D'où la correction : sur un mail DENSE EN LIENS (donc une plateforme), la
+  // fin du message n'est pas la demande mais le pied de page — on retire la
+  // prime de fin, et on pénalise ce qui n'est fait que de liens.
+  const densiteGlobale = densiteLiens(paragraphes.join(' '));
+  const plateforme = densiteGlobale > 0.25;
+
   const notes = paragraphes.map((p, i) => {
     let note = PORTEUR.test(p) ? 2 : 0;
-    // Le début porte l'objet ; la fin porte la demande. Les deux comptent plus
-    // que le milieu, indépendamment de leur contenu.
+    // Le début porte l'objet. Dans un mail écrit par un humain, la fin porte
+    // la demande — mais seulement là.
     if (i === 0) note += 3;
-    if (i === paragraphes.length - 1) note += 2;
-    if (i === paragraphes.length - 2) note += 1;
-    // Un paragraphe très court est souvent une salutation ou un intertitre.
-    if (p.length < 25) note -= 1;
+    if (!plateforme) {
+      if (i === paragraphes.length - 1) note += 2;
+      if (i === paragraphes.length - 2) note += 1;
+    }
+    const d = densiteLiens(p);
+    if (d > 0.6) note -= 4;
+    else if (d > 0.3) note -= 2;
+    // Un paragraphe très court est souvent une salutation ou un intertitre —
+    // sauf sur une plateforme, où la phrase humaine EST la ligne courte.
+    if (p.length < 25 && !plateforme) note -= 1;
     return note;
   });
 
