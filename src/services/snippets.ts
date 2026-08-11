@@ -455,7 +455,7 @@ export async function backfillSnippets(
     byFolder.set(m.folder.path, arr);
   }
   progress(
-    `${pending.length} mail(s) sans extrait dans ${byFolder.size} dossier(s) — récupération du texte…`,
+    `${pending.length} mail(s) à lire dans ${byFolder.size} dossier(s) — récupération du texte…`,
   );
 
   const updates: { id: number; snippet: string; analysisInput: string }[] = [];
