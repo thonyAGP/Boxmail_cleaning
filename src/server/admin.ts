@@ -67,6 +67,7 @@ import {
   reflectRestoreInIndex,
 } from '../services/search.js';
 import { find } from '../services/find.js';
+import { listeDoublons } from '../services/duplicates.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1720,6 +1721,21 @@ export function buildAdminRouter(): Router {
         );
       });
       res.status(202).json({ jobId: job.id });
+    }),
+  );
+
+  // Pièces jointes en double (11/08). Lecture seule : on ne supprime rien,
+  // la déduplication est d'abord cognitive (« 1 document · 4 exemplaires »).
+  router.get(
+    '/attachments/duplicates',
+    guard(async (req, res) => {
+      res.json(
+        await listeDoublons({
+          account: String(req.query.account ?? '').trim() || undefined,
+          limit: Number.parseInt(String(req.query.limit ?? '40'), 10) || 40,
+          minBytes: Number.parseInt(String(req.query.min ?? ''), 10) || undefined,
+        }),
+      );
     }),
   );
 
