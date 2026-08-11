@@ -138,39 +138,31 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**En place** (détail et historique : docs/JOURNAL.md) : revue UX 3 phases +
-refonte visuelle, dépouillement complet, lecture mail HTML fidèle,
-connecteur Rentila phases 1+2, **connecteur Fiscal-Manager V1 déployé**
-(design docs/CONNECTEUR-FISCAL-MANAGER.md), **suppression en 1 clic +
-bandeau d'annulation 10 s qui restaure vraiment**, **lecture des pièces
-jointes** (texte PDF sans dépendance, scans lus par Claude via le tool
-`read_attachment`, fournisseur/montant réels → pré-remplissage du frais).
-**CAP ACTÉ PAR L'UTILISATEUR (11/08) : « RETROUVER SANS CLASSER »** — le
-nettoyage n'est plus le chantier (mesuré : 966 mails nettoyables seulement,
-`docs/PLAN-NETTOYAGE.md`). Ses boîtes sont des archives non structurées ; il
-ne range rien et ne rangera pas. Premier jalon LIVRÉ : noms des pièces
-jointes stockés et cherchés, recherche étendue au résumé IA, résultats
-GROUPÉS par interlocuteur, écran « Que cherches-tu ? ». Reste : le contenu
-des pièces (27 lues sur 10 191), puis la vue documentaire.
-**PLAN GLOBAL ACTÉ (10/08) : `docs/PLAN-ASSISTANT.md`** — passer de « logiciel
-de tri » à « assistant qui prend les devants » (3 tours ChatGPT + backtest sur
-les données réelles). À lire AVANT tout nouveau chantier produit. Prompt
-d'audit réutilisable : `docs/PROMPT-AUDIT.md`. Prochaine étape = phase 0
-(banc de validation MUST_SURFACE / taux de fuite), pas une fonctionnalité.
-**En attente / à faire** :
-- Connecteur Fiscal-Manager : jeton saisi le 10/08 ; reste à confirmer le
-  premier pull réel et la société d'Au-marais ; V2 = cron Vercel + lot
-  mensuel Cerfrance.
-- Vérifier en réel : suppression 1 clic + annulation, et le classement
-  des factures scannées transmises par un proche.
+**CAP ACTÉ PAR L'UTILISATEUR (11/08) : « RETROUVER SANS CLASSER ».** Le
+nettoyage n'est PLUS le chantier : mesuré, il ne peut retirer que 966 mails
+(137 Mo sur 7 471) — le poids est dans les pièces jointes et les documents,
+c'est-à-dire dans ce qu'il faut garder (`docs/PLAN-NETTOYAGE.md`, qui contient
+aussi le modèle complet si on y revient). Ses boîtes ne sont pas sales : ce
+sont des archives non structurées. Il ne range rien et ne rangera pas.
+Premier jalon LIVRÉ le 11/08 : noms des pièces jointes stockés et cherchés,
+recherche étendue au résumé IA, résultats GROUPÉS par interlocuteur, écran
+« Que cherches-tu ? ».
+
+**En place** (historique : docs/JOURNAL.md) : revue UX 3 phases + refonte
+visuelle, dépouillement, lecture mail HTML fidèle, connecteur Rentila 1+2,
+connecteur Fiscal-Manager V1 (docs/CONNECTEUR-FISCAL-MANAGER.md), suppression
+1 clic + annulation 10 s, lecture des pièces jointes, briefing « Aujourd'hui »,
+veto IA sur les échéances. Cadre produit : `docs/PLAN-ASSISTANT.md` (à lire
+avant tout nouveau chantier) ; audit réutilisable : `docs/PROMPT-AUDIT.md`.
+
+**À faire** :
+- Suite « retrouver » : contenu des pièces (27 lues sur 10 191 — c'est le gros
+  manque), puis vue documentaire (Factures · Banque · Fiscal · Immobilier ·
+  Contrats) sans qu'aucun dossier ne soit créé.
+- Fiscal-Manager : confirmer le premier pull réel (https://app.lb2i.com/pieces)
+  et la société d'Au-marais ; V2 = cron Vercel + lot mensuel Cerfrance.
+- À valider en réel avec lui : dépouillement, Rentila, suppression 1 clic,
+  classement des factures scannées transmises par un proche.
 - Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
-- **Nettoyage : décision à prendre avec lui** (`docs/PLAN-NETTOYAGE.md`).
-  Mesuré le 10/08 : seulement **966 mails nettoyables / 137 Mo** sur les
-  18 035 de réception — le poids est dans les pièces jointes et documents,
-  donc dans ce qu'il faut garder. Conclusion partagée avec ChatGPT :
-  le prochain chantier est « retrouver sans classer », pas supprimer.
-- Stratégies de rétention à activer AVEC l'utilisateur ; C5 ;
-  `thony56_gtr` ~8 982 mails restants (option C3b Haiku ~4,70 $, clé
-  API pas demandée). ⚠️ L'ancien chiffre « 8 762 récupérables / 1,3 Go »
-  était FAUX : il comptait la corbeille.
-- À VALIDER en réel : dépouillement + Rentila sur ses boîtes.
+- Stratégies de rétention : à n'activer QU'AVEC lui. ⚠️ L'ancien chiffre
+  « 8 762 récupérables / 1,3 Go » était FAUX (il comptait la corbeille).
