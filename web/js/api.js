@@ -71,6 +71,13 @@ export const api = {
   rentilaCommandCancel: (id) => request('POST', '/rentila/commands/' + id + '/cancel'),
   reviewLearning: () => request('GET', '/review/learning'),
   reviewLearningDismiss: (key) => request('POST', '/review/learning/dismiss', { key }),
+  // Dossiers : les sujets de vie qui traversent les interlocuteurs.
+  dossiers: (limit = 60) => request('GET', `/dossiers?limit=${limit}`),
+  dossierRenommer: (id, label) => request('PATCH', `/dossiers/${id}`, { label }),
+  dossierMasquer: (id, hidden) => request('PATCH', `/dossiers/${id}`, { hidden }),
+  dossierFusionner: (source, target) => request('POST', '/dossiers/merge', { source, target }),
+  dossiersPropager: (id) => request('POST', '/dossiers/spread', id ? { id } : {}),
+
   suggestions: () => request('GET', '/suggestions'),
   suggestionDismiss: (kind, refKey) => request('POST', '/suggestions/dismiss', { kind, refKey }),
   reviewSample: (n = 10) => request('GET', `/review/sample?n=${n}`),

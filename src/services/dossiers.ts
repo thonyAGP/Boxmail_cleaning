@@ -63,54 +63,167 @@ export function cleDossier(label: string): string | null {
   return cle.slice(0, 120);
 }
 
+const KINDS = ['bien', 'affaire', 'vehicule', 'societe', 'personne', 'reference', 'autre'];
+
 /**
- * Rattache un mail à un dossier à partir du libellé donné par l'analyse.
+ * Forme comparable d'un identifiant dur : majuscules, séparateurs retirés.
+ * « 9002390187/S12/F » et « 9002390187 S12 F » désignent le même sinistre.
+ */
+export function normaliserIdentifiant(v: string): string | null {
+  const s = String(v ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  // Moins de 5 caractères : ce n'est pas un identifiant, c'est un mot.
+  return s.length >= 5 ? s.slice(0, 60) : null;
+}
+
+/**
+ * Suit la chaîne des fusions. Sans ça, une fusion serait défaite au premier
+ * mail qui arrive avec l'ancienne orthographe — et l'utilisateur devrait
+ * refusionner indéfiniment. La borne à 10 sauts protège d'un cycle qu'une
+ * fusion croisée pourrait créer.
+ */
+async function suivreFusion(id: number): Promise<number> {
+  let courant = id;
+  for (let i = 0; i < 10; i++) {
+    const d = await db.dossier.findUnique({
+      where: { id: courant },
+      select: { mergedIntoId: true },
+    });
+    if (!d?.mergedIntoId || d.mergedIntoId === courant) return courant;
+    courant = d.mergedIntoId;
+  }
+  logger.warn('chaîne de fusion trop longue, arrêt', { depart: id, arrivee: courant });
+  return courant;
+}
+
+export interface Mention {
+  label: string;
+  kind?: string | null;
+  /** Numéro de contrat, de sinistre, SIRET, plaque… quand l'analyse en a lu un. */
+  identifier?: string | null;
+  source?: string;
+}
+
+/**
+ * RÉSOLUTION — le cœur du lot 3. L'IA propose une mention, le serveur décide
+ * de l'identité.
+ *
+ * L'ordre n'est pas arbitraire : un identifiant DUR prime sur l'orthographe.
+ * Deux mails qui citent le même numéro de sinistre parlent du même dossier,
+ * même si l'un dit « Sinistre dégât des eaux » et l'autre « DOSSIER
+ * 9002390187/S12/F ». C'est la seule façon de recoller ce qu'aucune
+ * normalisation de chaîne ne rapprocherait.
+ */
+export async function resoudre(m: Mention): Promise<{ dossierId: number; cree: boolean } | null> {
+  await ensureDbReady();
+  const label = String(m.label ?? '').trim().slice(0, 160);
+  const cle = cleDossier(label);
+  const ident = m.identifier ? normaliserIdentifiant(m.identifier) : null;
+  if (!cle && !ident) return null;
+
+  // 1. Par identifiant dur.
+  if (ident) {
+    const trouve = await db.dossierIdentifier.findFirst({
+      where: { value: ident },
+      select: { dossierId: true },
+    });
+    if (trouve) {
+      const cible = await suivreFusion(trouve.dossierId);
+      if (cle) await ajouterAlias(cible, cle, label, m.source ?? 'ia');
+      return { dossierId: cible, cree: false };
+    }
+  }
+
+  // 2. Par orthographe déjà rencontrée.
+  if (cle) {
+    const alias = await db.dossierAlias.findUnique({
+      where: { key: cle },
+      select: { dossierId: true },
+    });
+    if (alias) {
+      const cible = await suivreFusion(alias.dossierId);
+      if (ident) await ajouterIdentifiant(cible, ident, m.kind, m.source ?? 'ia');
+      return { dossierId: cible, cree: false };
+    }
+    // 3. Repli sur la clé du dossier lui-même : les dossiers créés avant la
+    //    table d'alias n'ont pas encore de ligne correspondante.
+    const direct = await db.dossier.findUnique({ where: { key: cle }, select: { id: true } });
+    if (direct) {
+      const cible = await suivreFusion(direct.id);
+      await ajouterAlias(cible, cle, label, 'reprise');
+      if (ident) await ajouterIdentifiant(cible, ident, m.kind, m.source ?? 'ia');
+      return { dossierId: cible, cree: false };
+    }
+  }
+
+  // 4. Rien de connu : on crée. Un dossier sans libellé exploitable prend son
+  //    identifiant comme nom — mieux vaut « DOSSIER 9002390187 » que rien.
+  const cleFinale = cle ?? `ref ${ident}`.toLowerCase();
+  const dossier = await db.dossier.create({
+    data: {
+      key: cleFinale,
+      label: label || `Réf. ${ident}`,
+      kind: m.kind && KINDS.includes(m.kind) ? m.kind : 'autre',
+      aliases: JSON.stringify([label || `Réf. ${ident}`]),
+    },
+  });
+  await ajouterAlias(dossier.id, cleFinale, label || `Réf. ${ident}`, m.source ?? 'ia');
+  if (ident) await ajouterIdentifiant(dossier.id, ident, m.kind, m.source ?? 'ia');
+  logger.info('dossier créé', { key: cleFinale, label: dossier.label });
+  return { dossierId: dossier.id, cree: true };
+}
+
+async function ajouterAlias(
+  dossierId: number,
+  key: string,
+  label: string,
+  source: string,
+): Promise<void> {
+  // `key` est unique GLOBALEMENT : si l'alias existe déjà ailleurs, il désigne
+  // un autre dossier et on ne le vole pas en silence.
+  const existe = await db.dossierAlias.findUnique({ where: { key }, select: { id: true } });
+  if (existe) return;
+  await db.dossierAlias.create({ data: { dossierId, key, label: label.slice(0, 160), source } });
+}
+
+async function ajouterIdentifiant(
+  dossierId: number,
+  value: string,
+  kind: string | null | undefined,
+  source: string,
+): Promise<void> {
+  const k = kind && KINDS.includes(kind) ? kind : 'other';
+  await db.dossierIdentifier
+    .create({ data: { dossierId, kind: k, value, source } })
+    .catch(() => undefined); // unique [kind, value] : déjà connu, rien à faire
+}
+
+/**
+ * Rattache un mail à un dossier à partir de ce que l'analyse a lu.
  * Crée le dossier au besoin. Idempotent.
  */
 export async function rattacher(opts: {
   messageId: number;
   label: string;
   kind?: string;
+  identifier?: string | null;
   source?: string;
 }): Promise<{ dossierId: number; cree: boolean } | null> {
-  await ensureDbReady();
-  const label = String(opts.label ?? '').trim().slice(0, 160);
-  const cle = cleDossier(label);
-  if (!cle) return null;
-
-  let dossier = await db.dossier.findUnique({ where: { key: cle } });
-  let cree = false;
-  if (!dossier) {
-    dossier = await db.dossier.create({
-      data: {
-        key: cle,
-        label,
-        kind: opts.kind && ['bien', 'affaire', 'vehicule', 'societe', 'personne', 'autre'].includes(opts.kind)
-          ? opts.kind
-          : 'autre',
-        aliases: JSON.stringify([label]),
-      },
-    });
-    cree = true;
-    logger.info('dossier créé', { key: cle, label });
-  } else if (dossier.label !== label) {
-    // On mémorise l'orthographe rencontrée : elle servira à la propagation.
-    const alias: string[] = safeJson(dossier.aliases);
-    if (!alias.includes(label)) {
-      alias.push(label);
-      await db.dossier.update({
-        where: { id: dossier.id },
-        data: { aliases: JSON.stringify(alias.slice(0, 20)) },
-      });
-    }
-  }
+  const r = await resoudre({
+    label: opts.label,
+    kind: opts.kind,
+    identifier: opts.identifier ?? null,
+    source: opts.source,
+  });
+  if (!r) return null;
 
   await db.dossierMessage.upsert({
-    where: { dossierId_messageId: { dossierId: dossier.id, messageId: opts.messageId } },
-    create: { dossierId: dossier.id, messageId: opts.messageId, source: opts.source ?? 'ia' },
+    where: { dossierId_messageId: { dossierId: r.dossierId, messageId: opts.messageId } },
+    create: { dossierId: r.dossierId, messageId: opts.messageId, source: opts.source ?? 'ia' },
     update: {},
   });
-  return { dossierId: dossier.id, cree };
+  return r;
 }
 
 function safeJson(s: string | null): string[] {
@@ -132,12 +245,14 @@ function safeJson(s: string | null): string[] {
 export async function propager(dossierId?: number): Promise<{ dossiers: number; ajouts: number }> {
   await ensureDbReady();
   const dossiers = await db.dossier.findMany({
-    where: { status: { not: 'hidden' }, ...(dossierId ? { id: dossierId } : {}) },
-    select: { id: true, label: true, aliases: true },
+    // Ni masqués ni absorbés : propager sur un dossier fusionné y remettrait
+    // les mails qu'on vient d'en sortir.
+    where: { status: { notIn: ['hidden', 'merged'] }, ...(dossierId ? { id: dossierId } : {}) },
+    select: { id: true, label: true, aliases: true, aliasRows: { select: { label: true } } },
   });
   let ajouts = 0;
   for (const d of dossiers) {
-    const termes = [d.label, ...safeJson(d.aliases)]
+    const termes = [d.label, ...safeJson(d.aliases), ...d.aliasRows.map((a) => a.label)]
       .map((t) => t.trim())
       .filter((t) => t.length >= 6);
     const vus = new Set<string>();
@@ -194,12 +309,217 @@ export async function rafraichir(dossierId: number): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// LES TROIS GESTES DE L'UTILISATEUR
+//
+// Demandés explicitement le 11/08 : renommer, fusionner, masquer. Le point
+// commun des trois, et la seule chose qui compte : sa correction ne doit
+// JAMAIS être effacée par une réanalyse. Sinon il corrigerait une fois,
+// verrait revenir la même erreur, et ne recommencerait pas — c'est exactement
+// ce qui s'est passé avec les 114 règles de classement suggérées dont aucune
+// n'a jamais été activée.
+// ---------------------------------------------------------------------------
+
+/** Renomme un dossier. Le libellé devient MANUEL et n'est plus jamais réécrit. */
+export async function renommer(id: number, label: string): Promise<{ label: string }> {
+  await ensureDbReady();
+  const propre = String(label ?? '').trim().slice(0, 160);
+  if (propre.length < 2) throw new Error('Le nom du dossier est trop court.');
+  const d = await db.dossier.update({
+    where: { id },
+    data: { label: propre, labelSource: 'manual' },
+    select: { id: true, label: true, key: true },
+  });
+  // L'ancienne orthographe reste un alias : les mails qui la citent doivent
+  // continuer d'atterrir ici.
+  const cle = cleDossier(propre);
+  if (cle) await ajouterAlias(d.id, cle, propre, 'manuel');
+  logger.info('dossier renommé', { id, label: propre });
+  return { label: d.label };
+}
+
+/**
+ * Fusionne deux dossiers. Tout part vers la cible : alias, identifiants,
+ * mails. Le dossier absorbé reste en base avec un RENVOI — c'est lui qui fait
+ * que la fusion tient dans le temps, puisque la résolution suit le renvoi.
+ */
+export async function fusionner(
+  sourceId: number,
+  cibleId: number,
+): Promise<{ dossierId: number; mailsDeplaces: number; aliasDeplaces: number }> {
+  await ensureDbReady();
+  if (sourceId === cibleId) throw new Error('Un dossier ne se fusionne pas avec lui-même.');
+  const [source, cible] = await Promise.all([
+    db.dossier.findUnique({ where: { id: sourceId }, select: { id: true, key: true, label: true } }),
+    db.dossier.findUnique({ where: { id: cibleId }, select: { id: true, label: true } }),
+  ]);
+  if (!source || !cible) throw new Error('Dossier introuvable.');
+
+  // Alias : on repointe ceux qui ne créeraient pas de collision, on jette les
+  // autres (ils désignent déjà la cible).
+  const alias = await db.dossierAlias.findMany({ where: { dossierId: sourceId } });
+  let aliasDeplaces = 0;
+  for (const a of alias) {
+    const conflit = await db.dossierAlias.findFirst({
+      where: { key: a.key, dossierId: cibleId },
+      select: { id: true },
+    });
+    if (conflit) {
+      await db.dossierAlias.delete({ where: { id: a.id } });
+    } else {
+      await db.dossierAlias.update({
+        where: { id: a.id },
+        data: { dossierId: cibleId, source: 'fusion' },
+      });
+      aliasDeplaces++;
+    }
+  }
+  // La clé PROPRE du dossier absorbé devient un alias de la cible : sans ça,
+  // un mail qui arrive demain avec l'ancienne écriture recréerait le dossier.
+  await ajouterAlias(cibleId, source.key, source.label, 'fusion');
+
+  for (const i of await db.dossierIdentifier.findMany({ where: { dossierId: sourceId } })) {
+    await db.dossierIdentifier
+      .update({ where: { id: i.id }, data: { dossierId: cibleId, source: 'fusion' } })
+      .catch(async () => {
+        await db.dossierIdentifier.delete({ where: { id: i.id } }).catch(() => undefined);
+      });
+  }
+
+  const liens = await db.dossierMessage.findMany({ where: { dossierId: sourceId } });
+  let mailsDeplaces = 0;
+  for (const l of liens) {
+    await db.dossierMessage.upsert({
+      where: { dossierId_messageId: { dossierId: cibleId, messageId: l.messageId } },
+      create: { dossierId: cibleId, messageId: l.messageId, source: l.source },
+      update: {},
+    });
+    mailsDeplaces++;
+  }
+  await db.dossierMessage.deleteMany({ where: { dossierId: sourceId } });
+
+  await db.dossier.update({
+    where: { id: sourceId },
+    data: { status: 'merged', mergedIntoId: cibleId, messageCount: 0 },
+  });
+  await rafraichir(cibleId);
+  logger.info('dossiers fusionnés', {
+    source: source.label,
+    cible: cible.label,
+    mailsDeplaces,
+  });
+  return { dossierId: cibleId, mailsDeplaces, aliasDeplaces };
+}
+
+/** Masque (ou réaffiche) un dossier sans rien perdre. */
+export async function masquer(id: number, masque = true): Promise<{ status: string }> {
+  await ensureDbReady();
+  const d = await db.dossier.update({
+    where: { id },
+    data: { status: masque ? 'hidden' : 'confirmed' },
+    select: { status: true },
+  });
+  return { status: d.status };
+}
+
+/**
+ * Reprise des alias stockés en JSON vers la table indexée. Idempotent : on
+ * peut la rejouer sans risque, et elle ne fait rien une fois passée.
+ */
+export async function migrerAliasJson(): Promise<{ dossiers: number; alias: number }> {
+  await ensureDbReady();
+  const dossiers = await db.dossier.findMany({
+    select: { id: true, key: true, label: true, aliases: true },
+  });
+  let alias = 0;
+  for (const d of dossiers) {
+    const candidats = [d.label, ...safeJson(d.aliases)];
+    // La clé propre du dossier doit exister comme alias, sinon la résolution
+    // par alias le raterait et en créerait un doublon.
+    const avant = await db.dossierAlias.count({ where: { dossierId: d.id } });
+    await ajouterAlias(d.id, d.key, d.label, 'reprise');
+    for (const c of candidats) {
+      const k = cleDossier(c);
+      if (k) await ajouterAlias(d.id, k, c, 'reprise');
+    }
+    const apres = await db.dossierAlias.count({ where: { dossierId: d.id } });
+    alias += apres - avant;
+  }
+  if (alias > 0) logger.info('alias de dossiers repris', { dossiers: dossiers.length, alias });
+  return { dossiers: dossiers.length, alias };
+}
+
+/**
+ * Rattache un mail aux dossiers que son VERDICT SÉMANTIQUE désigne (lot 1).
+ * Les `contextHints` sont les dossiers proprement dits ; les entités de type
+ * bien, véhicule, société ou contrat en sont aussi, avec leur identifiant s'il
+ * a été lu — c'est ce dernier qui recolle ce qu'aucune orthographe ne
+ * rapprocherait.
+ */
+export async function rattacherDepuisVerdict(
+  messageId: number,
+): Promise<{ rattaches: number }> {
+  await ensureDbReady();
+  const [contextes, mentions] = await Promise.all([
+    db.verdictContext.findMany({
+      where: { messageId },
+      select: { kind: true, label: true, certainty: true },
+    }),
+    db.entityMention.findMany({
+      where: { messageId, kind: { in: ['property', 'vehicle', 'company', 'contract'] } },
+      select: { kind: true, nameRaw: true, identifier: true, certainty: true, role: true },
+    }),
+  ]);
+
+  const TRAD: Record<string, string> = {
+    property: 'bien',
+    vehicle: 'vehicule',
+    company: 'societe',
+    contract: 'reference',
+    affair: 'affaire',
+    reference: 'reference',
+  };
+
+  let rattaches = 0;
+  for (const c of contextes) {
+    const r = await rattacher({
+      messageId,
+      label: c.label,
+      kind: TRAD[c.kind] ?? 'autre',
+      source: 'ia',
+    });
+    if (r) rattaches++;
+  }
+  for (const m of mentions) {
+    // Une société simplement CITÉE ne fait pas un dossier — sinon chaque
+    // signature de bas de page en créerait un. Il faut qu'elle soit partie
+    // prenante, ou qu'un identifiant dur l'accroche.
+    if (m.kind === 'company' && m.role === 'mentioned' && !m.identifier) continue;
+    if (m.certainty === 'weak_inference' || m.certainty === 'unknown') continue;
+    const r = await rattacher({
+      messageId,
+      label: m.nameRaw,
+      kind: TRAD[m.kind] ?? 'autre',
+      identifier: m.identifier,
+      source: 'ia',
+    });
+    if (r) rattaches++;
+  }
+  return { rattaches };
+}
+
 export interface DossierResume {
   id: number;
   key: string;
   label: string;
   kind: string;
   status: string;
+  /** manual = renommé par l'utilisateur ; l'analyse ne le réécrira pas. */
+  labelSource: string;
+  /** Orthographes rencontrées — ce qui explique pourquoi ces mails sont ensemble. */
+  aliases: string[];
+  /** Identifiants durs (n° de sinistre, de contrat…) qui accrochent le dossier. */
+  identifiers: string[];
   messageCount: number;
   firstAt: string | null;
   lastAt: string | null;
@@ -217,7 +537,7 @@ export async function listerDossiers(opts: { limit?: number } = {}): Promise<{
   await ensureDbReady();
   const limit = Math.min(Math.max(opts.limit ?? 40, 1), 200);
   const lignes = await db.dossier.findMany({
-    where: { status: { not: 'hidden' } },
+    where: { status: { notIn: ['hidden', 'merged'] } },
     orderBy: [{ messageCount: 'desc' }],
     take: limit,
     select: {
@@ -226,9 +546,12 @@ export async function listerDossiers(opts: { limit?: number } = {}): Promise<{
       label: true,
       kind: true,
       status: true,
+      labelSource: true,
       messageCount: true,
       firstAt: true,
       lastAt: true,
+      aliasRows: { select: { label: true }, take: 8 },
+      identifiers: { select: { value: true, kind: true }, take: 5 },
       messages: {
         select: {
           message: { select: { accountSlug: true, fromEmail: true, hasAttachments: true } },
@@ -236,7 +559,7 @@ export async function listerDossiers(opts: { limit?: number } = {}): Promise<{
       },
     },
   });
-  const total = await db.dossier.count({ where: { status: { not: 'hidden' } } });
+  const total = await db.dossier.count({ where: { status: { notIn: ['hidden', 'merged'] } } });
   return {
     total,
     dossiers: lignes.map((d) => {
@@ -247,6 +570,9 @@ export async function listerDossiers(opts: { limit?: number } = {}): Promise<{
         label: d.label,
         kind: d.kind,
         status: d.status,
+        labelSource: d.labelSource,
+        aliases: [...new Set(d.aliasRows.map((a) => a.label))].filter((a) => a !== d.label),
+        identifiers: d.identifiers.map((i) => i.value),
         messageCount: d.messageCount,
         firstAt: d.firstAt?.toISOString() ?? null,
         lastAt: d.lastAt?.toISOString() ?? null,

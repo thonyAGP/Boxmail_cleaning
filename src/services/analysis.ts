@@ -869,6 +869,23 @@ export async function applySemanticVerdicts(
     if (operations.length > 0) {
       await db.$transaction(operations as never);
     }
+
+    // Résolution des dossiers APRÈS l'écriture : elle lit les projections
+    // (contextHints et entités) qui viennent d'être posées. Hors transaction
+    // à dessein — un échec de rattachement ne doit pas annuler un verdict
+    // correctement enregistré.
+    const { rattacherDepuisVerdict } = await import('./dossiers.js');
+    for (const v of paquet) {
+      if (!messages.has(v.id)) continue;
+      try {
+        await rattacherDepuisVerdict(v.id);
+      } catch (err) {
+        logger.warn('rattachement aux dossiers en échec', {
+          id: v.id,
+          error: (err as Error).message,
+        });
+      }
+    }
   }
 
   for (const [account, items] of journal) {

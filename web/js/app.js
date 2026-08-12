@@ -623,6 +623,7 @@ const HUBS = {
     ['bigclean', '#/bigclean', '🧺 Libérer de l\'espace'],
   ],
   organize: [
+    ['dossiers', '#/dossiers', '📁 Mes dossiers'],
     ['rules', '#/rules', '🗂️ Classement automatique'],
     ['suggestions', '#/suggestions', '💡 Règles proposées'],
     ['verify', '#/verify', '🔬 Corriger l\'assistant'],
@@ -673,6 +674,8 @@ function route() {
     renderBigClean();
   } else if (hash.startsWith('#/rules')) {
     renderRules();
+  } else if (hash.startsWith('#/dossiers')) {
+    renderDossiers();
   } else if (hash.startsWith('#/suggestions')) {
     renderSuggestions();
   } else if (hash.startsWith('#/verify')) {
@@ -5636,6 +5639,156 @@ async function loadRetention() {
 
 // -------------------------------- Suggestions (A6 — Cap V3) : #/suggestions
 // L'assistant apprend de tes décisions et PROPOSE — il n'agit jamais seul.
+// ------------------------------------------------- Mes dossiers : #/dossiers
+//
+// Un dossier = un sujet de vie qui traverse les interlocuteurs. « 46 rue de la
+// République » apparaît chez 45 correspondants différents et dans 4 boîtes :
+// regrouper par expéditeur l'éclate, regrouper par sujet le reconstitue.
+//
+// CE QUE FAIT CET ÉCRAN, et rien d'autre : corriger ce que l'assistant a
+// compris. Renommer, fusionner deux dossiers qui n'en font qu'un, masquer ce
+// qui n'en est pas un. AUCUN mail n'est déplacé, AUCUN dossier n'est créé dans
+// la boîte — il n'a jamais rangé en dix ans et ne rangera pas.
+//
+// Sa correction n'est jamais écrasée par une réanalyse : c'est la seule chose
+// qui compte. 114 règles de classement ont été suggérées, aucune activée — une
+// correction qu'on efface est une correction qu'on ne refait pas.
+let _dossiers = [];
+let _fusionSource = null;
+
+async function renderDossiers() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>📁 Mes dossiers</h1>
+      <div class="sub">Les sujets qui traversent tes interlocuteurs — un bien, une société, un véhicule,
+      une affaire. C'est l'analyse qui les propose en lisant tes mails ; ici tu corriges.
+      Rien n'est déplacé dans ta boîte.</div></div>
+    <div class="head-actions">
+      <button class="btn" id="dos-spread">🔗 Retrouver les mails qui en parlent</button>
+      <button class="btn" id="dos-refresh">↻ Actualiser</button></div></div>
+    <div id="dos-body"><div class="empty"><span class="spinner"></span>Chargement des dossiers…</div></div>`;
+  $('#dos-refresh').addEventListener('click', loadDossiers);
+  $('#dos-spread').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await api.dossiersPropager();
+      pollJobs();
+      $('#dos-body').innerHTML = `<div class="notice">🔗 Recherche lancée — l'assistant rattache aux
+        dossiers connus les mails qui les citent. Suis l'avancement via la pastille d'activité, puis
+        actualise cet écran.</div>`;
+    } catch (err) {
+      alert(err.message);
+      e.target.disabled = false;
+    }
+  });
+  await loadDossiers();
+}
+
+function dossierKindLabel(k) {
+  return { bien: '🏠 Bien', societe: '🏢 Société', vehicule: '🚗 Véhicule',
+    personne: '👤 Personne', affaire: '⚖️ Affaire', reference: '🔢 Référence' }[k] ?? '📁 Autre';
+}
+
+async function loadDossiers() {
+  const body = $('#dos-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement des dossiers…</div>';
+  let d;
+  try {
+    d = await api.dossiers(60);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+  _dossiers = d.dossiers ?? [];
+
+  if (_dossiers.length === 0) {
+    body.innerHTML = `<div class="empty">Aucun dossier pour l'instant. 📁 Ils apparaissent au fil de
+      l'analyse de tes mails : dès qu'un bien, une société ou une affaire revient, il devient un dossier.</div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    ${_fusionSource ? `<div class="notice">🔗 Fusion en cours : <strong>${esc(_fusionSource.label)}</strong>
+      va rejoindre le dossier que tu choisis ci-dessous.
+      <button class="btn btn-sm" id="dos-fusion-annuler">Annuler</button></div>` : ''}
+    <div class="panel">
+      <div class="panel-head"><h2>📁 Dossiers</h2><span class="badge">${fmtNum(d.total)}</span></div>
+      <div class="panel-body">
+        ${_dossiers.map((x, i) => `
+          <div class="today-row" style="display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border)">
+            <div style="flex:1; min-width:0">
+              <div><strong>${esc(x.label)}</strong>
+                ${x.labelSource === 'manual' ? '<span class="muted" style="font-size:11px">✍️ nommé par toi</span>' : ''}
+                <span class="muted" style="font-size:12px">· ${dossierKindLabel(x.kind)}</span></div>
+              <div class="muted" style="font-size:12px">
+                ${fmtNum(x.messageCount)} mail(s) · ${fmtNum(x.correspondents)} interlocuteur(s)
+                ${x.accounts.length ? ` · ${x.accounts.map((a) => accountChip(a)).join(' ')}` : ''}
+                ${x.withAttachments ? ` · ${fmtNum(x.withAttachments)} avec pièce jointe` : ''}
+              </div>
+              ${x.identifiers.length ? `<div class="muted" style="font-size:11.5px">🔢 ${x.identifiers.map(esc).join(' · ')}</div>` : ''}
+              ${x.aliases.length ? `<div class="muted" style="font-size:11.5px">aussi écrit : ${x.aliases.slice(0, 4).map(esc).join(' · ')}</div>` : ''}
+            </div>
+            <div style="display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end">
+              <a class="btn btn-sm" href="#/search?q=${encodeURIComponent(x.label)}">🔍 Voir</a>
+              <button class="btn btn-sm dos-ren" data-i="${i}">✏️ Renommer</button>
+              ${_fusionSource
+                ? (_fusionSource.id === x.id
+                    ? '<span class="muted" style="font-size:12px; align-self:center">à fusionner…</span>'
+                    : `<button class="btn btn-sm btn-primary dos-cible" data-i="${i}">⤵️ Fusionner ici</button>`)
+                : `<button class="btn btn-sm dos-fus" data-i="${i}">🔗 Fusionner</button>`}
+              <button class="btn btn-sm dos-hide" data-i="${i}">🙈 Masquer</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="panel-body muted" style="font-size:12.5px; border-top:1px solid var(--border)">
+        Fusionner sert quand le même sujet a été écrit de deux façons. Le dossier absorbé garde un
+        renvoi vers l'autre : un mail qui arrive demain avec l'ancienne orthographe atterrit au bon
+        endroit, sans que tu aies à refaire la fusion.
+      </div>
+    </div>`;
+
+  $('#dos-fusion-annuler')?.addEventListener('click', () => { _fusionSource = null; loadDossiers(); });
+
+  body.querySelectorAll('.dos-ren').forEach((b) => b.addEventListener('click', async () => {
+    const x = _dossiers[Number(b.dataset.i)];
+    const nom = prompt('Nouveau nom du dossier :', x.label);
+    if (nom === null || nom.trim() === x.label) return;
+    try {
+      await api.dossierRenommer(x.id, nom.trim());
+      await loadDossiers();
+    } catch (err) { alert(err.message); }
+  }));
+
+  body.querySelectorAll('.dos-fus').forEach((b) => b.addEventListener('click', () => {
+    _fusionSource = _dossiers[Number(b.dataset.i)];
+    loadDossiers();
+  }));
+
+  body.querySelectorAll('.dos-cible').forEach((b) => b.addEventListener('click', async () => {
+    const cible = _dossiers[Number(b.dataset.i)];
+    if (!_fusionSource) return;
+    if (!confirm(`Fusionner « ${_fusionSource.label} » dans « ${cible.label} » ?\n\n`
+      + `Les ${_fusionSource.messageCount} mail(s) rejoignent « ${cible.label} ». Aucun mail n'est supprimé ni déplacé dans ta boîte.`)) return;
+    try {
+      const r = await api.dossierFusionner(_fusionSource.id, cible.id);
+      _fusionSource = null;
+      await loadDossiers();
+      alert(`✅ Fusionné — ${fmtNum(r.mailsDeplaces)} mail(s) rattachés à « ${cible.label} ».`);
+    } catch (err) { alert(err.message); }
+  }));
+
+  body.querySelectorAll('.dos-hide').forEach((b) => b.addEventListener('click', async () => {
+    const x = _dossiers[Number(b.dataset.i)];
+    if (!confirm(`Masquer « ${x.label} » ?\n\nIl disparaît de cette liste. Aucun mail n'est touché.`)) return;
+    try {
+      await api.dossierMasquer(x.id, true);
+      await loadDossiers();
+    } catch (err) { alert(err.message); }
+  }));
+}
+
 async function renderSuggestions() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">

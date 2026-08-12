@@ -69,7 +69,14 @@ import {
 import { find } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance } from '../services/correspondance.js';
-import { listerDossiers, propager } from '../services/dossiers.js';
+import {
+  listerDossiers,
+  propager,
+  renommer,
+  fusionner,
+  masquer,
+  migrerAliasJson,
+} from '../services/dossiers.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1783,11 +1790,83 @@ export function buildAdminRouter(): Router {
       }
       const id = Number.parseInt(String(req.body?.id ?? ''), 10) || undefined;
       const job = startJob('dossiers', async (progress) => {
+        // Reprise des alias avant de propager : sans elle, les dossiers créés
+        // avant la table d'alias ne seraient pas retrouvés et se
+        // dédoubleraient à la première mention.
+        const m = await migrerAliasJson();
+        if (m.alias > 0) progress(`${m.alias} orthographe(s) reprise(s).`);
         progress('Rattachement des mails aux dossiers connus…');
         const r = await propager(id);
         return `${r.dossiers} dossier(s) parcourus, ${r.ajouts} rattachement(s).`;
       });
       res.status(202).json({ jobId: job.id });
+    }),
+  );
+
+  // Les trois gestes de l'utilisateur sur un dossier (11/08) : renommer,
+  // fusionner, masquer. Sa correction ne doit JAMAIS être effacée par une
+  // réanalyse — c'est la seule chose qui compte ici. 114 règles de classement
+  // ont été suggérées et aucune activée : une correction qu'on écrase est une
+  // correction qu'on ne refait pas.
+  router.patch(
+    '/dossiers/:id',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant de dossier invalide.' });
+        return;
+      }
+      try {
+        if (typeof req.body?.label === 'string') {
+          const r = await renommer(id, req.body.label);
+          await recordOperation({
+            account: '(global)',
+            tool: 'dossier_renommer',
+            params: { id, label: r.label },
+            result: `Dossier renommé « ${r.label} »`,
+          });
+          res.json(r);
+          return;
+        }
+        if (typeof req.body?.hidden === 'boolean') {
+          const r = await masquer(id, req.body.hidden);
+          await recordOperation({
+            account: '(global)',
+            tool: 'dossier_masquer',
+            params: { id, hidden: req.body.hidden },
+            result: req.body.hidden ? 'Dossier masqué' : 'Dossier réaffiché',
+          });
+          res.json(r);
+          return;
+        }
+        res.status(400).json({ error: 'Rien à modifier (label ou hidden attendu).' });
+      } catch (e) {
+        res.status(400).json({ error: (e as Error).message });
+      }
+    }),
+  );
+
+  router.post(
+    '/dossiers/merge',
+    guard(async (req, res) => {
+      const source = Number.parseInt(String(req.body?.source ?? ''), 10);
+      const cible = Number.parseInt(String(req.body?.target ?? ''), 10);
+      if (!Number.isInteger(source) || !Number.isInteger(cible)) {
+        res.status(400).json({ error: 'Il faut un dossier source et un dossier cible.' });
+        return;
+      }
+      try {
+        const r = await fusionner(source, cible);
+        await recordOperation({
+          account: '(global)',
+          tool: 'dossier_fusionner',
+          params: { source, cible },
+          result: `${r.mailsDeplaces} mail(s) déplacés vers le dossier conservé`,
+        });
+        res.json(r);
+      } catch (e) {
+        res.status(400).json({ error: (e as Error).message });
+      }
     }),
   );
 

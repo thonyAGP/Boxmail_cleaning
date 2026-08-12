@@ -576,14 +576,25 @@ model Dossier {
   id          Int      @id @default(autoincrement())
   /// Clé normalisée (accents retirés, liaisons supprimées) — l'identité stable.
   key         String   @unique
-  /// bien | reference
+  /// bien | societe | vehicule | personne | affaire | reference | autre
   kind        String   @default("bien")
   /// Nom affiché, renommable par l'utilisateur sans casser la clé.
   label       String
-  /// Variantes d'écriture rencontrées, en JSON — sert au rattachement.
+  /// Variantes d'écriture rencontrées, en JSON — HISTORIQUE. Remplacé par la
+  /// table DossierAlias (indexée, et repointable lors d'une fusion) ; conservé
+  /// le temps que la reprise des données soit passée partout.
   aliases     String?
-  /// auto = proposé ; confirmed = validé ; hidden = écarté par l'utilisateur.
+  /// auto = libellé posé par l'analyse ; manual = renommé par l'utilisateur.
+  /// Une réanalyse ne réécrit JAMAIS un libellé manuel — sinon sa correction
+  /// serait effacée au tour suivant et il ne recommencerait pas deux fois.
+  labelSource String   @default("auto")
+  /// auto = proposé ; confirmed = validé ; hidden = écarté ; merged = absorbé.
   status      String   @default("auto")
+  /// Dossier absorbant, quand celui-ci a été fusionné. La résolution suit ce
+  /// renvoi : un mail qui arrive demain avec l'ANCIENNE orthographe atterrit
+  /// dans le dossier cible. C'est ce qui fait qu'une fusion manuelle survit à
+  /// une réanalyse au lieu d'être défaite à chaque nouveau mail.
+  mergedIntoId Int?
   messageCount Int     @default(0)
   firstAt     DateTime?
   lastAt      DateTime?
@@ -591,8 +602,56 @@ model Dossier {
   updatedAt   DateTime @updatedAt
 
   messages    DossierMessage[]
+  aliasRows   DossierAlias[]
+  identifiers DossierIdentifier[]
+  mergedInto  Dossier?  @relation("Fusion", fields: [mergedIntoId], references: [id])
+  absorbes    Dossier[] @relation("Fusion")
 
   @@index([status])
+  @@index([mergedIntoId])
+}
+
+/// Orthographe rencontrée pour un dossier. L'IA écrira « 46 rue de la
+/// République », puis « Immeuble République », puis « 46 Rue République
+/// Brest » : ce n'est pas un défaut du modèle, c'est le mauvais outil pour
+/// assurer l'identité. Le SERVEUR tient l'identité, à partir de ces alias.
+///
+/// Table plutôt que JSON : la recherche devient indexée, et une fusion se
+/// résume à repointer les lignes au lieu de fusionner deux blobs.
+model DossierAlias {
+  id        Int      @id @default(autoincrement())
+  dossierId Int
+  /// Clé normalisée de l'alias — c'est elle qu'on interroge.
+  key       String   @unique
+  /// Orthographe telle que rencontrée, pour l'afficher à l'utilisateur.
+  label     String
+  /// ia | manuel | fusion
+  source    String   @default("ia")
+  createdAt DateTime @default(now())
+
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@index([dossierId])
+}
+
+/// Identifiant DUR d'un dossier : numéro de contrat, de sinistre, de dossier
+/// judiciaire, SIRET, plaque. Quand il est présent, il PRIME sur l'orthographe
+/// — deux mails qui citent le même numéro de sinistre parlent du même dossier,
+/// quel que soit le nom que chaque correspondant lui donne.
+model DossierIdentifier {
+  id        Int      @id @default(autoincrement())
+  dossierId Int
+  /// contract | claim | case | siret | plate | invoice | other
+  kind      String   @default("other")
+  /// Valeur normalisée (majuscules, séparateurs retirés).
+  value     String
+  source    String   @default("ia")
+  createdAt DateTime @default(now())
+
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+
+  @@unique([kind, value])
+  @@index([dossierId])
 }
 
 /// Verdict sémantique d'un mail (11/08) — le socle de la refonte de l'analyse.
