@@ -316,6 +316,12 @@ export interface CandidatRepli {
   intent: string | null;
   /** Colonne legacy `aiAction` (projection de l'ancienne analyse). */
   aiAction: string | null;
+  /**
+   * En-tête List-Unsubscribe. Signal de DIFFUSION, pas de non-réponse : les
+   * plateformes en mettent sur des mails transactionnels. Ne sert plus qu'au
+   * repli, jamais à écarter un mail dont l'analyse dit le contraire.
+   */
+  hasListUnsubscribe?: boolean;
 }
 
 export interface EvaluationReponse {
@@ -416,6 +422,18 @@ export function evaluerReponseAttendue(
   // l'ancienne analyse a écrit « attend une réponse », NI l'adresse de
   // l'expéditeur NI son propre `aiAction` n'ont le droit de la faire taire.
   const attendExplicite = ATTEND_REPONSE.has(candidat.intent ?? '');
+  // L'en-tête de désinscription redescend ICI, dans le repli : il écartait le
+  // mail à la collecte, donc AVANT même que l'analyse ait son mot à dire —
+  // même faute que l'adresse de l'expéditeur, et sur les mêmes catégories
+  // (assurance, comptable, syndic, relance de facture impayée).
+  if (candidat.hasListUnsubscribe && !attendExplicite) {
+    return {
+      attendue: false,
+      source: 'repli',
+      pourquoi:
+        "l'expéditeur propose une désinscription (liste de diffusion) et aucune analyse ne dit le contraire — repli, pas encore de verdict",
+    };
+  }
   if (AUTO_SENDER_RE.test(candidat.fromEmail) && !attendExplicite) {
     return {
       attendue: false,
@@ -512,9 +530,18 @@ export async function getUnansweredEmails(
   const accountEmail = accountRow?.emailAddress?.toLowerCase() ?? null;
 
   // 1. Candidats : mails entrants « répondables » de la boîte de réception.
-  //    (newsletters exclues via List-Unsubscribe ; l'adresse de l'expéditeur,
-  //    elle, ne filtre PLUS rien à la collecte — lot 4d : c'est
-  //    evaluerReponseAttendue qui décide, verdict d'abord, heuristiques en repli)
+  //    PLUS AUCUN FILTRE DE FORME À LA COLLECTE (lot 4d, complété le 12/08) :
+  //    ni l'adresse de l'expéditeur, ni l'en-tête List-Unsubscribe. C'est
+  //    evaluerReponseAttendue qui décide — le verdict d'abord, les heuristiques
+  //    en repli.
+  //
+  //    MESURÉ : le List-Unsubscribe écartait 21 des 191 mails que le banc
+  //    compte comme « à traiter », soit le même angle mort que les 48 mails
+  //    no-reply de la veille. Dedans : cinq mails AXA, deux de son comptable,
+  //    deux de son syndic, une relance de facture impayée, et « [ACTION
+  //    REQUISE] – Mise en conformité de votre société ». Les plateformes
+  //    posent cet en-tête sur des mails transactionnels ; c'est un signal de
+  //    diffusion, pas une preuve qu'aucune réponse n'est attendue.
   const raw = await db.message.findMany({
     where: {
       accountSlug: account,
@@ -522,7 +549,6 @@ export async function getUnansweredEmails(
       isOutbound: false,
       isAnswered: false,
       isAutoReply: false,
-      hasListUnsubscribe: false,
       threadId: { not: null },
       fromEmail: { not: null },
       date: { gte: since },
@@ -543,6 +569,7 @@ export async function getUnansweredEmails(
       // sémantique) — voir evaluerReponseAttendue.
       intent: true,
       aiAction: true,
+      hasListUnsubscribe: true,
       folder: { select: { path: true } },
     },
   });
@@ -578,6 +605,7 @@ export async function getUnansweredEmails(
         date: m.date,
         intent: m.intent,
         aiAction: m.aiAction,
+        hasListUnsubscribe: m.hasListUnsubscribe,
       },
       now,
     );
