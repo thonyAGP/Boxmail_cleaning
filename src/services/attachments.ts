@@ -151,7 +151,13 @@ export async function readAttachmentsForAccount(
         where: { id: m.id },
         data: {
           attachmentKind: r.kind,
-          attachmentText: r.text || null,
+          // Assaini UNE DERNIÈRE FOIS ici, juste avant l'écriture, et ce n'est
+          // pas une ceinture de plus : les troncatures (`slice`) travaillent en
+          // unités UTF-16 et peuvent COUPER UNE PAIRE EN DEUX — un emoji au
+          // mauvais endroit suffit à recréer un demi-caractère isolé APRÈS
+          // l'assainissement de la source. C'était le dernier échec restant
+          // (« unexpected end of hex escape ») le 12/08.
+          attachmentText: r.text ? assainirPourBase(r.text) : null,
           attachmentTextAt: new Date(),
           // La FICHE des pièces passe aussi par l'assainissement (12/08, second
           // tour) : elle contient les noms de fichiers venus d'IMAP, et c'est
