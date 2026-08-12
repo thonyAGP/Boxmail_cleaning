@@ -63,12 +63,12 @@ export const NOISE_MIN_AGE_DAYS = 7;
 // Sans verdict : les heuristiques historiques (catégorie d'expéditeur résolue
 // par la sync avec sa précédence, intent legacy), à l'identique.
 const NOISE_BUCKET_CASE = `CASE
-  -- LE BON DISCRIMINANT est l'existence d'un verdict SÉMANTIQUE, pas
-  -- `aiVerdictAt` : cette colonne est posée par l'ANCIENNE analyse plate sur
-  -- 17 207 mails qui n'ont aucune ligne MailVerdict. Les tester avec
-  -- `aiVerdictAt` les faisait tomber ENTRE les deux chemins — trop « analysés »
-  -- pour le repli, sans aucune donnée pour le nouveau. Le banc l'a vu tout de
-  -- suite : 51,8 % → 52,9 % de fuite (12/08).
+  -- LE BON DISCRIMINANT est l'existence d'un verdict SÉMANTIQUE, pas la
+  -- colonne aiVerdictAt : celle-ci est posée par l'ANCIENNE analyse plate sur
+  -- 17 207 mails qui n'ont aucune ligne MailVerdict. Les tester ainsi les
+  -- faisait tomber ENTRE les deux chemins — trop « analysés » pour bénéficier
+  -- du repli, sans la moindre donnée pour le nouveau. Le banc l'a vu tout de
+  -- suite : 51,8 % puis 52,9 % de fuite (12/08).
   WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id) THEN CASE
     WHEN EXISTS (SELECT 1 FROM VerdictAction va WHERE va.messageId = m.id AND va.actor = 'user') THEN NULL
     WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id AND v.purpose = 'marketing')
