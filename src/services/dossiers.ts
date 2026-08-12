@@ -29,6 +29,10 @@ import { logger } from '../logger.js';
  *  2. PROPAGER : une fois qu'un dossier existe, rattacher les autres mails qui
  *     citent le même libellé. Ce n'est pas un vocabulaire inventé — c'est celui
  *     que l'analyse a produit, appliqué aux 25 000 mails sans les réanalyser.
+ *     Depuis le lot 4h, les MENTIONS et CONTEXTES des verdicts existants sont
+ *     la première source de rattachement (comparaison par clé normalisée et
+ *     par identifiant dur) — la sous-chaîne ne couvre plus que les mails
+ *     jamais analysés.
  */
 
 /** Libellés trop vagues pour faire un dossier : on les refuse. */
@@ -237,10 +241,76 @@ function safeJson(s: string | null): string[] {
 }
 
 /**
- * PROPAGATION : rattache au dossier les mails qui citent son libellé sans
- * avoir été analysés. C'est ce qui évite d'attendre que l'IA ait relu les
- * 25 000 mails pour qu'un dossier soit complet — le vocabulaire vient d'elle,
- * la recherche est mécanique et gratuite.
+ * Index des mentions et contextes de TOUS les verdicts, sous leur forme
+ * NORMALISÉE (cleDossier / normaliserIdentifiant). Fonction pure — le banc
+ * l'éprouve avec des lignes en mémoire.
+ *
+ * C'est la matière première de la propagation par le verdict (lot 4h) : là où
+ * la sous-chaîne exige la même graphie au caractère près, la clé rapproche
+ * « 46 Rue de la République » et « 46 rue republique », et l'identifiant dur
+ * rapproche ce qu'aucune orthographe ne rapprocherait.
+ */
+export interface IndexMentions {
+  /** cleDossier(nameRaw/label) → mails dont le verdict porte cette mention. */
+  parCle: Map<string, Set<number>>;
+  /** normaliserIdentifiant(identifier) → mails porteurs de cet identifiant. */
+  parIdentifiant: Map<string, Set<number>>;
+}
+
+export function indexerMentionsPourPropagation(
+  mentions: { messageId: number; nameRaw: string; identifier: string | null }[],
+  contextes: { messageId: number; label: string }[],
+): IndexMentions {
+  const parCle = new Map<string, Set<number>>();
+  const parIdentifiant = new Map<string, Set<number>>();
+  const poser = (map: Map<string, Set<number>>, cle: string | null, id: number) => {
+    if (!cle) return;
+    const s = map.get(cle);
+    if (s) s.add(id);
+    else map.set(cle, new Set([id]));
+  };
+  for (const m of mentions) {
+    poser(parCle, cleDossier(m.nameRaw), m.messageId);
+    if (m.identifier) poser(parIdentifiant, normaliserIdentifiant(m.identifier), m.messageId);
+  }
+  for (const c of contextes) {
+    poser(parCle, cleDossier(c.label), c.messageId);
+  }
+  return { parCle, parIdentifiant };
+}
+
+/**
+ * Les mails que le VERDICT rattache à un dossier : mêmes clés normalisées,
+ * ou même identifiant dur. Fonction pure, éprouvée par le banc.
+ */
+export function ciblesDuDossier(
+  d: { cles: Iterable<string>; identifiants: Iterable<string> },
+  index: IndexMentions,
+): Set<number> {
+  const out = new Set<number>();
+  for (const k of d.cles) for (const id of index.parCle.get(k) ?? []) out.add(id);
+  for (const v of d.identifiants) for (const id of index.parIdentifiant.get(v) ?? []) out.add(id);
+  return out;
+}
+
+/**
+ * PROPAGATION : rattache au dossier les mails qui le citent sans que
+ * l'analyse ait été rejouée. C'est ce qui évite d'attendre que l'IA ait relu
+ * les 25 000 mails pour qu'un dossier soit complet.
+ *
+ * Deux voies, dans cet ordre (lot 4h) :
+ *  1. le VERDICT : les mentions (`EntityMention`) et contextes
+ *     (`VerdictContext`) déjà produits par l'analyse, comparés aux alias du
+ *     dossier par CLÉ NORMALISÉE et par IDENTIFIANT DUR — plus fiable qu'une
+ *     sous-chaîne, insensible à la graphie, source « verdict » ;
+ *  2. la SOUS-CHAÎNE (historique) : le libellé cherché tel quel dans le
+ *     sujet, le résumé, l'extrait et les pièces — c'est elle qui couvre les
+ *     mails jamais analysés, source « propagation ».
+ *
+ * BUDGET : les mentions/contextes forts sont chargés UNE fois pour tous les
+ * dossiers (2 requêtes, indépendantes du nombre de dossiers), puis la voie
+ * verdict ne coûte que la validation des cibles (1 requête par lot de 900).
+ * La voie sous-chaîne garde son coût historique (1 requête par terme).
  */
 export async function propager(dossierId?: number): Promise<{ dossiers: number; ajouts: number }> {
   await ensureDbReady();
@@ -248,13 +318,69 @@ export async function propager(dossierId?: number): Promise<{ dossiers: number; 
     // Ni masqués ni absorbés : propager sur un dossier fusionné y remettrait
     // les mails qu'on vient d'en sortir.
     where: { status: { notIn: ['hidden', 'merged'] }, ...(dossierId ? { id: dossierId } : {}) },
-    select: { id: true, label: true, aliases: true, aliasRows: { select: { label: true } } },
+    select: {
+      id: true,
+      key: true,
+      label: true,
+      aliases: true,
+      aliasRows: { select: { key: true, label: true } },
+      identifiers: { select: { value: true } },
+    },
   });
+  if (dossiers.length === 0) return { dossiers: 0, ajouts: 0 };
+
+  // Les inférences faibles ne rattachent rien : un dossier pollué par un
+  // doute d'analyse coûterait plus cher à nettoyer que le mail manquant.
+  const [mentionsV, contextesV] = await Promise.all([
+    db.entityMention.findMany({
+      where: { certainty: { in: ['explicit', 'strong_inference'] } },
+      select: { messageId: true, nameRaw: true, identifier: true },
+    }),
+    db.verdictContext.findMany({
+      where: { certainty: { in: ['explicit', 'strong_inference'] } },
+      select: { messageId: true, label: true },
+    }),
+  ]);
+  const index = indexerMentionsPourPropagation(mentionsV, contextesV);
+
   let ajouts = 0;
   for (const d of dossiers) {
     const termes = [d.label, ...safeJson(d.aliases), ...d.aliasRows.map((a) => a.label)]
       .map((t) => t.trim())
       .filter((t) => t.length >= 6);
+
+    // --- Voie 1 : le verdict. Toutes les écritures connues du dossier,
+    // normalisées, plus ses identifiants durs (déjà normalisés à l'insertion).
+    const cles = new Set<string>([d.key, ...d.aliasRows.map((a) => a.key)]);
+    for (const t of termes) {
+      const k = cleDossier(t);
+      if (k) cles.add(k);
+    }
+    const cibles = [...ciblesDuDossier(
+      { cles, identifiants: d.identifiers.map((i) => i.value) },
+      index,
+    )];
+    for (let i = 0; i < cibles.length; i += 900) {
+      // Mêmes exclusions que la voie sous-chaîne : ni corbeille, ni spam.
+      const valides = await db.message.findMany({
+        where: {
+          id: { in: cibles.slice(i, i + 900) },
+          isDeleted: false,
+          folder: { role: { notIn: ['spam', 'trash'] } },
+        },
+        select: { id: true },
+      });
+      for (const m of valides) {
+        const r = await db.dossierMessage.upsert({
+          where: { dossierId_messageId: { dossierId: d.id, messageId: m.id } },
+          create: { dossierId: d.id, messageId: m.id, source: 'verdict' },
+          update: {},
+        });
+        if (r) ajouts++;
+      }
+    }
+
+    // --- Voie 2 : la sous-chaîne (historique, couvre les mails sans verdict).
     const vus = new Set<string>();
     for (const terme of termes) {
       const k = terme.toLowerCase();

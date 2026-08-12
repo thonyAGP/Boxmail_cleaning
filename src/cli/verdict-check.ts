@@ -23,6 +23,10 @@ import { evaluerReponseAttendue } from '../services/attention.js';
 import { scoreMessage } from '../services/importance.js';
 import { depouillerEtat, buildProposal } from '../services/review.js';
 import { paiementOuvert, uneCarteParMail } from '../services/today.js';
+import { explainMatch } from '../services/search.js';
+import { labelDuGroupe } from '../services/find.js';
+import { indexerMentionsPourPropagation, ciblesDuDossier } from '../services/dossiers.js';
+import { pieceComptableDuVerdict } from '../services/accounting.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -1299,6 +1303,166 @@ console.log('\n=== 17. Aujourd’hui — consommer, pas interpréter ===\n');
     '…ni « paiement » quand une autre famille l’a déjà cardé',
     [13],
     invoicesU.map((x) => x.messageId),
+  );
+}
+
+// ---------------------------------------------------------------------------
+//
+// RECHERCHE & DOSSIERS (lot 4h) — retrouver par ce que l'ANALYSE a nommé :
+// une entité ou un dossier cités par le verdict font retrouver un mail dont
+// ni le sujet ni le texte ne portent le terme cherché ; la propagation des
+// dossiers compare des clés normalisées et des identifiants durs, plus jamais
+// seulement des sous-chaînes.
+
+console.log('\n=== 18. Recherche & dossiers — retrouvés par ce que l’analyse a nommé ===\n');
+
+{
+  // Un mail dont NI le sujet NI le texte ne disent « république » : seule
+  // l'analyse l'a nommé. La raison affichée doit le dire.
+  const ou = explainMatch('république', {
+    subject: 'Compte rendu de visite',
+    snippet: 'Bonjour, suite à notre passage sur place…',
+    entites: ['46 rue de la République'],
+    contextes: [],
+  });
+  verifier('retrouvé par une entité que le sujet ne contient pas', true, ou.includes('entité citée'));
+  verifier(
+    '…et par elle seule (ni le sujet ni le texte ne la portent)',
+    false,
+    ou.includes('sujet') || ou.includes('texte du mail'),
+  );
+  const ouCtx = explainMatch('affaire odas', {
+    subject: 'Convocation',
+    contextes: ['Affaire ODAS'],
+  });
+  verifier('un dossier (contexte) cité se signale aussi', true, ouCtx.includes('dossier cité'));
+  verifier(
+    'sans terme cherché, aucune raison fabriquée',
+    0,
+    explainMatch(undefined, { entites: ['46 rue de la République'] }).length,
+  );
+
+  // Le nom d'un groupe : l'entité `sent_by` lue par l'analyse prime sur le
+  // nom d'affichage déclaratif (« noreply », variantes de casse).
+  const groupe = [
+    { fromName: 'noreply', entites: [{ nameRaw: 'Leroy Merlin', role: 'sent_by' }] },
+    { fromName: 'LEROY MERLIN Brest', entites: [{ nameRaw: 'Leroy Merlin', role: 'sent_by' }] },
+    { fromName: 'LEROY MERLIN Brest', entites: [] },
+  ];
+  verifier(
+    'le groupe prend le nom de l’entité lue par l’analyse',
+    'Leroy Merlin',
+    labelDuGroupe(groupe, 'leroymerlin.fr'),
+  );
+  verifier(
+    'sans entité, le nom le plus fréquent reste (repli)',
+    'LEROY MERLIN Brest',
+    labelDuGroupe([{ fromName: 'LEROY MERLIN Brest', entites: [] }], 'leroymerlin.fr'),
+  );
+  verifier('sans rien, la clé fait le nom', 'leroymerlin', labelDuGroupe([], 'leroymerlin.fr'));
+
+  // Propagation des dossiers par le verdict : la GRAPHIE ne compte plus
+  // (clés normalisées), et l'identifiant dur recolle le reste.
+  const index = indexerMentionsPourPropagation(
+    [
+      { messageId: 11, nameRaw: '46 Rue de la République, Brest', identifier: null },
+      { messageId: 12, nameRaw: 'Sinistre dégât des eaux', identifier: '9002390187/S12/F' },
+      // Mention étrangère au dossier : ne doit accrocher nulle part.
+      { messageId: 13, nameRaw: 'Renault Trafic', identifier: null },
+    ],
+    [{ messageId: 14, label: '46 rue de la republique brest' }],
+  );
+  const cibles = ciblesDuDossier(
+    { cles: ['46 rue republique brest'], identifiants: ['9002390187S12F'] },
+    index,
+  );
+  verifier(
+    '« 46 Rue de la République, Brest » rejoint le dossier malgré la graphie',
+    true,
+    cibles.has(11),
+  );
+  verifier('le contexte du verdict rattache aussi', true, cibles.has(14));
+  verifier(
+    'l’identifiant dur recolle ce qu’aucune orthographe ne rapprocherait',
+    true,
+    cibles.has(12),
+  );
+  verifier('une mention étrangère au dossier n’accroche pas', false, cibles.has(13));
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE CONNECTEUR COMPTABLE (lot 4i) — `sent_by` n'est pas `issued_by` : la
+// pièce envoyée au logiciel comptable porte l'ÉMETTEUR lu par l'analyse,
+// jamais l'expéditeur du mail. Sans verdict, le repli heuristique garde la
+// main et rien n'est inventé ici.
+
+console.log('\n=== 19. Connecteur comptable — l’émetteur, jamais l’expéditeur ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [
+        // La facture Sosh transmise par sa mère — LE cas qui a déclenché la refonte.
+        msg(1901, { fromEmail: 'maman@example.com', hasAttachments: true }),
+        // Repli : intention facture legacy, pas encore de verdict.
+        msg(1902, { intent: 'invoice', intentSource: 'ai', hasAttachments: true }),
+        // Verdict présent mais AUCUN document comptable : une pub.
+        msg(1903),
+        // Document sans issuer lisible : la mention issued_by prend le relais.
+        msg(1904, { hasAttachments: true }),
+      ],
+      verdicts: [
+        verdictDe(1901, { purpose: 'document_delivery' }),
+        verdictDe(1903, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(1904, { purpose: 'document_delivery' }),
+      ],
+      documents: [
+        { messageId: 1901, kind: 'invoice', label: null, issuer: 'Sosh', issueDate: null, dueDate: null, amount: 42.3, currency: 'EUR', reference: 'FAC-052026', certainty: 'explicit' },
+        { messageId: 1904, kind: 'receipt', label: null, issuer: null, issueDate: null, dueDate: null, amount: 120, currency: 'EUR', reference: null, certainty: 'strong_inference' },
+      ],
+      mentions: [
+        { messageId: 1901, kind: 'person', nameRaw: 'Maman', role: 'sent_by', identifier: null, certainty: 'explicit' },
+        { messageId: 1901, kind: 'company', nameRaw: 'Sosh', role: 'issued_by', identifier: null, certainty: 'explicit' },
+        { messageId: 1904, kind: 'company', nameRaw: 'EDF', role: 'issued_by', identifier: null, certainty: 'explicit' },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const piece = pieceComptableDuVerdict(etats.get(1901));
+  verifier(
+    'la facture transmise par un tiers est attribuée à son ÉMETTEUR',
+    'Sosh',
+    piece?.supplier,
+  );
+  verifier('…jamais à l’expéditeur du mail', true, piece?.supplier !== 'Maman');
+  verifier('le montant vient de l’analyse', 42.3, piece?.amountTtc);
+  verifier('la référence aussi', 'FAC-052026', piece?.invoiceNumber);
+  verifier(
+    'la transmission est DITE, sans contaminer le fournisseur',
+    true,
+    (piece?.reasons ?? []).some((r) => r.includes('transmis par « Maman »')),
+  );
+  verifier(
+    '…et la raison avoue sa provenance (l’émetteur, pas l’expéditeur)',
+    true,
+    (piece?.reasons ?? []).some((r) => r.includes('jamais l’expéditeur') || r.includes("jamais l'expéditeur")),
+  );
+  verifier(
+    'sans verdict, le connecteur ne fabrique rien ici (le repli garde la main)',
+    null,
+    pieceComptableDuVerdict(etats.get(1902)),
+  );
+  verifier(
+    'verdict sans document comptable : rien non plus — l’analyse a parlé',
+    null,
+    pieceComptableDuVerdict(etats.get(1903)),
+  );
+  const releve = pieceComptableDuVerdict(etats.get(1904));
+  verifier(
+    'sans issuer lisible, la mention issued_by donne le fournisseur',
+    'EDF',
+    releve?.supplier,
   );
 }
 

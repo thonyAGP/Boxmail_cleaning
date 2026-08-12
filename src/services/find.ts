@@ -14,6 +14,13 @@ import { searchIndex, type SearchResultItem } from './search.js';
  * INTERLOCUTEURS, chacun avec ce qu'il lui a envoyé.
  *
  * Aucun mail n'est déplacé : l'organisation est virtuelle, elle vit ici.
+ *
+ * LOT 4H (12/08) : les ENTITÉS du verdict sémantique servent au classement
+ * (une correspondance sur une entité pèse comme un nom de fichier) et au nom
+ * des groupes (`labelDuGroupe`). La CLÉ de regroupement, elle, reste le
+ * domaine de l'expéditeur — volontairement : re-clé-er sur l'entité couperait
+ * chaque interlocuteur en deux groupes, ses mails analysés d'un côté et les
+ * autres de l'autre, tant que l'analyse n'a pas tout relu.
  */
 
 /** Domaines grand public : derrière, il y a une personne, pas une entreprise. */
@@ -54,6 +61,12 @@ export function entiteExpediteur(email: string | null | undefined): string {
 const POIDS: Record<string, number> = {
   'pièce jointe': 4,
   sujet: 3,
+  // Une ENTITÉ ou un DOSSIER nommés par l'analyse (lot 4h) pèsent comme un nom
+  // de fichier : l'analyse a lu le mail entier, ce n'est pas un mot noyé dans
+  // le texte — c'est précisément ce qui retrouve « 46 rue de la République »
+  // quand le sujet se tait.
+  'entité citée': 4,
+  'dossier cité': 4,
   expéditeur: 2,
   'contenu de la pièce': 3,
   résumé: 2,
@@ -96,9 +109,45 @@ function scoreItem(it: SearchResultItem, terme = ''): number {
   if (it.hasAttachments) s += 1;
   // Un vrai mot vaut bien plus qu'un fragment : sinon « RIB » fait remonter
   // « Cabinet Ribéroux » (48 mails) avant le mail qui porte vraiment un RIB.
-  const q = qualiteMot(terme, it.subject, it.fromName, it.summary, ...it.attachmentNames);
+  // Les entités et contextes lus par l'analyse comptent au même titre (4h).
+  const q = qualiteMot(
+    terme,
+    it.subject,
+    it.fromName,
+    it.summary,
+    ...it.attachmentNames,
+    ...it.entites.map((e) => e.nameRaw),
+    ...it.contextes,
+  );
   s += q === 2 ? 6 : q === 1 ? 1 : 0;
   return s;
+}
+
+/**
+ * Nom affiché d'un groupe (lot 4h) : l'ENTITÉ `sent_by` lue par l'analyse
+ * prime quand elle existe — le nom d'affichage d'un expéditeur est déclaratif
+ * et changeant (« LEROY MERLIN Brest », « noreply »), l'entité dit QUI écrit
+ * vraiment. À défaut : le nom d'affichage le plus fréquent, puis la clé.
+ * Fonction pure — le banc l'éprouve avec des items en mémoire.
+ */
+export function labelDuGroupe(
+  arr: { fromName: string; entites: { nameRaw: string; role: string }[] }[],
+  key: string,
+): string {
+  const plusFrequent = (vals: string[]): string | null => {
+    const n = new Map<string, number>();
+    for (const v of vals) n.set(v, (n.get(v) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+  const entites = arr
+    .flatMap((i) => i.entites.filter((e) => e.role === 'sent_by').map((e) => e.nameRaw.trim()))
+    .filter(Boolean);
+  const noms = arr.map((i) => (i.fromName || '').trim()).filter(Boolean);
+  return (
+    plusFrequent(entites) ??
+    plusFrequent(noms) ??
+    (key.includes('@') ? key : key.split('.')[0])
+  );
 }
 
 export interface FindGroup {
@@ -181,16 +230,10 @@ export async function find(opts: FindOptions): Promise<FindResult> {
   for (const [key, arr] of parGroupe) {
     arr.sort((a, b) => scoreItem(b, q) - scoreItem(a, q) || (b.date ?? '').localeCompare(a.date ?? ''));
     const dates = arr.map((i) => i.date).filter((d): d is string => !!d).sort();
-    // Nom affiché : le plus fréquent parmi les expéditeurs du groupe (un même
-    // service écrit tantôt « Leroy Merlin », tantôt « LEROY MERLIN Brest »).
-    const noms = new Map<string, number>();
-    for (const i of arr) {
-      const n = (i.fromName || '').trim();
-      if (n) noms.set(n, (noms.get(n) ?? 0) + 1);
-    }
-    const label =
-      [...noms].sort((a, b) => b[1] - a[1])[0]?.[0] ??
-      (key.includes('@') ? key : key.split('.')[0]);
+    // Nom affiché : l'entité lue par l'analyse quand elle existe, sinon le nom
+    // le plus fréquent (un même service écrit tantôt « Leroy Merlin », tantôt
+    // « LEROY MERLIN Brest »).
+    const label = labelDuGroupe(arr, key);
 
     const fichiers: string[] = [];
     for (const i of arr) {

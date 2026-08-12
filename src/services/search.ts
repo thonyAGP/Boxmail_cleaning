@@ -1,10 +1,30 @@
 import { db, ensureDbReady } from '../db/client.js';
+import {
+  resolveMailSemanticState,
+  type EtatSemantique,
+  type Provenance,
+} from './semantique.js';
 
 /**
  * Recherche de mails dans l'INDEX local (L3). Métadonnées uniquement : aucune
  * connexion IMAP, aucune lecture de contenu — instantané même sur des dizaines
  * de milliers de mails. La lecture du corps d'un mail précis passe par
  * imapService.readEmail (route dédiée), jamais par un LLM.
+ *
+ * LOT 4H (12/08) : la recherche s'appuie sur le modèle sémantique.
+ *  - Les ENTITÉS (`EntityMention.nameRaw`) et les CONTEXTES
+ *    (`VerdictContext.label`) du verdict sont cherchables : c'est ce qui fait
+ *    qu'on retrouve « 46 rue de la République » même quand ni le sujet ni le
+ *    texte ne le disent — l'analyse l'a lu, elle, dans le mail entier ;
+ *  - chaque résultat porte sa `nature` RÉSOLUE par le socle (précédence
+ *    manuel > IA > heuristique, appliquée une seule fois dans semantique.ts)
+ *    avec sa provenance — la colonne `intent` n'est plus qu'une façade ;
+ *  - `explainMatch` sait dire « trouvé dans une entité citée » : un résultat
+ *    ne doit jamais apparaître sans raison.
+ *
+ * BUDGET : la résolution sémantique se fait EN LOT sur les lignes RETOURNÉES
+ * (≤ 500), soit 14 requêtes constantes par appel — jamais proportionnel au
+ * nombre de mails de l'index (SQLite connection_limit=1).
  */
 
 /** Longueur de l'extrait renvoyé aux listes (le stockage en garde ~500). */
@@ -59,8 +79,22 @@ export interface SearchResultItem {
   isSeen: boolean;
   isFlagged: boolean;
   isOutbound: boolean;
-  /** Intention détectée (A1) : otp/invoice/shipping/… ; null = non calculée. */
+  /**
+   * FAÇADE legacy (lot 4h) : la valeur de `nature` recopiée pour les écrans
+   * qui lisent encore `intent`. Côté serveur, lire `nature` — elle dit d'où
+   * la valeur vient.
+   */
   intent: string | null;
+  /**
+   * L'intention RÉSOLUE par le socle sémantique, avec sa provenance et son
+   * pourquoi (affichables tels quels). La précédence manuel > IA > heuristique
+   * est appliquée UNE fois, dans semantique.ts — plus jamais ici.
+   */
+  nature: { valeur: string | null; source: Provenance; pourquoi: string } | null;
+  /** Entités lues par l'analyse (« 46 rue de la République », « Sosh »…). */
+  entites: { kind: string; nameRaw: string; role: string }[];
+  /** Dossiers (contextes) cités par l'analyse. */
+  contextes: string[];
   hasListUnsubscribe: boolean;
   hasAttachments: boolean;
   attachmentCount: number;
@@ -118,6 +152,12 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
         // français. Il porte souvent le mot que cherche Anthony là où le
         // sujet ne dit rien (« relance de la banque sur le prêt Altoen »).
         { aiSummary: { contains: q } },
+        // Les ENTITÉS et les CONTEXTES du verdict sémantique (lot 4h). C'est
+        // ce qui fait qu'on retrouve « 46 rue de la République » même quand le
+        // sujet ne le dit pas : l'analyse a lu le mail entier et a nommé de
+        // quoi il parle — la recherche n'a plus qu'à s'en servir.
+        { verdict: { is: { mentions: { some: { nameRaw: { contains: q } } } } } },
+        { verdict: { is: { contexts: { some: { label: { contains: q } } } } } },
       ],
     });
   }
@@ -179,41 +219,79 @@ export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
     }),
   ]);
 
+  // L'état sémantique des lignes RETOURNÉES, résolu en une passe (lot 4h) :
+  // 14 requêtes constantes pour ≤ 500 lignes — jamais mail par mail.
+  const etats = await resolveMailSemanticState(rows.map((r) => r.id));
+
   return {
     total,
     truncated: total > rows.length,
-    items: rows.map((m) => ({
-      account: m.accountSlug,
-      folder: m.folder.path,
-      folderRole: m.folder.role,
-      uid: m.uid,
-      messageId: m.id,
-      threadId: m.threadId,
-      subject: m.subject ?? '(sans sujet)',
-      fromName: m.fromName ?? '',
-      fromEmail: m.fromEmail ?? '',
-      date: m.date?.toISOString() ?? null,
-      isSeen: m.isSeen,
-      isFlagged: m.isFlagged,
-      isOutbound: m.isOutbound,
-      intent: m.intent,
-      hasListUnsubscribe: m.hasListUnsubscribe,
-      hasAttachments: m.hasAttachments,
-      attachmentCount: m.attachmentCount,
-      sizeBytes: m.sizeBytes,
-      snippet: previewSnippet(m.snippet),
-      attachmentNames: splitNames(m.attachmentNames),
-      summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
-      matchedIn: explainMatch(q, {
-        subject: m.subject,
-        fromName: m.fromName,
-        fromEmail: m.fromEmail,
-        attachmentNames: m.attachmentNames,
-        attachmentText: m.attachmentText,
-        snippet: m.snippet,
-        aiSummary: m.aiSummary,
-      }),
-    })),
+    items: rows.map((m) => {
+      const sem = partieSemantique(etats.get(m.id), m.intent);
+      return {
+        account: m.accountSlug,
+        folder: m.folder.path,
+        folderRole: m.folder.role,
+        uid: m.uid,
+        messageId: m.id,
+        threadId: m.threadId,
+        subject: m.subject ?? '(sans sujet)',
+        fromName: m.fromName ?? '',
+        fromEmail: m.fromEmail ?? '',
+        date: m.date?.toISOString() ?? null,
+        isSeen: m.isSeen,
+        isFlagged: m.isFlagged,
+        isOutbound: m.isOutbound,
+        ...sem,
+        hasListUnsubscribe: m.hasListUnsubscribe,
+        hasAttachments: m.hasAttachments,
+        attachmentCount: m.attachmentCount,
+        sizeBytes: m.sizeBytes,
+        snippet: previewSnippet(m.snippet),
+        attachmentNames: splitNames(m.attachmentNames),
+        summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
+        matchedIn: explainMatch(q, {
+          subject: m.subject,
+          fromName: m.fromName,
+          fromEmail: m.fromEmail,
+          attachmentNames: m.attachmentNames,
+          attachmentText: m.attachmentText,
+          snippet: m.snippet,
+          aiSummary: m.aiSummary,
+          entites: sem.entites.map((e) => e.nameRaw),
+          contextes: sem.contextes,
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * La part sémantique d'un item de liste : la nature résolue (avec provenance)
+ * et ce que l'analyse a nommé. Quand le mail n'est pas dans la résolution
+ * (jamais le cas en pratique — elle porte sur les lignes retournées), la
+ * colonne legacy reste la façade et rien n'est inventé.
+ *
+ * Bornes volontaires (8 entités, 6 contextes) : une liste peut compter 500
+ * lignes, on n'envoie au navigateur que de quoi reconnaître, pas l'analyse
+ * entière.
+ */
+function partieSemantique(
+  etat: EtatSemantique | undefined,
+  intentColonne: string | null,
+): Pick<SearchResultItem, 'intent' | 'nature' | 'entites' | 'contextes'> {
+  if (!etat) return { intent: intentColonne, nature: null, entites: [], contextes: [] };
+  return {
+    intent: etat.nature.valeur,
+    nature: {
+      valeur: etat.nature.valeur,
+      source: etat.nature.source,
+      pourquoi: etat.nature.pourquoi,
+    },
+    entites: etat.faits.mentions
+      .slice(0, 8)
+      .map((x) => ({ kind: x.kind, nameRaw: x.nameRaw, role: x.role })),
+    contextes: etat.faits.contextes.slice(0, 6).map((c) => c.label),
   };
 }
 
@@ -234,8 +312,10 @@ export function splitNames(raw: string | null | undefined): string[] {
  * plutôt que d'apparaître sans raison.
  *
  * L'ordre est celui de la CONFIANCE accordée à la correspondance : un mot
- * dans le nom du fichier ou dans le sujet est un signal plus fort que le
- * même mot noyé au milieu du texte.
+ * dans le nom du fichier, dans le sujet ou dans ce que l'ANALYSE a nommé
+ * (entité, dossier) est un signal plus fort que le même mot noyé au milieu
+ * du texte — c'est aussi ce qui permet de dire pourquoi un mail ressort
+ * alors que son sujet ne contient pas le terme.
  */
 export function explainMatch(
   q: string | undefined,
@@ -247,15 +327,22 @@ export function explainMatch(
     attachmentText?: string | null;
     snippet?: string | null;
     aiSummary?: string | null;
+    /** Noms d'entités lus par l'analyse (lot 4h). */
+    entites?: string[];
+    /** Libellés de dossiers/contextes lus par l'analyse (lot 4h). */
+    contextes?: string[];
   },
 ): string[] {
   const terme = q?.trim().toLowerCase();
   if (!terme) return [];
   const contient = (v: string | null | undefined) => !!v && v.toLowerCase().includes(terme);
+  const contientUn = (vs: string[] | undefined) => !!vs && vs.some((v) => contient(v));
   const out: string[] = [];
   if (contient(champs.attachmentNames)) out.push('pièce jointe');
   if (contient(champs.subject)) out.push('sujet');
   if (contient(champs.fromName) || contient(champs.fromEmail)) out.push('expéditeur');
+  if (contientUn(champs.entites)) out.push('entité citée');
+  if (contientUn(champs.contextes)) out.push('dossier cité');
   if (contient(champs.attachmentText)) out.push('contenu de la pièce');
   if (contient(champs.aiSummary)) out.push('résumé');
   if (contient(champs.snippet)) out.push('texte du mail');
@@ -303,6 +390,10 @@ function quickTextFilter(q: string | undefined) {
       // Cherche aussi DANS les pièces jointes : une facture nommée
       // « document(3).pdf » se retrouve par son contenu (10/08).
       { attachmentText: { contains: t } },
+      // …et dans ce que l'analyse a NOMMÉ (lot 4h) : le filtre rapide doit
+      // retrouver « 46 rue de la République » même quand le sujet se tait.
+      { verdict: { is: { mentions: { some: { nameRaw: { contains: t } } } } } },
+      { verdict: { is: { contexts: { some: { label: { contains: t } } } } } },
     ],
   };
 }
@@ -368,6 +459,9 @@ export async function listUnifiedInbox(
       },
     }),
   ]);
+  // Nature résolue et entités pour la page affichée (≤ 200 lignes) : 14
+  // requêtes constantes par vue — le socle décide, la colonne reste une façade.
+  const etats = await resolveMailSemanticState(rows.map((r) => r.id));
   return {
     account: '',
     folder: `(toutes les boîtes · ${role})`,
@@ -387,7 +481,7 @@ export async function listUnifiedInbox(
       isSeen: m.isSeen,
       isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
-      intent: m.intent,
+      ...partieSemantique(etats.get(m.id), m.intent),
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,
@@ -458,6 +552,8 @@ export async function listFolderMessages(
       },
     }),
   ]);
+  // Même régime que la boîte unifiée : la nature vient du socle, en lot.
+  const etats = await resolveMailSemanticState(rows.map((r) => r.id));
   return {
     account,
     folder,
@@ -477,7 +573,7 @@ export async function listFolderMessages(
       isSeen: m.isSeen,
       isFlagged: m.isFlagged,
       isOutbound: m.isOutbound,
-      intent: m.intent,
+      ...partieSemantique(etats.get(m.id), m.intent),
       hasListUnsubscribe: m.hasListUnsubscribe,
       hasAttachments: m.hasAttachments,
       attachmentCount: m.attachmentCount,

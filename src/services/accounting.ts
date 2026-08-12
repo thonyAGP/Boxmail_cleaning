@@ -3,15 +3,32 @@
  * Design : docs/CONNECTEUR-FISCAL-MANAGER.md (débattu avec ChatGPT, corrigé
  * par Anthony). Principe : « Boxmail détecte, Fiscal-Manager qualifie ».
  *
- * Ce module DÉTECTE les mails « pièce comptable » (intention facture + pièce
- * jointe exploitable) et les mémorise en MÉTADONNÉES seulement — jamais le
- * PDF : l'IMAP reste le stockage durable, la pièce est streamée à la demande
- * par l'API (server/accounting.ts). Fiscal-Manager tire la liste par curseur
- * (seq monotone) et décide seul de ce que chaque pièce devient.
+ * Ce module DÉTECTE les mails « pièce comptable » et les mémorise en
+ * MÉTADONNÉES seulement — jamais le PDF : l'IMAP reste le stockage durable, la
+ * pièce est streamée à la demande par l'API (server/accounting.ts).
+ * Fiscal-Manager tire la liste par curseur (seq monotone) et décide seul de ce
+ * que chaque pièce devient.
  *
- * Protection : un candidat est par définition un mail à pièce jointe
- * d'intention invoice — la protection centrale (retention.ts) exclut déjà ces
- * mails de TOUTE suppression automatique. Aucune clause supplémentaire.
+ * BASCULÉ SUR LE SOCLE au lot 4i (12/08) — la contre-revue l'a placé AVANT le
+ * nettoyage : « une mauvaise extraction comptable est une erreur métier
+ * réelle, même sans suppression ». Deux régimes, comme partout depuis 4c :
+ *  - quand le VERDICT sémantique existe, LUI SEUL décide : un mail est
+ *    candidat parce que l'analyse déclare un DOCUMENT comptable (facture,
+ *    reçu), plus jamais parce qu'un mot du sujet a fait dire « invoice » à une
+ *    regex — et les champs pré-remplis (fournisseur, montant, référence)
+ *    viennent de `getAccountingFacts()` ;
+ *  - sans verdict, le critère historique (intention facture + pièce jointe)
+ *    reste, en REPLI, et l'avoue dans ses raisons.
+ *
+ * LE POINT QUI COMMANDE TOUT : `sent_by` n'est pas `issued_by`. Le scan d'une
+ * facture d'opérateur transmis par sa mère est une pièce comptable de
+ * l'OPÉRATEUR, pas d'elle — le fournisseur envoyé au logiciel comptable est
+ * l'ÉMETTEUR lu par l'analyse, jamais l'expéditeur du mail.
+ *
+ * Protection : un candidat est par définition un mail À PIÈCE JOINTE — la
+ * protection centrale (retention.ts, clause `m.hasAttachments = 0`) exclut
+ * déjà ces mails de TOUTE suppression automatique, quel que soit le régime de
+ * détection. Aucune clause supplémentaire.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -21,6 +38,11 @@ import { documentHints } from './attachment-text.js';
 import { imapService } from './imap.js';
 import { recordOperation } from './oplog.js';
 import type { AccountRecord } from './accounts.js';
+import {
+  getAccountingFacts,
+  resolveMailSemanticState,
+  type EtatSemantique,
+} from './semantique.js';
 
 /**
  * Boîte → société par défaut. PROPOSITION, jamais « vérifiée » : Anthony a
@@ -81,11 +103,81 @@ function usableAttachments(
   return out;
 }
 
+/**
+ * Types de documents du verdict qui font une PIÈCE COMPTABLE. Volontairement
+ * étroit : un devis, un relevé ou un contrat ne sont pas des pièces de frais —
+ * mieux vaut qu'Anthony transmette à la main (bouton « Envoyer à la compta »)
+ * que d'inonder Fiscal-Manager de faux candidats.
+ */
+const KINDS_PIECE_COMPTABLE = ['invoice', 'receipt'];
+
+/**
+ * Ce que le VERDICT sémantique dit de la pièce comptable d'un mail, ou null
+ * quand il ne dit rien (pas de verdict, ou aucun document comptable déclaré —
+ * le repli `documentHints` reprend alors la main). Fonction PURE, éprouvée par
+ * le banc avec des états résolus en mémoire.
+ *
+ * `supplier` est l'ÉMETTEUR du document (`issuer`, à défaut la mention
+ * `issued_by`) — JAMAIS l'expéditeur du mail : c'est le cas Sosh/maman, celui
+ * qui a déclenché la refonte.
+ */
+export interface PieceComptableVerdict {
+  supplier: string | null;
+  amountTtc: number | null;
+  invoiceNumber: string | null;
+  /** Qui a TRANSMIS le mail (mention sent_by) — informatif, jamais le fournisseur. */
+  transmisPar: string | null;
+  /** Justifications en français, affichables telles quelles. */
+  reasons: string[];
+}
+
+export function pieceComptableDuVerdict(
+  etat: EtatSemantique | null | undefined,
+): PieceComptableVerdict | null {
+  if (!etat?.analyse.verdictPresent) return null;
+  const faits = getAccountingFacts(etat);
+  const doc = faits.documents.find((d) => KINDS_PIECE_COMPTABLE.includes(d.kind)) ?? null;
+  if (!doc) return null;
+  const supplier = doc.emetteur ?? faits.emisPar[0]?.nameRaw ?? null;
+  const transmisPar = faits.envoyePar[0]?.nameRaw ?? null;
+  const reasons: string[] = [];
+  if (supplier) {
+    reasons.push(
+      `fournisseur « ${supplier} » : l'émetteur du document lu par l'analyse — jamais l'expéditeur du mail`,
+    );
+  }
+  if (transmisPar && supplier && transmisPar !== supplier) {
+    reasons.push(`transmis par « ${transmisPar} » — la pièce reste celle de « ${supplier} »`);
+  }
+  if (doc.montant !== null) {
+    reasons.push(
+      `montant ${doc.montant.toFixed(2).replace('.', ',')} ${doc.devise ?? 'EUR'} lu par l'analyse`,
+    );
+  }
+  if (doc.reference) reasons.push(`référence « ${doc.reference} » lue par l'analyse`);
+  if (reasons.length === 0) {
+    reasons.push(
+      "l'analyse déclare une pièce comptable, sans avoir pu lire l'émetteur ni le montant",
+    );
+  }
+  return {
+    supplier,
+    amountTtc: doc.montant,
+    invoiceNumber: doc.reference,
+    transmisPar,
+    reasons,
+  };
+}
+
 export interface DetectReport {
   scanned: number;
   created: number;
   skippedNoAttachment: number;
   sourceMissingMarked: number;
+  /** Candidats créés parce que le VERDICT déclare une pièce comptable. */
+  viaVerdict: number;
+  /** Candidats créés par le critère historique (pas encore de verdict). */
+  viaRepli: number;
 }
 
 /**
@@ -99,16 +191,35 @@ export async function detectAccountingCandidates(
   opts: { indexedSince?: Date; sinceDays?: number; limit?: number } = {},
 ): Promise<DetectReport> {
   await ensureDbReady();
-  const report: DetectReport = { scanned: 0, created: 0, skippedNoAttachment: 0, sourceMissingMarked: 0 };
+  const report: DetectReport = {
+    scanned: 0,
+    created: 0,
+    skippedNoAttachment: 0,
+    sourceMissingMarked: 0,
+    viaVerdict: 0,
+    viaRepli: 0,
+  };
   const limit = Math.min(opts.limit ?? 300, 1000);
 
   const messages = await db.message.findMany({
     where: {
       accountSlug: rec.account,
-      intent: 'invoice',
       hasAttachments: true,
       isDeleted: false,
       isOutbound: false,
+      // DEUX RÉGIMES (lot 4i). Le discriminant est l'existence d'une ligne
+      // MailVerdict — JAMAIS la colonne aiVerdictAt : elle est posée par
+      // l'ancienne analyse plate sur 17 207 mails sans verdict sémantique, qui
+      // tomberaient sinon ENTRE les deux chemins (régression mesurée le 12/08).
+      //  1. verdict présent : c'est LUI qui décide — candidat si l'analyse
+      //     déclare un document comptable, même quand l'ancienne étiquette
+      //     disait autre chose qu'« invoice » ;
+      //  2. pas de verdict : le critère historique (intention facture), en
+      //     repli, en attendant l'analyse.
+      OR: [
+        { verdict: { is: { documents: { some: { kind: { in: KINDS_PIECE_COMPTABLE } } } } } },
+        { AND: [{ verdict: { is: null } }, { intent: 'invoice' }] },
+      ],
       folder: { role: { notIn: ['trash', 'spam', 'sent', 'drafts'] } },
       ...(opts.indexedSince ? { createdAt: { gte: opts.indexedSince } } : {}),
       ...(opts.sinceDays
@@ -145,9 +256,20 @@ export async function detectAccountingCandidates(
 
   const { company, basis } = companyForMailbox(rec.account);
 
+  // L'état sémantique du lot, résolu en une passe (14 requêtes constantes,
+  // jamais mail par mail) : la présélection SQL ci-dessus est grossière, c'est
+  // `getAccountingFacts` (via pieceComptableDuVerdict) qui REVALIDE au moment
+  // d'agir — un verdict peut avoir changé entre-temps.
+  const etats = await resolveMailSemanticState(messages.map((m) => m.id));
+
   for (const m of messages) {
     if (byMessageId.has(m.id)) continue;
     if (m.internetMessageId && byMsgIdHeader.has(m.internetMessageId)) continue;
+    const etat = etats.get(m.id);
+    const viaVerdict = !!etat?.analyse.verdictPresent;
+    // Verdict présent mais plus aucun document comptable déclaré : pas un
+    // candidat — et pas de repli non plus, l'analyse a parlé.
+    if (viaVerdict && !pieceComptableDuVerdict(etat)) continue;
     report.scanned++;
     let parts;
     try {
@@ -181,8 +303,13 @@ export async function detectAccountingCandidates(
       },
     });
     if (m.internetMessageId) byMsgIdHeader.add(m.internetMessageId);
-    if (status === 'ACTIVE') report.created++;
-    else report.skippedNoAttachment++;
+    if (status === 'ACTIVE') {
+      report.created++;
+      if (viaVerdict) report.viaVerdict++;
+      else report.viaRepli++;
+    } else {
+      report.skippedNoAttachment++;
+    }
   }
 
   report.sourceMissingMarked = await sweepSourceMissing(rec.account);
@@ -322,12 +449,15 @@ export interface CandidateView {
   };
   attachments: { attachmentId: string; filename: string; contentType: string; sizeBytes: number }[];
   /**
-   * Ce que le DOCUMENT dit de lui-même (10/08), quand son texte a pu être lu.
-   * Sert à pré-remplir le frais côté Fiscal-Manager — et à ne plus confondre
-   * l'expéditeur avec le fournisseur (un proche peut transférer une facture
-   * Sosh : le fournisseur est Sosh). Ce sont des PROPOSITIONS : l'utilisateur
-   * garde la main sur chaque champ.
-   * `needsVision` = pièce scannée, à faire lire par l'IA (read_attachment).
+   * Ce que la pièce dit d'elle-même, pour pré-remplir le frais côté
+   * Fiscal-Manager. Depuis le lot 4i, la source première est le VERDICT
+   * sémantique (`getAccountingFacts`) : fournisseur = l'ÉMETTEUR du document,
+   * jamais l'expéditeur du mail (un proche peut transférer une facture Sosh :
+   * le fournisseur est Sosh). Sans verdict, la lecture heuristique du texte de
+   * la pièce (documentHints) reste, en repli avoué. Ce sont des PROPOSITIONS :
+   * l'utilisateur garde la main sur chaque champ.
+   * `needsVision` = pièce scannée dont il manque encore l'essentiel, à faire
+   * lire par l'IA (read_attachment).
    */
   document?: {
     supplier: string | null;
@@ -363,10 +493,20 @@ export async function listCandidates(
     }
   }
 
+  // L'état sémantique de la page, résolu en une passe (lot 4i — 14 requêtes
+  // constantes pour ≤ 200 candidats) : c'est lui qui fournit fournisseur,
+  // montant et référence quand le verdict existe.
+  const etats = page.length
+    ? await resolveMailSemanticState(page.map((r) => r.messageId))
+    : new Map<number, EtatSemantique>();
+
   const items = page.map((r) => {
     const atts = JSON.parse(r.attachmentsJson) as CandidateAttachment[];
     const doc = docs.get(r.messageId);
-    const hints = doc?.text ? documentHints(doc.text) : null;
+    // Le verdict d'abord ; la lecture heuristique du texte de la pièce ne
+    // reprend la main que s'il ne dit rien (repli avoué dans les raisons).
+    const verdictDoc = pieceComptableDuVerdict(etats.get(r.messageId));
+    const hints = !verdictDoc && doc?.text ? documentHints(doc.text) : null;
     return {
       candidateId: r.candidateId,
       detectedAt: r.detectedAt.toISOString(),
@@ -386,17 +526,35 @@ export async function listCandidates(
         contentType: a.contentType,
         sizeBytes: a.sizeBytes,
       })),
-      ...(hints || doc?.kind === 'scan'
+      ...(verdictDoc
         ? {
             document: {
-              supplier: hints?.supplier ?? null,
-              amountTtc: hints?.amountTtc ?? null,
-              invoiceNumber: hints?.invoiceNumber ?? null,
-              needsVision: doc?.kind === 'scan',
-              reasons: hints?.reasons ?? ['pièce scannée : son contenu doit être lu par l\'IA'],
+              supplier: verdictDoc.supplier,
+              amountTtc: verdictDoc.amountTtc,
+              invoiceNumber: verdictDoc.invoiceNumber,
+              // La vision ne sert plus que si le verdict n'a pas suffi : une
+              // pièce scannée dont l'analyse a déjà lu l'émetteur ET le
+              // montant n'a plus rien à demander à read_attachment.
+              needsVision:
+                doc?.kind === 'scan' &&
+                (verdictDoc.supplier === null || verdictDoc.amountTtc === null),
+              reasons: verdictDoc.reasons,
             },
           }
-        : {}),
+        : hints || doc?.kind === 'scan'
+          ? {
+              document: {
+                supplier: hints?.supplier ?? null,
+                amountTtc: hints?.amountTtc ?? null,
+                invoiceNumber: hints?.invoiceNumber ?? null,
+                needsVision: doc?.kind === 'scan',
+                reasons: [
+                  ...(hints?.reasons ?? ['pièce scannée : son contenu doit être lu par l\'IA']),
+                  'repli heuristique — le verdict d\'analyse ne fournit pas encore ces champs',
+                ],
+              },
+            }
+          : {}),
     };
   });
   const last = page[page.length - 1];
