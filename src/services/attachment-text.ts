@@ -411,10 +411,33 @@ export function officeToText(buf: Buffer): AttachmentText {
  * (`cleanSnippet`) ; il manquait pour celui des PIÈCES.
  */
 export function assainirPourBase(s: string): string {
-  return s
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
-    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  // PAS D'EXPRESSION RÉGULIÈRE ICI — c'est ce qui a fait échouer mes deux
+  // premiers correctifs du 12/08, et le défaut était hérité du nettoyage des
+  // mails. Le motif habituel « (début|caractère non-haut) suivi d'un bas »
+  // CONSOMME le caractère qui précède : sur deux demi-caractères isolés
+  // CONSÉCUTIFS, le second n'est jamais vu — et un seul suffit à faire échouer
+  // l'écriture de tout le mail.
+  //
+  // On parcourt donc par POINT DE CODE : « for...of » rend une paire valide
+  // comme un seul point de code (au-dessus de 0xFFFF, donc hors de la plage
+  // D800-DFFF) et un demi-caractère isolé comme une unité DANS cette plage. La
+  // distinction est exacte, sans cas particulier, et les emojis sont préservés.
+  let out = '';
+  for (const ch of s) {
+    const c = ch.codePointAt(0) ?? 0;
+    // Demi-caractère de substitution isolé (une paire valide ne passe pas ici).
+    if (c >= 0xd800 && c <= 0xdfff) {
+      out += ' ';
+      continue;
+    }
+    // Caractères de contrôle, sauf tabulation, saut de ligne, retour chariot.
+    if (c < 9 || (c > 10 && c < 32 && c !== 13)) {
+      out += ' ';
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 export function attachmentToText(
