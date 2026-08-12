@@ -6,6 +6,18 @@ import {
   finDePeriode,
   type EtatAttention,
 } from '../services/verdict.js';
+import {
+  resoudre,
+  getOpenActions,
+  getDeadlineState,
+  getAccountingFacts,
+  getCleanupProtection,
+  type LignesBrutes,
+  type LigneMessage,
+  type LigneVerdict,
+  type LigneAction,
+  type EtatSemantique,
+} from '../services/semantique.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -283,6 +295,358 @@ if (rAbime.success) {
     "\n  → Une valeur hors liste dégrade CE champ, elle ne jette pas le travail\n" +
       "    des 99 autres mails. L'analyse tourne sur le forfait d'Anthony.",
   );
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE SOCLE (lot 4a) — `resoudre` et les sélecteurs de semantique.ts, éprouvés
+// avec des objets en mémoire : le cœur du résolveur est pur, aucune base.
+
+const MAINTENANT = new Date('2026-08-12T12:00:00Z');
+
+const msg = (id: number, sur: Partial<LigneMessage> = {}): LigneMessage => ({
+  id,
+  accountSlug: 'test',
+  threadId: null,
+  date: new Date('2026-08-01T10:00:00Z'),
+  fromEmail: 'exp@example.com',
+  subject: 'sujet de test',
+  isSeen: true,
+  isAnswered: false,
+  isFlagged: false,
+  isOutbound: false,
+  isDeleted: false,
+  isAutoReply: false,
+  hasAttachments: false,
+  intent: null,
+  intentSource: 'auto',
+  intentReason: null,
+  analysisConfidence: null,
+  aiSummary: null,
+  aiVerdictAt: null,
+  ...sur,
+});
+
+const verdictDe = (messageId: number, sur: Partial<LigneVerdict> = {}): LigneVerdict => ({
+  messageId,
+  analysisStatus: 'complete',
+  purpose: null,
+  subtype: null,
+  summary: null,
+  attentionMode: null,
+  attentionUntil: null,
+  attentionPrecision: null,
+  attentionBasis: null,
+  ...sur,
+});
+
+const actionDe = (messageId: number, sur: Partial<LigneAction> = {}): LigneAction => ({
+  messageId,
+  kind: 'reply',
+  label: null,
+  actor: 'user',
+  strength: 'requested',
+  dueAt: null,
+  duePrecision: null,
+  expiresAt: null,
+  expiresPrecision: null,
+  amount: null,
+  currency: null,
+  reference: null,
+  certainty: 'explicit',
+  ...sur,
+});
+
+const lignes = (sur: Partial<LignesBrutes> = {}): LignesBrutes => ({
+  messages: [],
+  verdicts: [],
+  actions: [],
+  evenements: [],
+  documents: [],
+  mentions: [],
+  contextes: [],
+  incertitudes: [],
+  fils: [],
+  sortants: [],
+  expediteurs: [],
+  taches: [],
+  echeances: [],
+  etatsFil: [],
+  ...sur,
+});
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 6. Socle — la précédence rend la valeur ET sa provenance ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [
+        msg(101, { intent: 'invoice', intentSource: 'manual', intentReason: 'corrigé par toi' }),
+        msg(102, { intent: 'promo', intentSource: 'ai' }),
+        msg(103, { intent: 'info', intentSource: 'auto' }),
+        // Verdict présent mais colonne encore 'auto' : l'IA prime sur l'heuristique.
+        msg(104, { intent: 'info', intentSource: 'auto' }),
+        // Correction manuelle + verdict présent : le manuel prime sur l'IA.
+        msg(105, { intent: 'invoice', intentSource: 'manual' }),
+      ],
+      verdicts: [verdictDe(104), verdictDe(105)],
+      expediteurs: [
+        {
+          accountSlug: 'test',
+          email: 'exp@example.com',
+          category: 'company',
+          categorySource: 'manual',
+          categoryReason: 'posée à la main',
+          priority: 'normal',
+          kind: 'company',
+          engagedAt: null,
+        },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  verifier('une correction manuelle sort avec source « manuel »', 'manuel', etats.get(101)?.nature.source);
+  verifier('…et sa valeur', 'invoice', etats.get(101)?.nature.valeur);
+  verifier('un intent posé par l’IA sort avec source « ia »', 'ia', etats.get(102)?.nature.source);
+  verifier('un intent heuristique sort avec source « heuristique »', 'heuristique', etats.get(103)?.nature.source);
+  verifier('verdict présent ⇒ l’IA prime sur l’heuristique', 'ia', etats.get(104)?.nature.source);
+  verifier('le manuel prime MÊME quand un verdict existe', 'manuel', etats.get(105)?.nature.source);
+  verifier(
+    'la catégorie d’expéditeur porte aussi sa provenance',
+    'manuel',
+    etats.get(101)?.categorieExpediteur.source,
+  );
+  verifier(
+    'chaque valeur résolue porte un « pourquoi » affichable',
+    true,
+    (etats.get(101)?.nature.pourquoi ?? '').length > 0,
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 7. Socle — le fait historique n’est pas l’état courant ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [
+        // Fil 1 : il a répondu APRÈS le mail — le fait demeure, l'état est soldé.
+        msg(201, { threadId: 1 }),
+        // Fil 2 : aucune réponse — le fait ET l'état.
+        msg(202, { threadId: 2 }),
+        // \Answered posé par IMAP suffit aussi.
+        msg(203, { isAnswered: true }),
+        // Fil 4 : il a dit « pas de réponse nécessaire » — vérité manuelle.
+        msg(204, { threadId: 4 }),
+        // Facture : « contient une facture » (fait) ≠ « encore à payer » (état).
+        msg(205),
+        msg(206),
+      ],
+      verdicts: [201, 202, 203, 204, 205, 206].map((id) =>
+        verdictDe(id, { attentionMode: 'while_action_open' }),
+      ),
+      actions: [
+        actionDe(201),
+        actionDe(202),
+        actionDe(203),
+        actionDe(204),
+        actionDe(205, { kind: 'pay', amount: 42.3 }),
+        actionDe(206, { kind: 'pay', amount: 42.3 }),
+      ],
+      documents: [
+        { messageId: 205, kind: 'invoice', label: null, issuer: 'Sosh', issueDate: null, dueDate: null, amount: 42.3, currency: 'EUR', reference: null, certainty: 'explicit' },
+        { messageId: 206, kind: 'invoice', label: null, issuer: 'Sosh', issueDate: null, dueDate: null, amount: 42.3, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+      mentions: [
+        { messageId: 205, kind: 'person', nameRaw: 'Maman', role: 'sent_by', identifier: null, certainty: 'explicit' },
+        { messageId: 205, kind: 'company', nameRaw: 'Sosh', role: 'issued_by', identifier: null, certainty: 'explicit' },
+      ],
+      fils: [
+        { id: 1, lastMessageAt: new Date('2026-08-02T09:00:00Z') },
+        { id: 2, lastMessageAt: new Date('2026-08-01T10:00:00Z') },
+        { id: 4, lastMessageAt: new Date('2026-08-01T10:00:00Z') },
+      ],
+      sortants: [{ threadId: 1, dernierLe: new Date('2026-08-02T09:00:00Z') }],
+      etatsFil: [
+        { threadId: 4, messageId: 204, kind: 'reply', state: 'dismissed', snoozedUntil: null },
+      ],
+      taches: [{ messageId: 206, status: 'done' }],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const repondu = etats.get(201) as EtatSemantique;
+  const sansReponse = etats.get(202) as EtatSemantique;
+  verifier('le FAIT demeure : le mail demandait une réponse', 1, repondu.faits.actionsDemandees.length);
+  verifier('…mais l’ÉTAT est soldé : plus rien d’ouvert', 0, getOpenActions(repondu).length);
+  verifier('la clôture vient d’un acte de l’utilisateur', 'manuel', repondu.courant.actions[0]?.source);
+  verifier('sans réponse dans le fil, l’action reste ouverte', 1, getOpenActions(sansReponse).length);
+  verifier('\\Answered solde aussi la demande', 0, getOpenActions(etats.get(203) as EtatSemantique).length);
+  verifier(
+    '« pas de réponse nécessaire » (dismiss) solde en source « manuel »',
+    'manuel',
+    (etats.get(204) as EtatSemantique).courant.actions[0]?.source,
+  );
+  const facture = etats.get(206) as EtatSemantique;
+  verifier('« contient une facture » : le fait demeure après paiement', 1, facture.faits.documentsPortes.length);
+  verifier('« encore à payer » : l’état, lui, est soldé (tâche faite)', 0, getOpenActions(facture).length);
+  const compta = getAccountingFacts(etats.get(205) as EtatSemantique);
+  verifier('la comptabilité voit l’ÉMETTEUR (Sosh)…', 'Sosh', compta.emisPar[0]?.nameRaw);
+  verifier('…distinct de l’EXPÉDITEUR (Maman)', 'Maman', compta.envoyePar[0]?.nameRaw);
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 8. Socle — la protection du nettoyage est failure closed ===\n');
+
+{
+  verifier(
+    'donnée manquante ⇒ PROTÉGÉ (mail absent de la résolution)',
+    true,
+    getCleanupProtection(undefined).protege,
+  );
+  // Une protection qui PLANTE devient une protection qui protège.
+  const piege = new Proxy(
+    {},
+    {
+      get(): never {
+        throw new Error('boum');
+      },
+    },
+  ) as unknown as EtatSemantique;
+  verifier('erreur pendant l’évaluation ⇒ PROTÉGÉ', true, getCleanupProtection(piege).protege);
+
+  const etats = resoudre(
+    lignes({
+      messages: [
+        // Jamais analysé, aucune confiance : preuve insuffisante.
+        msg(301),
+        // Bruit avéré : verdict complet, marketing, attention none, vieux,
+        // aucun échange — le SEUL cas qui se libère.
+        msg(302, { date: new Date('2020-01-01T10:00:00Z'), analysisConfidence: 'high', intent: 'promo', intentSource: 'ai' }),
+        // Facture PÉRIMÉE : périmé ≠ supprimable.
+        msg(303, { date: new Date('2020-01-01T10:00:00Z'), analysisConfidence: 'high', intent: 'invoice', intentSource: 'ai' }),
+        // Correction manuelle ⇒ protégé, même sur du bruit.
+        msg(304, { date: new Date('2020-01-01T10:00:00Z'), analysisConfidence: 'high', intent: 'promo', intentSource: 'manual' }),
+        // Relation personnelle ⇒ protégé.
+        msg(305, { date: new Date('2020-01-01T10:00:00Z'), analysisConfidence: 'high', fromEmail: 'maman@example.com' }),
+      ],
+      verdicts: [
+        verdictDe(302, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(303, {
+          purpose: 'transaction_record',
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2020-02-01T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        verdictDe(304, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(305, { purpose: 'conversation', attentionMode: 'none' }),
+      ],
+      documents: [
+        { messageId: 303, kind: 'invoice', label: null, issuer: 'EDF', issueDate: null, dueDate: null, amount: 120, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+      expediteurs: [
+        { accountSlug: 'test', email: 'maman@example.com', category: 'person', categorySource: 'auto', categoryReason: null, priority: 'normal', kind: 'person', engagedAt: null },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  verifier('jamais analysé ⇒ PROTÉGÉ (preuve insuffisante)', true, getCleanupProtection(etats.get(301)).protege);
+  verifier(
+    'le bruit avéré, lui, se LIBÈRE (sinon l’invariant serait vide)',
+    false,
+    getCleanupProtection(etats.get(302)).protege,
+  );
+  const facturePerimee = etats.get(303) as EtatSemantique;
+  verifier('la facture de 2020 est bien PÉRIMÉE…', true, facturePerimee.courant.attention.perimee);
+  verifier('…et reste INTOUCHABLE : périmé ≠ supprimable', true, getCleanupProtection(facturePerimee).protege);
+  verifier(
+    'certitude « high » de l’IA ≠ autorisation : le document veto quand même',
+    true,
+    etats.get(303)?.analyse.confianceLegacy === 'high' && getCleanupProtection(etats.get(303)).protege,
+  );
+  verifier('correction manuelle ⇒ PROTÉGÉ, même du bruit', true, getCleanupProtection(etats.get(304)).protege);
+  verifier('expéditeur « personne » ⇒ PROTÉGÉ (0 mail personnel)', true, getCleanupProtection(etats.get(305)).protege);
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 9. Socle — l’inconnu ne périme jamais, et c’est transitif ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [msg(401), msg(402)],
+      verdicts: [verdictDe(401, { attentionMode: 'unknown' })],
+      actions: [
+        // dueAt PASSÉ : ce n'est ni une péremption ni une résolution.
+        actionDe(401, { kind: 'pay', dueAt: new Date('2026-01-15T00:00:00Z'), duePrecision: 'date' }),
+      ],
+      evenements: [
+        {
+          messageId: 401,
+          kind: 'appointment',
+          label: null,
+          startsAt: new Date('2026-01-15T00:00:00Z'),
+          startsPrecision: 'date',
+          endsAt: null,
+          participation: 'participant',
+          certainty: 'explicit',
+        },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const inconnu = etats.get(401) as EtatSemantique;
+  verifier(
+    'mode « unknown » : pas de péremption fabriquée depuis dueAt ni startsAt',
+    false,
+    inconnu.courant.attention.perimee,
+  );
+  verifier('l’action au dueAt passé reste OUVERTE', true, inconnu.courant.actions[0]?.resteAFaire);
+  verifier('…et marquée EN RETARD — un retard, pas une résolution', true, inconnu.courant.actions[0]?.enRetard);
+  const echeancesAction = getDeadlineState(inconnu).filter((e) => e.origine === 'action');
+  verifier('l’échéance dérivée de l’action est échue…', true, echeancesAction[0]?.echue);
+  verifier('…mais PAS close', false, echeancesAction[0]?.close);
+  verifier(
+    'jamais analysé : l’attention ne périme pas non plus',
+    false,
+    (etats.get(402) as EtatSemantique).courant.attention.perimee,
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 10. Socle — une échéance passée n’est pas close ===\n');
+
+{
+  const echeance = (messageId: number, status: string) => ({
+    messageId,
+    title: 'Payer la taxe foncière',
+    date: new Date('2026-01-15T00:00:00Z'),
+    type: 'payment',
+    status,
+    vetoReason: status === 'vetoed' ? 'ai_no_action' : null,
+    reason: 'détectée dans le mail',
+  });
+  const etats = resoudre(
+    lignes({
+      messages: [msg(501), msg(502), msg(503)],
+      echeances: [echeance(501, 'confirmed'), echeance(502, 'done'), echeance(503, 'vetoed')],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const enRetard = (etats.get(501) as EtatSemantique).courant.echeances[0];
+  verifier('confirmée et dépassée : ÉCHUE', true, enRetard?.echue);
+  verifier('…mais PAS close (dueAt < maintenant = retard, pas résolution)', false, enRetard?.close);
+  verifier('son statut le dit : « en_retard »', 'en_retard', enRetard?.statut);
+  verifier('une échéance active protège du nettoyage', true, getCleanupProtection(etats.get(501)).protege);
+  const faite = (etats.get(502) as EtatSemantique).courant.echeances[0];
+  verifier('« faite » est close, par un ACTE (source manuel)', true, faite?.close && faite?.source === 'manuel');
+  const vetoee = (etats.get(503) as EtatSemantique).courant.echeances[0];
+  verifier('« vetoed » est écartée, par l’IA', true, vetoee?.statut === 'ecartee' && vetoee?.source === 'ia');
 }
 
 // ---------------------------------------------------------------------------

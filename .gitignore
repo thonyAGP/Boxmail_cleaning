@@ -29,3 +29,6 @@ npm-debug.log*
 .vscode/
 *.swp
 ux-review/
+
+# Contre-revues ChatGPT : journaux et captures, jamais versionnés
+.consult/

@@ -806,10 +806,18 @@ export async function categorizeAccount(
         isDeleted: false,
         isOutbound: false,
         id: { gt: cursor },
-        // Précédence manual > ai > auto (C2) : un intent posé par l'analyse IA
-        // n'est JAMAIS réécrit par les regex. Sans cette clause, le backfill 🏷️
-        // effacerait tout le travail du rattrapage.
-        intentSource: { not: 'ai' },
+        // Précédence manual > ai > auto (C2) : ni une correction de
+        // l'utilisateur ni un verdict de l'IA ne sont réécrits par les regex.
+        //
+        // CORRIGÉ LE 12/08. La clause excluait `ai` seul, donc les mails
+        // CORRIGÉS À LA MAIN entraient dans le lot et l'`updateMany` ci-dessous
+        // écrasait leur intention par celle des regex — en laissant
+        // `intentSource = 'manual'`. La ligne prétendait ensuite porter une
+        // correction humaine qui n'en était plus une, et l'interface affichait
+        // toujours « ✍️ corrigé par toi » sur une valeur qu'il n'avait pas
+        // choisie. Le commentaire d'origine annonçait pourtant la bonne règle :
+        // c'est le code qui ne la tenait pas.
+        intentSource: 'auto',
       },
       orderBy: { id: 'asc' },
       take: BATCH,
