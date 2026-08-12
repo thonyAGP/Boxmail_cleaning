@@ -358,33 +358,29 @@ export async function recordFeedback(input: FeedbackInput): Promise<{
     update: { verdict: input.verdict, reason, claim },
   });
 
-  // B4 : le verdict alimente la CONFIANCE de l'analyse pour les moteurs qui
-  // nourrissent le nettoyage — « incorrect » ⇒ confiance faible ⇒ le mail est
-  // protégé de toute suppression automatique ; « correct » ⇒ confiance forte.
+  // TRANCHÉ PAR ANTHONY LE 12/08, et il a fallu qu'il le répète trois fois :
   //
-  // ⚠️ SIGNALÉ AU LOT 4K (12/08), COMPORTEMENT CONSERVÉ EN ATTENDANT QU'ANTHONY
-  // TRANCHE : c'est une PROTECTION déguisée en champ d'analyse — la même
-  // famille de défaut que celle corrigée dans admin.ts le 12/08 (contre-revue
-  // « protection du nettoyage », décision n° 3 : un champ d'analyse ne doit
-  // pas porter une décision de sécurité). Le sens « incorrect ⇒ low » AJOUTE
-  // une protection (direction sûre) ; mais « correct ⇒ high » RETIRE la
-  // protection « analyse incertaine » de retention.ts (clause
-  // analysisConfidence != 'low') sur la foi d'un clic. La cible propre est un
-  // veto dédié dans le socle (getCleanupProtection, lot 4j) nourri par
-  // AnalysisFeedback — pas une écriture dans la colonne de compatibilité.
-  if (['newsletter', 'notification', 'cleanup'].includes(input.engine)) {
-    const conf =
-      input.verdict === 'incorrect'
-        ? { level: 'low', reason: 'tu as jugé cette analyse incorrecte (Vérifier l’analyse)' }
-        : input.verdict === 'correct'
-          ? { level: 'high', reason: 'tu as jugé cette analyse correcte (Vérifier l’analyse)' }
-          : null;
-    if (conf) {
-      await db.message.update({
-        where: { id: input.messageId },
-        data: { analysisConfidence: conf.level, analysisConfidenceReason: conf.reason },
-      });
-    }
+  //   « Si je change la catégorie, je change le CLASSEMENT du mail. Si tu l'as
+  //   classé en personne et que je le classe en marketing, alors il obéit aux
+  //   règles marketing. Aussi con que ça. »
+  //
+  // Un verdict de contrôle qualité dit que le CLASSEMENT est juste ou faux. Il
+  // ne dit RIEN de la valeur du mail, ni dans un sens ni dans l'autre. Il ne
+  // doit donc plus toucher à la confiance de l'analyse — laquelle sert de
+  // permission de suppression dans retention.ts.
+  //
+  // Ce que faisait ce code : « incorrect » posait une confiance faible (donc
+  // protégeait), « correct » posait une confiance forte (donc DÉPROTÉGEAIT sur
+  // la foi d'un clic). Les deux étaient faux pour la même raison.
+  //
+  // Ce qu'un « incorrect » signifie vraiment : cette analyse est à refaire. On
+  // remet donc le mail dans le vivier d'analyse — le verdict brut d'origine
+  // reste intact dans MailVerdict, rien n'est perdu.
+  if (input.verdict === 'incorrect') {
+    await db.message.update({
+      where: { id: input.messageId },
+      data: { aiVerdictAt: null },
+    });
   }
   return {
     engine: input.engine,

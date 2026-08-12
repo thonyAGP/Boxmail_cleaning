@@ -6238,7 +6238,12 @@ async function renderBigClean() {
   main.innerHTML = `<div class="page-head">
     <div><h1>🧺 Libérer de l'espace</h1>
       <div class="sub">Pourquoi ta boîte est pleine, et ce qu'on peut récupérer SANS RISQUE.
-      L'analyse ne touche à rien : tu regardes, tu coches, tu valides.</div></div>
+      L'analyse ne touche à rien : tu regardes, tu coches, tu valides.</div>
+      <div class="notice" style="margin-top:8px">🛑 <strong>Le nettoyage automatique ne propose plus rien</strong>
+      — c'est voulu. Tes stratégies actives visent zéro mail : tout ce qu'elles attrapent est protégé
+      par ailleurs, et depuis le 12/08 un mail auquel tu as répondu l'est pour toujours
+      (5 225 mails, soit 29 % de ta boîte de réception). Le cap est « retrouver sans classer »,
+      pas faire de la place. Les chiffres ci-dessous restent justes et consultables.</div></div>
     <div class="head-actions"><button class="btn" id="bigclean-refresh">🔍 Ré-analyser</button></div></div>
     <div id="bigclean-body"><div class="empty"><span class="spinner"></span>Analyse complète de tes boîtes…</div></div>`;
   $('#bigclean-refresh').addEventListener('click', loadBigClean);
@@ -6277,7 +6282,7 @@ async function loadBigClean() {
         <div class="kpi-sub">taille des mails synchronisés</div></div>
       <div class="kpi accent"><div class="kpi-label">🧺 Récupérable sans risque</div>
         <div class="kpi-value">${fmtNum(r.deletable.count)}</div>
-        <div class="kpi-sub">mails · ${fmtSize(r.deletable.sizeBytes)} — 0 mail personnel, garanti</div></div>
+        <div class="kpi-sub">mails · ${fmtSize(r.deletable.sizeBytes)} — aucun mail portant un signal de valeur humaine</div></div>
     </div>
 
     <div class="panel">
