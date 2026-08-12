@@ -145,7 +145,24 @@ export interface AnalysisBatch {
   remaining: number;
 }
 
-const MAX_BATCH = 100;
+/**
+ * Taille d'un lot — en NOMBRE et surtout en OCTETS.
+ *
+ * INCIDENT DU 13/08 : « analyse les 300 mails prioritaires » a échoué avec
+ * « The request body is not valid JSON: unexpected end of data: line 1 column
+ * 821431 ». Le lot pesait 800 Ko. Cause : le lot 2 a enrichi chaque mail —
+ * 2 200 caractères de corps choisi, jusqu'à 2 500 de pièces jointes, les
+ * destinataires, les noms de pièces, les indices de document — sans que
+ * personne ne réduise le NOMBRE de mails par lot. Cent mails d'environ 8 Ko ne
+ * passent plus.
+ *
+ * Le garde-fou qui compte est le budget en octets : il tient quelle que soit
+ * l'évolution future du contenu d'un mail. Le plafond en nombre n'est qu'une
+ * seconde barrière.
+ */
+const MAX_BATCH = 40;
+/** ~180 Ko : large sous la limite de transport, et déjà beaucoup de lecture. */
+const MAX_BATCH_BYTES = 180_000;
 
 /**
  * Mails analysables : lecture du texte TENTÉE (snippet non null), pas encore
@@ -253,7 +270,7 @@ export async function nextAnalysisBatch(
   // verdict sémantique — pas la poignée qui n'a jamais été analysée du tout.
   // Garder l'ancien défaut faisait servir 5 mails là où 200 étaient demandés.
   let scope = opts.scope ?? 'relecture';
-  const limit = Math.min(Math.max(opts.limit ?? 50, 1), MAX_BATCH);
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), MAX_BATCH);
   let where = candidateWhere(scope, opts.account);
 
   // TRAITEMENT INTÉGRAL (décision utilisateur 02/08) : quand les cas douteux
@@ -372,10 +389,7 @@ export async function nextAnalysisBatch(
     }
   }
 
-  return {
-    scope,
-    remaining: Math.max(0, total - rows.length),
-    items: rows.map((r) => {
+  const tous = rows.map((r) => {
       const destinataires = lireDestinataires(r.toEmails);
       const moi = adresses.get(r.accountSlug);
       const accountRole: 'direct' | 'non_liste' | 'inconnu' =
@@ -430,7 +444,34 @@ export async function nextAnalysisBatch(
           confidence: r.analysisConfidence,
         },
       };
-    }),
+  });
+
+  // COUPE AU POIDS. On empile les mails tant que le lot reste transportable et
+  // on s'arrête net — le mail écarté revient au tour suivant, rien n'est perdu.
+  // Le premier est toujours servi, même s'il dépasse à lui seul : sinon un mail
+  // exceptionnellement gros bloquerait la file pour toujours.
+  const items: AnalysisCandidate[] = [];
+  let poids = 0;
+  for (const it of tous) {
+    const taille = JSON.stringify(it).length;
+    if (items.length > 0 && poids + taille > MAX_BATCH_BYTES) break;
+    items.push(it);
+    poids += taille;
+  }
+  if (items.length < tous.length) {
+    logger.info('lot réduit au poids', {
+      demandes: tous.length,
+      servis: items.length,
+      octets: poids,
+    });
+  }
+
+  return {
+    scope,
+    // `remaining` compte ce qui reste APRÈS ce lot — donc aussi les mails
+    // écartés par le budget, sinon la boucle s'arrêterait trop tôt.
+    remaining: Math.max(0, total - items.length),
+    items,
   };
 }
 

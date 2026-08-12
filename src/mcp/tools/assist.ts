@@ -305,7 +305,18 @@ export function registerAssistTools(server: McpServer): void {
               "puis les plus récents. C'est le travail réel : environ 17 000 mails. " +
               'uncertain / all = les mails jamais analysés du tout (quelques unités).',
           ),
-        limit: z.number().int().min(1).max(100).default(50).describe('Mails par lot (cap 100).'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(40)
+          .default(20)
+          .describe(
+            'Mails par lot (cap 40, défaut 20). Le lot est AUSSI coupé au ' +
+              "poids : depuis que chaque mail porte 2 200 caractères de texte " +
+              'choisi et le contenu de ses pièces, une centaine de mails ' +
+              'dépassait la taille transportable. Demande peu et enchaîne.',
+          ),
       },
       annotations: { readOnlyHint: true },
     },
