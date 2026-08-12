@@ -928,11 +928,20 @@ export async function setSenderPriority(
 /**
  * Corrige la catégorie d'un expéditeur à la main (categorySource=manual —
  * plus jamais écrasée par la sync), ou repasse en automatique (category=null).
+ *
+ * `auteur` dit QUI a tranché : l'utilisateur depuis l'interface, ou Claude
+ * depuis le tool MCP. Les deux verrouillent la catégorie de la même façon,
+ * mais le libellé affiché ne doit jamais attribuer à l'utilisateur une
+ * décision qu'il n'a pas prise (incident du 12/08 : sept catégories posées
+ * par Claude lui étaient présentées comme les siennes).
  */
+export type AuteurCategorie = 'utilisateur' | 'claude';
+
 export async function setSenderCategory(
   accountSlug: string,
   email: string,
   category: SenderCategory | null,
+  auteur: AuteurCategorie = 'utilisateur',
 ): Promise<{ email: string; category: string; source: string; reason: string }> {
   await ensureDbReady();
   const normalized = email.trim().toLowerCase();
@@ -967,7 +976,8 @@ export async function setSenderCategory(
     return { email: normalized, category: auto.category, source: 'auto', reason: auto.reason };
   }
 
-  const reason = 'catégorie choisie par toi';
+  const reason =
+    auteur === 'claude' ? 'catégorie posée par Claude (analyse fine)' : 'catégorie choisie par toi';
   await db.sender.update({
     where: { id: sender.id },
     data: { category, categorySource: 'manual', categoryReason: reason },

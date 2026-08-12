@@ -20,6 +20,7 @@ import {
   applySemanticVerdicts,
   nextAnalysisBatch,
   type Verdict,
+  type AnalysisScope,
 } from '../../services/analysis.js';
 import { zVerdict } from '../../services/verdict.js';
 import { MESSAGE_INTENTS } from '../../services/categorize.js';
@@ -209,7 +210,7 @@ export function registerAssistTools(server: McpServer): void {
     },
     guard(async (args: { account?: string; email: string; category: (typeof SENDER_CATEGORIES)[number] | null }) => {
       const rec = await resolveAccount(args.account);
-      const result = await setSenderCategory(rec.account, args.email, args.category);
+      const result = await setSenderCategory(rec.account, args.email, args.category, 'claude');
       await recordOperation({
         account: rec.account,
         tool: 'set_sender_category',
@@ -260,10 +261,16 @@ export function registerAssistTools(server: McpServer): void {
         'avec pour chacun un EXTRAIT DE SON TEXTE — c’est ce que les ' +
         'heuristiques n’ont jamais pu lire, d’où des milliers de mails classés ' +
         '« je ne sais pas », ni triés ni nettoyables. ' +
-        'MODE D’EMPLOI : appeler ce tool, juger chaque mail à partir de son ' +
-        'extrait, renvoyer les verdicts avec submit_analysis_batch, puis ' +
-        'RECOMMENCER tant que `remaining` est supérieur à 0 — sans redemander ' +
-        'l’autorisation entre deux lots, l’utilisateur a lancé le rattrapage. ' +
+        'MODE D’EMPLOI, ET IL EST IMPÉRATIF : appeler ce tool, juger chaque ' +
+        'mail, renvoyer les verdicts avec submit_semantic_batch, puis ' +
+        'RECOMMENCER IMMÉDIATEMENT — et ainsi de suite jusqu’à atteindre le ' +
+        'nombre demandé par l’utilisateur, ou jusqu’à `remaining` = 0. ' +
+        'UN SEUL LOT NE SUFFIT JAMAIS : un lot vaut au plus 100 mails, et ' +
+        'l’utilisateur en demande couramment plusieurs centaines. Ne redemande ' +
+        'PAS l’autorisation entre deux lots, ne t’arrête pas pour commenter, ' +
+        'n’attends pas qu’on te relance : c’est lui qui a lancé le rattrapage, ' +
+        'et s’arrêter au premier lot revient à ne rien faire (constaté le ' +
+        '12/08 : « relis 200 mails » avait produit 5 verdicts). ' +
         'Les plus ANCIENS d’abord (ce sont eux qui encombrent la boîte). ' +
         'scope=uncertain (défaut) vise les cas douteux ; quand ils sont ' +
         'ÉPUISÉS, le tool bascule TOUT SEUL sur le reste des mails sans ' +
@@ -290,14 +297,19 @@ export function registerAssistTools(server: McpServer): void {
       inputSchema: {
         ...accountParam,
         scope: z
-          .enum(['uncertain', 'all'])
-          .default('uncertain')
-          .describe('uncertain = les cas que les heuristiques ratent (défaut) ; all = tout.'),
+          .enum(['uncertain', 'all', 'relecture'])
+          .default('relecture')
+          .describe(
+            'relecture (DÉFAUT) = les mails sans verdict sémantique, servis par ' +
+              'priorité — argent, échéances, réponses attendues, pièces jointes, ' +
+              "puis les plus récents. C'est le travail réel : environ 17 000 mails. " +
+              'uncertain / all = les mails jamais analysés du tout (quelques unités).',
+          ),
         limit: z.number().int().min(1).max(100).default(50).describe('Mails par lot (cap 100).'),
       },
       annotations: { readOnlyHint: true },
     },
-    guard(async (args: { account?: string; scope: 'uncertain' | 'all'; limit: number }) => {
+    guard(async (args: { account?: string; scope: AnalysisScope; limit: number }) => {
       const account = args.account ? (await resolveAccount(args.account)).account : undefined;
       const [batch, progress] = await Promise.all([
         nextAnalysisBatch({ account, scope: args.scope, limit: args.limit }),

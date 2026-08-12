@@ -59,7 +59,23 @@ export const AI_ACTIONS = ['reply', 'pay', 'read', 'archive', 'none'] as const;
 export type AiAction = (typeof AI_ACTIONS)[number];
 
 /** Portée du lot : les cas douteux d'abord, ou tout ce qui a un texte. */
-export type AnalysisScope = 'uncertain' | 'all';
+/**
+ * Portée d'un lot.
+ *
+ * `relecture` est né d'un échec mesuré (13/08). Anthony a demandé « relis 200
+ * mails prioritaires » : il en est ressorti CINQ. Ce n'était pas la faute de sa
+ * formulation — l'outil ne pouvait mécaniquement pas faire mieux. Les deux
+ * anciennes portées exigent `aiVerdictAt = null`, c'est-à-dire « jamais
+ * analysé ». Or 17 198 mails portent un ancien verdict PLAT sans verdict
+ * SÉMANTIQUE : ce sont exactement ceux qu'il faut relire, et ils étaient
+ * invisibles. Le vivier réel valait 8 mails.
+ *
+ *  - `uncertain` / `all` : les mails jamais analysés (historique) ;
+ *  - `relecture` : ceux qui n'ont pas encore de verdict sémantique, servis PAR
+ *    PRIORITÉ — l'argent, les échéances, les réponses attendues et les pièces
+ *    jointes d'abord, puis les plus récents.
+ */
+export type AnalysisScope = 'uncertain' | 'all' | 'relecture';
 
 export interface AnalysisCandidate {
   /** Identifiant à renvoyer tel quel dans le verdict. */
@@ -143,7 +159,10 @@ function candidateWhere(scope: AnalysisScope, account?: string) {
     isOutbound: false,
     folder: { is: { role: { notIn: ['trash', 'spam'] } } },
     snippet: { not: null },
-    aiVerdictAt: null,
+    // `relecture` vise ce qui n'a pas de verdict SÉMANTIQUE, que le mail ait
+    // été analysé par l'ancien chemin plat ou non. Les deux autres portées
+    // gardent leur critère historique « jamais analysé ».
+    ...(scope === 'relecture' ? { verdict: { is: null } } : { aiVerdictAt: null }),
     ...(account ? { accountSlug: account } : {}),
     // « uncertain » vise ce qui bloque réellement : analyse faible/moyenne, ou
     // intention absente/générique. C'est là que l'IA change quelque chose.
@@ -237,14 +256,50 @@ export async function nextAnalysisBatch(
   // TRAITEMENT INTÉGRAL (décision utilisateur 02/08) : quand les cas douteux
   // sont épuisés, la boucle continue TOUTE SEULE sur le reste des mails sans
   // verdict — l'IA lit tout, les règles se déduisent ensuite de ses verdicts.
+  //
+  // ET DEPUIS LE 13/08 : quand il n'y a plus rien à analyser du tout, on
+  // bascule sur la RELECTURE. Sans cela, l'outil rendait un lot vide alors que
+  // 17 198 mails attendaient un verdict sémantique — c'est ce qui a fait qu'une
+  // demande de « 200 mails » n'en a produit que 5.
   if (scope === 'uncertain' && (await db.message.count({ where })) === 0) {
     scope = 'all';
     where = candidateWhere(scope, opts.account);
   }
+  if (scope !== 'relecture' && (await db.message.count({ where })) === 0) {
+    scope = 'relecture';
+    where = candidateWhere(scope, opts.account);
+  }
+
+  // PRIORITÉ (relecture uniquement) : l'argent, les échéances, les réponses
+  // attendues et les pièces jointes d'abord — puis les plus récents. Les ids
+  // sont choisis en SQL parce que ce classement ne s'exprime pas en Prisma ;
+  // le reste du chargement ne change pas.
+  let idsPrioritaires: number[] | null = null;
+  if (scope === 'relecture') {
+    const lignes = await db.$queryRawUnsafe<{ id: number }[]>(
+      `SELECT m.id
+         FROM Message m JOIN Folder f ON f.id = m.folderId
+        WHERE m.isDeleted = 0 AND m.isOutbound = 0
+          AND f.role NOT IN ('trash','spam')
+          AND m.snippet IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)
+          ${opts.account ? 'AND m.accountSlug = ?' : ''}
+        ORDER BY
+          (CASE WHEN m.aiAction IN ('pay','reply') THEN 100 ELSE 0 END
+         + CASE WHEN m.intent IN ('invoice','document','action_required','reply_expected')
+                THEN 50 ELSE 0 END
+         + CASE WHEN m.hasAttachments = 1 THEN 20 ELSE 0 END) DESC,
+          m.date DESC
+        LIMIT ${limit}`,
+      ...(opts.account ? [opts.account] : []),
+    );
+    idsPrioritaires = lignes.map((l) => Number(l.id));
+    if (idsPrioritaires.length === 0) idsPrioritaires = [-1]; // aucun candidat
+  }
 
   const [rows, total] = await Promise.all([
     db.message.findMany({
-      where,
+      where: idsPrioritaires ? { ...where, id: { in: idsPrioritaires } } : where,
       orderBy: { date: 'asc' },
       take: limit,
       select: {
