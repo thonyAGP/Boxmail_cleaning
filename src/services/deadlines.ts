@@ -1,21 +1,54 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { recordOperation } from './oplog.js';
 import { logger } from '../logger.js';
-import { imapService } from './imap.js';
 import { isRentilaSender, parseRentilaMail } from './rentila.js';
 import type { AccountRecord } from './accounts.js';
+import {
+  resolveMailSemanticState,
+  getOpenActions,
+  getDeadlineState,
+  type EtatSemantique,
+} from './semantique.js';
 
 /**
- * Deadline Engine — Phase 4, brique 4 (SPEC V2 §8.6, livraison L2).
+ * Moteur des échéances — BASCULE SUR LE SOCLE au lot 4c (12/08).
  *
- * Détecte les dates limites dans les mails : passe rapide sur les SUJETS
- * (index local), passe approfondie optionnelle sur les CORPS (IMAP, plafonnée).
- * Chaque échéance est PROPOSÉE puis validée/ignorée par l'utilisateur —
- * jamais d'action automatique (garde-fou SPEC §11.5).
+ * C'est ce moteur qui a produit deux des trois échecs connus : le rappel
+ * Air France d'un vol passé remonté première priorité, et « paiements par
+ * carte indisponibles le 12 mai » (PayFiP) transformé en échéance de
+ * PAIEMENT. Cause commune : il devinait sur des mots et des dates, puis un
+ * veto codé à la main (`aiVerdictSaysNoAction`, supprimé ici) rattrapait ses
+ * inventions en relisant `aiAction`/`analysisConfidence` — une rustine par
+ * cas, exactement le montage que la refonte interdit.
  *
- * Les newsletters sont exclues (leurs « offres valables jusqu'au… » ne sont
- * pas des échéances). Les statuts non-proposed ne sont jamais écrasés par une
- * nouvelle détection.
+ * LA RÈGLE DU LOT 4C, tenue partout dans ce fichier :
+ *
+ *   Une échéance est une ACTION RÉELLEMENT DUE (verdict sémantique :
+ *   action `actor = 'user'` encore ouverte, portant un `dueAt`) —
+ *   jamais une date trouvée dans un texte.
+ *
+ * Les trois pièges de la contre-revue, et où ils sont parés :
+ *  1. « toute date n'est pas une échéance » → `echeancesDepuisLeVerdict` ne
+ *     lit QUE les actions ouvertes de l'utilisateur (via le socle) ; une date
+ *     d'événement, de document ou d'information ne crée RIEN ;
+ *  2. « une échéance passée n'est pas close » → aucune ligne de ce fichier ne
+ *     ferme quoi que ce soit sur `date < maintenant` ; la disparition vient
+ *     d'un acte (done/dismissed) ou de la fenêtre d'action du verdict ;
+ *  3. « ne rien réinventer » → une action due sans date reste SANS échéance,
+ *     comptée et déclarée (`withoutDate`), jamais complétée par un
+ *     « facture + 30 jours ».
+ *
+ * COHABITATION (l'immense majorité des 25 000 mails n'a pas encore de
+ * verdict sémantique) : quand le verdict existe, le socle PRIME et la regex
+ * ne tourne pas ; sinon l'extraction heuristique (`extractDeadlines`)
+ * reste le REPLI, marqué comme tel dans la raison affichée. Quand un verdict
+ * arrive plus tard, `revoirEcheancesProposees()` ré-arbitre les propositions
+ * heuristiques via le socle — c'est ce qui remplace la relecture-rustine.
+ *
+ * Garde-fous inchangés : chaque échéance est PROPOSÉE puis validée/ignorée
+ * par l'utilisateur — jamais d'action automatique (SPEC §11.5) ; les
+ * newsletters sont exclues ; un statut travaillé par l'utilisateur n'est
+ * jamais écrasé.
  */
 
 export type DeadlineType = 'payment' | 'document' | 'appointment' | 'renewal' | 'other';
@@ -223,65 +256,183 @@ export interface DetectReport {
   bodiesRead: number;
   created: number;
   alreadyKnown: number;
-  /** Échéances NON créées parce que l'IA avait jugé le mail sans action. */
-  vetoedByAi: number;
+  /** Échéances créées depuis le VERDICT SÉMANTIQUE (actions réellement dues). */
+  fromVerdict: number;
+  /** Actions dues déclarées SANS date lisible : rien d'inventé — on le dit. */
+  withoutDate: number;
   durationMs: number;
 }
 
+// ---------------------------------------------------------------------------
+// Le socle d'abord (lot 4c) : échéance = action réellement due
+// ---------------------------------------------------------------------------
+
 /**
- * L'IA a-t-elle déjà tranché que ce mail n'appelle aucune action ?
- *
- * POURQUOI (10/08) : les heuristiques de date tournaient en parallèle de
- * l'analyse IA et l'écrasaient. Résultat mesuré : 11 échéances sur 15
- * portaient sur un mail que l'IA avait classé « à lire » ou « à archiver »
- * — dont une pure information (« paiements indisponibles le 12 mai »)
- * transformée en échéance de PAIEMENT.
- *
- * Règle : un verdict IA EXPLICITE et de confiance HAUTE disant « rien à
- * faire » interdit la création d'une échéance. On reste prudent : une
- * confiance faible ou moyenne ne bloque rien (l'heuristique garde sa chance),
- * et les verdicts « à payer » / « à répondre » ne bloquent évidemment pas.
+ * Nature de l'échéance déduite du GESTE demandé — plus jamais des mots du
+ * sujet. `guessType` (regex) ne sert qu'au repli, sur les mails sans verdict.
  */
-function aiVerdictSaysNoAction(msg: {
-  aiAction: string | null;
-  analysisConfidence: string | null;
-  /** Catégorie de l'expéditeur : une PERSONNE ne subit jamais le veto élargi. */
-  senderCategory?: string | null;
-}): boolean {
-  if (!msg.aiAction) return false;
-  if (!['read', 'archive', 'none'].includes(msg.aiAction)) return false;
-  if (msg.analysisConfidence === 'high') return true;
-  // Élargissement demandé le 11/08 : une confiance MOYENNE suffit quand
-  // l'expéditeur n'est pas une personne. Cas déclencheur : « Ce qui évolue sur
-  // votre facture d'électricité » restait une échéance alors que l'analyse
-  // disait « à lire ». Sur un automate, le risque d'écarter à tort est
-  // faible ; sur un humain, il ne l'est pas — et la proposition écartée reste
-  // de toute façon visible et rétablissable d'un clic.
-  return msg.analysisConfidence === 'medium' && msg.senderCategory !== 'person';
-}
+const TYPE_PAR_GESTE: Record<string, DeadlineType> = {
+  pay: 'payment',
+  provide_document: 'document',
+  sign: 'document',
+  declare: 'document',
+  attend: 'appointment',
+  book: 'appointment',
+  call: 'appointment',
+  renew: 'renewal',
+};
 
-/** Catégorie de l'expéditeur d'un mail (null si inconnue). */
-async function categorieExpediteur(messageId: number): Promise<string | null> {
-  const m = await db.message.findUnique({
-    where: { id: messageId },
-    select: { accountSlug: true, fromEmail: true },
-  });
-  if (!m?.fromEmail) return null;
-  const s = await db.sender.findFirst({
-    where: { accountSlug: m.accountSlug, email: m.fromEmail },
-    select: { category: true },
-  });
-  return s?.category ?? null;
+/** Certitude PAR AFFIRMATION du verdict → confiance affichée (0-1). Jamais
+ *  l'inverse : la confiance n'autorise rien, elle explique. */
+const CONFIANCE_PAR_CERTITUDE: Record<string, number> = {
+  explicit: 0.95,
+  strong_inference: 0.85,
+  weak_inference: 0.65,
+  unknown: 0.5,
+};
+
+export interface EcheanceDuVerdict {
+  date: Date;
+  type: DeadlineType;
+  /** Le geste demandé, tel que l'analyse l'a lu — jamais « payer maman ». */
+  titre: string | null;
+  confidence: number;
+  reason: string;
+  sourceText: string;
 }
 
 /**
- * Repasse le veto sur les échéances DÉJÀ créées (11/08).
+ * Les échéances qu'un verdict sémantique AUTORISE — le remplaçant du couple
+ * regex + veto. Fonction PURE (le banc l'éprouve avec des états en mémoire).
  *
- * Le veto du 10/08 ne s'appliquait qu'au moment de la détection : les
- * propositions nées avant lui — ou avant que l'analyse du mail n'existe —
- * restaient affichées. Constaté en réel : « Votre facture mobile Free est
- * disponible » figurait encore parmi les échéances alors que l'analyse
- * conclut « à lire, rien à faire », avec une confiance forte.
+ * Les trois pièges, tenus ici même :
+ *  1. seules les actions OUVERTES de l'utilisateur produisent une échéance
+ *     (`getOpenActions` : acteur `user`, rien ne l'a soldée, fenêtre non
+ *     passée). Une date d'événement, de document, ou « paiements
+ *     indisponibles le 12 mai » ne crée RIEN — aucune action, aucune échéance ;
+ *  2. une action au `dueAt` passé reste OUVERTE (le socle la dit `enRetard`,
+ *     jamais résolue) : elle produit son échéance, qui s'affichera en retard ;
+ *  3. une action due SANS date ne fabrique aucune date : elle est DÉCLARÉE
+ *     dans `actionsSansDate`, et c'est tout.
+ */
+export function echeancesDepuisLeVerdict(etat: EtatSemantique): {
+  echeances: EcheanceDuVerdict[];
+  actionsSansDate: string[];
+} {
+  const echeances: EcheanceDuVerdict[] = [];
+  const actionsSansDate: string[] = [];
+  // La vue « échéance » du socle : parmi ses lignes, celles d'origine
+  // `action` sont exactement les actions de l'utilisateur encore ouvertes qui
+  // portent un dueAt. Elle parcourt getOpenActions dans l'ordre — on s'y
+  // aligne pour retrouver le détail (geste, montant, certitude) de chaque ligne.
+  const vues = getDeadlineState(etat).filter((v) => v.origine === 'action');
+  const ouvertes = getOpenActions(etat);
+  const avecDate = ouvertes.filter((a) => a.fait.dueAt !== null);
+
+  vues.forEach((vue, i) => {
+    const a = avecDate[i];
+    if (!a?.fait.dueAt) return; // jamais atteint par construction — prudence
+    const montant =
+      a.fait.montant !== null
+        ? ` (${a.fait.montant.toFixed(2).replace('.', ',')} ${a.fait.devise ?? '€'})`
+        : '';
+    echeances.push({
+      date: a.fait.dueAt,
+      type: TYPE_PAR_GESTE[a.fait.kind] ?? 'other',
+      titre: a.fait.label,
+      confidence: CONFIANCE_PAR_CERTITUDE[a.fait.certainty] ?? 0.5,
+      reason:
+        `l'analyse du mail déclare une action à faire de ta part : ` +
+        `« ${a.fait.label ?? a.fait.kind} »${montant} — ${vue.pourquoi} ` +
+        `(échéance issue du verdict sémantique, pas d'une date trouvée dans le texte)`,
+      sourceText: (etat.resume.valeur ?? a.fait.label ?? a.fait.kind).slice(0, 300),
+    });
+  });
+
+  for (const a of ouvertes) {
+    if (a.fait.dueAt === null) actionsSansDate.push(a.fait.label ?? a.fait.kind);
+  }
+  return { echeances, actionsSansDate };
+}
+
+/**
+ * Arbitrage d'une proposition EXISTANTE (née de la regex) à la lumière du
+ * socle. Fonction PURE — c'est elle qui remplace `aiVerdictSaysNoAction`.
+ *
+ *  - pas de verdict → on GARDE : l'inconnu ne fait taire personne, et la
+ *    proposition heuristique reste la meilleure information disponible ;
+ *  - verdict présent et PLUS AUCUNE action ouverte de l'utilisateur → veto.
+ *    C'est le cas PayFiP (jamais eu d'action) comme le cas Air France (la
+ *    fenêtre d'action est passée : hors délai n'est pas « fait », mais agir
+ *    n'a plus de sens) ;
+ *  - une action reste ouverte → on GARDE, toujours. Même si sa date diffère
+ *    de la proposition, même si l'analyse n'a pas su lire de date : fermer à
+ *    tort MASQUE une obligation, laisser ouvert dérange seulement.
+ *
+ * Le passage du temps ne décide RIEN ici (piège n° 2) : une proposition à la
+ * date passée soutenue par une action ouverte reste affichée — en retard.
+ */
+export function arbitrerProposition(
+  etat: EtatSemantique | null | undefined,
+  dateProposee: Date,
+): { garder: boolean; pourquoi: string } {
+  if (!etat || !etat.analyse.verdictPresent) {
+    return {
+      garder: true,
+      pourquoi:
+        "pas encore de verdict sémantique sur ce mail — la proposition (repli heuristique) reste affichée",
+    };
+  }
+  const ouvertes = getOpenActions(etat);
+  if (ouvertes.length === 0) {
+    const fenetrePassee = etat.courant.actions.some(
+      (a) => a.fait.acteur === 'user' && a.horsDelai,
+    );
+    if (fenetrePassee) {
+      return {
+        garder: false,
+        pourquoi:
+          "la fenêtre d'action est passée — agir n'a plus de sens (un rappel périmé n'est pas une échéance)",
+      };
+    }
+    return {
+      garder: false,
+      pourquoi:
+        `date trouvée dans le mail, mais l'analyse conclut « ` +
+        `${etat.resume.valeur ?? 'aucune action de ta part'} » — la date décrit un fait, ` +
+        `pas une action de ta part`,
+    };
+  }
+  // Une action due couvre-t-elle la date proposée ? (marge de 36 h : la regex
+  // pose les dates en heure locale, le verdict en UTC — on ne veut pas qu'un
+  // décalage de fuseau fasse passer une confirmation pour une divergence.)
+  const MARGE_MS = 36 * 3_600_000;
+  const t = dateProposee.getTime();
+  const couverte = getDeadlineState(etat).some(
+    (v) => v.origine === 'action' && Math.abs(v.date.getTime() - t) <= MARGE_MS,
+  );
+  return {
+    garder: true,
+    pourquoi: couverte
+      ? "l'analyse confirme une action due de ta part à cette date"
+      : "une action reste à faire d'après l'analyse — dans le doute, la date trouvée reste proposée",
+  };
+}
+
+/**
+ * Ré-arbitre les propositions EXISTANTES via le socle — remplaçant de la
+ * relecture-rustine du 11/08, qui relisait `aiAction`/`analysisConfidence`.
+ *
+ * POURQUOI ELLE EXISTE TOUJOURS : la détection tourne à la sync, l'analyse
+ * sémantique arrive APRÈS (rattrapage MCP, flux). Une proposition née de la
+ * regex doit être re-jugée quand le verdict de son mail apparaît — sinon les
+ * fausses échéances du stock resteraient affichées à vie (constaté le 11/08 :
+ * « Votre facture mobile Free est disponible »).
+ *
+ * Le NOM est conservé parce que sync.ts (hors périmètre du lot 4c) l'appelle
+ * à chaque synchronisation ; le corps, lui, ne devine plus rien : résolution
+ * EN LOT (jamais mail par mail — SQLite connection_limit=1), puis
+ * `arbitrerProposition` pour chaque ligne.
  *
  * Ne touche QUE les propositions (`proposed`) : une échéance que l'utilisateur
  * a confirmée lui appartient, on ne la lui retire jamais dans son dos.
@@ -290,23 +441,20 @@ export async function revoirEcheancesProposees(): Promise<{ revues: number; ecar
   await ensureDbReady();
   const lignes = await db.deadline.findMany({
     where: { status: 'proposed' },
-    select: { id: true, messageId: true, title: true },
+    select: { id: true, messageId: true, title: true, date: true },
   });
+  if (lignes.length === 0) return { revues: 0, ecartees: 0 };
+  const etats = await resolveMailSemanticState([...new Set(lignes.map((l) => l.messageId))]);
   let ecartees = 0;
   for (const d of lignes) {
-    const msg = await db.message.findUnique({
-      where: { id: d.messageId },
-      select: { aiAction: true, analysisConfidence: true },
-    });
-    if (!msg) continue;
-    const senderCategory = await categorieExpediteur(d.messageId);
-    if (!aiVerdictSaysNoAction({ ...msg, senderCategory })) continue;
+    const arbitrage = arbitrerProposition(etats.get(d.messageId), d.date);
+    if (arbitrage.garder) continue;
     await db.deadline.update({
       where: { id: d.id },
-      data: { status: 'vetoed', vetoReason: 'ai_no_action' },
+      data: { status: 'vetoed', vetoReason: 'ai_no_action', reason: arbitrage.pourquoi },
     });
     ecartees++;
-    logger.info('échéance écartée après relecture du verdict', { id: d.id, titre: d.title });
+    logger.info('échéance écartée après lecture du socle', { id: d.id, titre: d.title });
   }
   return { revues: lignes.length, ecartees };
 }
@@ -352,98 +500,79 @@ export async function detectDeadlines(
       fromEmail: true,
       fromName: true,
       date: true,
-      // Le VERDICT DE L'IA (10/08). Il a été payé sur le forfait de
-      // l'utilisateur et il est souvent JUSTE — c'est le détecteur qui avait
-      // tort de l'ignorer : voir aiVerdictSaysNoAction.
-      aiAction: true,
-      analysisConfidence: true,
-      aiSummary: true,
       folder: { select: { path: true } },
     },
   });
   progress(`${messages.length} mails à analyser (sujets)…`);
 
+  // L'état sémantique de TOUT le lot, résolu en une passe — le détecteur ne
+  // relit plus les colonnes plates (`aiAction`, `analysisConfidence`) : il
+  // lit le socle, qui a déjà appliqué la précédence et l'état du fil.
+  const etats = await resolveMailSemanticState(messages.map((m) => m.id));
+
   let created = 0;
   let alreadyKnown = 0;
   let bodiesRead = 0;
-  let vetoedByAi = 0;
+  let fromVerdict = 0;
+  let withoutDate = 0;
   const createdItems: { subject: string; date: string | null; folder?: string; uid?: number }[] =
     [];
 
-  const record = async (
-    msg: (typeof messages)[number],
-    ex: ExtractedDeadline,
-    source: 'sujet' | 'contenu',
-    titleOverride?: string,
-  ) => {
-    // GARDE-FOU (10/08, retour utilisateur cinglant). Le mail « [SIV-PAYFIP]
-    // Paiements par carte bancaire indisponibles le 12 mai » devenait une
-    // échéance de PAIEMENT au 12 mai : le détecteur avait vu un mot et une
-    // date. Or l'IA avait déjà lu ce mail et écrit, en confiance haute :
-    // « information technique ponctuelle sans action durable requise ».
-    // Mesure du jour : 11 échéances sur 15 portaient sur un mail que l'IA
-    // jugeait SANS action. Quand l'IA a tranché, elle fait autorité.
-    // ÉCARTÉE, mais pas effacée : on enregistre la proposition avec son motif
-    // pour pouvoir l'EXPLIQUER à l'écran et la RÉTABLIR si l'arbitrage s'est
-    // trompé. Sans cette trace, l'utilisateur ne voit rien du travail fait —
-    // et n'a aucune raison de faire confiance au système (retour 10/08).
-    if (aiVerdictSaysNoAction(msg)) {
-      vetoedByAi++;
-      const seen = await db.deadline.findUnique({
-        where: {
-          accountSlug_messageId_date: { accountSlug: account, messageId: msg.id, date: ex.date },
-        },
-      });
-      if (!seen) {
-        await db.deadline.create({
-          data: {
-            accountSlug: account,
-            messageId: msg.id,
-            threadId: msg.threadId,
-            title: titleOverride ?? msg.subject ?? '(sans sujet)',
-            date: ex.date,
-            type: ex.type,
-            status: 'vetoed',
-            vetoReason: 'ai_no_action',
-            confidence: ex.confidence,
-            reason:
-              `date trouvée dans le ${source}, mais l'analyse du mail conclut « ` +
-              `${msg.aiSummary ?? 'rien à faire'} » — la date décrit un fait, pas une action de ta part`,
-            sourceText: ex.sourceText,
-            fromEmail: msg.fromEmail,
-            fromName: msg.fromName,
-            subject: msg.subject,
-          },
-        });
-      }
-      return;
-    }
+  /** Une échéance à enregistrer, d'où qu'elle vienne (verdict ou repli). */
+  interface Proposition {
+    date: Date;
+    type: DeadlineType;
+    confidence: number;
+    reason: string;
+    sourceText: string;
+    title?: string | null;
+    /** true = portée par le verdict sémantique (seule origine qui peut
+     *  rouvrir une date écartée par un ancien arbitrage machine). */
+    duVerdict?: boolean;
+  }
+
+  const record = async (msg: (typeof messages)[number], p: Proposition): Promise<void> => {
     const existing = await db.deadline.findUnique({
       where: {
-        accountSlug_messageId_date: { accountSlug: account, messageId: msg.id, date: ex.date },
+        accountSlug_messageId_date: { accountSlug: account, messageId: msg.id, date: p.date },
       },
     });
     if (existing) {
+      // Le verdict AFFIRME une action due là où un ancien arbitrage machine
+      // avait écarté la date : l'analyse plus riche rouvre la proposition.
+      // Un choix de l'UTILISATEUR (ignorée, confirmée, faite) n'est jamais
+      // rejoué — sa vérité prime sur toute analyse.
+      if (p.duVerdict && existing.status === 'vetoed') {
+        await db.deadline.update({
+          where: { id: existing.id },
+          data: {
+            status: 'proposed',
+            vetoReason: null,
+            confidence: p.confidence,
+            reason: p.reason,
+            sourceText: p.sourceText,
+          },
+        });
+        created++;
+        fromVerdict++;
+        createdItems.push({
+          subject: `${p.title ?? msg.subject ?? '(sans sujet)'} → ${p.date.toLocaleDateString('fr-FR')}`,
+          date: msg.date?.toISOString() ?? null,
+          folder: msg.folder.path,
+          uid: msg.uid,
+        });
+        return;
+      }
       alreadyKnown++;
       // Ne jamais écraser un statut travaillé par l'utilisateur ; on peut
       // seulement renforcer la confiance d'une proposition.
-      if (existing.status === 'proposed' && ex.confidence > existing.confidence) {
+      if (existing.status === 'proposed' && p.confidence > existing.confidence) {
         await db.deadline.update({
           where: { id: existing.id },
-          data: { confidence: ex.confidence, sourceText: ex.sourceText, reason: reason() },
+          data: { confidence: p.confidence, sourceText: p.sourceText, reason: p.reason },
         });
       }
       return;
-    }
-
-    function reason(): string {
-      const parts = [
-        ex.trigger
-          ? `le ${source} mentionne « ${ex.trigger} » suivi d'une date`
-          : `date trouvée dans le ${source} avec un contexte de type connu`,
-        `extrait : « ${ex.sourceText} »`,
-      ];
-      return parts.join(' · ');
     }
 
     await db.deadline.create({
@@ -451,20 +580,21 @@ export async function detectDeadlines(
         accountSlug: account,
         messageId: msg.id,
         threadId: msg.threadId,
-        title: titleOverride ?? msg.subject ?? '(sans sujet)',
-        date: ex.date,
-        type: ex.type,
-        confidence: ex.confidence,
-        reason: reason(),
-        sourceText: ex.sourceText,
+        title: p.title ?? msg.subject ?? '(sans sujet)',
+        date: p.date,
+        type: p.type,
+        confidence: p.confidence,
+        reason: p.reason,
+        sourceText: p.sourceText,
         fromEmail: msg.fromEmail,
         fromName: msg.fromName,
         subject: msg.subject,
       },
     });
     created++;
+    if (p.duVerdict) fromVerdict++;
     createdItems.push({
-      subject: `${msg.subject ?? '(sans sujet)'} → ${ex.date.toLocaleDateString('fr-FR')}`,
+      subject: `${p.title ?? msg.subject ?? '(sans sujet)'} → ${p.date.toLocaleDateString('fr-FR')}`,
       date: msg.date?.toISOString() ?? null,
       // Le mail n'a pas bougé : on garde de quoi le rouvrir depuis le journal.
       folder: msg.folder.path,
@@ -472,12 +602,60 @@ export async function detectDeadlines(
     });
   };
 
-  // Passe 1 : sujets (instantané).
+  // La raison du REPLI porte son propre aveu : l'utilisateur doit voir d'un
+  // coup d'œil qu'une date vient d'un motif de texte, pas d'une analyse.
+  const raisonRepli = (ex: ExtractedDeadline, source: 'sujet' | 'contenu'): string =>
+    [
+      ex.trigger
+        ? `le ${source} mentionne « ${ex.trigger} » suivi d'une date`
+        : `date trouvée dans le ${source} avec un contexte de type connu`,
+      `extrait : « ${ex.sourceText} »`,
+      "repli heuristique — ce mail n'a pas encore de verdict d'analyse",
+    ].join(' · ');
+
+  const enregistrerRepli = (
+    msg: (typeof messages)[number],
+    ex: ExtractedDeadline,
+    source: 'sujet' | 'contenu',
+    title?: string,
+  ): Promise<void> =>
+    record(msg, {
+      date: ex.date,
+      type: ex.type,
+      confidence: ex.confidence,
+      reason: raisonRepli(ex, source),
+      sourceText: ex.sourceText,
+      title,
+    });
+
+  // Passe 1 : le SOCLE d'abord ; les sujets (heuristiques) en repli.
   for (const msg of messages) {
-    // Les notifications Rentila ont leur propre grammaire (connecteur phase 1) :
-    // le sujet porte le bien et le délai (« expire dans 30 jours: 101 1er
-    // droite T3 »), mais pas de date en clair — l'extracteur générique ne
-    // verrait rien. Titre réécrit en obligation claire.
+    const etat = etats.get(msg.id);
+    if (etat?.analyse.verdictPresent) {
+      // Le verdict existe : LUI SEUL décide — aucune regex sur ce mail. Une
+      // date qui n'est pas une action réellement due (événement, document,
+      // « indisponible le 12 mai ») ne devient jamais une proposition.
+      const { echeances, actionsSansDate } = echeancesDepuisLeVerdict(etat);
+      for (const e of echeances) {
+        await record(msg, {
+          date: e.date,
+          type: e.type,
+          confidence: e.confidence,
+          reason: e.reason,
+          sourceText: e.sourceText,
+          title: e.titre,
+          duVerdict: true,
+        });
+      }
+      // Piège n° 3 : une action due SANS date lisible ne fabrique rien — on
+      // la compte pour pouvoir le dire (« rien d'inventé »).
+      withoutDate += actionsSansDate.length;
+      continue;
+    }
+    // REPLI (pas encore de verdict). Les notifications Rentila ont leur propre
+    // grammaire (connecteur phase 1) : le sujet porte le bien et le délai
+    // (« expire dans 30 jours: 101 1er droite T3 »), mais pas de date en clair
+    // — l'extracteur générique ne verrait rien. Titre réécrit en obligation.
     if (isRentilaSender(msg.fromEmail)) {
       const info = parseRentilaMail({
         subject: msg.subject,
@@ -488,31 +666,38 @@ export async function detectDeadlines(
       if (info) {
         if (info.due) {
           const { title, ...ex } = info.due;
-          await record(msg, ex, 'sujet', title);
+          await enregistrerRepli(msg, ex, 'sujet', title);
         }
         continue; // pas d'extraction générique sur un mail Rentila reconnu
       }
     }
     for (const ex of extractDeadlines(msg.subject ?? '', msg.date ?? new Date())) {
-      await record(msg, ex, 'sujet');
+      await enregistrerRepli(msg, ex, 'sujet');
     }
   }
 
-  // Passe 2 (optionnelle) : corps des mails au sujet évocateur, via IMAP.
+  // Passe 2 (optionnelle) : corps des mails au sujet évocateur, via IMAP —
+  // repli elle aussi : jamais sur un mail au verdict connu (le socle a déjà
+  // tout dit, relire le corps à la regex serait deviner par-dessus).
   if (opts.deep) {
     const candidates = messages
+      .filter((m) => !etats.get(m.id)?.analyse.verdictPresent)
       // Les mails Rentila sont déjà traités par leur grammaire dédiée (passe 1)
       // et leurs corps sont des gabarits HTML sans date supplémentaire.
       .filter((m) => !isRentilaSender(m.fromEmail))
       .filter((m) => DEEP_SUBJECT_RE.test(m.subject ?? ''))
       .slice(0, DEEP_BODY_CAP);
     progress(`Analyse approfondie : lecture de ${candidates.length} contenus de mails…`);
+    // Import différé : imap.ts tire config.ts, qui exige le .env dès le
+    // chargement — or le banc (`npm run verdict:check`) importe ce fichier
+    // pour éprouver les fonctions pures, sans serveur ni IMAP.
+    const { imapService } = await import('./imap.js');
     for (const msg of candidates) {
       try {
         const body = await imapService.readEmail(rec, msg.folder.path, msg.uid);
         bodiesRead++;
         for (const ex of extractDeadlines(body.text, msg.date ?? new Date())) {
-          await record(msg, ex, 'contenu');
+          await enregistrerRepli(msg, ex, 'contenu');
         }
         if (bodiesRead % 10 === 0) progress(`…${bodiesRead}/${candidates.length} contenus lus`);
       } catch {
@@ -532,7 +717,8 @@ export async function detectDeadlines(
   }
   progress(
     `✅ ${created} nouvelle(s) échéance(s) proposée(s) (${alreadyKnown} déjà connues` +
-      `${vetoedByAi ? `, ${vetoedByAi} écartée(s) : l'analyse disait « rien à faire »` : ''}).`,
+      `${fromVerdict ? `, dont ${fromVerdict} issue(s) de l'analyse sémantique` : ''}` +
+      `${withoutDate ? ` ; ${withoutDate} action(s) à date encore inconnue — rien d'inventé` : ''}).`,
   );
 
   return {
@@ -541,7 +727,8 @@ export async function detectDeadlines(
     bodiesRead,
     created,
     alreadyKnown,
-    vetoedByAi,
+    fromVerdict,
+    withoutDate,
     durationMs: Date.now() - started,
   };
 }

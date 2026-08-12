@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { db } from '../db/client.js';
 import { logger } from '../logger.js';
 import { recordOperation } from './oplog.js';
 import { listAccountNames, getAccountRecord } from './accounts.js';
@@ -226,96 +225,14 @@ const CAPABILITIES: Capability[] = [
         'Une facture transmise par un proche est désormais reconnue au nom du VRAI fournisseur.';
     },
   },
-  {
-    id: 'deadline-ai-veto-v1',
-    label: 'Je ne transforme plus une information en échéance',
-    link: '#/deadlines',
-    run: async () => {
-      // Ménage du stock (10/08). Une pure information — « les paiements par
-      // carte seront indisponibles le 12 mai » — était devenue une échéance
-      // de PAIEMENT au 12 mai. Mesure : 11 échéances sur 15 portaient sur un
-      // mail que l'analyse avait pourtant classé « à lire » ou « à archiver »
-      // en confiance haute. On retire ces propositions ; les échéances
-      // CONFIRMÉES par l'utilisateur ne sont jamais touchées.
-      const proposed = await db.deadline.findMany({
-        where: { status: 'proposed' },
-        select: { id: true, messageId: true, title: true },
-      });
-      if (proposed.length === 0) return 'Aucune date proposée à revoir.';
-      const msgs = new Map(
-        (
-          await db.message.findMany({
-            where: { id: { in: proposed.map((d) => d.messageId) } },
-            select: { id: true, aiAction: true, analysisConfidence: true },
-          })
-        ).map((m) => [m.id, m]),
-      );
-      let removed = 0;
-      for (const d of proposed) {
-        const m = msgs.get(d.messageId);
-        if (!m?.aiAction) continue;
-        if (!['read', 'archive', 'none'].includes(m.aiAction)) continue;
-        if (m.analysisConfidence !== 'high') continue;
-        // « dismissed » plutôt que supprimé : réversible, et visible dans
-        // l'onglet « Ignorées » si l'utilisateur veut vérifier.
-        await db.deadline.update({ where: { id: d.id }, data: { status: 'dismissed' } });
-        removed++;
-      }
-      if (removed > 0) {
-        await recordOperation({
-          account: '*',
-          tool: 'deadline_ai_veto',
-          params: { removed, examined: proposed.length },
-          result: `${removed} fausse(s) date(s) écartée(s) : l'analyse disait « rien à faire »`,
-        });
-      }
-      return `${proposed.length} date(s) proposée(s) relues : ${removed} écartée(s) parce que ` +
-        'l\'analyse du mail disait « rien à faire » (elles restent visibles dans l\'onglet Ignorées).';
-    },
-  },
-  {
-    id: 'deadline-veto-visible-v1',
-    label: 'Je te montre les dates que j\'ai écartées, et pourquoi',
-    link: '#/deadlines',
-    run: async () => {
-      // Les dates écartées par la passe précédente avaient été marquées
-      // « ignorées » — indistinguables d'un choix de l'utilisateur, et donc
-      // invisibles en tant que travail fait. On leur donne leur vrai statut
-      // (« écartée par l'analyse ») pour pouvoir les montrer et les expliquer.
-      const rows = await db.deadline.findMany({
-        where: { status: 'dismissed', vetoReason: null },
-        select: { id: true, messageId: true, reason: true },
-      });
-      if (rows.length === 0) return 'Aucune date à requalifier.';
-      const msgs = new Map(
-        (
-          await db.message.findMany({
-            where: { id: { in: rows.map((r) => r.messageId) } },
-            select: { id: true, aiAction: true, analysisConfidence: true, aiSummary: true },
-          })
-        ).map((m) => [m.id, m]),
-      );
-      let moved = 0;
-      for (const r of rows) {
-        const m = msgs.get(r.messageId);
-        if (!m?.aiAction || !['read', 'archive', 'none'].includes(m.aiAction)) continue;
-        if (m.analysisConfidence !== 'high') continue;
-        await db.deadline.update({
-          where: { id: r.id },
-          data: {
-            status: 'vetoed',
-            vetoReason: 'ai_no_action',
-            reason:
-              `date trouvée dans le mail, mais l'analyse conclut « ${m.aiSummary ?? 'rien à faire'} »` +
-              ' — la date décrit un fait, pas une action de ta part',
-          },
-        });
-        moved++;
-      }
-      return `${moved} date(s) écartée(s) sont désormais consultables dans l'onglet ` +
-        '« Écartées par l\'analyse » — avec le motif, et un bouton pour les rétablir si je me suis trompé.';
-    },
-  },
+  // Les rattrapages « deadline-ai-veto-v1 » et « deadline-veto-visible-v1 »
+  // (10-11/08) ont été RETIRÉS au lot 4c (12/08) : ils rejouaient après coup
+  // le veto codé à la main sur `aiAction`/`analysisConfidence` — la rustine
+  // que la bascule sur le socle supprime. Leur travail est repris en continu
+  // par `revoirEcheancesProposees()` (deadlines.ts), qui arbitre désormais
+  // chaque proposition via le socle sémantique à chaque synchronisation.
+  // Leurs marqueurs restent inertes dans data/whatsnew.json — sans danger, et
+  // ces identifiants ne doivent jamais être réutilisés (entrées immuables).
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');

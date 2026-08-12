@@ -18,6 +18,7 @@ import {
   type LigneAction,
   type EtatSemantique,
 } from '../services/semantique.js';
+import { echeancesDepuisLeVerdict, arbitrerProposition } from '../services/deadlines.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -647,6 +648,170 @@ console.log('\n=== 10. Socle — une échéance passée n’est pas close ===\n'
   verifier('« faite » est close, par un ACTE (source manuel)', true, faite?.close && faite?.source === 'manuel');
   const vetoee = (etats.get(503) as EtatSemantique).courant.echeances[0];
   verifier('« vetoed » est écartée, par l’IA', true, vetoee?.statut === 'ecartee' && vetoee?.source === 'ia');
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE MOTEUR DES ÉCHÉANCES (lot 4c) — les trois pièges de la contre-revue,
+// éprouvés sur les fonctions pures de deadlines.ts avec des états résolus en
+// mémoire. Le veto codé à la main a disparu : c'est CES fonctions qui doivent
+// porter les garanties, pas une règle par cas.
+
+console.log('\n=== 11. Échéances — piège n° 1 : une date n’est pas une échéance ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [msg(601), msg(602), msg(603), msg(604), msg(605)],
+      verdicts: [
+        // PayFiP : notification pure, un événement informatif, AUCUNE action.
+        verdictDe(601, { purpose: 'notification', summary: 'Le paiement par carte sera indisponible le 12 mai.' }),
+        // Un mail qui PORTE une facture (dueDate connue) sans action déclarée.
+        verdictDe(602, { purpose: 'document_delivery' }),
+        // Une action datée, mais dont l'acteur n'est PAS l'utilisateur.
+        verdictDe(603, { purpose: 'notification' }),
+        // La seule vraie échéance du lot : action `pay` de l'utilisateur, datée.
+        verdictDe(604, { purpose: 'request' }),
+        // Sosh : le titre vient du GESTE lu par l'analyse, jamais de l'expéditeur.
+        verdictDe(605, { purpose: 'document_delivery', summary: 'Sa mère transmet la facture Sosh de mai.' }),
+      ],
+      evenements: [
+        {
+          messageId: 601,
+          kind: 'service_window',
+          label: 'Indisponibilité du paiement par carte',
+          startsAt: new Date('2026-05-12T00:00:00Z'),
+          startsPrecision: 'date',
+          endsAt: null,
+          participation: 'informational',
+          certainty: 'explicit',
+        },
+      ],
+      documents: [
+        { messageId: 602, kind: 'invoice', label: null, issuer: 'EDF', issueDate: null, dueDate: new Date('2026-09-01T00:00:00Z'), amount: 120, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+      actions: [
+        actionDe(603, { kind: 'pay', actor: 'sender', dueAt: new Date('2026-09-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(604, { kind: 'pay', dueAt: new Date('2026-09-15T00:00:00Z'), duePrecision: 'date', certainty: 'explicit' }),
+        actionDe(605, { kind: 'pay', label: 'Payer la facture Sosh', amount: 42.3, currency: 'EUR', dueAt: new Date('2026-09-01T00:00:00Z'), duePrecision: 'date' }),
+      ],
+      mentions: [
+        { messageId: 605, kind: 'person', nameRaw: 'Maman', role: 'sent_by', identifier: null, certainty: 'explicit' },
+        { messageId: 605, kind: 'company', nameRaw: 'Sosh', role: 'issued_by', identifier: null, certainty: 'explicit' },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const payfip = echeancesDepuisLeVerdict(etats.get(601) as EtatSemantique);
+  verifier('PayFiP : une date d’ÉVÉNEMENT ne crée AUCUNE échéance', 0, payfip.echeances.length);
+  verifier('…et ne déclare rien d’inconnu non plus', 0, payfip.actionsSansDate.length);
+  verifier(
+    'la dueDate d’un DOCUMENT ne crée aucune échéance (aucune action déclarée)',
+    0,
+    echeancesDepuisLeVerdict(etats.get(602) as EtatSemantique).echeances.length,
+  );
+  verifier(
+    'une action datée dont l’acteur n’est PAS l’utilisateur ne crée rien',
+    0,
+    echeancesDepuisLeVerdict(etats.get(603) as EtatSemantique).echeances.length,
+  );
+  const vraie = echeancesDepuisLeVerdict(etats.get(604) as EtatSemantique);
+  verifier('une action `pay` de l’utilisateur, datée, crée UNE échéance', 1, vraie.echeances.length);
+  verifier('…du bon type (le GESTE décide, pas les mots du sujet)', 'payment', vraie.echeances[0]?.type);
+  const soshE = echeancesDepuisLeVerdict(etats.get(605) as EtatSemantique);
+  verifier(
+    'Sosh : le titre vient de l’action lue, jamais « payer maman »',
+    'Payer la facture Sosh',
+    soshE.echeances[0]?.titre,
+  );
+  verifier(
+    'et la raison avoue sa provenance (verdict, pas texte)',
+    true,
+    (soshE.echeances[0]?.reason ?? '').includes('verdict sémantique'),
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 12. Échéances — piège n° 2 : passée n’est pas close ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [msg(701), msg(702), msg(703)],
+      verdicts: [
+        verdictDe(701, { purpose: 'request', attentionMode: 'while_action_open' }),
+        // Air France : la fenêtre d'action est PASSÉE (expiresAt), pas le dueAt.
+        verdictDe(702, { purpose: 'request', attentionMode: 'until_time', attentionUntil: new Date('2026-06-16T00:00:00Z'), attentionPrecision: 'date' }),
+        // PayFiP au stade de l'arbitrage : verdict présent, aucune action.
+        verdictDe(703, { purpose: 'notification', summary: 'information technique ponctuelle, rien à faire' }),
+      ],
+      actions: [
+        // Payé pour le 15 janvier, on est le 12 août : RETARD, pas résolution.
+        actionDe(701, { kind: 'pay', dueAt: new Date('2026-01-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(702, { kind: 'confirm', label: "S'enregistrer en ligne", expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const retard = echeancesDepuisLeVerdict(etats.get(701) as EtatSemantique);
+  verifier('une action au dueAt PASSÉ produit toujours son échéance', 1, retard.echeances.length);
+  verifier(
+    '…et son arbitrage la GARDE (le temps qui passe ne ferme rien)',
+    true,
+    arbitrerProposition(etats.get(701), new Date('2026-01-15T00:00:00Z')).garder,
+  );
+  const airFranceEtat = etats.get(702) as EtatSemantique;
+  verifier('Air France : fenêtre passée ⇒ AUCUNE échéance créée', 0, echeancesDepuisLeVerdict(airFranceEtat).echeances.length);
+  const arbAir = arbitrerProposition(airFranceEtat, new Date('2026-06-16T00:00:00Z'));
+  verifier('…et la proposition regex correspondante est écartée', false, arbAir.garder);
+  verifier(
+    'avec le BON motif : hors délai, pas « résolu par le calendrier »',
+    true,
+    arbAir.pourquoi.includes('fenêtre'),
+  );
+  const arbPayfip = arbitrerProposition(etats.get(703), new Date('2026-05-12T00:00:00Z'));
+  verifier('PayFiP : proposition écartée (aucune action de ta part)', false, arbPayfip.garder);
+  verifier(
+    '…en citant ce que l’analyse a conclu',
+    true,
+    arbPayfip.pourquoi.includes('la date décrit un fait'),
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+console.log('\n=== 13. Échéances — piège n° 3 : aucune date inventée ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [msg(801), msg(802)],
+      verdicts: [verdictDe(801, { purpose: 'request', attentionMode: 'while_action_open' })],
+      actions: [
+        // Une facture à payer dont l'analyse n'a PAS su lire la date : pas de
+        // « facture + 30 jours », pas de « rappel = aujourd'hui ».
+        actionDe(801, { kind: 'pay', label: 'Payer la facture EDF', dueAt: null }),
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const inconnue = echeancesDepuisLeVerdict(etats.get(801) as EtatSemantique);
+  verifier('action due sans date ⇒ AUCUNE échéance fabriquée', 0, inconnue.echeances.length);
+  verifier('…mais elle est DÉCLARÉE comme inconnue', 1, inconnue.actionsSansDate.length);
+  verifier('…avec son libellé, pour pouvoir le dire à l’écran', 'Payer la facture EDF', inconnue.actionsSansDate[0]);
+  verifier(
+    'une proposition regex sur ce mail est GARDÉE (l’action est ouverte, sa date illisible)',
+    true,
+    arbitrerProposition(etats.get(801), new Date('2026-09-30T00:00:00Z')).garder,
+  );
+  const arbSansVerdict = arbitrerProposition(etats.get(802), new Date('2026-09-30T00:00:00Z'));
+  verifier('sans verdict, l’arbitrage ne fait taire personne', true, arbSansVerdict.garder);
+  verifier(
+    '…et le dit : la proposition est un repli en attendant l’analyse',
+    true,
+    arbSansVerdict.pourquoi.includes('repli'),
+  );
 }
 
 // ---------------------------------------------------------------------------

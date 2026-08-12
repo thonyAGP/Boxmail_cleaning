@@ -21,36 +21,42 @@ import { documentHints } from './attachment-text.js';
 /**
  * Analyse fine par l'IA (C2 — Série C).
  *
- * L'assistant ne lisait que le sujet : tout mail non reconnu tombait en
- * « confiance faible », donc ni trié ni nettoyable. Maintenant que chaque mail
- * porte un extrait de son texte (C1), une IA peut juger — et son verdict
- * DÉBLOQUE le nettoyage en remontant la confiance.
+ * ⚠️ FICHIER À DEUX ÉTAGES depuis le lot 4b (12/08) :
  *
- * CHOIX STRUCTURANT : le verdict s'écrit dans les champs EXISTANTS
- * (`Message.intent`, `Message.analysisConfidence`, `Sender.category`), avec une
- * source `'ai'`. Conséquence : « Aujourd'hui », les stratégies de rétention et
- * le score d'importance en profitent SANS une ligne de changement. Précédence
- * stricte : **manual > ai > auto**.
+ *  1. LEGACY, en voie de retrait — `AI_ACTIONS`, `Verdict` (plat) et
+ *     `applyVerdicts` : l'ancien verdict qui écrasait tout dans quatre
+ *     colonnes plates (`intent`, `aiAction`, `analysisConfidence`,
+ *     `aiSummary`). C'est ce format qui a rendu possibles les trois échecs de
+ *     juin-août (un mot comme `pay` ne dit ni QUI doit payer, ni POUR QUAND,
+ *     ni si la fenêtre est passée). Il n'est PAS une autorité : plus aucun
+ *     moteur ne doit décider sur `aiAction`/`intent` — le socle
+ *     (`semantique.ts`) est la seule porte d'entrée. Il reste branché parce
+ *     que le tool MCP historique l'appelle encore et que les colonnes de
+ *     compatibilité doivent rester écrites tant que les lots 4c-4k ne sont
+ *     pas terminés (contre-revue du 12/08, risque n° 8 : garder les colonnes
+ *     écrites, interdire progressivement leur lecture).
  *
- * GARDE-FOUS : l'IA ne supprime JAMAIS rien, elle classe. Elle n'écrase jamais
- * une correction manuelle. Un verdict hors énumération est refusé (le mail
- * reste simplement non analysé). Tout est journalisé et réversible.
+ *  2. VIVANT — `applySemanticVerdicts` (plus bas) : le verdict sémantique
+ *     complet (verdict.ts), stocké brut et immuable, dont les colonnes plates
+ *     ne sont plus qu'une projection (`projeterVersLegacy`).
  *
- * Deux moteurs se branchent sur `applyVerdicts`, un seul chemin d'écriture :
- *  - C3a : piloté depuis Claude via MCP (sur le forfait) — le rattrapage ;
- *  - C3b : Haiku côté serveur, sur le flux courant (à venir).
+ * L'historique du choix C2 (verdict dans les champs existants, précédence
+ * manual > ai > auto) est conservé dans docs/JOURNAL.md. Les garde-fous, eux,
+ * ne bougent pas : l'IA ne supprime JAMAIS rien, elle classe ; elle n'écrase
+ * jamais une correction manuelle ; tout est journalisé et réversible.
  */
 
+/**
+ * ⚠️ LEGACY (lot 4b). L'« action » en un mot est l'exemple canonique de ce que
+ * la refonte interdit : `read` posé sur un rappel Air France périmé le faisait
+ * remonter première priorité, `pay` sur le scan transmis par maman faisait
+ * « payer maman ». Ne sert plus qu'à valider les verdicts plats entrants et à
+ * remplir la colonne de compatibilité `Message.aiAction` — aucun moteur ne
+ * doit plus DÉCIDER dessus (le veto des échéances qui le lisait a disparu au
+ * lot 4c).
+ */
 export const AI_ACTIONS = ['reply', 'pay', 'read', 'archive', 'none'] as const;
 export type AiAction = (typeof AI_ACTIONS)[number];
-
-export const AI_ACTION_LABELS: Record<AiAction, string> = {
-  reply: 'à répondre',
-  pay: 'à payer',
-  read: 'à lire',
-  archive: 'à archiver',
-  none: 'rien à faire',
-};
 
 /** Portée du lot : les cas douteux d'abord, ou tout ce qui a un texte. */
 export type AnalysisScope = 'uncertain' | 'all';
@@ -386,6 +392,8 @@ function lireDestinataires(brut: string | null): string[] {
   return [];
 }
 
+/** ⚠️ LEGACY (lot 4b) — le verdict PLAT. Le format vivant est `zVerdict`
+ *  (verdict.ts), appliqué par `applySemanticVerdicts` plus bas. */
 export interface Verdict {
   id: number;
   intent?: string;
@@ -431,8 +439,11 @@ const isAction = (v: unknown): v is AiAction =>
   typeof v === 'string' && (AI_ACTIONS as readonly string[]).includes(v);
 
 /**
- * Applique des verdicts. CHEMIN D'ÉCRITURE UNIQUE des deux moteurs (MCP et
- * Haiku) : une seule logique de précédence, un seul format de journal.
+ * ⚠️ LEGACY (lot 4b) — applique des verdicts PLATS. Conservé uniquement parce
+ * que le tool MCP historique (`submit_analysis_batch`) l'appelle encore : une
+ * session d'analyse en cours ne doit pas casser au milieu d'un rattrapage.
+ * Toute NOUVELLE analyse doit passer par `applySemanticVerdicts` — ce chemin-ci
+ * n'écrit que les colonnes de compatibilité et disparaîtra avec elles (lot 6).
  *
  * Un verdict invalide n'annule pas le lot : il est écarté avec son motif, et le
  * mail reste candidat pour plus tard. Mieux vaut un mail non analysé qu'un mail

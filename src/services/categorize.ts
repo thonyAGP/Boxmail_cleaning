@@ -3,13 +3,38 @@ import { AUTO_SENDER_RE } from './attention.js';
 import { documentHints } from './attachment-text.js';
 
 /**
- * Moteur de catégorisation (A1 — Cap V3, fondation de l'assistant).
- * Deux axes, calculés par heuristiques index-only et toujours EXPLIQUÉS :
- *  - QUI écrit ?      → Sender.category (banque, admin, marketplace, personne…)
- *  - POURQUOI il écrit ? → Message.intent (facture, code OTP, livraison…)
- * Aucune lecture de contenu, aucun LLM : sujets, adresses, en-têtes indexés.
- * Une catégorie corrigée à la main (categorySource=manual) n'est JAMAIS
- * écrasée par le recalcul — la correction est un signal d'apprentissage (A6).
+ * ⚠️ COUCHE DE COMPATIBILITÉ (lot 4b, 12/08) — CE FICHIER N'EST PLUS UNE
+ * AUTORITÉ.
+ *
+ * Il fut l'ontologie du système : `MESSAGE_INTENTS` définissait « ce qu'un
+ * mail veut », et 21 services décidaient dessus. C'est ce montage qui a
+ * produit les trois échecs de juin-août (Air France, PayFiP, la facture Sosh
+ * de maman) : une liste fermée de mots-clés prétendait comprendre, et chaque
+ * moteur relisait ses colonnes plates avec sa propre règle. La contre-revue
+ * du 12/08 (.consult/2026-08-12-lot4-bascule/synthese.md, § 6) a acté sa
+ * neutralisation : « il cesse d'être l'ontologie du système ; s'il reste
+ * nécessaire aux colonnes de compatibilité, il devient explicitement legacy,
+ * pas une autorité. »
+ *
+ * CE QUI FAIT AUTORITÉ DÉSORMAIS : le modèle sémantique (`verdict.ts`) résolu
+ * par le socle (`semantique.ts` — `resolveMailSemanticState()` et ses
+ * sélecteurs). Un moteur qui veut savoir ce qu'un mail demande lit le socle,
+ * jamais `Message.intent` ni `analysisConfidence`.
+ *
+ * POURQUOI IL RESTE : les colonnes plates (`intent`, `intentReason`,
+ * `analysisConfidence`) doivent continuer d'être ÉCRITES tant que tous les
+ * moteurs n'ont pas basculé (lots 4c à 4k) — les garder écrites et interdire
+ * progressivement leur LECTURE, c'est ce qui rend chaque bascule réversible
+ * (risque n° 8 de la contre-revue). `MESSAGE_INTENTS` et `detectIntent` sont
+ * donc en VOIE DE RETRAIT : n'y ajoute plus de vocabulaire, ne branche plus
+ * aucun nouveau lecteur dessus.
+ *
+ * (Description d'origine — A1, Cap V3 : deux axes, calculés par heuristiques
+ * index-only et toujours expliqués : QUI écrit ? → Sender.category ;
+ * POURQUOI il écrit ? → Message.intent. Aucune lecture de contenu, aucun
+ * LLM. Une catégorie corrigée à la main (categorySource=manual) n'est JAMAIS
+ * écrasée par le recalcul. La catégorisation d'EXPÉDITEUR, elle, reste
+ * vivante : le socle la consomme telle quelle, avec sa provenance.)
  */
 
 // ---------------------------------------------------------------- Qui écrit ?
@@ -221,6 +246,13 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
 
 // ---------------------------------------------------------- Pourquoi il écrit ?
 
+/**
+ * ⚠️ VOCABULAIRE EN VOIE DE RETRAIT (lot 4b). Cette liste fermée est
+ * précisément ce que la refonte remplace : « une intention » écrase en un mot
+ * ce que le verdict sémantique exprime en actions/événements/documents avec
+ * acteur, dates et certitude. Elle ne survit que pour remplir la colonne de
+ * compatibilité `Message.intent` — aucun moteur ne doit plus DÉCIDER dessus.
+ */
 export const MESSAGE_INTENTS = [
   'otp',
   'invoice',
