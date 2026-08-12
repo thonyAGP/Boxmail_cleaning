@@ -63,7 +63,13 @@ export const NOISE_MIN_AGE_DAYS = 7;
 // Sans verdict : les heuristiques historiques (catégorie d'expéditeur résolue
 // par la sync avec sa précédence, intent legacy), à l'identique.
 const NOISE_BUCKET_CASE = `CASE
-  WHEN m.aiVerdictAt IS NOT NULL THEN CASE
+  -- LE BON DISCRIMINANT est l'existence d'un verdict SÉMANTIQUE, pas
+  -- `aiVerdictAt` : cette colonne est posée par l'ANCIENNE analyse plate sur
+  -- 17 207 mails qui n'ont aucune ligne MailVerdict. Les tester avec
+  -- `aiVerdictAt` les faisait tomber ENTRE les deux chemins — trop « analysés »
+  -- pour le repli, sans aucune donnée pour le nouveau. Le banc l'a vu tout de
+  -- suite : 51,8 % → 52,9 % de fuite (12/08).
+  WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id) THEN CASE
     WHEN EXISTS (SELECT 1 FROM VerdictAction va WHERE va.messageId = m.id AND va.actor = 'user') THEN NULL
     WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id AND v.purpose = 'marketing')
       THEN (CASE WHEN s.category IN ('newsletter', 'social') THEN s.category ELSE 'promo' END)
@@ -267,7 +273,7 @@ export async function generateToday(): Promise<TodaySummary> {
             m.fromEmail, m.fromName, m.date, m.isSeen, m.intentReason
      FROM Message m JOIN Folder f ON f.id = m.folderId
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
-       AND m.aiVerdictAt IS NULL
+       AND NOT EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)
        AND m.intent = 'invoice' AND m.isSeen = 0
        AND m.date >= ?
      ORDER BY m.date DESC LIMIT ${TOP}`,
@@ -346,7 +352,8 @@ export async function generateToday(): Promise<TodaySummary> {
        AND NOT EXISTS (
          SELECT 1 FROM VerdictAction va
           WHERE va.messageId = m.id AND va.kind = 'pay' AND va.actor = 'user')
-       AND (m.aiVerdictAt IS NOT NULL OR m.intent IS NULL OR m.intent != 'invoice')`,
+       AND (EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)
+            OR m.intent IS NULL OR m.intent != 'invoice')`,
     noiseCutoff,
   );
 
