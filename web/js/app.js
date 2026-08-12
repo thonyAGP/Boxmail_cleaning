@@ -9476,7 +9476,10 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
       $('.modal-body').innerHTML = `<div class="notice">✅ Mail envoyé à
         <strong>${r.sentTo.map(esc).join(', ')}</strong>.<br>
         ${r.copiedTo ? `Copie déposée dans « ${esc(r.copiedTo)} ».`
-          : '⚠️ La copie dans « Éléments envoyés » n\'a pas pu être déposée (le mail est bien parti).'}</div>`;
+          : 'Ta copie est dans « Éléments envoyés » — c\'est ton fournisseur qui l\'y met.'}
+        <br><span class="muted" style="font-size:12px">Le serveur a accepté le message. Une remise
+        peut encore échouer plus tard (adresse inconnue, boîte pleine) : dans ce cas tu recevras un
+        avis de non-remise.</span></div>`;
       $('.modal-foot').innerHTML = '<button class="btn btn-primary" id="c-done">Fermer</button>';
       $('#c-done').addEventListener('click', () => {
         closeModal();

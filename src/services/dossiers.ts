@@ -607,6 +607,7 @@ export async function rattacherDepuisVerdict(
   };
 
   let rattaches = 0;
+  const touches = new Set<number>();
   for (const c of contextes) {
     const r = await rattacher({
       messageId,
@@ -614,12 +615,22 @@ export async function rattacherDepuisVerdict(
       kind: TRAD[c.kind] ?? 'autre',
       source: 'ia',
     });
-    if (r) rattaches++;
+    if (r) {
+      rattaches++;
+      touches.add(r.dossierId);
+    }
   }
   for (const m of mentions) {
-    // Une société simplement CITÉE ne fait pas un dossier — sinon chaque
-    // signature de bas de page en créerait un. Il faut qu'elle soit partie
-    // prenante, ou qu'un identifiant dur l'accroche.
+    // L'EXPÉDITEUR NE FAIT PAS UN DOSSIER (corrigé le 12/08, sur les cinq
+    // premiers verdicts réels). Trois dossiers sur cinq venaient d'être créés
+    // ainsi : « LinkedIn », « Revolut Business », « igloohome ». Ce ne sont pas
+    // des sujets de vie, ce sont des expéditeurs — et on les suit déjà comme
+    // tels dans la table Sender. Un dossier vient de ce dont le mail PARLE :
+    // qui émet le document, qui est concerné, qui est facturé.
+    if (m.role === 'sent_by') continue;
+    // Une société simplement CITÉE ne fait pas un dossier non plus — sinon
+    // chaque signature de bas de page en créerait un. Il faut qu'elle soit
+    // partie prenante, ou qu'un identifiant dur l'accroche.
     if (m.kind === 'company' && m.role === 'mentioned' && !m.identifier) continue;
     if (m.certainty === 'weak_inference' || m.certainty === 'unknown') continue;
     const r = await rattacher({
@@ -629,8 +640,14 @@ export async function rattacherDepuisVerdict(
       identifier: m.identifier,
       source: 'ia',
     });
-    if (r) rattaches++;
+    if (r) {
+      rattaches++;
+      touches.add(r.dossierId);
+    }
   }
+  // Le compteur affiché est recalculé ici : sans ça, l'écran « Mes dossiers »
+  // annonçait « 0 mail » sur des dossiers qui venaient d'en recevoir un.
+  for (const id of touches) await rafraichir(id);
   return { rattaches };
 }
 

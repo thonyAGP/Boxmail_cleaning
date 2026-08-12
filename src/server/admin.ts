@@ -2784,13 +2784,24 @@ export function buildAdminRouter(): Router {
         references,
       });
 
-      // Copie « Éléments envoyés » : best effort (l'envoi a déjà réussi).
-      let copiedTo: string | null = null;
-      try {
-        copiedTo = (await imapService.appendToSent(rec, raw)).folder;
-      } catch (err) {
-        logger.warn('copie Envoyés impossible', { account: slug, error: (err as Error).message });
-      }
+      // PLUS DE COPIE DÉPOSÉE PAR NOUS (12/08) — c'était la cause des doublons.
+      //
+      // Signalé par Anthony : « les mails envoyés le 11 août et le 2 août ont
+      // été envoyés en double ». Vérifié en base : les CINQ mails envoyés
+      // depuis l'interface depuis le 28/07 apparaissent chacun DEUX FOIS dans
+      // « Éléments envoyés », à la même seconde, avec des tailles différentes.
+      // Les tailles différentes sont la signature du mécanisme : un exemplaire
+      // est celui qu'Outlook.com dépose LUI-MÊME à l'envoi (ré-encodé par le
+      // serveur), l'autre est celui que ce code ajoutait par IMAP.
+      //
+      // Outlook.com/Hotmail — les seuls comptes gérés ici — archivent
+      // systématiquement les mails envoyés côté serveur. Notre copie était donc
+      // toujours en trop. On ne dépose plus rien ; on le DIT à l'utilisateur,
+      // parce qu'il doit savoir que sa copie existe et d'où elle vient.
+      //
+      // ⚠️ Si un fournisseur qui n'archive pas était ajouté un jour, il faudrait
+      // rétablir l'ajout POUR LUI SEUL — jamais globalement.
+      const copiedTo: string | null = null;
 
       // Réponse : marque le mail d'origine répondu (IMAP + index) — les
       // écrans « Réponses en attente » se mettent à jour sans re-sync.
