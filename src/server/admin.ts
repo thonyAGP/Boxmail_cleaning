@@ -2574,10 +2574,18 @@ export function buildAdminRouter(): Router {
               intent,
               intentSource: 'manual',
               intentReason: 'corrigé par toi',
-              // Ta correction lève le doute : le mail n'a plus à être proposé
-              // au rattrapage IA ni protégé pour cause d'analyse incertaine.
-              analysisConfidence: 'high',
-              analysisConfidenceReason: 'intention corrigée à la main',
+              // LA CONFIANCE N'EST PLUS TOUCHÉE (12/08, contre-revue
+              // « protection du nettoyage », décision n° 3).
+              //
+              // Ce code forçait la confiance à « haute », ce qui faisait sauter
+              // la protection « analyse incertaine ». Autrement dit : corriger
+              // un mail RETIRAIT une protection. Anthony a tranché l'inverse —
+              // « si je corrige moi-même, cela ne veut pas dire que j'empêche
+              // le mail d'être supprimé automatiquement » — mais la conclusion
+              // va plus loin que le sens de la règle : une correction dit ce
+              // qu'EST le mail, jamais ce qu'on a le DROIT d'en faire.
+              // Mélanger les deux revenait à laisser un champ d'analyse porter
+              // une décision de sécurité.
             }
           : { intent: null, intentSource: 'auto', intentReason: null },
       });
