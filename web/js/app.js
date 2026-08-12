@@ -7876,8 +7876,14 @@ const inboxState = {
   // '' = 🌐 toutes les boîtes (défaut) ; mémorisé entre les visites.
   account: localStorage.getItem('bm.inboxAccount') ?? '',
   // Rôle de dossier en vue unifiée : inbox | sent | drafts | trash | archive | spam
-  role: 'inbox',
-  folder: '',
+  //
+  // MÉMORISÉS entre les visites, comme le compte (12/08). Sans ça, revenir sur
+  // une boîte ou faire F5 ramenait toujours à la réception : l'URL ne porte que
+  // le compte, et le dossier ne vivait qu'en mémoire — donc perdu au premier
+  // rafraîchissement. Signalé par Anthony : « en refaisant F5 pour rafraîchir,
+  // on revient dans le bon dossier ».
+  role: localStorage.getItem('bm.inboxRole') || 'inbox',
+  folder: localStorage.getItem('bm.inboxFolder') || '',
   offset: 0,
   pageSize: 50,
   unseen: false,
@@ -7973,8 +7979,12 @@ async function renderInbox(slugFromHash) {
   $('#inbox-account').addEventListener('change', async (e) => {
     inboxState.account = e.target.value;
     localStorage.setItem('bm.inboxAccount', inboxState.account);
+    // Changer de boîte remet au dossier par défaut : un chemin de dossier n'a
+    // pas de sens d'une boîte à l'autre.
     inboxState.folder = '';
     if (!isUnifiedInbox()) inboxState.role = 'inbox';
+    localStorage.setItem('bm.inboxRole', inboxState.role);
+    localStorage.setItem('bm.inboxFolder', '');
     inboxState.offset = 0;
     inboxState.selected.clear();
     await loadInboxFolders();
@@ -7987,6 +7997,9 @@ async function renderInbox(slugFromHash) {
     } else {
       inboxState.folder = e.target.value;
     }
+    // Mémorisé, comme le compte : c'est ce qui fait qu'un F5 te ramène ICI.
+    localStorage.setItem('bm.inboxRole', inboxState.role);
+    localStorage.setItem('bm.inboxFolder', inboxState.folder);
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
@@ -8187,6 +8200,15 @@ function inboxView() {
 async function loadInbox() {
   const body = $('#inbox-body');
   if (!body) return;
+  // Point de passage OBLIGÉ de tout changement de dossier — y compris les clics
+  // dans la barre latérale, qui ne passent par aucun des sélecteurs. C'est donc
+  // ici qu'on retient où tu es, pour t'y ramener au rafraîchissement.
+  try {
+    localStorage.setItem('bm.inboxRole', inboxState.role || 'inbox');
+    localStorage.setItem('bm.inboxFolder', inboxState.folder || '');
+  } catch {
+    /* navigation privée : tant pis pour la mémorisation */
+  }
   // La bascule n'existe que sur la boîte de réception unifiée — pas sur les
   // dossiers (envoyés, corbeille…) ni sur une boîte précise.
   const tabs = $('#inbox-view-tabs');

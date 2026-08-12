@@ -393,7 +393,42 @@ export function officeToText(buf: Buffer): AttachmentText {
     : { kind: 'other', text: '', note: 'Document Office sans texte exploitable.' };
 }
 
+/**
+ * Rend un texte ÉCRIVABLE EN BASE.
+ *
+ * PANNE RÉELLE, relevée dans les journaux du 12/08 : une quinzaine d'échecs en
+ * série, tous « Invalid prisma.message.update() : lone leading surrogate in
+ * hex escape » / « unexpected end of hex escape ». L'extraction PDF produit des
+ * demi-caractères de substitution isolés — une table `/ToUnicode` incomplète
+ * suffit — et une chaîne qui en contient n'est pas encodable en UTF-8 : TOUTE
+ * l'écriture échoue, pas seulement le caractère fautif.
+ *
+ * Conséquence : le job « pièces jointes » tournait et ne produisait rien pour
+ * ces mails, en boucle, sans que rien ne le dise à l'écran. Exactement le genre
+ * de panne silencieuse qui donne une illusion de couverture.
+ *
+ * Le même assainissement existait depuis longtemps pour le texte des MAILS
+ * (`cleanSnippet`) ; il manquait pour celui des PIÈCES.
+ */
+export function assainirPourBase(s: string): string {
+  return s
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+}
+
 export function attachmentToText(
+  filename: string,
+  contentType: string,
+  buf: Buffer,
+): AttachmentText {
+  const r = attachmentToTextBrut(filename, contentType, buf);
+  // Assainissement au SEUL point de sortie : tous les appelants en profitent,
+  // y compris la lecture à la demande (read_attachment).
+  return r.text ? { ...r, text: assainirPourBase(r.text) } : r;
+}
+
+function attachmentToTextBrut(
   filename: string,
   contentType: string,
   buf: Buffer,

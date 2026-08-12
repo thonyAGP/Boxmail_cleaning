@@ -17,7 +17,12 @@ import { createHash } from 'node:crypto';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { imapService } from './imap.js';
-import { attachmentToText, documentHints, type DocumentHints } from './attachment-text.js';
+import {
+  attachmentToText,
+  assainirPourBase,
+  documentHints,
+  type DocumentHints,
+} from './attachment-text.js';
 import { detectIntent } from './categorize.js';
 import type { AccountRecord } from './accounts.js';
 
@@ -247,7 +252,10 @@ export async function readOne(
     if (r.kind === 'text') {
       // Le NOM du fichier est conservé dans le texte indexé : chercher
       // « facture.pdf » doit marcher, y compris quand le nom ne dit rien.
-      const chunk = `--- ${dl.filename} ---\n${r.text.slice(0, MAX_TEXT_PAR_PIECE)}`;
+      // Le NOM du fichier vient d'IMAP et passe par la même moulinette : il
+      // peut porter les mêmes caractères mal formés que le contenu, et il
+      // suffirait d'un seul pour faire échouer l'écriture de tout le mail.
+      const chunk = `--- ${assainirPourBase(dl.filename)} ---\n${r.text.slice(0, MAX_TEXT_PAR_PIECE)}`;
       chunks.push(chunk);
       total += chunk.length;
     } else if (r.kind === 'scan') sawImage = true;
