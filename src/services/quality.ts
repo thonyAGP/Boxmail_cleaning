@@ -97,6 +97,11 @@ async function sampleByCategory(category: 'newsletter' | 'notification', limit: 
   };
   // categorySource='auto' : on ne juge que les décisions de la MACHINE (une
   // catégorie corrigée à la main est déjà un verdict de l'utilisateur).
+  // VÉRIFIÉ AU LOT 4K (12/08) : cette lecture porte sur la catégorie
+  // d'EXPÉDITEUR (précédence manuel > ia > auto maintenue par la sync), pas
+  // sur les colonnes plates du mail — rien à basculer. À noter (non tranché) :
+  // les catégories posées par l'analyse (categorySource='ai') ne sont jamais
+  // échantillonnées ici, alors que ce sont aussi des décisions de machine.
   return db.$queryRawUnsafe<Row[]>(
     `SELECT m.id, m.threadId, m.accountSlug AS account, f.path AS folder, m.uid,
             m.subject, m.fromEmail, m.fromName, m.date, m.isSeen, s.categoryReason
@@ -356,6 +361,17 @@ export async function recordFeedback(input: FeedbackInput): Promise<{
   // B4 : le verdict alimente la CONFIANCE de l'analyse pour les moteurs qui
   // nourrissent le nettoyage — « incorrect » ⇒ confiance faible ⇒ le mail est
   // protégé de toute suppression automatique ; « correct » ⇒ confiance forte.
+  //
+  // ⚠️ SIGNALÉ AU LOT 4K (12/08), COMPORTEMENT CONSERVÉ EN ATTENDANT QU'ANTHONY
+  // TRANCHE : c'est une PROTECTION déguisée en champ d'analyse — la même
+  // famille de défaut que celle corrigée dans admin.ts le 12/08 (contre-revue
+  // « protection du nettoyage », décision n° 3 : un champ d'analyse ne doit
+  // pas porter une décision de sécurité). Le sens « incorrect ⇒ low » AJOUTE
+  // une protection (direction sûre) ; mais « correct ⇒ high » RETIRE la
+  // protection « analyse incertaine » de retention.ts (clause
+  // analysisConfidence != 'low') sur la foi d'un clic. La cible propre est un
+  // veto dédié dans le socle (getCleanupProtection, lot 4j) nourri par
+  // AnalysisFeedback — pas une écriture dans la colonne de compatibilité.
   if (['newsletter', 'notification', 'cleanup'].includes(input.engine)) {
     const conf =
       input.verdict === 'incorrect'

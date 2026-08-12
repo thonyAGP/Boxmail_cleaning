@@ -41,6 +41,53 @@ export interface Suggestions {
   total: number;
 }
 
+// Seuils de la suggestion « 🔕 jamais urgent » déduite des lectures de l'IA :
+// au moins N mails lus, dont au moins 90 % sans suite. Volontairement hauts —
+// l'écran a déjà produit 114 suggestions dont AUCUNE n'a été activée : mieux
+// vaut peu de suggestions très sûres que beaucoup d'à-peu-près.
+export const SUGGESTION_IA_MIN_MAILS = 8;
+export const SUGGESTION_IA_MIN_RATIO = 0.9;
+
+/** Ce que l'IA a lu des mails d'UN expéditeur (agrégé en SQL, deux régimes). */
+export interface BilanLecturesIA {
+  /** Mails lus par l'IA : verdict sémantique OU ancienne analyse plate. */
+  lus: number;
+  /** …jugés « rien à attendre de toi » PAR LE VERDICT (aucune action de
+   *  l'utilisateur déclarée, attention éteinte dès réception). */
+  sansSuiteVerdict: number;
+  /** …jugés « rien à faire » par l'ANCIENNE analyse plate (repli assumé). */
+  sansSuiteRepli: number;
+}
+
+/**
+ * La preuve chiffrée d'une suggestion « 🔕 jamais urgent », ou null quand les
+ * lectures ne la justifient pas. Fonction PURE — c'est elle que le banc
+ * (npm run verdict:check) éprouve : la preuve affichée est ce qui rend la
+ * suggestion acceptable, elle cite les chiffres et AVOUE la part venue de
+ * l'ancienne analyse plate (repli) quand il y en a une.
+ */
+export function preuveJamaisUrgent(b: BilanLecturesIA): string | null {
+  const sansSuite = b.sansSuiteVerdict + b.sansSuiteRepli;
+  if (b.lus < SUGGESTION_IA_MIN_MAILS) return null;
+  if (sansSuite / b.lus < SUGGESTION_IA_MIN_RATIO) return null;
+  let jugement: string;
+  if (b.sansSuiteRepli === 0) {
+    jugement = `${sansSuite} sans rien à attendre de toi (aucune action demandée, attention éteinte)`;
+  } else if (b.sansSuiteVerdict === 0) {
+    jugement =
+      `${sansSuite} jugés « à archiver » ou « rien à faire » par l'ancienne analyse` +
+      ' — repli, pas encore de verdict sémantique';
+  } else {
+    jugement =
+      `${sansSuite} sans rien à attendre de toi, dont ${b.sansSuiteRepli} jugé(s) par` +
+      " l'ancienne analyse (repli, pas encore de verdict sémantique)";
+  }
+  return (
+    `L'IA a lu ${b.lus} de ses mails un par un : ${jugement} — marquer 🔕 jamais urgent ?` +
+    ' (Ses mails deviendront aussi de meilleurs candidats au nettoyage.)'
+  );
+}
+
 /** Toutes les suggestions courantes (idempotent, index + journal only). */
 export async function listSuggestions(): Promise<Suggestions> {
   await ensureDbReady();
@@ -195,28 +242,66 @@ export async function listSuggestions(): Promise<Suggestions> {
     priorities.push(suggestion);
   }
 
-  // 4. Règles DÉDUITES DES VERDICTS IA (décision utilisateur 02/08 : « l'IA
-  //    lit tout et les règles en découlent »). Quand l'IA a lu ≥ 8 mails d'un
-  //    même expéditeur et jugé ≥ 90 % « à archiver » ou « rien à faire »,
-  //    elle propose 🔕 jamais urgent — preuve chiffrée à l'appui, validation
-  //    par l'utilisateur via le mécanisme existant (priorités A5).
+  // 4. Règles DÉDUITES DES LECTURES DE L'IA (décision utilisateur 02/08 :
+  //    « l'IA lit tout et les règles en découlent »). Quand l'IA a lu assez de
+  //    mails d'un même expéditeur et jugé la quasi-totalité « rien à attendre
+  //    de toi », elle propose 🔕 jamais urgent — preuve chiffrée à l'appui
+  //    (c'est elle qui rend la suggestion acceptable), validation par
+  //    l'utilisateur via le mécanisme existant (priorités A5).
+  //
+  //    LOT 4K (12/08) : deux régimes, comme partout depuis 4c. Le discriminant
+  //    est l'existence d'une ligne MailVerdict — JAMAIS la colonne aiVerdictAt,
+  //    posée par l'ANCIENNE analyse plate sur 17 207 mails sans verdict
+  //    sémantique, qui tomberaient sinon ENTRE les deux chemins.
+  //     1. verdict présent : « rien à attendre de toi » = l'analyse COMPLÈTE
+  //        n'a déclaré AUCUNE action de ta part ET a éteint l'attention dès
+  //        réception (mode 'none'). Aucune action demandée ⇒ aucune action
+  //        ouverte, par construction — et c'est volontairement PLUS STRICT que
+  //        « plus d'action ouverte » : un expéditeur dont tu as dû solder les
+  //        demandes (répondre, payer) n'est pas « jamais urgent », il est
+  //        suivi. Une analyse partielle ou en échec ne compte jamais : on ne
+  //        fait pas taire un expéditeur sur un doute.
+  //     2. pas de verdict : l'ancienne projection plate (aiAction archive/none)
+  //        reste, en REPLI — et la preuve l'avoue (voir preuveJamaisUrgent).
+  //    L'agrégation reste en SQL parce qu'elle balaie TOUS les mails lus par
+  //    l'IA (même budget que NOISE_BUCKET_CASE de today.ts) : résoudre des
+  //    milliers d'états en mémoire pour compter par expéditeur serait un
+  //    contresens.
   const already = new Set(priorities.map((p) => `${p.account}|${p.email}`));
-  type AiRow = { account: string; email: string; n: number; na: number };
+  type AiRow = {
+    account: string;
+    email: string;
+    n: number | bigint;
+    naVerdict: number | bigint;
+    naRepli: number | bigint;
+  };
   const aiRows = await db.$queryRawUnsafe<AiRow[]>(
     `SELECT m.accountSlug AS account, m.fromEmail AS email,
             COUNT(*) AS n,
-            SUM(CASE WHEN m.aiAction IN ('archive', 'none') THEN 1 ELSE 0 END) AS na
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id
+                                    AND v.attentionMode = 'none' AND v.analysisStatus = 'complete')
+                      AND NOT EXISTS (SELECT 1 FROM VerdictAction va
+                                       WHERE va.messageId = m.id AND va.actor = 'user')
+                 THEN 1 ELSE 0 END) AS naVerdict,
+            SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)
+                      AND m.aiAction IN ('archive', 'none')
+                 THEN 1 ELSE 0 END) AS naRepli
      FROM Message m
-     WHERE m.aiVerdictAt IS NOT NULL AND m.isDeleted = 0 AND m.isOutbound = 0
+     WHERE (m.aiVerdictAt IS NOT NULL
+            OR EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id))
+       AND m.isDeleted = 0 AND m.isOutbound = 0
        AND m.fromEmail IS NOT NULL
      GROUP BY m.accountSlug, m.fromEmail
-     HAVING COUNT(*) >= 8`,
+     HAVING COUNT(*) >= ${SUGGESTION_IA_MIN_MAILS}`,
   );
   for (const r of aiRows) {
     if (priorities.length >= 40) break; // l'écran n'en montre que 20 — inutile d'aller plus loin
-    const n = Number(r.n);
-    const na = Number(r.na);
-    if (na / n < 0.9) continue;
+    const evidence = preuveJamaisUrgent({
+      lus: Number(r.n),
+      sansSuiteVerdict: Number(r.naVerdict),
+      sansSuiteRepli: Number(r.naRepli),
+    });
+    if (!evidence) continue;
     if (already.has(`${r.account}|${r.email}`)) continue;
     if (dismissed.has(`priority:priority:${r.account}|${r.email}|never_urgent`)) continue;
     const s = await db.sender.findUnique({
@@ -229,7 +314,7 @@ export async function listSuggestions(): Promise<Suggestions> {
       email: r.email,
       name: s.displayName ?? r.email,
       priority: 'never_urgent',
-      evidence: `L'IA a lu ${n} de ses mails un par un : ${na} jugés « à archiver » ou « rien à faire » — marquer 🔕 jamais urgent ? (Ses mails deviendront aussi de meilleurs candidats au nettoyage.)`,
+      evidence,
     });
   }
 

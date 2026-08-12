@@ -342,7 +342,11 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const attachmentNames = piecesInfo.map((x) => x.n).join('\n');
             const hasListUnsubscribe =
               !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8'));
-            // Intention (A1) : sur les entrants uniquement, depuis le sujet indexé.
+            // Intention (A1) : sur les entrants uniquement, depuis le sujet
+            // indexé. COLONNE DE COMPATIBILITÉ depuis le lot 4b (12/08) : elle
+            // doit rester ÉCRITE (le socle la lit comme repli pour les mails
+            // sans verdict sémantique, avec provenance « heuristique »), mais
+            // la sync ne DÉCIDE rien dessus — aucun moteur ne le doit plus.
             const intentInfo =
               fromEmail === selfEmail
                 ? null

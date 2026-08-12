@@ -27,6 +27,7 @@ import { explainMatch } from '../services/search.js';
 import { labelDuGroupe } from '../services/find.js';
 import { indexerMentionsPourPropagation, ciblesDuDossier } from '../services/dossiers.js';
 import { pieceComptableDuVerdict } from '../services/accounting.js';
+import { preuveJamaisUrgent } from '../services/learning.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -1463,6 +1464,51 @@ console.log('\n=== 19. Connecteur comptable — l’émetteur, jamais l’expéd
     'sans issuer lisible, la mention issued_by donne le fournisseur',
     'EDF',
     releve?.supplier,
+  );
+}
+
+// ---------------------------------------------------------------------------
+//
+// L'APPRENTISSAGE (lot 4k) — la suggestion « 🔕 jamais urgent » déduite des
+// lectures de l'IA ne compte plus sur `aiAction` quand le verdict existe :
+// « rien à attendre de toi » = aucune action de l'utilisateur déclarée et
+// attention éteinte. La PREUVE CHIFFRÉE reste affichée avec chaque suggestion
+// (c'est elle qui la rend acceptable) et AVOUE la part venue du repli.
+
+console.log('\n=== 20. Apprentissage — la preuve chiffrée, deux régimes assumés ===\n');
+
+{
+  verifier(
+    'moins de 8 mails lus : aucune suggestion, quel que soit le ratio',
+    null,
+    preuveJamaisUrgent({ lus: 7, sansSuiteVerdict: 7, sansSuiteRepli: 0 }),
+  );
+  verifier(
+    '89 % « sans suite » : aucune suggestion (le seuil est 90 %)',
+    null,
+    preuveJamaisUrgent({ lus: 100, sansSuiteVerdict: 89, sansSuiteRepli: 0 }),
+  );
+  const pur = preuveJamaisUrgent({ lus: 10, sansSuiteVerdict: 10, sansSuiteRepli: 0 }) ?? '';
+  verifier('régime verdict : la preuve cite les chiffres', true, pur.includes('a lu 10') && pur.includes('10 sans rien'));
+  verifier(
+    '…fondée sur l’absence d’action et l’attention éteinte, plus jamais sur aiAction',
+    true,
+    pur.includes('aucune action demandée') && pur.includes('attention éteinte'),
+  );
+  verifier('…sans parler de repli quand tout vient du verdict', false, pur.includes('repli'));
+  const repli = preuveJamaisUrgent({ lus: 12, sansSuiteVerdict: 0, sansSuiteRepli: 11 }) ?? '';
+  verifier('régime repli (ancienne analyse plate) : la preuve l’AVOUE', true, repli.includes('repli'));
+  verifier(
+    '…en nommant sa source (l’ancienne analyse, pas le verdict)',
+    true,
+    repli.includes('ancienne analyse'),
+  );
+  const mixte = preuveJamaisUrgent({ lus: 20, sansSuiteVerdict: 10, sansSuiteRepli: 9 }) ?? '';
+  verifier('régime mixte : la part du repli est chiffrée', true, mixte.includes('dont 9'));
+  verifier(
+    'les deux régimes s’ADDITIONNENT pour atteindre le seuil (10+9 sur 20 = 95 %)',
+    true,
+    mixte.length > 0,
   );
 }
 

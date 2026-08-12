@@ -28,7 +28,9 @@ export interface AccountHealth {
   /** Explication en français, affichable telle quelle. */
   message: string;
   indexedMessages: number;
-  /** Mails entrants indexés mais pas encore analysés (intention/confiance). */
+  /** Mails entrants jamais touchés par la passe de confiance de la sync
+   *  (colonne legacy B4). Télémesure de FRAÎCHEUR du pipeline — pas la
+   *  couverture du verdict sémantique (elle vit sur /api/analysis/coverage). */
   unanalyzed: number;
   quotaPct: number | null;
 }
@@ -81,8 +83,18 @@ export async function getHealth(): Promise<HealthReport> {
   });
   const bySlug = new Map(rows.map((r) => [r.slug, r]));
 
-  // Mails entrants jamais analysés (ni intention ni confiance) — un compteur
-  // qui grimpe signale un pipeline qui ne tourne plus.
+  // Mails entrants jamais touchés par la passe de confiance de la sync — un
+  // compteur qui grimpe signale un pipeline de synchronisation qui ne tourne
+  // plus.
+  //
+  // LECTURE CONSERVÉE AU LOT 4K (12/08), ET C'EST UN CHOIX : ici la colonne
+  // analysisConfidence ne dit rien d'un mail, elle sert de témoin de passage
+  // de la sync (elle est posée par computeConfidenceForAccount à chaque
+  // cycle). La remplacer par « sans ligne MailVerdict » changerait le SENS du
+  // compteur : il afficherait le stock du rattrapage sémantique (des milliers
+  // de mails, qui ne se vide qu'à la demande via Claude) et ne détecterait
+  // plus une sync arrêtée. La couverture du verdict sémantique, elle, se lit
+  // sur /api/analysis/coverage.
   const unanalyzedRows = await db.message.groupBy({
     by: ['accountSlug'],
     where: { isDeleted: false, isOutbound: false, analysisConfidence: null },
