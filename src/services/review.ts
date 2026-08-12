@@ -4,14 +4,33 @@ import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { recordOperation } from './oplog.js';
 import { createTask } from './tasks.js';
-import { imapService } from './imap.js';
-import { resolveAccount } from './accounts.js';
 import { chunk } from './attention.js';
 import { isRentilaSender, parseRentilaMail, type RentilaMailInfo } from './rentila.js';
 import { extractDeadlines } from './deadlines.js';
+import {
+  resolveMailSemanticState,
+  getOpenActions,
+  type EtatSemantique,
+  type EtatAction,
+  type Provenance,
+} from './semantique.js';
 
 /**
  * Dépouillement du courrier entrant (Lot 1 du plan validé le 02/08).
+ * BASCULÉ SUR LE SOCLE au lot 4f (12/08) — c'est l'écran quotidien d'Anthony,
+ * le plus gros risque de la refonte d'après la contre-revue :
+ *
+ *   « Migrer ses 8 fonctions séparément : deux sur le nouveau modèle, trois
+ *   sur les colonnes legacy, trois sur leurs propres heuristiques. »
+ *
+ * La parade est STRUCTURELLE, pas disciplinaire : `reviewQueue` résout l'état
+ * sémantique de TOUT le lot en une passe (resolveMailSemanticState), le
+ * condense en UN objet par mail (`depouillerEtat`, fonction pure éprouvée par
+ * le banc), et les fonctions internes (classifyRow, buildProposal,
+ * convergence, toItem, reviewLearning) deviennent PRÉSENTATIVES : aucune ne
+ * relit `intent`, `aiAction` ni `analysisConfidence` — elles reçoivent l'objet
+ * résolu. Le jour où la politique de classement change, elle change à UN
+ * endroit.
  *
  * L'application savait détecter, classer et noter — mais s'arrêtait juste
  * avant le geste : rien ne prenait en charge « voici tes 20 nouveaux mails,
@@ -62,43 +81,273 @@ function getBaseline(): Date {
   return baseline;
 }
 
-// ---------------------------------------------------------------- Classification
+// ---------------------------------------------------------------- Résolution (lot 4f)
+
+/** Catégories d'expéditeur qui exigent une décision individuelle. */
+const CATEGORIES_A_DECIDER = new Set(['person', 'bank', 'admin', 'insurance']);
+const CATEGORIES_BRUIT = new Set(['newsletter', 'notification', 'social', 'ad']);
+
+/** REPLI uniquement — natures legacy à décision individuelle / rangeables.
+ *  Ces listes MEURENT avec le dernier mail non analysé : sur un mail au
+ *  verdict connu, aucune catégorie n'est consultée (piège n° 3, contre-revue). */
+const NATURES_A_DECIDER = new Set(['invoice', 'reply_expected', 'appointment', 'reminder', 'action_required']);
+const NATURES_RANGEABLES = new Set(['promo', 'confirmation', 'shipping', 'otp']);
+
+/** Libellés FR des natures legacy citées dans les raisons du repli. */
+const NATURE_LABELS: Record<string, string> = {
+  invoice: 'facture', reply_expected: 'réponse attendue', appointment: 'rendez-vous',
+  reminder: 'rappel', action_required: 'action à faire', promo: 'publicité',
+  confirmation: 'confirmation', shipping: 'suivi de livraison', otp: 'code à usage unique',
+  document: 'document', info: 'information',
+};
+
+/** Contrainte d'une action ouverte : le tri qui désigne LE geste central.
+ *  Retard d'abord, puis la date la plus proche, la force, et le kind — pour
+ *  qu'un mail « payer + répondre » ait UNE raison principale stable. */
+const ORDRE_FORCE: Record<string, number> = { required: 0, requested: 1, optional: 2, informational: 3 };
+const ORDRE_GESTE: Record<string, number> = {
+  pay: 0, reply: 1, sign: 2, provide_document: 3, declare: 4, renew: 5,
+  attend: 6, book: 7, call: 8, confirm: 9, review: 10, other: 11,
+};
+
 /**
- * Classe de décision d'un mail — le tri du parcours (plan §11) :
- *  - important : à décider individuellement (personnes, banque/administration,
- *    demandes, factures, rendez-vous, verdict IA « répondre/payer ») ;
- *  - read      : mérite une lecture (informations, cas incertains) ;
- *  - range     : probablement rangeable d'un geste (notifications, newsletters,
- *    promos, confirmations…) — traité par LOTS homogènes.
- * Une analyse en confiance FAIBLE ne va jamais dans « range » : elle remonte
- * vers une décision humaine (« lire pour décider »).
+ * Familles de lot côté verdict : le PURPOSE (fonction du message), libellé en
+ * français. C'est lui qui garde les quittances séparées du marketing d'un même
+ * expéditeur — le rôle que tenait `intent` dans l'ancienne clé de lot.
  */
-function classify(m: {
-  intent: string | null;
+const FAMILLES_VERDICT: Record<string, string> = {
+  request: 'demandes',
+  response: 'réponses reçues',
+  notification: 'notifications',
+  confirmation: 'confirmations automatiques',
+  transaction_record: 'traces de transaction (reçus, quittances…)',
+  document_delivery: 'documents transmis',
+  security: 'codes et sécurité',
+  marketing: 'publicités / newsletters',
+  conversation: 'conversations',
+  other: 'nature à préciser',
+  unknown: 'nature à préciser',
+};
+
+/** Colonnes legacy embarquées pour le REPLI (mails sans verdict sémantique).
+ *  Jamais consultées quand le verdict existe — même contrat que le
+ *  `CandidatRepli` d'attention.ts. */
+export interface RepereRepli {
+  /** Projection de l'ancienne analyse plate (reply/pay/read/archive/none). */
   aiAction: string | null;
-  analysisConfidence: string | null;
-  senderCategory: string | null;
-}): ReviewClass {
-  const cat = m.senderCategory;
-  if (cat === 'person') return 'important';
-  if (cat === 'bank' || cat === 'admin' || cat === 'insurance') return 'important';
-  if (m.aiAction === 'reply' || m.aiAction === 'pay') return 'important';
-  if (
-    m.intent === 'invoice' || m.intent === 'reply_expected' ||
-    m.intent === 'appointment' || m.intent === 'reminder' ||
-    m.intent === 'action_required'
-  ) {
-    return 'important';
+  /** Source de l'intent legacy. Seul usage restant : « rule » (règle regex
+   *  validée par simulation) reste un signal fiable pour le régime A — le
+   *  socle range « rule » sous `heuristique` et perdrait cette nuance. */
+  intentSource: string | null;
+}
+
+/**
+ * L'OBJET RÉSOLU que reçoivent les 8 fonctions du dépouillement. Une seule
+ * carte par mail : `primaryReason` est LA raison, `secondaryReasons` des
+ * mentions sous la même carte — jamais des cartes concurrentes (un mail
+ * « échéance + réponse attendue + à lire » n'existe plus).
+ */
+export interface EtatDepouille {
+  classe: ReviewClass;
+  /** verdict = décidé par le socle ; repli = heuristiques legacy en attendant
+   *  que ce mail soit analysé. La raison affichée avoue toujours sa provenance. */
+  source: 'verdict' | 'repli';
+  primaryReason: string;
+  secondaryReasons: string[];
+  /** L'action ouverte la plus contraignante — le geste que la carte propose. */
+  geste: {
+    kind: string;
+    label: string | null;
+    dueAt: Date | null;
+    enRetard: boolean;
+    montant: number | null;
+    devise: string | null;
+    certainty: string;
+  } | null;
+  veutPayer: boolean;
+  veutRepondre: boolean;
+  /** Intention résolue par le socle (précédence manuel > IA > heuristique). */
+  nature: string | null;
+  natureSource: Provenance;
+  /** true si la nature peut compter comme signal de convergence (régime A). */
+  natureFiable: boolean;
+  resume: string | null;
+  categorieExpediteur: string | null;
+  /** Confiance legacy B4 — affichage seulement, n'autorise jamais rien. */
+  confiance: string | null;
+  /** Clé de FAMILLE du regroupement en lots (préfixée v:/n: — un mail analysé
+   *  et un mail non analysé ne portent pas le même niveau de preuve). */
+  lotFamille: string;
+  /** Libellé FR de la famille (null = le front affiche la nature legacy). */
+  lotFamilleLabel: string | null;
+}
+
+const FR_DATE_COURT = (d: Date): string => d.toLocaleDateString('fr-FR');
+
+function libelleAction(a: EtatAction): string {
+  const montant =
+    a.fait.montant !== null
+      ? ` (${a.fait.montant.toFixed(2).replace('.', ',')} ${a.fait.devise ?? '€'})`
+      : '';
+  const quand = a.enRetard
+    ? ' — échéance dépassée, en retard, pas résolue'
+    : a.fait.dueAt
+      ? ` — à faire avant le ${FR_DATE_COURT(a.fait.dueAt)}`
+      : '';
+  return `« ${a.fait.label ?? a.fait.kind} »${montant}${quand}`;
+}
+
+/**
+ * Condense l'état sémantique d'un mail en UN objet de dépouillement.
+ * Fonction PURE (le banc l'éprouve avec des états résolus en mémoire).
+ *
+ * Les trois pièges de la contre-revue, tenus ici même :
+ *  1. les 8 fonctions ne migrent pas séparément : elles lisent TOUTES cet
+ *     objet, résolu une fois — plus aucune relecture des colonnes plates ;
+ *  2. le sens n'est pas le classement : la classe (important/read/range) est
+ *     une POLITIQUE DE RANGEMENT sur l'ouverture de l'action, l'échéance, le
+ *     doute et la fenêtre — elle ne fabrique aucune conclusion sémantique ;
+ *  3. une carte, une raison : le geste central est choisi par un tri stable,
+ *     tout le reste (autres actions, échéance déjà suivie, document porté)
+ *     devient une mention secondaire sous la MÊME carte.
+ */
+export function depouillerEtat(etat: EtatSemantique, repli: RepereRepli): EtatDepouille {
+  const nature = etat.nature.valeur;
+  const cat = etat.categorieExpediteur.valeur;
+  const confiance = etat.analyse.confianceLegacy;
+  const verdictPresent = etat.analyse.verdictPresent;
+  const resume = etat.resume.valeur;
+
+  const ouvertes = [...getOpenActions(etat)].sort(
+    (a, b) =>
+      Number(b.enRetard) - Number(a.enRetard) ||
+      (a.fait.dueAt?.getTime() ?? Number.POSITIVE_INFINITY) -
+        (b.fait.dueAt?.getTime() ?? Number.POSITIVE_INFINITY) ||
+      (ORDRE_FORCE[a.fait.force] ?? 9) - (ORDRE_FORCE[b.fait.force] ?? 9) ||
+      (ORDRE_GESTE[a.fait.kind] ?? 99) - (ORDRE_GESTE[b.fait.kind] ?? 99),
+  );
+  const central = ouvertes[0] ?? null;
+  const geste = central
+    ? {
+        kind: central.fait.kind,
+        label: central.fait.label,
+        dueAt: central.fait.dueAt,
+        enRetard: central.enRetard,
+        montant: central.fait.montant,
+        devise: central.fait.devise,
+        certainty: central.fait.certainty,
+      }
+    : null;
+
+  // Le verdict décide seul quand il existe ; sinon les colonnes legacy (repli).
+  const veutPayer = verdictPresent
+    ? ouvertes.some((a) => a.fait.kind === 'pay')
+    : nature === 'invoice' || repli.aiAction === 'pay';
+  const veutRepondre = verdictPresent
+    ? ouvertes.some((a) => a.fait.kind === 'reply')
+    : nature === 'reply_expected' || repli.aiAction === 'reply';
+
+  const echeancesActives = etat.courant.echeances.filter((e) => !e.close);
+  const mentionEcheance = (e: (typeof echeancesActives)[number]): string =>
+    `déjà suivie en échéance : « ${e.titre} » (${FR_DATE_COURT(e.date)}${e.echue ? ', dépassée' : ''})`;
+
+  let classe: ReviewClass;
+  let primary: string;
+  const secondaires: string[] = [];
+
+  if (verdictPresent) {
+    if (central) {
+      classe = 'important';
+      primary = `une action reste à faire de ta part : ${libelleAction(central)} (analyse du mail)`;
+      for (const a of ouvertes.slice(1)) secondaires.push(`aussi à faire : ${libelleAction(a)}`);
+      for (const e of echeancesActives) secondaires.push(mentionEcheance(e));
+    } else if (cat !== null && CATEGORIES_A_DECIDER.has(cat)) {
+      classe = 'important';
+      primary = `à décider toi-même : ${etat.categorieExpediteur.pourquoi}`;
+      for (const e of echeancesActives) secondaires.push(mentionEcheance(e));
+    } else if (echeancesActives.length > 0) {
+      // L'obligation vit déjà ailleurs : PAS une seconde carte « à décider ».
+      classe = 'read';
+      primary =
+        `l'obligation vit déjà en échéance : « ${echeancesActives[0].titre} » ` +
+        `(${FR_DATE_COURT(echeancesActives[0].date)}) — rien d'autre à décider ici`;
+      for (const e of echeancesActives.slice(1)) secondaires.push(mentionEcheance(e));
+    } else if (etat.analyse.statut !== 'complete' || etat.analyse.douteLourd) {
+      classe = 'read';
+      primary = "l'analyse est incomplète ou déclare un doute — à lire pour décider toi-même";
+    } else if (etat.courant.attention.perimee) {
+      // C'est ici qu'Air France en août devient rangeable au lieu de crier
+      // « dernier rappel » : la fenêtre est passée, plus rien à faire.
+      classe = 'range';
+      primary = `plus rien à surveiller d'après l'analyse — ${etat.courant.attention.pourquoi}`;
+    } else {
+      classe = 'read';
+      primary = `l'analyse garde ce mail sous attention — ${etat.courant.attention.pourquoi}`;
+    }
+    if (etat.faits.documentsPortes.length > 0) {
+      secondaires.push('porte un document (facture, contrat, attestation…) — à retrouver, jamais à perdre');
+    }
+    if (resume) secondaires.push(`résumé de l'analyse : ${resume}`);
+  } else {
+    // ---------------------------- REPLI (pas encore de verdict sémantique)
+    // Le comportement historique de `classify`, à l'identique — mais sur des
+    // valeurs RÉSOLUES (précédence déjà appliquée), et la raison avoue le repli.
+    if (cat !== null && CATEGORIES_A_DECIDER.has(cat)) {
+      classe = 'important';
+      primary = `à décider toi-même : ${etat.categorieExpediteur.pourquoi}`;
+    } else if (repli.aiAction === 'reply' || repli.aiAction === 'pay') {
+      classe = 'important';
+      primary =
+        `l'ancienne analyse conclut « ${repli.aiAction === 'pay' ? 'payer' : 'répondre'} » — ` +
+        'repli, pas encore de verdict sémantique';
+    } else if (nature !== null && NATURES_A_DECIDER.has(nature)) {
+      classe = 'important';
+      primary =
+        `classé « ${NATURE_LABELS[nature] ?? nature} » (${etat.nature.pourquoi})` +
+        (etat.nature.source === 'manuel' ? '' : ' — repli, pas encore de verdict sémantique');
+    } else if (confiance === 'low') {
+      classe = 'read';
+      primary = 'analyse incertaine (confiance faible) — à lire pour décider toi-même';
+    } else if (cat !== null && CATEGORIES_BRUIT.has(cat)) {
+      classe = 'range';
+      primary = `rangeable d'un geste : ${etat.categorieExpediteur.pourquoi}`;
+    } else if (nature !== null && NATURES_RANGEABLES.has(nature)) {
+      classe = 'range';
+      primary =
+        `mail transactionnel (${NATURE_LABELS[nature] ?? nature}) — rangeable d'un geste ` +
+        '(repli, pas encore de verdict)';
+    } else {
+      classe = 'read';
+      primary = "rien ne le distingue encore — à lire (repli, ce mail n'a pas de verdict d'analyse)";
+    }
+    if (resume) secondaires.push(`résumé de l'analyse : ${resume}`);
   }
-  if (m.analysisConfidence === 'low') return 'read';
-  if (cat === 'notification' || cat === 'newsletter' || cat === 'social' || cat === 'ad') return 'range';
-  if (
-    m.intent === 'promo' || m.intent === 'confirmation' ||
-    m.intent === 'shipping' || m.intent === 'otp'
-  ) {
-    return 'range';
-  }
-  return 'read';
+
+  return {
+    classe,
+    source: verdictPresent ? 'verdict' : 'repli',
+    primaryReason: primary,
+    secondaryReasons: secondaires,
+    geste,
+    veutPayer,
+    veutRepondre,
+    nature,
+    natureSource: etat.nature.source,
+    natureFiable:
+      verdictPresent ||
+      etat.nature.source === 'manuel' ||
+      repli.intentSource === 'rule' ||
+      (nature !== null && confiance === 'high'),
+    resume,
+    categorieExpediteur: cat,
+    confiance,
+    lotFamille: verdictPresent
+      ? `v:${etat.faits.objet?.purpose ?? 'unknown'}`
+      : `n:${nature ?? ''}`,
+    lotFamilleLabel: verdictPresent
+      ? (FAMILLES_VERDICT[etat.faits.objet?.purpose ?? 'unknown'] ?? 'nature à préciser')
+      : null,
+  };
 }
 
 interface CandidateRow {
@@ -111,18 +360,19 @@ interface CandidateRow {
   fromName: string | null;
   date: Date | null;
   isSeen: boolean;
-  intent: string | null;
-  intentSource: string | null;
+  /** Colonnes legacy, lues UNIQUEMENT par le repli (voir RepereRepli). */
   aiAction: string | null;
-  aiSummary: string | null;
-  analysisConfidence: string | null;
+  intentSource: string | null;
   folder: { path: string };
 }
 
-async function loadCandidates(): Promise<{ rows: CandidateRow[]; senderCat: Map<string, string | null> }> {
+async function loadCandidates(): Promise<CandidateRow[]> {
   await ensureDbReady();
   const baseline = getBaseline();
-  const rows = await db.message.findMany({
+  // Plus AUCUNE lecture d'intent / analysisConfidence / aiSummary ici (lot 4f) :
+  // ces vérités arrivent RÉSOLUES par le socle, avec leur provenance. La
+  // catégorie d'expéditeur aussi — l'ancien chargement senderCat a disparu.
+  return db.message.findMany({
     where: {
       isDeleted: false,
       isOutbound: false,
@@ -136,29 +386,26 @@ async function loadCandidates(): Promise<{ rows: CandidateRow[]; senderCat: Map<
     select: {
       id: true, accountSlug: true, uid: true, subject: true, snippet: true,
       fromEmail: true, fromName: true, date: true, isSeen: true,
-      intent: true, intentSource: true, aiAction: true, aiSummary: true, analysisConfidence: true,
+      aiAction: true, intentSource: true,
       folder: { select: { path: true } },
     },
   });
+}
 
-  // Catégories d'expéditeur (par compte + adresse).
-  const senderCat = new Map<string, string | null>();
-  const pairs = new Map<string, Set<string>>();
-  for (const m of rows) {
-    if (!m.fromEmail) continue;
-    if (!pairs.has(m.accountSlug)) pairs.set(m.accountSlug, new Set());
-    pairs.get(m.accountSlug)!.add(m.fromEmail);
+/**
+ * L'état de dépouillement de TOUT le lot, résolu en une passe — jamais mail
+ * par mail (SQLite `connection_limit=1`) : 14 requêtes constantes par lot de
+ * 900, puis `depouillerEtat` en mémoire.
+ */
+async function resoudreLot(rows: CandidateRow[]): Promise<Map<number, EtatDepouille>> {
+  const etats = await resolveMailSemanticState(rows.map((r) => r.id));
+  const out = new Map<number, EtatDepouille>();
+  for (const r of rows) {
+    const etat = etats.get(r.id);
+    if (!etat) continue; // mail disparu entre les deux requêtes : ignoré
+    out.set(r.id, depouillerEtat(etat, { aiAction: r.aiAction, intentSource: r.intentSource }));
   }
-  for (const [account, emails] of pairs) {
-    for (const part of chunk([...emails], 500)) {
-      const senders = await db.sender.findMany({
-        where: { accountSlug: account, email: { in: part } },
-        select: { email: true, category: true },
-      });
-      for (const s of senders) senderCat.set(`${account}|${s.email}`, s.category);
-    }
-  }
-  return { rows, senderCat };
+  return out;
 }
 
 /**
@@ -166,10 +413,11 @@ async function loadCandidates(): Promise<{ rows: CandidateRow[]; senderCat: Map<
  * les notifications automatiques sont rangeables (les obligations qu'elles
  * portent vivent déjà en échéances), les messages relayés de locataires et
  * les alertes qui exigent un geste restent des décisions individuelles.
+ * Hors Rentila (grammaire déterministe), la classe vient de l'objet résolu.
  */
 function classifyRow(
   m: CandidateRow,
-  senderCategory: string | null,
+  d: EtatDepouille,
 ): { cls: ReviewClass; rentila: RentilaMailInfo | null } {
   if (isRentilaSender(m.fromEmail)) {
     const info = parseRentilaMail({
@@ -185,15 +433,7 @@ function classifyRow(
       return { cls: needsAction ? 'important' : 'read', rentila: info };
     }
   }
-  return {
-    cls: classify({
-      intent: m.intent,
-      aiAction: m.aiAction,
-      analysisConfidence: m.analysisConfidence,
-      senderCategory,
-    }),
-    rentila: null,
-  };
+  return { cls: d.classe, rentila: null };
 }
 
 /** Libellé lisible d'une notification Rentila pour les listes exactes. */
@@ -240,22 +480,39 @@ interface ExistingDeadline { id: number; status: string; title: string; date: Da
 const FR_DATE = (d: Date): string => d.toLocaleDateString('fr-FR');
 
 /** « EDF » depuis le nom affiché, sinon le domaine (« foncia »), sinon générique. */
-function payeeName(m: CandidateRow): string {
+function payeeName(m: { fromName: string | null; fromEmail: string | null }): string {
   if (m.fromName?.trim()) return m.fromName.trim();
   const domain = m.fromEmail?.split('@')[1]?.split('.')[0];
   return domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : 'le créancier';
 }
 
-function firstNameOf(m: CandidateRow): string {
+function firstNameOf(m: { fromName: string | null; fromEmail: string | null }): string {
   const first = (m.fromName ?? '').trim().split(/\s+/)[0];
   return first || m.fromEmail || '?';
 }
 
-/** Premier titre-verbe possible pour ce mail, ou null si aucune famille ne s'applique. */
-function buildProposal(
-  m: CandidateRow,
+/** Nature de l'échéance proposée : le GESTE décide, jamais les mots du sujet.
+ *  Même table que deadlines.ts (TYPE_PAR_GESTE, non exporté là-bas — les deux
+ *  convergeront au socle avec l'ontologie unique du lot 4b). */
+const TYPE_PAR_GESTE: Record<string, string> = {
+  pay: 'payment',
+  provide_document: 'document',
+  sign: 'document',
+  declare: 'document',
+  attend: 'appointment',
+  book: 'appointment',
+  call: 'appointment',
+  renew: 'renewal',
+};
+
+/** Premier titre-verbe possible pour ce mail, ou null si aucune famille ne s'applique.
+ *  Fonction PRÉSENTATIVE (lot 4f) : elle reçoit l'objet résolu `d` et ne relit
+ *  aucune colonne plate. Exportée pour le banc (`npm run verdict:check`). */
+export function buildProposal(
+  m: Pick<CandidateRow, 'subject' | 'fromEmail' | 'fromName' | 'date'>,
   existing: ExistingDeadline | null,
   rentila: RentilaMailInfo | null,
+  d: EtatDepouille,
 ): ReviewProposal | null {
   const subject = (m.subject ?? '').replace(/\s+/g, ' ').trim() || '(sans sujet)';
 
@@ -307,10 +564,69 @@ function buildProposal(
     };
   }
 
-  const wantsPay = m.intent === 'invoice' || m.aiAction === 'pay';
-  const wantsReply = m.intent === 'reply_expected' || m.aiAction === 'reply';
+  // -------------------------------------------- le verdict, quand il existe
+  // LUI SEUL décide : aucune regex sur ce mail — une date que l'analyse n'a
+  // pas su lire n'est PAS re-devinée dans le sujet (piège n° 3 des échéances :
+  // rien d'inventé). Le repli plus bas garde l'ancien comportement, motifs de
+  // sujet compris, pour l'immense majorité des mails pas encore analysés.
+  if (d.source === 'verdict') {
+    const g = d.geste;
+    if (!g) {
+      // Rien d'ouvert. Si une échéance suit déjà ce mail, on la montre au lieu
+      // de proposer un doublon ; sinon il n'y a honnêtement rien à proposer.
+      if (existing) {
+        return {
+          objectType: 'deadline',
+          mode: existing.status === 'confirmed' ? 'exists' : 'confirm',
+          title: existing.title, date: existing.date.toISOString(),
+          deadlineType: 'other', deadlineId: existing.id,
+          why: existing.status === 'confirmed'
+            ? 'Cette obligation a déjà son échéance confirmée.'
+            : 'Une échéance existe déjà pour ce mail — confirme-la, ou ajuste-la.',
+        };
+      }
+      return null;
+    }
+    const montant = g.montant !== null
+      ? ` (${g.montant.toFixed(2).replace('.', ',')} ${g.devise ?? '€'})`
+      : '';
+    if (g.kind === 'reply') {
+      return {
+        objectType: 'task', mode: 'create',
+        title: (g.label ?? `Répondre à ${firstNameOf(m)}`).slice(0, 200),
+        date: null, deadlineType: 'other', deadlineId: null,
+        why: "L'analyse du mail déclare une réponse encore attendue de ta part.",
+      };
+    }
+    if (existing?.status === 'confirmed') {
+      return {
+        objectType: 'deadline', mode: 'exists',
+        title: existing.title, date: existing.date.toISOString(),
+        deadlineType: TYPE_PAR_GESTE[g.kind] ?? 'other', deadlineId: existing.id,
+        why: 'Cette obligation a déjà son échéance confirmée.',
+      };
+    }
+    const titreGeste = g.label ?? (g.kind === 'pay' ? `Payer ${payeeName(m)}` : subject.replace(/^(re|fwd?|tr)\s*:\s*/i, ''));
+    const date = existing?.date ?? g.dueAt ?? null;
+    if (date) {
+      return {
+        objectType: 'deadline', mode: existing ? 'confirm' : 'create',
+        title: `${titreGeste} — avant le ${FR_DATE(date)}`.slice(0, 200),
+        date: date.toISOString(),
+        deadlineType: TYPE_PAR_GESTE[g.kind] ?? 'other',
+        deadlineId: existing?.id ?? null,
+        why: `L'analyse du mail déclare une action à faire de ta part${montant}, due le ${FR_DATE(date)} (verdict sémantique, pas une date trouvée dans le texte).`,
+      };
+    }
+    return {
+      objectType: 'task', mode: 'create',
+      title: titreGeste.slice(0, 200), date: null, deadlineType: 'other', deadlineId: null,
+      why: `L'analyse du mail déclare une action à faire de ta part${montant}, sans date lisible — rien d'inventé.`,
+    };
+  }
 
-  if (wantsPay) {
+  // ------------------------------ REPLI (pas encore de verdict sémantique)
+  if (d.veutPayer) {
     const payee = payeeName(m);
     if (existing?.status === 'confirmed') {
       return {
@@ -326,17 +642,17 @@ function buildProposal(
         objectType: 'deadline', mode: existing ? 'confirm' : 'create',
         title: `Payer ${payee} — avant le ${FR_DATE(date)}`.slice(0, 200),
         date: date.toISOString(), deadlineType: 'payment', deadlineId: existing?.id ?? null,
-        why: `J'ai reconnu une facture et trouvé une échéance au ${FR_DATE(date)}.`,
+        why: `J'ai reconnu une facture et trouvé une échéance au ${FR_DATE(date)} (lu dans le sujet — repli, pas encore d'analyse).`,
       };
     }
     return {
       objectType: 'task', mode: 'create',
       title: `Payer ${payee}`.slice(0, 200), date: null, deadlineType: 'other', deadlineId: null,
-      why: `J'ai reconnu une facture de ${payee}, sans date d'échéance lisible.`,
+      why: `J'ai reconnu une facture de ${payee}, sans date d'échéance lisible (repli, pas encore d'analyse).`,
     };
   }
 
-  if (wantsReply) {
+  if (d.veutRepondre) {
     return {
       objectType: 'task', mode: 'create',
       title: `Répondre à ${firstNameOf(m)}`.slice(0, 200),
@@ -348,7 +664,7 @@ function buildProposal(
   // « Action à faire » (voter, signer, activer…) : ni une réponse, ni une
   // simple information — une tâche, avec le sujet (souvent déjà un impératif :
   // « Vote now! … ») comme intitulé.
-  if (m.intent === 'action_required') {
+  if (d.nature === 'action_required') {
     return {
       objectType: 'task', mode: 'create',
       title: subject.replace(/^(re|fwd?|tr)\s*:\s*/i, '').slice(0, 200),
@@ -357,7 +673,7 @@ function buildProposal(
     };
   }
 
-  if (m.intent === 'appointment') {
+  if (d.nature === 'appointment') {
     if (existing?.status === 'confirmed') {
       return {
         objectType: 'deadline', mode: 'exists',
@@ -381,37 +697,41 @@ function buildProposal(
 
 /**
  * Régime A ou B ? Booléen : au moins 2 signaux positifs indépendants ET
- * aucune contradiction entre sources fortes.
+ * aucune contradiction entre sources fortes. Présentative (lot 4f) : tout
+ * vient de l'objet résolu — l'historique des gestes n'est plus clefé sur
+ * `intent` (voir reviewLearning pour la justification de la nouvelle clé).
  */
 function convergence(
-  m: CandidateRow,
-  senderCategory: string | null,
+  d: EtatDepouille,
   hasDate: boolean,
   history: { decision: ReviewDecision; count: number; mixed: boolean } | undefined,
 ): boolean {
   const positives: string[] = [];
-  if (senderCategory) positives.push('sender');
-  const intentReliable =
-    m.intentSource === 'manual' || m.intentSource === 'rule' ||
-    (m.intent !== null && m.analysisConfidence === 'high');
-  if (intentReliable) positives.push('intent');
+  if (d.categorieExpediteur) positives.push('sender');
+  if (d.natureFiable && d.nature !== null) positives.push('intent');
   if (hasDate) positives.push('date');
   if (history && !history.mixed && history.count >= 3) positives.push('history');
 
-  const promoLike = m.intent === 'promo' || m.intent === 'otp';
-  const trustedCat = ['bank', 'admin', 'insurance', 'person'].includes(senderCategory ?? '');
-  const noiseCat = ['newsletter', 'notification', 'social', 'ad'].includes(senderCategory ?? '');
-  const wantsReply = m.intent === 'reply_expected' || m.aiAction === 'reply';
-  const wantsPay = m.intent === 'invoice' || m.aiAction === 'pay';
+  const promoLike = d.nature === 'promo' || d.nature === 'otp';
+  const trustedCat = CATEGORIES_A_DECIDER.has(d.categorieExpediteur ?? '');
+  const noiseCat = CATEGORIES_BRUIT.has(d.categorieExpediteur ?? '');
   const contradiction =
     (promoLike && trustedCat) ||
-    (noiseCat && wantsReply) ||
-    (history?.mixed === false && history.decision === 'trash' && (wantsPay || wantsReply));
+    (noiseCat && d.veutRepondre) ||
+    (history?.mixed === false && history.decision === 'trash' && (d.veutPayer || d.veutRepondre));
 
   return positives.length >= 2 && !contradiction;
 }
 
-function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null, rentila?: RentilaMailInfo | null) {
+/** Présentative (lot 4f) : tout ce qui s'affiche vient de l'objet résolu `d`
+ *  — l'intention montrée est la RÉSOLUE (précédence appliquée), la raison est
+ *  `primaryReason` (une carte, une raison, qui avoue sa provenance). */
+function toItem(
+  m: CandidateRow,
+  cls: ReviewClass,
+  d: EtatDepouille | null,
+  rentila?: RentilaMailInfo | null,
+) {
   return {
     id: m.id,
     account: m.accountSlug,
@@ -423,12 +743,16 @@ function toItem(m: CandidateRow, cls: ReviewClass, senderCategory: string | null
     fromName: m.fromName,
     date: m.date?.toISOString() ?? null,
     isSeen: m.isSeen,
-    intent: m.intent,
-    aiAction: m.aiAction,
-    aiSummary: m.aiSummary,
-    confidence: m.analysisConfidence,
-    senderCategory,
+    intent: d?.nature ?? null,
+    /** Le geste attendu est une réponse (libellé du bouton « Lire et répondre »). */
+    veutRepondre: d?.veutRepondre ?? false,
+    aiSummary: d?.resume ?? null,
+    confidence: d?.confiance ?? null,
+    senderCategory: d?.categorieExpediteur ?? null,
     class: cls,
+    /** LA raison de la carte + mentions secondaires (jamais d'autres cartes). */
+    primaryReason: d?.primaryReason ?? null,
+    secondaryReasons: d?.secondaryReasons ?? [],
     /** Lecture Rentila du mail (« Assurance locataire expirée — 101… »), sinon null. */
     rentilaLabel: rentila ? rentilaDisplay(rentila, m.subject) : null,
     /** Chantier 2 — posés par l'enrichissement de reviewQueue. */
@@ -443,7 +767,10 @@ export interface ReviewLot {
   account: string;
   fromEmail: string;
   fromName: string | null;
+  /** Nature legacy — repli uniquement (le front l'affiche via ses libellés). */
   intent: string | null;
+  /** Libellé FR de la famille quand le verdict a rangé le lot, sinon null. */
+  familleLabel: string | null;
   senderCategory: string | null;
   count: number;
   ids: number[];
@@ -468,15 +795,15 @@ export async function reviewSummary(): Promise<{
   laterCount: number;
   baseline: string;
 }> {
-  const { rows, senderCat } = await loadCandidates();
+  const rows = await loadCandidates();
+  const depouilles = await resoudreLot(rows);
   let important = 0;
   let read = 0;
   let range = 0;
   for (const m of rows) {
-    const { cls } = classifyRow(
-      m,
-      m.fromEmail ? senderCat.get(`${m.accountSlug}|${m.fromEmail}`) ?? null : null,
-    );
+    const d = depouilles.get(m.id);
+    if (!d) continue;
+    const { cls } = classifyRow(m, d);
     if (cls === 'important') important++;
     else if (cls === 'read') read++;
     else range++;
@@ -500,40 +827,54 @@ export async function reviewSummary(): Promise<{
 
 /**
  * File du parcours : les importants un par un, puis les « à lire », puis le
- * rangeable par LOTS homogènes (même compte + même expéditeur + même
- * intention — les 5 notifications Rentila ne forment pas un lot avec la
- * newsletter Leroy Merlin, ni le loyer en retard avec les quittances).
+ * rangeable par LOTS homogènes.
+ *
+ * CLÉ DE LOT (lot 4f) : compte + expéditeur + FAMILLE résolue — `intent` en
+ * est sorti. Un lot, c'est « la même décision qui se répète » ; ce qui rend la
+ * décision identique, c'est QUI envoie et POUR QUOI FAIRE le message existe :
+ *  - mail analysé : le purpose du verdict (`v:transaction_record`…) — c'est
+ *    lui qui garde le loyer en retard hors du lot des quittances ;
+ *  - mail pas encore analysé : la nature RÉSOLUE par le socle (`n:promo`…),
+ *    précédence manuel > IA > heuristique déjà appliquée.
+ * Les préfixes v:/n: empêchent un mail analysé et un mail non analysé de se
+ * retrouver dans le même lot : ils ne portent pas le même niveau de preuve,
+ * on ne leur applique pas un geste commun sur la foi de deux vocabulaires.
  */
 export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: number }> {
-  const { rows, senderCat } = await loadCandidates();
+  const rows = await loadCandidates();
+  // L'état sémantique de TOUT le lot, résolu en UNE passe (comme
+  // getUnansweredEmails) : les 8 fonctions en aval ne relisent plus rien.
+  const depouilles = await resoudreLot(rows);
   const singles: ReviewSingle[] = [];
   const lots = new Map<string, ReviewLot>();
   let total = 0;
 
   for (const m of rows) {
-    const senderCategory = m.fromEmail
-      ? senderCat.get(`${m.accountSlug}|${m.fromEmail}`) ?? null
-      : null;
-    const { cls, rentila } = classifyRow(m, senderCategory);
+    const d = depouilles.get(m.id);
+    if (!d) continue;
+    const { cls, rentila } = classifyRow(m, d);
     total++;
     if (cls !== 'range' || !m.fromEmail) {
-      singles.push({ kind: 'single', item: toItem(m, cls, senderCategory, rentila) });
+      singles.push({ kind: 'single', item: toItem(m, cls, d, rentila) });
       continue;
     }
     // Toutes les notifications Rentila d'un compte forment UN lot (peu importe
-    // l'intention) : c'est la même décision — « j'ai vu, les obligations sont
+    // la famille) : c'est la même décision — « j'ai vu, les obligations sont
     // déjà dans le calendrier ».
     const key = rentila
       ? `${m.accountSlug}|__rentila__`
-      : `${m.accountSlug}|${m.fromEmail}|${m.intent ?? ''}`;
+      : `${m.accountSlug}|${m.fromEmail}|${d.lotFamille}`;
     if (!lots.has(key)) {
       lots.set(key, {
         kind: 'lot',
         account: m.accountSlug,
         fromEmail: m.fromEmail,
         fromName: rentila ? 'Rentila' : m.fromName,
-        intent: rentila ? null : m.intent,
-        senderCategory: rentila ? 'notification' : senderCategory,
+        // Familles à deux régimes : verdict → libellé FR ; repli → la nature
+        // legacy, que le front sait déjà libeller.
+        intent: rentila || d.lotFamilleLabel ? null : d.nature,
+        familleLabel: rentila ? null : d.lotFamilleLabel,
+        senderCategory: rentila ? 'notification' : d.categorieExpediteur,
         count: 0,
         ids: [],
         samples: [],
@@ -569,7 +910,7 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
       const info = lot.rentila
         ? parseRentilaMail({ subject: row.subject, fromEmail: row.fromEmail, fromName: row.fromName, date: row.date })
         : null;
-      ordered.push({ kind: 'single', item: toItem(row, 'range', lot.senderCategory, info) });
+      ordered.push({ kind: 'single', item: toItem(row, 'range', depouilles.get(row.id) ?? null, info) });
     } else {
       ordered.push(lot);
     }
@@ -599,45 +940,50 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
       if (!prev || (d.status === 'confirmed' && prev.status !== 'confirmed')) dlByMsg.set(d.messageId, d);
     }
 
-    // Historique des gestes par motif (signal + contradiction).
+    // Historique des gestes par motif (signal + contradiction) — même clé que
+    // l'apprentissage : compte + expéditeur, sans `intent` (voir reviewLearning).
     const decided = await db.message.groupBy({
-      by: ['accountSlug', 'fromEmail', 'intent', 'reviewDecision'],
+      by: ['accountSlug', 'fromEmail', 'reviewDecision'],
       where: { reviewedAt: { not: null }, reviewDecision: { in: ['seen', 'trash', 'keep'] }, fromEmail: { not: null } },
       _count: { _all: true },
     });
     const history = new Map<string, { decision: ReviewDecision; count: number; mixed: boolean }>();
-    for (const d of decided) {
-      const key = `${d.accountSlug}|${d.fromEmail}|${d.intent ?? ''}`;
+    for (const dec of decided) {
+      const key = `${dec.accountSlug}|${dec.fromEmail}`;
       const prev = history.get(key);
-      if (!prev) history.set(key, { decision: d.reviewDecision as ReviewDecision, count: d._count._all, mixed: false });
+      if (!prev) history.set(key, { decision: dec.reviewDecision as ReviewDecision, count: dec._count._all, mixed: false });
       else {
         prev.mixed = true;
-        if (d._count._all > prev.count) {
-          prev.decision = d.reviewDecision as ReviewDecision;
-          prev.count = d._count._all;
+        if (dec._count._all > prev.count) {
+          prev.decision = dec.reviewDecision as ReviewDecision;
+          prev.count = dec._count._all;
         }
       }
     }
 
     for (const it of singleItems) {
       const row = rows.find((r) => r.id === it.id);
-      if (!row) continue;
+      const d = depouilles.get(it.id);
+      if (!row || !d) continue;
       const rentila = isRentilaSender(row.fromEmail)
         ? parseRentilaMail({ subject: row.subject, fromEmail: row.fromEmail, fromName: row.fromName, date: row.date })
         : null;
       const existing = dlByMsg.get(it.id) ?? null;
-      const proposal = buildProposal(row, existing, rentila);
-      const hist = row.fromEmail ? history.get(`${row.accountSlug}|${row.fromEmail}|${row.intent ?? ''}`) : undefined;
+      const proposal = buildProposal(row, existing, rentila, d);
+      const hist = row.fromEmail ? history.get(`${row.accountSlug}|${row.fromEmail}`) : undefined;
       // Régime A d'office quand la source est déterministe : grammaire Rentila
       // (construite sur les sujets réels), correction MANUELLE (la vérité par
-      // définition), ou « action à faire » (règle regex validée par simulation
-      // sur les ~26 000 sujets de prod le 03/08). Sinon, convergence de
-      // signaux.
+      // définition), « action à faire » (règle regex validée par simulation
+      // sur les ~26 000 sujets de prod le 03/08), ou verdict sémantique dont
+      // le geste est affirmé (explicit / strong_inference — jamais une
+      // inférence faible : elle repasse par la convergence de signaux).
       const regimeA = proposal !== null
         && (rentila !== null
-          || row.intentSource === 'manual'
-          || row.intent === 'action_required'
-          || convergence(row, it.senderCategory, existing !== null || proposal.date !== null, hist));
+          || d.natureSource === 'manuel'
+          || d.nature === 'action_required'
+          || (d.source === 'verdict' && d.geste !== null
+            && (d.geste.certainty === 'explicit' || d.geste.certainty === 'strong_inference'))
+          || convergence(d, existing !== null || proposal.date !== null, hist));
       it.regime = regimeA ? 'A' : 'B';
       it.proposal = regimeA ? proposal : null;
     }
@@ -648,7 +994,8 @@ export async function reviewQueue(): Promise<{ groups: ReviewGroup[]; total: num
 
 // ---------------------------------------------------------------- Apprentissage
 // Lot 3 du plan : l'assistant observe les DÉCISIONS répétées (même compte,
-// même expéditeur, même intention → même geste) et les restitue :
+// même expéditeur → même geste ; `intent` a quitté la clé au lot 4f) et les
+// restitue :
 //  - 2 gestes identiques  → simple remarque en fin de dépouillement ;
 //  - 3 gestes cohérents ou plus → proposition explicite, avec la liste exacte
 //    des mails EN ATTENTE qui seraient concernés (« Voir les N mails »).
@@ -676,6 +1023,8 @@ export interface LearningMotif {
   account: string;
   fromEmail: string;
   fromName: string | null;
+  /** Toujours null depuis le lot 4f (l'intention a quitté la clé du motif) —
+   *  champ conservé : le front l'affiche quand il est présent. */
   intent: string | null;
   decision: ReviewDecision;
   /** Nombre de gestes identiques déjà faits par l'utilisateur. */
@@ -695,21 +1044,27 @@ export async function reviewLearning(): Promise<{ notes: LearningMotif[]; propos
     where: { reviewedAt: { not: null }, reviewDecision: { in: LEARNABLE }, fromEmail: { not: null } },
     orderBy: { reviewedAt: 'desc' },
     take: 2000,
-    select: { accountSlug: true, fromEmail: true, fromName: true, intent: true, reviewDecision: true },
+    select: { accountSlug: true, fromEmail: true, fromName: true, reviewDecision: true },
   });
 
-  // Décompte par clé compte|expéditeur|intention, toutes décisions confondues
-  // (pour détecter les contradictions).
+  // Décompte par clé compte|expéditeur, toutes décisions confondues (pour
+  // détecter les contradictions). `intent` est SORTI de la clé (lot 4f) : les
+  // gestes passés ne portent pas l'état sémantique du moment où ils ont été
+  // faits, et un motif clefé sur du vocabulaire legacy survivrait à sa
+  // disparition. Conséquence assumée : un expéditeur aux gestes différents
+  // selon la nature (quittances « vu », relances « gardé ») devient un motif
+  // CONTREDIT — donc jamais proposé. C'est le sens du garde-fou : mieux vaut
+  // zéro proposition qu'une proposition qui généralise à tort.
   const tally = new Map<string, {
-    account: string; fromEmail: string; fromName: string | null; intent: string | null;
+    account: string; fromEmail: string; fromName: string | null;
     byDecision: Map<ReviewDecision, number>;
   }>();
   for (const m of decided) {
-    const key = `${m.accountSlug}|${m.fromEmail}|${m.intent ?? ''}`;
+    const key = `${m.accountSlug}|${m.fromEmail}`;
     if (!tally.has(key)) {
       tally.set(key, {
         account: m.accountSlug, fromEmail: m.fromEmail!, fromName: m.fromName,
-        intent: m.intent, byDecision: new Map(),
+        byDecision: new Map(),
       });
     }
     const t = tally.get(key)!.byDecision;
@@ -718,7 +1073,14 @@ export async function reviewLearning(): Promise<{ notes: LearningMotif[]; propos
   }
 
   const { dismissed } = readLearningState();
-  const { rows } = await loadCandidates();
+  // Un « Ne plus proposer » posé AVANT le lot 4f portait l'ancienne clé
+  // (compte|expéditeur|intent|décision) : il continue de faire taire le motif
+  // pour ce même expéditeur et ce même geste, quelle que soit l'intention.
+  const ecarteAvantLot4f = (account: string, email: string, decision: ReviewDecision): boolean =>
+    Object.keys(dismissed).some(
+      (k) => k.startsWith(`${account}|${email}|`) && k.endsWith(`|${decision}`),
+    );
+  const rows = await loadCandidates();
   const notes: LearningMotif[] = [];
   const proposals: LearningMotif[] = [];
 
@@ -729,16 +1091,16 @@ export async function reviewLearning(): Promise<{ notes: LearningMotif[]; propos
     const [decision, count] = [...t.byDecision.entries()][0];
     if (count < 2) continue;
     const motifKey = `${key}|${decision}`;
-    if (dismissed[motifKey]) continue;
+    if (dismissed[motifKey] || ecarteAvantLot4f(t.account, t.fromEmail, decision)) continue;
 
     const pending = rows.filter((r) =>
-      r.accountSlug === t.account && r.fromEmail === t.fromEmail && (r.intent ?? '') === (t.intent ?? ''));
+      r.accountSlug === t.account && r.fromEmail === t.fromEmail);
     const motif: LearningMotif = {
       key: motifKey,
       account: t.account,
       fromEmail: t.fromEmail,
       fromName: t.fromName,
-      intent: t.intent,
+      intent: null,
       decision,
       count,
       pendingIds: pending.map((r) => r.id),
@@ -821,6 +1183,13 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
   // Effets réels, groupés par compte + dossier.
   const undo: UndoTrashGroup[] = [];
   if (decision === 'seen' || decision === 'trash') {
+    // Import différé (même raison que deadlines.ts) : imap.ts tire config.ts,
+    // qui exige le .env dès le chargement — or le banc (`npm run
+    // verdict:check`) importe ce fichier pour éprouver les fonctions pures.
+    const [{ imapService }, { resolveAccount }] = await Promise.all([
+      import('./imap.js'),
+      import('./accounts.js'),
+    ]);
     const byTarget = new Map<
       string,
       { account: string; folder: string; uids: number[]; messageIds: number[] }
@@ -919,6 +1288,11 @@ export async function reviewDecide(ids: number[], decision: ReviewDecision): Pro
  */
 export async function reviewRestore(groups: UndoTrashGroup[]): Promise<{ restored: number }> {
   await ensureDbReady();
+  // Import différé — voir reviewDecide (le banc importe ce fichier).
+  const [{ imapService }, { resolveAccount }] = await Promise.all([
+    import('./imap.js'),
+    import('./accounts.js'),
+  ]);
   let restored = 0;
   for (const g of groups) {
     if (!g?.folder || !Array.isArray(g.trashUids) || g.trashUids.length === 0) continue;
@@ -1141,6 +1515,11 @@ export async function validateProposal(input: ValidateProposalInput): Promise<{
   // recale à la synchronisation suivante en cas d'échec.
   if (decisionApplied) {
     try {
+      // Import différé — voir reviewDecide (le banc importe ce fichier).
+      const [{ imapService }, { resolveAccount }] = await Promise.all([
+        import('./imap.js'),
+        import('./accounts.js'),
+      ]);
       const rec = await resolveAccount(m.accountSlug);
       await imapService.markEmails(rec, m.folder.path, [m.uid], ['\Seen'], []);
     } catch (err) {

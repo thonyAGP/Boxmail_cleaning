@@ -6,13 +6,34 @@ import { getImportantEmails, type ImportantItem } from './importance.js';
 import { listDeadlines, type DeadlineItem } from './deadlines.js';
 import { previewSnippet } from './search.js';
 import { logger } from '../logger.js';
+import {
+  resolveMailSemanticState,
+  getOpenActions,
+  type EtatSemantique,
+} from './semantique.js';
 
 /**
  * Accueil « Aujourd'hui » (A2 — Cap V3). L'utilisateur ne voit plus des mails
  * mais des ACTIONS : à faire, important, peut attendre, bruit. Agrégat
  * index-only multi-comptes qui RÉUTILISE les moteurs existants (réponses,
- * relances, échéances, importance) + les catégories/intentions A1.
- * Un compte en erreur est signalé sans casser l'accueil.
+ * relances, échéances, importance). Un compte en erreur est signalé sans
+ * casser l'accueil.
+ *
+ * LOT 4G (12/08) : cet écran CONSOMME, il n'interprète plus.
+ *  - `NEVER_REPLY_INTENTS` a disparu : le moteur des réponses (lot 4d) décide
+ *    déjà — verdict d'abord, heuristiques en repli — re-filtrer ici, c'était
+ *    ré-interpréter par-dessus ;
+ *  - « factures à traiter » (intent = 'invoice') est devenu « actions de
+ *    PAIEMENT encore ouvertes » : « contient une facture » est un FAIT,
+ *    « facture encore à payer » est un ÉTAT — seul le second est une action ;
+ *  - le bruit s'appuie sur le verdict quand il existe (voir NOISE_BUCKET_CASE) ;
+ *  - UNE carte par mail : échéance > réponse > paiement (`uneCarteParMail`).
+ *
+ * BUDGET DE REQUÊTES : generateToday tourne à CHAQUE ouverture de l'accueil.
+ * Tout est résolu EN LOT (jamais mail par mail — SQLite connection_limit=1) :
+ * ~46 requêtes par compte via les moteurs (dont 2 × 14 de résolution en lot),
+ * et ~18 globales (dont les 14, constantes, du lot « paiements ouverts »).
+ * Rien ici n'est proportionnel au nombre de mails.
  */
 
 export type NoiseBucket = 'newsletter' | 'notification' | 'social' | 'promo';
@@ -25,9 +46,29 @@ export const NOISE_BUCKETS: NoiseBucket[] = ['newsletter', 'notification', 'soci
 export const NOISE_MIN_AGE_DAYS = 7;
 
 // Affectation d'un mail de la boîte de réception à un « bruit » (disjoint —
-// l'ordre du CASE fait foi) : expéditeur newsletter > notification > réseau
-// social > pub (expéditeur publicitaire OU intention promo détectée).
+// l'ordre du CASE fait foi).
+//
+// LE SOCLE PRIME QUAND LE VERDICT EXISTE (lot 4g) — en SQL, parce que ce CASE
+// balaie TOUTE la boîte de réception à chaque ouverture de l'accueil (résoudre
+// 25 000 états en mémoire ici serait un contresens de budget) :
+//  · un mail dont l'analyse déclare une action de l'UTILISATEUR n'est JAMAIS
+//    du bruit — la demande de réservation Airbnb voyage avec un List-Unsubscribe
+//    et vient d'un expéditeur classé « notification », elle n'en est pas moins
+//    à traiter (même angle mort que les 48 mails no-reply du 11/08) ;
+//  · c'est ensuite la FONCTION du message lue par l'analyse qui range :
+//    marketing → pub (ou newsletter/réseau social si la catégorie d'expéditeur
+//    l'affine), notification à attention éteinte → notification. Tout le reste
+//    (document, transaction, sécurité, fenêtre encore vivante ou illisible en
+//    SQL) reste HORS bruit : dans le doute, on protège — jamais l'inverse.
+// Sans verdict : les heuristiques historiques (catégorie d'expéditeur résolue
+// par la sync avec sa précédence, intent legacy), à l'identique.
 const NOISE_BUCKET_CASE = `CASE
+  WHEN m.aiVerdictAt IS NOT NULL THEN CASE
+    WHEN EXISTS (SELECT 1 FROM VerdictAction va WHERE va.messageId = m.id AND va.actor = 'user') THEN NULL
+    WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id AND v.purpose = 'marketing')
+      THEN (CASE WHEN s.category IN ('newsletter', 'social') THEN s.category ELSE 'promo' END)
+    WHEN EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id AND v.purpose = 'notification' AND v.attentionMode = 'none') THEN 'notification'
+    ELSE NULL END
   WHEN s.category = 'newsletter' THEN 'newsletter'
   WHEN s.category = 'notification' THEN 'notification'
   WHEN s.category = 'social' THEN 'social'
@@ -38,12 +79,61 @@ export interface InvoiceItem {
   account: string;
   folder: string;
   uid: number;
+  /** id interne (colonne Message.id) — sert au dédoublonnage des cartes. */
+  messageId: number;
   subject: string;
   fromEmail: string;
   fromName: string | null;
   date: string | null;
   isSeen: boolean;
   reason: string;
+}
+
+/**
+ * L'action de PAIEMENT encore ouverte d'un mail, ou null. Fonction PURE
+ * (le banc l'éprouve avec des états résolus en mémoire).
+ *
+ * C'est le remplaçant du bloc « intent = 'invoice' » : seule une action `pay`
+ * de l'UTILISATEUR que rien n'a soldée compte — pas un mot dans un sujet.
+ * Une fenêtre passée (`horsDelai`) ou une action soldée (répondu, tâche
+ * faite) ne remontent jamais dans la vue du jour ; un `dueAt` dépassé, si :
+ * c'est un RETARD, pas une résolution.
+ */
+export function paiementOuvert(
+  etat: EtatSemantique | null | undefined,
+): { pourquoi: string } | null {
+  if (!etat?.analyse.verdictPresent) return null;
+  const pay = getOpenActions(etat).filter((a) => a.fait.kind === 'pay');
+  if (pay.length === 0) return null;
+  const a = pay[0];
+  const montant =
+    a.fait.montant !== null
+      ? ` (${a.fait.montant.toFixed(2).replace('.', ',')} ${a.fait.devise ?? '€'})`
+      : '';
+  const quand = a.enRetard
+    ? ' — échéance dépassée, en retard, pas résolue'
+    : a.fait.dueAt
+      ? ` — à régler avant le ${a.fait.dueAt.toLocaleDateString('fr-FR')}`
+      : '';
+  return {
+    pourquoi: `l'analyse du mail déclare un paiement encore à faire de ta part : « ${a.fait.label ?? 'paiement'} »${montant}${quand}`,
+  };
+}
+
+/**
+ * UNE carte par mail (lot 4g) : un mail déjà présenté par une famille
+ * prioritaire ne réapparaît pas dans une famille suivante. L'ordre choisi —
+ * échéance > réponse > paiement — va du plus qualifié (date + cycle de vie +
+ * geste validables) au plus générique ; et sans lui, chaque action `pay`
+ * datée ferait DEUX cartes, puisque la détection d'échéances (lot 4c) crée
+ * déjà une Deadline à partir de la même action.
+ */
+export function uneCarteParMail<R extends { messageId: number }>(
+  prioritaires: { messageId: number }[],
+  suivants: R[],
+): R[] {
+  const pris = new Set(prioritaires.map((x) => x.messageId));
+  return suivants.filter((x) => !pris.has(x.messageId));
 }
 
 export interface NoiseBucketStat {
@@ -111,23 +201,11 @@ export async function generateToday(): Promise<TodaySummary> {
     }
   }
 
-  // Grâce aux intentions A1 : un mail promo / code OTP / suivi de livraison /
-  // confirmation automatique n'est JAMAIS une action « répondre à » sur
-  // l'accueil (le moteur réponses, antérieur à A1, ne filtre que les
-  // newsletters à en-tête et les no-reply).
-  const NEVER_REPLY_INTENTS = new Set(['promo', 'otp', 'shipping', 'confirmation']);
-  const replyIntentRows = replies.length
-    ? await db.message.findMany({
-        where: { id: { in: replies.map((r) => r.messageId) } },
-        select: { id: true, intent: true },
-      })
-    : [];
-  const intentById = new Map(replyIntentRows.map((r) => [r.id, r.intent]));
-  const filteredReplies = replies.filter(
-    (r) => !NEVER_REPLY_INTENTS.has(intentById.get(r.messageId) ?? ''),
-  );
-  replies.length = 0;
-  replies.push(...filteredReplies);
+  // Plus AUCUN re-filtrage des réponses ici (lot 4g — NEVER_REPLY_INTENTS
+  // supprimé) : getUnansweredEmails décide déjà, verdict d'abord et
+  // heuristiques en repli. Re-filtrer sur `intent` par-dessus, c'était
+  // exactement le montage rustine que la refonte interdit — et il aurait
+  // fait taire un verdict « réponse attendue » sur un mail de confirmation.
 
   // Les plus en retard d'abord ; échéances par date croissante.
   replies.sort((a, b) => Number(b.overdue) - Number(a.overdue) || b.waitingHours - a.waitingHours);
@@ -135,8 +213,15 @@ export async function generateToday(): Promise<TodaySummary> {
   deadlines.sort((a, b) => a.inDays - b.inDays);
   important.sort((a, b) => b.score - a.score);
 
-  // Factures à traiter : entrants inbox non lus, intention invoice (A1), 30 j.
-  type InvoiceRow = {
+  // Paiements à faire (lot 4g). Deux régimes, comme partout depuis 4c :
+  //  1. le VERDICT : présélection SQL bornée (mails d'inbox dont l'analyse a
+  //     déclaré une action `pay` de l'utilisateur, 90 j), puis le socle
+  //     tranche l'ouverture EN LOT — 14 requêtes constantes, jamais mail par
+  //     mail ;
+  //  2. le REPLI (mails jamais analysés) : l'ancien critère « intention
+  //     facture, non lu, 30 j », inchangé, et la raison avoue le repli.
+  type PayRow = {
+    id: number;
     account: string;
     folder: string;
     uid: number;
@@ -145,29 +230,73 @@ export async function generateToday(): Promise<TodaySummary> {
     fromName: string | null;
     date: string | number | bigint | null;
     isSeen: number;
-    intentReason: string | null;
   };
+  const payRows = await db.$queryRawUnsafe<PayRow[]>(
+    `SELECT DISTINCT m.id, m.accountSlug AS account, f.path AS folder, m.uid, m.subject,
+            m.fromEmail, m.fromName, m.date, m.isSeen
+     FROM Message m
+     JOIN Folder f ON f.id = m.folderId
+     JOIN VerdictAction va ON va.messageId = m.id
+     WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
+       AND va.kind = 'pay' AND va.actor = 'user'
+       AND m.date >= ?
+     ORDER BY m.date DESC LIMIT 50`,
+    new Date(Date.now() - 90 * 86_400_000).getTime(),
+  );
+  const etatsPay = await resolveMailSemanticState(payRows.map((r) => r.id));
+  const invoices: InvoiceItem[] = [];
+  for (const r of payRows) {
+    const paiement = paiementOuvert(etatsPay.get(r.id));
+    if (!paiement) continue; // soldé, hors délai, ou pas à lui : pas une action
+    invoices.push({
+      account: r.account,
+      folder: r.folder,
+      uid: r.uid,
+      messageId: r.id,
+      subject: r.subject ?? '(sans sujet)',
+      fromEmail: r.fromEmail ?? '',
+      fromName: r.fromName,
+      date: rawDate(r.date),
+      isSeen: r.isSeen === 1,
+      reason: paiement.pourquoi,
+    });
+  }
+  type InvoiceRow = PayRow & { intentReason: string | null };
   const invoiceRows = await db.$queryRawUnsafe<InvoiceRow[]>(
-    `SELECT m.accountSlug AS account, f.path AS folder, m.uid, m.subject,
+    `SELECT m.id, m.accountSlug AS account, f.path AS folder, m.uid, m.subject,
             m.fromEmail, m.fromName, m.date, m.isSeen, m.intentReason
      FROM Message m JOIN Folder f ON f.id = m.folderId
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
+       AND m.aiVerdictAt IS NULL
        AND m.intent = 'invoice' AND m.isSeen = 0
        AND m.date >= ?
      ORDER BY m.date DESC LIMIT ${TOP}`,
     new Date(Date.now() - 30 * 86_400_000).getTime(),
   );
-  const invoices: InvoiceItem[] = invoiceRows.map((r) => ({
-    account: r.account,
-    folder: r.folder,
-    uid: r.uid,
-    subject: r.subject ?? '(sans sujet)',
-    fromEmail: r.fromEmail ?? '',
-    fromName: r.fromName,
-    date: rawDate(r.date),
-    isSeen: r.isSeen === 1,
-    reason: r.intentReason ?? 'facture détectée dans le sujet',
-  }));
+  invoices.push(
+    ...invoiceRows.map((r) => ({
+      account: r.account,
+      folder: r.folder,
+      uid: r.uid,
+      messageId: r.id,
+      subject: r.subject ?? '(sans sujet)',
+      fromEmail: r.fromEmail ?? '',
+      fromName: r.fromName,
+      date: rawDate(r.date),
+      isSeen: r.isSeen === 1,
+      reason: `${r.intentReason ?? 'facture détectée dans le sujet'} — repli, pas encore de verdict d'analyse`,
+    })),
+  );
+
+  // UNE carte par mail : un mail déjà présenté comme échéance ne redevient ni
+  // « réponse attendue » ni « paiement » ; un mail « réponse attendue » ne
+  // redevient pas « paiement ». Voir uneCarteParMail pour l'ordre choisi.
+  const deadlinesCartes = deadlines.map((d) => ({ messageId: d.messageId }));
+  const repliesUniques = uneCarteParMail(deadlinesCartes, replies);
+  const invoicesUniques = uneCarteParMail(
+    [...deadlinesCartes, ...repliesUniques],
+    invoices,
+  ).slice(0, TOP);
 
   // Bruit : compteurs par catégorie sur toutes les boîtes de réception.
   // Un mail récent (< NOISE_MIN_AGE_DAYS) n'est PAS du bruit : il bascule
@@ -209,7 +338,15 @@ export async function generateToday(): Promise<TodaySummary> {
      WHERE m.isDeleted = 0 AND m.isOutbound = 0 AND f.role = 'inbox'
        AND m.isSeen = 0
        AND ((${NOISE_BUCKET_CASE}) IS NULL OR m.date >= ?)
-       AND (m.intent IS NULL OR m.intent != 'invoice')`,
+       -- Ce qui est déjà compté ailleurs (« à payer ») ne compte pas ici.
+       -- Le verdict d'abord ; l'intention legacy seulement pour les mails
+       -- qui n'en ont pas encore — sinon un mail portant une action de
+       -- paiement ouverte serait rangé dans « peut attendre » parce que son
+       -- ancienne étiquette disait « info ».
+       AND NOT EXISTS (
+         SELECT 1 FROM VerdictAction va
+          WHERE va.messageId = m.id AND va.kind = 'pay' AND va.actor = 'user')
+       AND (m.aiVerdictAt IS NOT NULL OR m.intent IS NULL OR m.intent != 'invoice')`,
     noiseCutoff,
   );
 
@@ -220,20 +357,23 @@ export async function generateToday(): Promise<TodaySummary> {
     accounts: names,
     skippedAccounts: skipped,
     todo: {
-      replies: replies.slice(0, TOP),
+      replies: repliesUniques.slice(0, TOP),
       followups: followups.slice(0, TOP),
       deadlines: deadlines.slice(0, TOP),
-      invoices,
-      total: replies.length + followups.length + deadlines.length + invoices.length,
+      invoices: invoicesUniques,
+      // Totaux sur les listes DÉDOUBLONNÉES : un mail = une carte, donc un
+      // seul point dans le compte (sinon « 52 actions » en contenait 3 fois
+      // certaines — même famille d'incohérence que le 10/08).
+      total: repliesUniques.length + followups.length + deadlines.length + invoicesUniques.length,
       // Ce que le parcours « Commencer » pourra RÉELLEMENT traiter : les
       // listes sont plafonnées à TOP par famille. Sans ce chiffre, l'écran
       // annonçait « ≈ 78 min » pour 52 actions et le parcours disait
       // « Action 1 sur 35 » (incohérence signalée le 10/08).
       queued:
-        Math.min(replies.length, TOP) +
+        Math.min(repliesUniques.length, TOP) +
         Math.min(followups.length, TOP) +
         Math.min(deadlines.length, TOP) +
-        invoices.length,
+        invoicesUniques.length,
     },
     important: important.slice(0, 5),
     canWait: {

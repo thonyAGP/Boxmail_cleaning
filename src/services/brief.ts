@@ -19,6 +19,12 @@ import { logger } from '../logger.js';
  *
  * Chaque brief généré est sauvegardé dans BriefRun : le suivant peut ainsi
  * dire « depuis le dernier brief » en plus de la fenêtre fixe (24 h / 7 j).
+ *
+ * LOT 4G (12/08) : vérifié — ce moteur CONSOMME, il n'interprète pas. Aucune
+ * lecture d'`intent` / `aiAction` / `analysisConfidence` ici : réponses,
+ * relances, importants et échéances arrivent déjà résolus par leurs moteurs
+ * (eux-mêmes sur le socle depuis les lots 4c-4e). Ne rien réinterpréter dans
+ * ce fichier — le nettoyage (getCleanupCandidates), lui, bascule au lot 4j.
  */
 
 export type BriefType = 'daily' | 'weekly';

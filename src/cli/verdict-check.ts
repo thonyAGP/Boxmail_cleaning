@@ -21,6 +21,8 @@ import {
 import { echeancesDepuisLeVerdict, arbitrerProposition } from '../services/deadlines.js';
 import { evaluerReponseAttendue } from '../services/attention.js';
 import { scoreMessage } from '../services/importance.js';
+import { depouillerEtat, buildProposal } from '../services/review.js';
+import { paiementOuvert, uneCarteParMail } from '../services/today.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -1073,6 +1075,230 @@ console.log('\n=== 15. Importance — ouverture, échéance, conséquence ===\n'
     'repli : question + montant du sujet + attente + ancienneté = 40',
     40,
     repli.score,
+  );
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE DÉPOUILLEMENT (lot 4f) — l'écran quotidien, le plus gros risque de la
+// refonte d'après la contre-revue : ses 8 fonctions ne migrent pas séparément,
+// elles lisent TOUTES l'objet résolu par `depouillerEtat` (fonction pure).
+
+console.log('\n=== 16. Dépouillement — un objet résolu, une carte, une raison ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [
+        // Facture EDF : action `pay` ouverte + échéance DÉJÀ créée + document.
+        msg(1601, { subject: 'Votre facture EDF' }),
+        // Air France en août : la fenêtre d'action est passée, rien à faire.
+        msg(1602, { subject: 'Dernier rappel : enregistrez-vous pour votre voyage' }),
+        // Repli : promo d'une entreprise, jamais analysé.
+        msg(1603, { intent: 'promo', intentSource: 'ai' }),
+        // Correction manuelle d'Anthony, pas encore de verdict.
+        msg(1604, { intent: 'invoice', intentSource: 'manual', intentReason: 'corrigé par toi' }),
+        // Même expéditeur : une quittance et une pub (la clé de lot).
+        msg(1605),
+        msg(1606),
+        // Même purpose (marketing), intents legacy DIFFÉRENTS.
+        msg(1607, { intent: 'promo', intentSource: 'ai' }),
+        msg(1608, { intent: 'info', intentSource: 'auto' }),
+        // Verdict + action reply ouverte (le geste attendu est une réponse).
+        msg(1609),
+        // Action `pay` due SANS date lisible.
+        msg(1610),
+      ],
+      verdicts: [
+        verdictDe(1601, { purpose: 'request', attentionMode: 'while_action_open' }),
+        verdictDe(1602, {
+          purpose: 'request',
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2026-06-16T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        verdictDe(1605, { purpose: 'transaction_record', attentionMode: 'none' }),
+        verdictDe(1606, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(1607, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(1608, { purpose: 'marketing', attentionMode: 'none' }),
+        verdictDe(1609, { attentionMode: 'while_action_open' }),
+        verdictDe(1610, { purpose: 'request', attentionMode: 'while_action_open' }),
+      ],
+      actions: [
+        actionDe(1601, { kind: 'pay', label: 'Payer la facture EDF', amount: 120, currency: 'EUR', dueAt: new Date('2026-08-20T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(1602, { kind: 'confirm', expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
+        actionDe(1609, { label: 'Répondre à la demande' }),
+        actionDe(1610, { kind: 'pay', label: 'Payer la facture Sosh', amount: 42.3, currency: 'EUR' }),
+      ],
+      documents: [
+        { messageId: 1601, kind: 'invoice', label: null, issuer: 'EDF', issueDate: null, dueDate: null, amount: 120, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+      echeances: [
+        { messageId: 1601, title: 'Payer EDF', date: new Date('2026-08-20T00:00:00Z'), type: 'payment', status: 'confirmed', vetoReason: null, reason: 'détectée dans le mail' },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const repli = { aiAction: null, intentSource: null };
+
+  const edf = depouillerEtat(etats.get(1601) as EtatSemantique, repli);
+  verifier('facture à payer : classe « à décider »', 'important', edf.classe);
+  verifier('…décidée par le verdict', 'verdict', edf.source);
+  verifier(
+    'UNE raison principale, qui cite le geste et le montant',
+    true,
+    edf.primaryReason.includes('Payer la facture EDF') && edf.primaryReason.includes('120,00'),
+  );
+  verifier(
+    'l’échéance liée est une MENTION secondaire, pas une carte concurrente',
+    true,
+    edf.secondaryReasons.some((s) => s.includes('déjà suivie en échéance')),
+  );
+  verifier('le geste central est le paiement', 'pay', edf.geste?.kind);
+
+  const air = depouillerEtat(etats.get(1602) as EtatSemantique, repli);
+  verifier('Air France en août : rangeable, plus « à décider »', 'range', air.classe);
+  verifier(
+    '…et la raison avoue la fenêtre passée',
+    true,
+    air.primaryReason.includes('plus rien à surveiller'),
+  );
+  verifier('aucun geste retenu (l’action est hors délai)', null, air.geste);
+  verifier('…donc AUCUNE proposition fabriquée', null,
+    buildProposal({ subject: air ? 'Dernier rappel' : '', fromEmail: 'x@airfrance.fr', fromName: 'Air France', date: new Date('2026-06-01T00:00:00Z') }, null, null, air));
+
+  const promoRepli = depouillerEtat(etats.get(1603) as EtatSemantique, repli);
+  verifier('repli : promo d’une entreprise → rangeable', 'range', promoRepli.classe);
+  verifier('…qui s’assume comme repli', 'repli', promoRepli.source);
+  verifier('…et l’avoue dans la raison affichée', true, promoRepli.primaryReason.includes('repli'));
+
+  const manuel = depouillerEtat(etats.get(1604) as EtatSemantique, repli);
+  verifier(
+    'correction manuelle : à décider, et la provenance est « manuel »',
+    true,
+    manuel.classe === 'important' && manuel.natureSource === 'manuel',
+  );
+
+  // La clé de regroupement des lots : compte|expéditeur|FAMILLE — intent en
+  // est sorti. La famille vient du purpose du verdict, ou de la nature résolue
+  // en repli, et les deux régimes ne se mélangent jamais (préfixes v:/n:).
+  const quittance = depouillerEtat(etats.get(1605) as EtatSemantique, repli);
+  const marketing = depouillerEtat(etats.get(1606) as EtatSemantique, repli);
+  verifier(
+    'quittance et pub du même expéditeur : lots SÉPARÉS (le purpose distingue)',
+    true,
+    quittance.lotFamille !== marketing.lotFamille,
+  );
+  const promoV = depouillerEtat(etats.get(1607) as EtatSemantique, repli);
+  const infoV = depouillerEtat(etats.get(1608) as EtatSemantique, repli);
+  verifier(
+    'même purpose, intents legacy différents : MÊME lot (intent a quitté la clé)',
+    promoV.lotFamille,
+    infoV.lotFamille,
+  );
+  verifier('…avec un libellé français pour l’écran', true, (promoV.lotFamilleLabel ?? '').length > 0);
+  verifier(
+    'un mail analysé et un non-analysé ne partagent JAMAIS un lot',
+    true,
+    promoRepli.lotFamille !== promoV.lotFamille,
+  );
+
+  const reponse = depouillerEtat(etats.get(1609) as EtatSemantique, repli);
+  verifier('action reply ouverte : le geste attendu est une réponse', true, reponse.veutRepondre);
+
+  // Propositions : présentatives, elles ne relisent rien et n'inventent rien.
+  const mLite = { subject: 'Votre facture EDF', fromEmail: 'exp@example.com', fromName: 'EDF', date: new Date('2026-08-01T10:00:00Z') };
+  const pEdf = buildProposal(mLite, null, null, edf);
+  verifier(
+    'proposition : échéance de PAIEMENT à la date lue par l’analyse',
+    true,
+    pEdf?.objectType === 'deadline' && pEdf.deadlineType === 'payment' && (pEdf.date ?? '').startsWith('2026-08-20'),
+  );
+  verifier('…et le pourquoi avoue le verdict', true, (pEdf?.why ?? '').includes('verdict sémantique'));
+  const sansDate = depouillerEtat(etats.get(1610) as EtatSemantique, repli);
+  const pSansDate = buildProposal(mLite, null, null, sansDate);
+  verifier(
+    'action due SANS date : une tâche, aucune date inventée (pas de regex)',
+    true,
+    pSansDate?.objectType === 'task' && pSansDate.date === null,
+  );
+  verifier('…et le dit (« rien d’inventé »)', true, (pSansDate?.why ?? '').includes("rien d'inventé"));
+}
+
+// ---------------------------------------------------------------------------
+//
+// L'ACCUEIL « AUJOURD'HUI » (lot 4g) — il consomme, il n'interprète plus :
+// « factures à traiter » est devenu « paiements encore ouverts » (le socle
+// tranche), et un même mail ne produit qu'UNE carte.
+
+console.log('\n=== 17. Aujourd’hui — consommer, pas interpréter ===\n');
+
+{
+  const etats = resoudre(
+    lignes({
+      messages: [msg(1701), msg(1702), msg(1703), msg(1704), msg(1705), msg(1706)],
+      verdicts: [
+        // Paiement ouvert (Comptastar, 850 €, dû le 15/08).
+        verdictDe(1701, { attentionMode: 'while_action_open' }),
+        // Paiement SOLDÉ : la tâche liée est faite.
+        verdictDe(1702, { attentionMode: 'while_action_open' }),
+        // PayFiP : notification, AUCUNE action — le mot « paiement » ne suffit pas.
+        verdictDe(1703, { purpose: 'notification' }),
+        // Paiement dont la fenêtre d'action est PASSÉE : agir n'a plus de sens.
+        verdictDe(1704, {
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2026-06-16T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        // Paiement au dueAt DÉPASSÉ : un retard, pas une résolution.
+        verdictDe(1706, { attentionMode: 'while_action_open' }),
+      ],
+      actions: [
+        actionDe(1701, { kind: 'pay', label: 'Régler Comptastar', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(1702, { kind: 'pay', label: 'Payer la facture' }),
+        actionDe(1704, { kind: 'pay', expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
+        actionDe(1706, { kind: 'pay', label: 'Payer la taxe', dueAt: new Date('2026-01-15T00:00:00Z'), duePrecision: 'date' }),
+      ],
+      taches: [{ messageId: 1702, status: 'done' }],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const ouvert = paiementOuvert(etats.get(1701));
+  verifier(
+    'paiement ouvert : il remonte, avec le montant lu par l’analyse',
+    true,
+    (ouvert?.pourquoi ?? '').includes('850,00'),
+  );
+  verifier('paiement soldé (tâche faite) : plus une action du jour', null, paiementOuvert(etats.get(1702)));
+  verifier('aucune action déclarée (PayFiP) : rien à payer', null, paiementOuvert(etats.get(1703)));
+  verifier(
+    'fenêtre d’action passée : ne remonte pas dans la vue du jour',
+    null,
+    paiementOuvert(etats.get(1704)),
+  );
+  verifier('jamais analysé : le verdict ne parle pas (le repli SQL vit ailleurs)', null, paiementOuvert(etats.get(1705)));
+  const retard = paiementOuvert(etats.get(1706));
+  verifier(
+    'dueAt dépassé : remonte quand même — un RETARD, pas une résolution',
+    true,
+    (retard?.pourquoi ?? '').includes('en retard, pas résolue'),
+  );
+
+  // UNE carte par mail : échéance > réponse > paiement.
+  const dl = [{ messageId: 12 }];
+  const replies = [{ messageId: 11 }, { messageId: 12 }];
+  const invoices = [{ messageId: 11 }, { messageId: 13 }, { messageId: 12 }];
+  const repliesU = uneCarteParMail(dl, replies);
+  verifier(
+    'un mail déjà en échéance ne redevient pas « réponse attendue »',
+    [11],
+    repliesU.map((x) => x.messageId),
+  );
+  const invoicesU = uneCarteParMail([...dl, ...repliesU], invoices);
+  verifier(
+    '…ni « paiement » quand une autre famille l’a déjà cardé',
+    [13],
+    invoicesU.map((x) => x.messageId),
   );
 }
 

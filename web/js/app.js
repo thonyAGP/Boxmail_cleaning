@@ -1934,6 +1934,12 @@ function reviewReason(item) {
   // Connecteur Rentila : la lecture structurée passe devant tout le reste
   // (« Assurance locataire expirée — 101 1er droite T3 »).
   if (item.rentilaLabel) bits.push(`🏠 ${item.rentilaLabel}`);
+  // Lot 4f : LA raison résolue par le serveur (elle avoue sa provenance), puis
+  // les mentions secondaires — une seule carte, jamais de cartes concurrentes.
+  if (item.primaryReason) {
+    bits.push(item.primaryReason, ...(item.secondaryReasons ?? []));
+    return bits.join(' · ');
+  }
   if (item.senderCategory) bits.push(SENDER_CATEGORY_LABELS[item.senderCategory] ?? item.senderCategory);
   if (item.intent) bits.push(INTENT_LABELS[item.intent] ?? item.intent);
   if (item.aiSummary) bits.push(`IA : ${item.aiSummary}`);
@@ -2239,7 +2245,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       // Pas de mail unique à afficher : la colonne de lecture se replie.
       closeReader();
       const who = g.fromName || g.fromEmail;
-      const intentLabel = g.intent ? (INTENT_LABELS[g.intent] ?? g.intent) : 'même nature';
+      const intentLabel = g.familleLabel ?? (g.intent ? (INTENT_LABELS[g.intent] ?? g.intent) : 'même nature');
       const catLabel = g.senderCategory ? (SENDER_CATEGORY_LABELS[g.senderCategory] ?? g.senderCategory) : '';
       $('#rv-body').innerHTML = `
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
@@ -2424,7 +2430,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
     const B = [];
     if (it.class === 'important') {
       // Le libellé suit le geste attendu : répondre si une réponse est attendue.
-      const readLabel = (it.aiAction === 'reply' || it.intent === 'reply_expected')
+      const readLabel = (it.veutRepondre || it.intent === 'reply_expected')
         ? '↩️ Lire et répondre' : '📖 Lire et traiter';
       B.push([readLabel, 'btn-primary', () => openReaderFor(it, readerOpts)]);
       B.push(['☑️ Ajouter à mes actions', '', () => decide([it.id], 'action', 1)]);
@@ -8106,7 +8112,7 @@ async function loadInboxReco() {
     <div class="reply-main">
       <div class="reply-top"><strong>${fmtNum(lot.count)} mails de ${esc(lot.fromName || lot.fromEmail)}</strong>
         ${accountChip(lot.account)}
-        <span class="muted" style="font-size:12px">${esc(lot.intent ? (INTENT_LABELS[lot.intent] ?? lot.intent) : '')}</span></div>
+        <span class="muted" style="font-size:12px">${esc(lot.familleLabel ?? (lot.intent ? (INTENT_LABELS[lot.intent] ?? lot.intent) : ''))}</span></div>
       <div class="reply-reason muted">${lot.samples.slice(0, 2).map((x) => esc(x.subject)).join(' · ')}${lot.count > 2 ? ' …' : ''}</div>
     </div>
     <div class="reply-side"><div class="reply-actions">
