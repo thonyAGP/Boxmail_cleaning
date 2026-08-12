@@ -1,13 +1,37 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { recordOperation } from './oplog.js';
+import {
+  resolveMailSemanticState,
+  getOpenActions,
+  getAttentionState,
+  type EtatSemantique,
+} from './semantique.js';
 
 /**
  * Attention Engine — Phase 4, brique 1 : RÉPONSES OUBLIÉES (SPEC V2 §8.3).
+ * BASCULÉ SUR LE SOCLE au lot 4d (12/08).
  *
- * Détecte, depuis l'index local (aucun accès IMAP), les mails entrants qui
- * attendent une réponse : dernier message de leur fil, reçus en boîte de
- * réception, sans réponse sortante depuis, et qui ressemblent à un mail écrit
- * par un humain (les newsletters/notifications sont ignorées).
+ * C'est ce moteur qui cachait le plus : le banc du 11/08 a compté 115 mails
+ * qui méritaient d'être vus et n'apparaissaient NULLE PART — des demandes de
+ * réservation Airbnb, une relance de facture impayée répétée cinq mois,
+ * « Votre paiement à Comptastar a échoué » resté 334 jours sans suite. Cause
+ * commune : des listes fermées (adresses no-reply, intentions « sans
+ * réponse ») avaient le dernier mot sur ce que l'analyse avait compris.
+ *
+ * LA RÈGLE DU LOT 4D, tenue dans `evaluerReponseAttendue` :
+ *
+ *   Une réponse est attendue quand une ACTION de type réponse est encore
+ *   OUVERTE pour l'utilisateur (verdict sémantique : action `reply`,
+ *   `actor = 'user'`, que rien n'a soldée) ET que la fenêtre d'attention est
+ *   vivante. Jamais parce que le dernier message du fil est entrant, jamais
+ *   à cause d'une catégorie, jamais malgré l'analyse.
+ *
+ * COHABITATION (l'immense majorité des mails n'a pas encore de verdict
+ * sémantique) : quand le verdict existe, LUI SEUL décide — l'adresse de
+ * l'expéditeur, les intentions legacy et `aiAction` ne sont plus consultés.
+ * Sinon, les heuristiques historiques restent le REPLI, correctif du 11/08
+ * compris (`ATTEND_REPONSE` : l'adresse ne prime pas sur l'analyse), et la
+ * raison affichée avoue le repli.
  *
  * Seuils SPEC : urgent 24 h · banque/comptable/administration 48 h ·
  * normal 7 jours. Chaque élément porte une `reason` explicite en français.
@@ -108,6 +132,9 @@ export const AUTO_SENDER_RE =
  * à la collecte. Il était donc du code mort depuis sa naissance — écrit
  * précisément pour « un message de voyageur Airbnb », et incapable de le
  * sauver. D'où sa remontée ici, au niveau du module.
+ *
+ * Depuis le lot 4d, ne sert plus qu'au REPLI (mails sans verdict sémantique) :
+ * quand le verdict existe, c'est lui qui dit si une réponse reste attendue.
  */
 export const ATTEND_REPONSE = new Set(['reply_expected', 'action_required']);
 
@@ -249,6 +276,187 @@ export function detectRequestKind(
   return { kind: 'information', why: 'aucune demande explicite détectée' };
 }
 
+// ---------------------------------------------------------------------------
+// La décision « une réponse est-elle encore attendue ? » (lot 4d)
+// ---------------------------------------------------------------------------
+
+/**
+ * REPLI UNIQUEMENT — intentions legacy réputées « sans réponse » quand
+ * l'expéditeur n'est pas une personne. Mesuré le 02/08 : 47 des 81 « en
+ * attente » étaient des factures Amazon/Stripe, des codes AXA/impots, des
+ * confirmations bancaires — c'est ce qui minait la confiance dans l'écran.
+ * `reminder` et `appointment` ajoutés le 11/08 (le rappel Air France d'un vol
+ * passé présenté première priorité du jour).
+ *
+ * Cette liste ne s'applique JAMAIS à un mail porteur d'un verdict sémantique :
+ * là, l'attention vient d'une action ouverte + d'une fenêtre + de l'état du
+ * fil, jamais d'une catégorie (piège n° 3 de la contre-revue). Elle meurt avec
+ * le dernier mail non analysé.
+ */
+const NO_REPLY_INTENTS = new Set([
+  'otp',
+  'invoice',
+  'shipping',
+  'confirmation',
+  'promo',
+  'document',
+  'reminder',
+  'appointment',
+]);
+
+/** Verdict de l'ancienne analyse plate : « rien à faire » (repli uniquement). */
+const AI_ACTIONS_SANS_SUITE = new Set(['archive', 'none', 'read']);
+
+/** Ce que le repli heuristique doit savoir d'un mail sans verdict. */
+export interface CandidatRepli {
+  fromEmail: string;
+  subject: string | null;
+  date: Date | null;
+  /** Colonne legacy `intent` (elle porte déjà les corrections manuelles). */
+  intent: string | null;
+  /** Colonne legacy `aiAction` (projection de l'ancienne analyse). */
+  aiAction: string | null;
+}
+
+export interface EvaluationReponse {
+  attendue: boolean;
+  /** verdict = décidé par le socle ; repli = heuristiques legacy, en
+   *  attendant que ce mail soit analysé. */
+  source: 'verdict' | 'repli';
+  /** Justification en français, affichable telle quelle. */
+  pourquoi: string;
+}
+
+/**
+ * Une réponse est-elle encore attendue de l'utilisateur pour ce mail ?
+ * Fonction PURE (le banc l'éprouve avec des états résolus en mémoire).
+ *
+ * Les trois pièges de la contre-revue, tenus ici même :
+ *  1. « demandait une réponse » (fait) ≠ « une réponse reste à faire »
+ *     (état) → on lit `getOpenActions` (courant), jamais
+ *     `faits.actionsDemandees` ; un mail auquel il a répondu, ou un fil marqué
+ *     « pas de réponse nécessaire », sort avec le pourquoi de sa clôture ;
+ *  2. l'expéditeur n'est pas l'acteur → seules les actions `actor = 'user'`
+ *     comptent (getOpenActions filtre) : une demande de réservation venant de
+ *     `automated@airbnb.com` reste visible, un mail où il n'est pas
+ *     destinataire de la demande n'attend rien de lui ;
+ *  3. pas de NO_REPLY_INTENTS déguisé → sur un mail au verdict connu, AUCUNE
+ *     catégorie (facture, info, confirmation…) n'est consultée : uniquement
+ *     l'ouverture de l'action, la fenêtre d'attention et l'état du fil.
+ */
+export function evaluerReponseAttendue(
+  etat: EtatSemantique | null | undefined,
+  candidat: CandidatRepli,
+  maintenant: number,
+): EvaluationReponse {
+  // ------------------------------------------------ le verdict, quand il existe
+  if (etat?.analyse.verdictPresent) {
+    const reponses = etat.courant.actions.filter(
+      (a) => a.fait.kind === 'reply' && a.fait.acteur === 'user',
+    );
+    const ouvertes = reponses.filter((a) => a.resteAFaire);
+    if (ouvertes.length === 0) {
+      const fermee = reponses[0];
+      // L'écartement manuel (« pas de réponse nécessaire ») ne fait pas
+      // DISPARAÎTRE l'élément : il doit rester visible dans l'onglet
+      // « Ignorées » du moteur, et restaurable. C'est l'état utilisateur
+      // (states, étape 4 de getUnansweredEmails) qui le marquera `dismissed` ;
+      // ici on ne répond qu'à la question structurelle « une réponse
+      // serait-elle attendue sans cet écartement ? ».
+      const fermeeParEcartementSeul =
+        fermee !== undefined &&
+        etat.courant.attention.ecarteeManuellement &&
+        !etat.signauxServeur.repondu &&
+        !etat.signauxServeur.sortantApresDansLeFil &&
+        !etat.signauxServeur.tacheFaite;
+      if (fermeeParEcartementSeul) {
+        return {
+          attendue: true,
+          source: 'verdict',
+          pourquoi:
+            'le mail demandait une réponse — fil marqué « pas de réponse nécessaire » par toi',
+        };
+      }
+      if (fermee) {
+        // Le FAIT demeure (le mail demandait une réponse) ; l'ÉTAT est soldé —
+        // et on dit par quoi (il a répondu, écarté le fil, fenêtre passée…).
+        return {
+          attendue: false,
+          source: 'verdict',
+          pourquoi: `le mail demandait une réponse, mais plus maintenant : ${fermee.pourquoi}`,
+        };
+      }
+      return {
+        attendue: false,
+        source: 'verdict',
+        pourquoi: "l'analyse du mail ne déclare aucune réponse à faire de ta part",
+      };
+    }
+    const attention = getAttentionState(etat);
+    if (attention.perimee) {
+      return {
+        attendue: false,
+        source: 'verdict',
+        pourquoi: `la fenêtre d'attention est passée — ${attention.pourquoi}`,
+      };
+    }
+    const a = ouvertes[0];
+    return {
+      attendue: true,
+      source: 'verdict',
+      pourquoi:
+        `l'analyse du mail déclare une réponse encore attendue de ta part` +
+        `${a.fait.label ? ` (« ${a.fait.label} »)` : ''}`,
+    };
+  }
+
+  // -------------------------------- le repli (pas encore de verdict sémantique)
+  //
+  // Comportement historique conservé, correctif du 11/08 compris : quand
+  // l'ancienne analyse a écrit « attend une réponse », NI l'adresse de
+  // l'expéditeur NI son propre `aiAction` n'ont le droit de la faire taire.
+  const attendExplicite = ATTEND_REPONSE.has(candidat.intent ?? '');
+  if (AUTO_SENDER_RE.test(candidat.fromEmail) && !attendExplicite) {
+    return {
+      attendue: false,
+      source: 'repli',
+      pourquoi:
+        'expéditeur automatique (no-reply/notification) et aucune analyse ne dit le contraire — repli, pas encore de verdict',
+    };
+  }
+  const muet = autoNoticeMuted(candidat.subject, candidat.date, maintenant);
+  if (muet) {
+    return { attendue: false, source: 'repli', pourquoi: muet };
+  }
+  // Une PERSONNE n'est jamais écartée : elle peut attendre une réponse quoi
+  // qu'elle envoie (l'artisan qui joint sa facture attend parfois un retour).
+  const estUnePersonne =
+    etat?.categorieExpediteur.valeur === 'person' ||
+    etat?.signauxServeur.kindExpediteur === 'person';
+  if (!estUnePersonne) {
+    if (candidat.intent && NO_REPLY_INTENTS.has(candidat.intent)) {
+      return {
+        attendue: false,
+        source: 'repli',
+        pourquoi: `mail transactionnel (${candidat.intent}) d'un expéditeur qui n'est pas une personne — repli, pas encore de verdict`,
+      };
+    }
+    if (candidat.aiAction && AI_ACTIONS_SANS_SUITE.has(candidat.aiAction) && !attendExplicite) {
+      return {
+        attendue: false,
+        source: 'repli',
+        pourquoi: `l'ancienne analyse conclut « ${candidat.aiAction} » (rien à faire) — repli, en attendant le verdict sémantique`,
+      };
+    }
+  }
+  return {
+    attendue: true,
+    source: 'repli',
+    pourquoi:
+      "dernier message du fil sans réponse envoyée — repli heuristique, ce mail n'a pas encore de verdict d'analyse",
+  };
+}
+
 export function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -304,7 +512,9 @@ export async function getUnansweredEmails(
   const accountEmail = accountRow?.emailAddress?.toLowerCase() ?? null;
 
   // 1. Candidats : mails entrants « répondables » de la boîte de réception.
-  //    (newsletters exclues via List-Unsubscribe, expéditeurs no-reply via regex)
+  //    (newsletters exclues via List-Unsubscribe ; l'adresse de l'expéditeur,
+  //    elle, ne filtre PLUS rien à la collecte — lot 4d : c'est
+  //    evaluerReponseAttendue qui décide, verdict d'abord, heuristiques en repli)
   const raw = await db.message.findMany({
     where: {
       accountSlug: account,
@@ -329,9 +539,9 @@ export async function getUnansweredEmails(
       toEmails: true,
       date: true,
       isSeen: true,
+      // Colonnes legacy, lues UNIQUEMENT par le repli (mails sans verdict
+      // sémantique) — voir evaluerReponseAttendue.
       intent: true,
-      // Verdict de l'analyse (11/08) : sans lui, les heuristiques décidaient
-      // seules — et se trompaient. Voir le veto ci-dessous.
       aiAction: true,
       folder: { select: { path: true } },
     },
@@ -341,80 +551,43 @@ export async function getUnansweredEmails(
   const byThread = new Map<number, (typeof raw)[number]>();
   for (const m of raw) {
     if (m.threadId === null || m.date === null || !m.fromEmail) continue;
-    // L'adresse de l'expéditeur ne prime PAS sur la lecture du mail : une
-    // demande de réservation Airbnb part de `automated@airbnb.com`, et une
-    // relance de son syndic de `notification@vilogi.com`. Quand l'analyse a
-    // conclu qu'une réponse est attendue, on garde le mail.
-    if (AUTO_SENDER_RE.test(m.fromEmail) && !ATTEND_REPONSE.has(m.intent ?? '')) continue;
-    // Filet pour les mails indexés avant la colonne isAutoReply.
+    // Filet pour les mails indexés avant la colonne isAutoReply : un
+    // répondeur d'absence ne demande rien.
     if (isAutoReplySubject(m.subject)) continue;
-    // Règle utilisateur : les avis « relevé à disposition » et les avis
-    // d'espace périmés (> 60 j) n'attendent aucune réponse — jamais listés.
-    if (autoNoticeMuted(m.subject, m.date, now)) continue;
     if (!byThread.has(m.threadId)) byThread.set(m.threadId, m);
   }
-  const threadIds = [...byThread.keys()];
 
-  // Mail TRANSACTIONNEL d'un expéditeur qui n'est pas une personne = pas de
-  // réponse attendue : une facture se paie, un OTP se tape, une confirmation
-  // se lit. Simulé sur les 7 boîtes réelles le 02/08 : 47 des 81 « en
-  // attente » étaient de ce type (factures Amazon/Stripe, codes AXA/impots,
-  // confirmations Crédit Agricole…) — c'est ce qui minait la confiance dans
-  // l'écran. Les mails de PERSONNES restent listés quoi qu'ils contiennent :
-  // l'artisan qui envoie sa facture attend parfois bel et bien un retour.
-  //
-  // `reminder` et `appointment` ajoutés le 11/08 après un retour cinglant :
-  // « Enregistrez-vous pour votre voyage du 16/06/2026 » d'Air France était
-  // présenté comme la PREMIÈRE des trois priorités du jour — un mail
-  // automatique, pour un vol passé depuis deux mois. Un rappel envoyé par une
-  // entreprise n'attend jamais de réponse ; celui d'une PERSONNE, si, et la
-  // garde `category !== 'person'` juste en dessous continue de le protéger.
-  const NO_REPLY_INTENTS = new Set([
-    'otp',
-    'invoice',
-    'shipping',
-    'confirmation',
-    'promo',
-    'document',
-    'reminder',
-    'appointment',
-  ]);
-  const senderCat = new Map<string, string | null>();
-  {
-    const emails = [...new Set([...byThread.values()].map((m) => m.fromEmail as string))];
-    for (const part of chunk(emails, 500)) {
-      const rows = await db.sender.findMany({
-        where: { accountSlug: account, email: { in: part } },
-        select: { email: true, category: true },
-      });
-      for (const r of rows) senderCat.set(r.email, r.category);
-    }
-  }
+  // L'état sémantique de TOUT le lot, résolu en une passe (lot 4d — jamais
+  // mail par mail, SQLite connection_limit=1) : précédence, état du fil et
+  // clôture des actions y sont déjà tranchés.
+  const etats = await resolveMailSemanticState([...byThread.values()].map((m) => m.id));
+
+  // La décision « réponse attendue ? », mail par mail : le verdict sémantique
+  // quand il existe (action `reply` ouverte + fenêtre vivante), le repli
+  // heuristique sinon — correctif du 11/08 compris (l'adresse de l'expéditeur
+  // ne prime pas sur l'analyse : une demande de réservation Airbnb part de
+  // `automated@airbnb.com`, une relance de son syndic de
+  // `notification@vilogi.com`).
+  const evaluations = new Map<number, EvaluationReponse>();
   for (const [threadId, m] of [...byThread]) {
-    const estUnePersonne = senderCat.get(m.fromEmail as string) === 'person';
-    // Une PERSONNE n'est jamais écartée : elle peut attendre une réponse quoi
-    // qu'elle envoie.
-    if (estUnePersonne) continue;
-    if (m.intent && NO_REPLY_INTENTS.has(m.intent)) {
+    const evaluation = evaluerReponseAttendue(
+      etats.get(m.id),
+      {
+        fromEmail: m.fromEmail as string,
+        subject: m.subject,
+        date: m.date,
+        intent: m.intent,
+        aiAction: m.aiAction,
+      },
+      now,
+    );
+    if (!evaluation.attendue) {
       byThread.delete(threadId);
       continue;
     }
-    // VETO DE L'ANALYSE (11/08). Même leçon que pour les fausses échéances la
-    // veille : quand l'IA a lu le mail et conclut qu'il n'y a rien à faire
-    // (lire, archiver, rien), une heuristique de structure — « le dernier
-    // message du fil est entrant » — ne doit pas la contredire. Le mail
-    // Air France portait le verdict « rappel d'enregistrement classique » et
-    // finissait quand même en tête du briefing.
-    // On ne l'applique JAMAIS quand l'analyse annonce elle-même une réponse
-    // attendue : sinon on masquerait un message de voyageur Airbnb.
-    if (
-      m.aiAction &&
-      ['archive', 'none', 'read'].includes(m.aiAction) &&
-      !ATTEND_REPONSE.has(m.intent ?? '')
-    ) {
-      byThread.delete(threadId);
-    }
+    evaluations.set(threadId, evaluation);
   }
+  const threadIds = [...byThread.keys()];
 
   // 2. Contexte des fils : dernier message toutes directions confondues et
   //    dernière réponse sortante — pour ne garder que les fils qui se
@@ -490,8 +663,14 @@ export async function getUnansweredEmails(
       why = `${why} — mais tu es en copie, seuil ramené à normal`;
     }
 
-    // B3 : type de demande (motifs FR sans « ? » inclus) depuis le sujet.
-    const request = detectRequestKind(m.subject);
+    // B3 : type de demande. Quand le verdict sémantique a tranché, c'est SA
+    // raison qui s'affiche (elle dit d'où vient la décision) ; sinon les
+    // motifs FR du sujet, comme avant.
+    const evaluation = evaluations.get(threadId);
+    const request: { kind: RequestKind; why: string } =
+      evaluation?.source === 'verdict'
+        ? { kind: 'reply_expected', why: evaluation.pourquoi }
+        : detectRequestKind(m.subject);
 
     const thresholdHours = THRESHOLDS[category];
     const waitingHours = (now - m.date.getTime()) / 3_600_000;

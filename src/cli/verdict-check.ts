@@ -19,6 +19,8 @@ import {
   type EtatSemantique,
 } from '../services/semantique.js';
 import { echeancesDepuisLeVerdict, arbitrerProposition } from '../services/deadlines.js';
+import { evaluerReponseAttendue } from '../services/attention.js';
+import { scoreMessage } from '../services/importance.js';
 
 /**
  * Vérification du contrat sémantique — `npm run verdict:check`
@@ -811,6 +813,266 @@ console.log('\n=== 13. Échéances — piège n° 3 : aucune date inventée ===\
     '…et le dit : la proposition est un repli en attendant l’analyse',
     true,
     arbSansVerdict.pourquoi.includes('repli'),
+  );
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE MOTEUR DES RÉPONSES ATTENDUES (lot 4d) — les trois pièges de la
+// contre-revue, éprouvés sur `evaluerReponseAttendue` avec des états résolus
+// en mémoire. NO_REPLY_INTENTS et le veto `aiAction` ne parlent plus que dans
+// le repli ; sur un mail au verdict connu, c'est l'action ouverte + la
+// fenêtre + l'état du fil, et rien d'autre.
+
+console.log('\n=== 14. Réponses attendues — action ouverte + fenêtre + fil ===\n');
+
+{
+  const mails: Record<number, LigneMessage> = {
+    // Demande de réservation Airbnb : adresse « automated@ » (le banc du 11/08
+    // en a compté 48 masquées par la regex), action `reply` ouverte.
+    901: msg(901, { fromEmail: 'automated@airbnb.com', subject: 'Demande de réservation de Julie' }),
+    // Même demande, mais il a RÉPONDU (sortant réel après ce mail dans le fil).
+    902: msg(902, { fromEmail: 'automated@airbnb.com', threadId: 90 }),
+    // La demande de réponse vise un TIERS, pas lui.
+    903: msg(903),
+    // Facture livrée, fenêtre vivante, AUCUNE demande de réponse.
+    904: msg(904),
+    // Réponse demandée, mais la fenêtre d'attention est passée depuis juin.
+    905: msg(905),
+    // Fil marqué « pas de réponse nécessaire » par l'utilisateur.
+    906: msg(906, { threadId: 96 }),
+    // \Answered posé par IMAP.
+    907: msg(907, { isAnswered: true }),
+    // --- repli (aucun verdict sémantique) :
+    910: msg(910, { fromEmail: 'no-reply@vilogi.com', intent: 'reply_expected', intentSource: 'ai' }),
+    911: msg(911, { fromEmail: 'no-reply@edf.fr' }),
+    912: msg(912, { fromEmail: 'artisan@example.com', intent: 'invoice', intentSource: 'ai' }),
+    913: msg(913, { fromEmail: 'billing@stripe.com', intent: 'invoice', intentSource: 'ai' }),
+    914: msg(914, { fromEmail: 'contact@copro.fr', intent: 'info', intentSource: 'ai' }),
+  };
+  const etats = resoudre(
+    lignes({
+      messages: Object.values(mails),
+      verdicts: [
+        verdictDe(901, { attentionMode: 'while_action_open' }),
+        verdictDe(902, { attentionMode: 'while_action_open' }),
+        verdictDe(903, { attentionMode: 'while_action_open' }),
+        verdictDe(904, {
+          purpose: 'document_delivery',
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2026-09-30T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        verdictDe(905, {
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2026-06-16T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        verdictDe(906, { attentionMode: 'while_action_open' }),
+        verdictDe(907, { attentionMode: 'while_action_open' }),
+      ],
+      actions: [
+        actionDe(901, { label: 'Répondre à la demande de réservation' }),
+        actionDe(902),
+        actionDe(903, { actor: 'third_party' }),
+        actionDe(905),
+        actionDe(906),
+        actionDe(907),
+      ],
+      documents: [
+        { messageId: 904, kind: 'invoice', label: null, issuer: 'EDF', issueDate: null, dueDate: null, amount: 120, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+      fils: [
+        { id: 90, lastMessageAt: new Date('2026-08-02T09:00:00Z') },
+        { id: 96, lastMessageAt: new Date('2026-08-01T10:00:00Z') },
+      ],
+      sortants: [{ threadId: 90, dernierLe: new Date('2026-08-02T09:00:00Z') }],
+      etatsFil: [
+        { threadId: 96, messageId: 906, kind: 'reply', state: 'dismissed', snoozedUntil: null },
+      ],
+      expediteurs: [
+        // L'artisan est une PERSONNE : jamais écarté par le repli, quoi qu'il envoie.
+        { accountSlug: 'test', email: 'artisan@example.com', category: 'person', categorySource: 'auto', categoryReason: null, priority: 'normal', kind: 'person', engagedAt: null },
+        { accountSlug: 'test', email: 'billing@stripe.com', category: 'company', categorySource: 'auto', categoryReason: null, priority: 'normal', kind: 'company', engagedAt: null },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const evalDe = (id: number, aiAction: string | null = null) => {
+    const m = mails[id];
+    return evaluerReponseAttendue(
+      etats.get(id),
+      { fromEmail: m.fromEmail ?? '', subject: m.subject, date: m.date, intent: m.intent, aiAction },
+      MAINTENANT.getTime(),
+    );
+  };
+
+  verifier('Airbnb « automated@ » + action reply ouverte : VISIBLE', true, evalDe(901).attendue);
+  verifier('…et la décision vient du verdict, pas de l’adresse', 'verdict', evalDe(901).source);
+  verifier('il a répondu dans le fil : plus en attente', false, evalDe(902).attendue);
+  verifier(
+    '…et la raison dit la clôture (fait ≠ état)',
+    true,
+    evalDe(902).pourquoi.includes('tu as écrit dans le fil'),
+  );
+  verifier('\\Answered posé par IMAP : plus en attente non plus', false, evalDe(907).attendue);
+  verifier('la demande vise un TIERS, pas lui : rien à répondre', false, evalDe(903).attendue);
+  verifier('facture sans demande de réponse : pas listée…', false, evalDe(904).attendue);
+  verifier(
+    '…pour la bonne raison (aucune action), jamais sa catégorie',
+    true,
+    evalDe(904).pourquoi.includes('aucune réponse à faire'),
+  );
+  verifier('fenêtre d’attention passée : plus en attente', false, evalDe(905).attendue);
+  verifier(
+    'fil écarté à la main : reste LISTABLE (onglet Ignorées, restaurable)',
+    true,
+    evalDe(906).attendue,
+  );
+  verifier(
+    '…avec le pourquoi de l’écartement',
+    true,
+    evalDe(906).pourquoi.includes('pas de réponse nécessaire'),
+  );
+  // --- le repli, correctif du 11/08 compris
+  verifier(
+    'repli : « attend une réponse » (analyse legacy) prime sur no-reply@',
+    true,
+    evalDe(910).attendue,
+  );
+  verifier('…et s’assume comme repli', 'repli', evalDe(910).source);
+  verifier('repli : no-reply@ sans analyse contraire reste écarté', false, evalDe(911).attendue);
+  verifier('repli : une PERSONNE n’est jamais écartée, même une facture', true, evalDe(912).attendue);
+  verifier('repli : facture d’une entreprise, pas de réponse attendue', false, evalDe(913).attendue);
+  verifier(
+    'repli : l’ancienne analyse « archive » fait toujours veto',
+    false,
+    evalDe(914, 'archive').attendue,
+  );
+}
+
+// ---------------------------------------------------------------------------
+//
+// LE MOTEUR D'IMPORTANCE (lot 4e) — le classement se fonde sur l'ouverture,
+// l'échéance et la conséquence ; les choix de l'utilisateur (⭐/🔕) restent
+// souverains ; le repli (mails sans verdict) garde le score historique.
+
+console.log('\n=== 15. Importance — ouverture, échéance, conséquence ===\n');
+
+{
+  const mails: Record<number, LigneMessage> = {
+    // Comptastar : paiement échoué, action `pay` ouverte, 850 €, due le 15/08.
+    1001: msg(1001, { subject: 'Votre paiement à Comptastar a échoué' }),
+    // Air France en août : sujet alarmant, mais fenêtre passée et rien à faire.
+    1002: msg(1002, { subject: 'Dernier rappel : enregistrez-vous pour votre voyage' }),
+    // Réservation : action reply ouverte, mail récent, rien d'autre.
+    1003: msg(1003, { date: new Date('2026-08-10T10:00:00Z') }),
+  };
+  const etats = resoudre(
+    lignes({
+      messages: Object.values(mails),
+      verdicts: [
+        verdictDe(1001, { attentionMode: 'while_action_open' }),
+        verdictDe(1002, {
+          attentionMode: 'until_time',
+          attentionUntil: new Date('2026-06-16T00:00:00Z'),
+          attentionPrecision: 'date',
+        }),
+        verdictDe(1003, { attentionMode: 'while_action_open' }),
+      ],
+      actions: [
+        actionDe(1001, { kind: 'pay', label: 'Régler le paiement Comptastar', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(1002, { kind: 'confirm', expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
+        actionDe(1003, { label: 'Répondre à la demande de réservation' }),
+      ],
+      documents: [
+        { messageId: 1001, kind: 'invoice', label: null, issuer: 'Comptastar', issueDate: null, dueDate: null, amount: 850, currency: 'EUR', reference: null, certainty: 'explicit' },
+      ],
+    }),
+    { maintenant: MAINTENANT },
+  );
+  const entree = (id: number, sur: Partial<Parameters<typeof scoreMessage>[0]> = {}) => ({
+    subject: mails[id]?.subject ?? '',
+    fromEmail: 'contact@acme.fr',
+    fromName: null,
+    isSeen: true,
+    date: mails[id]?.date ?? new Date('2026-08-10T10:00:00Z'),
+    hasListUnsubscribe: false,
+    ...sur,
+  });
+  const contexte = (id: number | null, sur: Partial<Parameters<typeof scoreMessage>[1]> = {}) => ({
+    senderKind: 'company',
+    senderPriority: 'normal',
+    threadHasOutbound: false,
+    awaitingReply: false,
+    etat: id !== null ? (etats.get(id) ?? null) : null,
+    now: MAINTENANT.getTime(),
+    ...sur,
+  });
+
+  // LA vérification demandée : une action ouverte pèse plus qu'un expéditeur
+  // connu. Même mail, d'un côté une action ouverte (+35), de l'autre une
+  // adresse de banque/administration (+30) — l'action gagne.
+  const avecAction = scoreMessage(entree(1003, { subject: '' }), contexte(1003));
+  const expediteurConnu = scoreMessage(
+    entree(1003, { subject: '', fromEmail: 'contact@impots.gouv.fr' }),
+    contexte(null),
+  );
+  verifier(
+    'une action ouverte (+35) pèse plus qu’un expéditeur connu (+30)',
+    true,
+    avecAction.score > expediteurConnu.score,
+  );
+  verifier('…et sa raison est affichable telle quelle, en français', true,
+    avecAction.reasons.some((r) => r.includes('une action reste à faire de ta part')));
+
+  // Air France en août : le sujet crie (« dernier rappel »), l'analyse sait
+  // que la fenêtre est passée — le mail ne remonte plus.
+  const airAout = scoreMessage(entree(1002), contexte(1002));
+  verifier('Air France en août : niveau LOW malgré le sujet alarmant', 'low', airAout.level);
+  verifier(
+    '…parce que la fenêtre est passée (raison explicite)',
+    true,
+    airAout.reasons.some((r) => r.includes("la fenêtre d'attention est passée")),
+  );
+
+  // Conséquence : l'argent en jeu vient de l'ANALYSE, pas d'une regex de sujet.
+  const comptastar = scoreMessage(entree(1001), contexte(1001));
+  verifier('l’argent en jeu est cité (850,00 EUR, lu par l’analyse)', true,
+    comptastar.reasons.some((r) => r.includes('850,00')));
+  verifier('échéance proche (le 15/08) : citée aussi', true,
+    comptastar.reasons.some((r) => r.includes('à faire avant le')));
+  verifier('paiement échoué + montant + document : niveau HIGH', 'high', comptastar.level);
+
+  // Les choix de l'utilisateur restent souverains — un acte, pas une analyse.
+  const etoile = scoreMessage(entree(1003), contexte(1003, { senderPriority: 'always_important' }));
+  verifier('⭐ toujours important ajoute toujours ses 40 points', true,
+    etoile.reasons.some((r) => r.startsWith('+40')));
+  const silencieux = scoreMessage(entree(1001), contexte(1001, { senderPriority: 'never_urgent' }));
+  verifier('🔕 jamais urgent plafonne à 30, MÊME une action ouverte', true,
+    silencieux.score <= 30 && silencieux.reasons.some((r) => r.includes('plafonné à 30')));
+
+  // Une demande à traiter n'est pas punie parce qu'elle voyage avec un
+  // List-Unsubscribe (les demandes Airbnb en portent un).
+  const reservation = scoreMessage(
+    entree(1003, { hasListUnsubscribe: true }),
+    contexte(1003, { senderKind: 'notification' }),
+  );
+  verifier('action ouverte : pas de malus « newsletter/notification »', true,
+    reservation.reasons.every((r) => !r.includes('rarement important')));
+
+  // Le REPLI (aucun verdict) garde le score historique, à l'identique.
+  const repli = scoreMessage(
+    entree(1003, {
+      subject: 'Relance : facture 150 € — peux-tu confirmer ?',
+      date: new Date('2026-07-20T10:00:00Z'),
+    }),
+    contexte(null, { awaitingReply: true }),
+  );
+  verifier(
+    'repli : question + montant du sujet + attente + ancienneté = 40',
+    40,
+    repli.score,
   );
 }
 

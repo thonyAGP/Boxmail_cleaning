@@ -6,14 +6,39 @@ import {
   autoNoticeMuted,
   chunk,
 } from './attention.js';
+import {
+  resolveMailSemanticState,
+  getOpenActions,
+  getAttentionState,
+  type EtatSemantique,
+} from './semantique.js';
 
 /**
  * Importance Engine — Phase 4, brique 3 (L1) : MAILS IMPORTANTS (SPEC V2 §8.2).
+ * BASCULÉ SUR LE SOCLE au lot 4e (12/08).
  *
- * Chaque mail entrant reçoit un score d'importance 0-100, calculé depuis
- * l'index local (aucun accès IMAP) par des règles additives explicites :
- * chaque règle qui s'applique ajoute des points ET sa justification en
- * français dans `reasons[]`. Lecture seule en v1 (pas de snooze/dismiss).
+ * Chaque mail entrant reçoit un score d'importance 0-100, par règles
+ * additives explicites : chaque règle qui s'applique ajoute des points ET sa
+ * justification en français dans `reasons[]` — c'est ce qui permet à
+ * l'utilisateur de contester.
+ *
+ * LA RÈGLE DU LOT 4E (contre-revue du 12/08 : « sinon des cartes
+ * sémantiquement justes, classées absurdement ») :
+ *
+ *   Le score se fonde sur une ACTION OUVERTE pour l'utilisateur, une
+ *   ÉCHÉANCE proche, une CONSÉQUENCE (argent, document à valeur) et l'ÉTAT
+ *   DU FIL — jamais sur `intent` ni `aiAction`. Une action ouverte (+35)
+ *   pèse PLUS qu'un expéditeur connu (+30) : ce qu'il y a à FAIRE passe
+ *   avant qui l'envoie.
+ *
+ * Ce qui vient de l'UTILISATEUR reste souverain : `Sender.priority`
+ * (⭐ toujours important +40 / 🔕 jamais urgent plafond 30) est un acte, pas
+ * une interprétation — aucun verdict ne le renverse.
+ *
+ * COHABITATION : les mails sans verdict sémantique gardent le score
+ * historique (heuristiques de sujet) comme REPLI ; quand le verdict existe,
+ * les heuristiques de contenu (montant du sujet, « ? », attente structurelle)
+ * ne tournent plus — le socle a déjà lu le mail.
  *
  * Niveaux : high ≥ 70 · medium 40-69 · low < 40.
  */
@@ -102,6 +127,9 @@ interface ScoreContext {
   deadlineLinked?: boolean;
   /** true si l'expéditeur a relancé : ≥ 2 mails entrants sans réponse (B3). */
   senderReminded?: boolean;
+  /** État sémantique résolu par le socle (lot 4e) — null/absent si le mail
+   *  n'a pas été résolu ; sans verdict, le score retombe sur le repli. */
+  etat?: EtatSemantique | null;
   now: number;
 }
 
@@ -118,6 +146,18 @@ export function scoreMessage(
     score += points;
     reasons.push(`${points > 0 ? '+' : ''}${points} ${reason}`);
   };
+
+  // Le verdict sémantique, quand il existe, porte l'ouverture, l'échéance et
+  // la conséquence ; les heuristiques de contenu ne tournent qu'en repli.
+  const semantique = ctx.etat?.analyse.verdictPresent ? ctx.etat : null;
+  const ouvertes = semantique ? getOpenActions(semantique) : [];
+  const ageMs = m.date ? ctx.now - m.date.getTime() : Number.POSITIVE_INFINITY;
+  // Règle utilisateur (31/07/2026) : un avis « relevé/document à disposition »
+  // n'attend JAMAIS de traitement, et un avis « message dans ton espace » est
+  // périmé après 60 jours. Dans les deux cas : pas de bonus d'attente ni de
+  // relance (la banque « relance » chaque mois toute seule), et un malus type
+  // notification pour le sortir de la liste des importants.
+  const noticeMuted = autoNoticeMuted(m.subject, m.date, ctx.now);
 
   // Priorité par relation (A5) : le choix de l'utilisateur prime sur tout.
   if (ctx.senderPriority === 'always_important') {
@@ -136,44 +176,105 @@ export function scoreMessage(
   } else if (ctx.threadHasOutbound) {
     add(10, 'fil de conversation (tu y as déjà écrit)');
   }
-  const ageMs = m.date ? ctx.now - m.date.getTime() : Number.POSITIVE_INFINITY;
   if (!m.isSeen && ageMs < 7 * 86_400_000) {
     add(15, 'non lu et récent (moins de 7 jours)');
   }
-  if (subject.includes('?')) {
-    add(10, 'le sujet pose une question');
+
+  if (semantique) {
+    // ------------------------------------------------ le socle (lot 4e)
+    // +35 > +30 : une action ouverte pèse PLUS qu'un expéditeur connu. Ce
+    // qu'il y a à FAIRE passe avant qui l'envoie — c'est ce qui fait remonter
+    // « Votre paiement à Comptastar a échoué » (334 jours sans suite) devant
+    // la newsletter de la banque.
+    if (ouvertes.length > 0) {
+      const a = ouvertes[0];
+      add(
+        35,
+        `une action reste à faire de ta part : « ${a.fait.label ?? a.fait.kind} » (analyse du mail)`,
+      );
+      if (ouvertes.some((x) => x.enRetard)) {
+        add(10, "son échéance est dépassée et rien ne l'a soldée — en retard, pas résolue");
+      } else {
+        const prochaine = ouvertes
+          .map((x) => x.fait.dueAt)
+          .filter((d): d is Date => d !== null)
+          .sort((d1, d2) => d1.getTime() - d2.getTime())[0];
+        if (prochaine && prochaine.getTime() - ctx.now < 7 * 86_400_000) {
+          add(10, `à faire avant le ${prochaine.toLocaleDateString('fr-FR')} (moins de 7 jours)`);
+        }
+      }
+      // Plus une action ouverte attend, plus elle compte (le cas Comptastar).
+      const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
+      if (waitingDays >= 14) add(10, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+      else if (waitingDays >= 7) add(5, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+    }
+    // Conséquence : de l'argent en jeu (montant lu par l'analyse, jamais une
+    // regex de sujet), un document à valeur porté par le mail.
+    const enJeu =
+      ouvertes
+        .map((x) => ({ montant: x.fait.montant, devise: x.fait.devise }))
+        .find((x) => x.montant !== null) ??
+      semantique.faits.documentsPortes
+        .map((d) => ({ montant: d.montant, devise: d.devise }))
+        .find((x) => x.montant !== null) ??
+      null;
+    if (enJeu?.montant != null) {
+      add(
+        10,
+        `de l'argent est en jeu (${enJeu.montant.toFixed(2).replace('.', ',')} ${enJeu.devise ?? '€'})`,
+      );
+    }
+    if (semantique.faits.documentsPortes.length > 0) {
+      add(10, 'porte un document à valeur (facture, contrat, attestation…)');
+    }
+    // Fenêtre d'attention passée et plus rien à faire : le mail ne doit plus
+    // remonter — c'est ce qui empêche le rappel Air France d'un vol passé de
+    // rester « important » sur la foi de son sujet (« dernier rappel »).
+    // Jamais l'inverse : une action ouverte n'est PAS masquée par la fenêtre.
+    if (ouvertes.length === 0 && getAttentionState(semantique).perimee) {
+      add(-40, "la fenêtre d'attention est passée — plus rien à faire d'après l'analyse");
+    }
+  } else {
+    // -------------------------- REPLI (pas encore de verdict sémantique)
+    // Le score historique, inchangé : heuristiques de sujet et de structure,
+    // en attendant que l'analyse passe sur ce mail.
+    if (subject.includes('?')) {
+      add(10, 'le sujet pose une question');
+    }
+    const amountMatch = AMOUNT_RE.exec(subject);
+    if (amountMatch) {
+      add(10, `montant dans le sujet (« ${amountMatch[0].trim()} »)`);
+    }
+    if (ctx.awaitingReply && !noticeMuted) {
+      add(10, 'attend une réponse (dernier message du fil, rien envoyé depuis)');
+      // B3 : plus un mail attend, plus il compte — « jours sans traitement ».
+      const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
+      if (waitingDays >= 14) add(10, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+      else if (waitingDays >= 7) add(5, `sans traitement depuis ${Math.round(waitingDays)} jours`);
+    }
   }
-  const amountMatch = AMOUNT_RE.exec(subject);
-  if (amountMatch) {
-    add(10, `montant dans le sujet (« ${amountMatch[0].trim()} »)`);
-  }
-  // Règle utilisateur (31/07/2026) : un avis « relevé/document à disposition »
-  // n'attend JAMAIS de traitement, et un avis « message dans ton espace » est
-  // périmé après 60 jours. Dans les deux cas : pas de bonus d'attente ni de
-  // relance (la banque « relance » chaque mois toute seule), et un malus type
-  // notification pour le sortir de la liste des importants.
-  const noticeMuted = autoNoticeMuted(m.subject, m.date, ctx.now);
-  if (ctx.awaitingReply && !noticeMuted) {
-    add(10, 'attend une réponse (dernier message du fil, rien envoyé depuis)');
-    // B3 : plus un mail attend, plus il compte — « jours sans traitement ».
-    const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
-    if (waitingDays >= 14) add(10, `sans traitement depuis ${Math.round(waitingDays)} jours`);
-    else if (waitingDays >= 7) add(5, `sans traitement depuis ${Math.round(waitingDays)} jours`);
-  }
+
   if (ctx.deadlineLinked) {
     add(10, 'une échéance est liée à ce mail');
   }
   if (ctx.senderReminded && !noticeMuted) {
     add(10, "l'expéditeur a relancé (plusieurs mails sans réponse de ta part)");
   }
-  if (noticeMuted) {
+  // Les malus « automatique » ne s'appliquent JAMAIS à un mail dont une action
+  // reste ouverte pour l'utilisateur : une demande de réservation Airbnb
+  // arrive avec un List-Unsubscribe, elle n'en est pas moins à traiter.
+  if (noticeMuted && ouvertes.length === 0) {
     add(-40, noticeMuted);
   }
-  if (m.hasListUnsubscribe || ctx.senderKind === 'newsletter' || ctx.senderKind === 'notification') {
+  if (
+    (m.hasListUnsubscribe || ctx.senderKind === 'newsletter' || ctx.senderKind === 'notification') &&
+    ouvertes.length === 0
+  ) {
     add(-40, 'newsletter ou notification automatique (rarement important)');
   }
 
   score = Math.max(0, Math.min(100, score));
+  // 🔕 est un ACTE de l'utilisateur : il plafonne même une action ouverte.
   if (ctx.senderPriority === 'never_urgent' && score > 30) {
     score = 30;
     reasons.push('plafonné à 30 : expéditeur marqué 🔕 jamais urgent (ton choix)');
@@ -349,6 +450,11 @@ export async function getImportantEmails(
   const threadIds = [...new Set(raw.map((m) => m.threadId).filter((t): t is number => t !== null))];
   const { lastAny, lastOut } = await loadThreadContext(threadIds);
 
+  // L'état sémantique de tout le lot, résolu EN UNE PASSE (lot 4e — jamais
+  // mail par mail, SQLite connection_limit=1) : c'est lui qui porte les
+  // actions ouvertes, les montants et la fenêtre d'attention du score.
+  const etats = await resolveMailSemanticState(raw.map((m) => m.id));
+
   // B3 : tâches et échéances liées aux candidats (requêtes par lots).
   const candidateIds = raw.map((m) => m.id);
   const taskedIds = new Set<number>();
@@ -406,6 +512,7 @@ export async function getImportantEmails(
         awaitingReply,
         deadlineLinked: deadlineIds.has(m.id),
         senderReminded,
+        etat: etats.get(m.id) ?? null,
         now,
       },
       treatStateOf({
@@ -501,6 +608,9 @@ export async function explainImportance(
     (!out || out.getTime() < (m.date as Date).getTime()) &&
     !AUTO_SENDER_RE.test(m.fromEmail);
 
+  // L'état sémantique de ce mail (socle, lot 4e) — même source que la liste.
+  const etats = await resolveMailSemanticState([m.id]);
+
   // Signaux B3 pour CE mail : échéance liée, tâche liée, relance reçue.
   const [deadline, task, inboundSinceOut] = await Promise.all([
     db.deadline.findFirst({
@@ -535,6 +645,7 @@ export async function explainImportance(
       awaitingReply,
       deadlineLinked: Boolean(deadline),
       senderReminded: awaitingReply && inboundSinceOut >= 2,
+      etat: etats.get(m.id) ?? null,
       now,
     },
     treatStateOf({
