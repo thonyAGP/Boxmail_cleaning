@@ -236,17 +236,36 @@ type PolicyRow = NonNullable<Awaited<ReturnType<typeof db.retentionPolicy.findUn
  * S'ajoute à la garantie « 0 mail personnel » (catégorie person exclue).
  */
 /**
- * Protections d'un mail. Deux familles :
- *  - ABSOLUES : signaux EXPLICITES de ta part (étoile, tâche à faire, échéance
- *    active, expéditeur « toujours important »), plus le garde-fou « analyse
- *    incertaine ». Elles ne s'éteignent jamais.
- *  - GRADUÉES : traces d'un échange (mail répondu, fil où tu as écrit). Elles
- *    ne valent que si l'échange est RÉCENT (voir ENGAGEMENT_HORIZON_DAYS).
+ * Protections d'un mail. DEUX NATURES qu'il ne faut plus confondre — c'est la
+ * conclusion de la contre-revue du 12/08
+ * (`.consult/2026-08-12-protection-nettoyage/synthese.md`) :
  *
- * Une date inconnue est traitée comme récente : dans le doute, on protège.
+ *  1. VETO DE SÉCURITÉ — des faits qu'on peut défendre seuls, tous issus d'un
+ *     ACTE explicite d'Anthony ou d'un état qu'il contrôle : étoile, tâche à
+ *     faire, échéance active, expéditeur « toujours important », et surtout
+ *     SA PARTICIPATION À LA CONVERSATION.
+ *
+ *  2. CONDITIONS D'ÉLIGIBILITÉ — les autres clauses ci-dessous (pièce jointe,
+ *     analyse incertaine, intention facture/document, expéditeur « personne »).
+ *     Elles restent en place et ne retirent rien, mais elles ne sont PAS des
+ *     garanties de sécurité : ce sont des classifications ou des approximations.
+ *     « Donner à un champ d'IA le statut d'invariant de sécurité » signifie
+ *     qu'un changement de modèle, de consigne ou de calibrage modifierait en
+ *     silence la politique de suppression. Elles doivent à terme devenir des
+ *     conditions PROPRES À CHAQUE STRATÉGIE — travail non fait ici, parce que
+ *     les retirer avant d'avoir construit la preuve positive ouvrirait un trou.
+ *
+ * DÉCISION D'ANTHONY DU 12/08, appliquée ici : « un mail auquel j'ai répondu
+ * doit rester protégé POUR TOUJOURS ». La graduation à deux ans disparaît. Il a
+ * accepté explicitement la conséquence — le nettoyage retirera beaucoup moins.
+ * Sa participation à une conversation est en elle-même une raison suffisante de
+ * ne jamais la nettoyer automatiquement.
+ *
+ * Une date inconnue protège toujours : dans le doute, on garde.
  */
-export function protectionClauses(now = Date.now()): { clauses: string[]; params: unknown[] } {
-  const cutoff = now - ENGAGEMENT_HORIZON_DAYS * 86_400_000;
+// `now` reste dans la signature : les appelants le passent, et une protection
+// future pourra en avoir besoin. Plus aucune clause n'est datée depuis le 12/08.
+export function protectionClauses(_now = Date.now()): { clauses: string[]; params: unknown[] } {
   return {
     clauses: [
       // --- Absolues ---
@@ -262,13 +281,15 @@ export function protectionClauses(now = Date.now()): { clauses: string[]; params
       // expéditeur ne suffit pas, il faut regarder la NATURE du mail.
       `m.hasAttachments = 0`,
       `(m.intent IS NULL OR m.intent NOT IN ('invoice', 'document'))`,
-      // --- Graduées ---
-      // Répondu : protège tant que c'est récent. Une date inconnue protège.
-      `(m.isAnswered = 0 OR (m.date IS NOT NULL AND m.date < ?))`,
-      `NOT EXISTS (SELECT 1 FROM Message mo WHERE mo.threadId = m.threadId AND mo.isOutbound = 1
-         AND (mo.date IS NULL OR mo.date >= ?))`,
+      // --- Participation à la conversation : VETO PERMANENT (12/08) ---
+      // Ces deux clauses portaient une limite de deux ans. Elle est retirée sur
+      // décision d'Anthony : avoir écrit dans un fil est une déclaration de
+      // valeur qui ne se périme pas. C'est le veto le plus large du système, et
+      // c'est assumé.
+      `m.isAnswered = 0`,
+      `NOT EXISTS (SELECT 1 FROM Message mo WHERE mo.threadId = m.threadId AND mo.isOutbound = 1)`,
     ],
-    params: [cutoff, cutoff],
+    params: [],
   };
 }
 
