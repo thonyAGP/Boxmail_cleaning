@@ -164,6 +164,17 @@ model Message {
   aiAction           String?   // reply | pay | read | archive | none
   aiVerdictAt        DateTime?
   aiModel            String?
+  // RÉSERVATION D'UN LOT D'ANALYSE (13/08). `next_analysis_batch` n'avait
+  // aucun mécanisme de réservation : deux agents lancés sur la même boîte
+  // recevaient les MÊMES mails (le tri est déterministe), d'où la règle « un
+  // agent par boîte, scopes disjoints » qui empêchait de paralléliser.
+  //
+  // La réservation PÉRIME (30 min). C'est la propriété qui compte : une
+  // session qui meurt en plein lot — ça vient d'arriver le 13/08 avec l'erreur
+  // 400 du proxy — ne doit pas retirer ses mails du vivier pour toujours. Un
+  // verrou sans expiration transformerait chaque plantage en perte sèche.
+  claimedAt          DateTime?
+  claimedBy          String?
   intentSource       String    @default("auto")
   // Intention détectée (A1 — pourquoi ce mail ? otp/invoice/shipping/…),
   // calculée à la sync sur les entrants, backfill via le job « categorize ».
@@ -194,6 +205,7 @@ model Message {
   @@index([accountSlug, intent])
   @@index([aiAction])
   @@index([accountSlug, reviewedAt])
+  @@index([claimedAt])
 }
 
 model Thread {

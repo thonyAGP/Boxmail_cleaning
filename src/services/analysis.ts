@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { recordOperation } from './oplog.js';
@@ -143,6 +144,12 @@ export interface AnalysisBatch {
   items: AnalysisCandidate[];
   /** Mails restant à analyser APRÈS ce lot (pour savoir s'il faut continuer). */
   remaining: number;
+  /**
+   * Renseigné dans le seul cas piégeux : lot VIDE alors que `remaining` n'est
+   * pas nul. Sans ce mot, l'agent boucle à vide en croyant qu'il reste du
+   * travail à prendre, alors qu'un autre agent tient les derniers mails.
+   */
+  note?: string;
 }
 
 /**
@@ -258,14 +265,134 @@ function attachmentPayload(r: {
 }
 
 /**
+ * Durée d'une réservation. Passé ce délai, le mail retourne au vivier même si
+ * personne ne l'a libéré.
+ *
+ * C'EST LA PROPRIÉTÉ QUI COMPTE, plus encore que l'exclusion elle-même. Une
+ * session d'analyse meurt en plein lot plus souvent qu'on ne le croit — le
+ * 13/08, la requête a été tronquée par le proxy et la session est tombée avec
+ * son lot en main. Un verrou sans expiration aurait retiré ces mails du vivier
+ * pour toujours : on aurait remplacé « deux agents font le même travail » par
+ * « des mails disparaissent silencieusement du rattrapage », ce qui est très
+ * pire — le second défaut est invisible.
+ *
+ * 30 minutes : plus long qu'un lot de 40 mails (quelques minutes), assez court
+ * pour qu'un plantage ne se voie pas à l'échelle du rattrapage.
+ */
+const CLAIM_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Réserve un lot et rend les ids réservés.
+ *
+ * POURQUOI UNE SEULE INSTRUCTION SQL. La version naïve — SELECT des ids, puis
+ * UPDATE pour les marquer — ne réserve RIEN : entre les deux `await`, un autre
+ * appel passe, lit les mêmes ids (le tri est déterministe) et les emporte
+ * aussi. On aurait ajouté deux colonnes et gardé le bug. Ici, la sélection est
+ * la sous-requête de l'UPDATE : SQLite exécute l'instruction d'un bloc, donc
+ * un appel concurrent voit soit tout avant, soit tout après, jamais au milieu.
+ * `RETURNING` rend exactement les lignes que CET appel a marquées.
+ *
+ * Le prédicat reproduit `candidateWhere()` en SQL — les deux doivent rester
+ * d'accord : toute portée modifiée là-haut se modifie ici.
+ */
+async function reserverLot(
+  scope: AnalysisScope,
+  account: string | undefined,
+  limit: number,
+  claimant: string,
+): Promise<number[]> {
+  const maintenant = Date.now();
+  const conditions = [
+    'm.isDeleted = 0',
+    'm.isOutbound = 0',
+    "f.role NOT IN ('trash','spam')",
+    'm.snippet IS NOT NULL',
+    // Miroir de candidateWhere : `relecture` = pas de verdict SÉMANTIQUE ;
+    // les deux autres portées gardent « jamais analysé ».
+    scope === 'relecture'
+      ? 'NOT EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)'
+      : 'm.aiVerdictAt IS NULL',
+  ];
+  const params: unknown[] = [];
+  if (scope === 'uncertain') {
+    conditions.push(
+      "(m.analysisConfidence IN ('low','medium') OR m.intent IS NULL OR m.intent = 'info')",
+    );
+  }
+  if (account) {
+    conditions.push('m.accountSlug = ?');
+    params.push(account);
+  }
+  // Libre, périmé, ou déjà à nous.
+  conditions.push('(m.claimedAt IS NULL OR m.claimedAt < ? OR m.claimedBy = ?)');
+  params.push(maintenant - CLAIM_TTL_MS, claimant);
+
+  // PRIORITÉ (relecture seulement) : l'argent, les échéances, les réponses
+  // attendues et les pièces jointes d'abord — puis les plus récents.
+  const ordre =
+    scope === 'relecture'
+      ? `(CASE WHEN m.aiAction IN ('pay','reply') THEN 100 ELSE 0 END
+        + CASE WHEN m.intent IN ('invoice','document','action_required','reply_expected')
+               THEN 50 ELSE 0 END
+        + CASE WHEN m.hasAttachments = 1 THEN 20 ELSE 0 END) DESC, m.date DESC`
+      : 'm.date ASC';
+
+  const lignes = await db.$queryRawUnsafe<{ id: number }[]>(
+    `UPDATE Message SET claimedAt = ?, claimedBy = ?
+      WHERE id IN (
+        SELECT m.id FROM Message m JOIN Folder f ON f.id = m.folderId
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY ${ordre}
+         LIMIT ${limit})
+     RETURNING id`,
+    // L'ordre compte : les paramètres du SET précèdent ceux du WHERE.
+    maintenant,
+    claimant,
+    ...params,
+  );
+  return lignes.map((l) => Number(l.id));
+}
+
+/**
+ * Rend au vivier les mails réservés dont on n'a plus besoin — appelé après un
+ * dépôt de verdicts. Sans cela, les mails du lot que l'IA n'a PAS jugés
+ * resteraient bloqués jusqu'à la péremption alors qu'ils sont disponibles tout
+ * de suite.
+ */
+async function libererLot(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += 500) {
+    await db.message.updateMany({
+      where: { id: { in: ids.slice(i, i + 500) } },
+      data: { claimedAt: null, claimedBy: null },
+    });
+  }
+}
+
+/**
  * Lot suivant à analyser. Charge utile VOLONTAIREMENT compacte : c'est le
  * forfait de l'utilisateur qui paie ces jetons (C3a). Les plus ANCIENS d'abord :
  * ce sont eux qui encombrent la boîte et que le rattrapage vise.
  */
 export async function nextAnalysisBatch(
-  opts: { account?: string; limit?: number; scope?: AnalysisScope } = {},
+  opts: {
+    account?: string;
+    limit?: number;
+    scope?: AnalysisScope;
+    /**
+     * Qui emporte ce lot. Deux agents qui donnent des noms différents ne
+     * reçoivent JAMAIS les mêmes mails. Un agent qui redonne le même nom
+     * récupère ses propres mails — c'est ce qui fait qu'un agent seul qui
+     * redemande un lot après une coupure retrouve son travail au lieu de
+     * devoir attendre la péremption.
+     */
+    claimant?: string;
+  } = {},
 ): Promise<AnalysisBatch> {
   await ensureDbReady();
+  // Sans nom fourni, un nom unique par appel : le comportement par défaut est
+  // donc « je ne marche jamais sur les pieds d'un autre ».
+  const claimant = (opts.claimant ?? '').trim().slice(0, 60) || `lot-${randomUUID().slice(0, 8)}`;
   // DÉFAUT = relecture (13/08). Le vrai travail, ce sont les ~17 000 mails sans
   // verdict sémantique — pas la poignée qui n'a jamais été analysée du tout.
   // Garder l'ancien défaut faisait servir 5 mails là où 200 étaient demandés.
@@ -290,36 +417,16 @@ export async function nextAnalysisBatch(
     where = candidateWhere(scope, opts.account);
   }
 
-  // PRIORITÉ (relecture uniquement) : l'argent, les échéances, les réponses
-  // attendues et les pièces jointes d'abord — puis les plus récents. Les ids
-  // sont choisis en SQL parce que ce classement ne s'exprime pas en Prisma ;
-  // le reste du chargement ne change pas.
-  let idsPrioritaires: number[] | null = null;
-  if (scope === 'relecture') {
-    const lignes = await db.$queryRawUnsafe<{ id: number }[]>(
-      `SELECT m.id
-         FROM Message m JOIN Folder f ON f.id = m.folderId
-        WHERE m.isDeleted = 0 AND m.isOutbound = 0
-          AND f.role NOT IN ('trash','spam')
-          AND m.snippet IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM MailVerdict v WHERE v.messageId = m.id)
-          ${opts.account ? 'AND m.accountSlug = ?' : ''}
-        ORDER BY
-          (CASE WHEN m.aiAction IN ('pay','reply') THEN 100 ELSE 0 END
-         + CASE WHEN m.intent IN ('invoice','document','action_required','reply_expected')
-                THEN 50 ELSE 0 END
-         + CASE WHEN m.hasAttachments = 1 THEN 20 ELSE 0 END) DESC,
-          m.date DESC
-        LIMIT ${limit}`,
-      ...(opts.account ? [opts.account] : []),
-    );
-    idsPrioritaires = lignes.map((l) => Number(l.id));
-    if (idsPrioritaires.length === 0) idsPrioritaires = [-1]; // aucun candidat
-  }
+  // RÉSERVATION. Les ids sont choisis ET marqués par la MÊME instruction : ce
+  // qui sort d'ici n'appartient qu'à cet appelant.
+  const reserves = await reserverLot(scope, opts.account, limit, claimant);
+  // `[-1]` = aucun candidat, pour que le chargement ci-dessous rende zéro
+  // ligne au lieu de retomber sur « pas de filtre d'ids ».
+  const idsPrioritaires: number[] = reserves.length > 0 ? reserves : [-1];
 
   const [rows, total] = await Promise.all([
     db.message.findMany({
-      where: idsPrioritaires ? { ...where, id: { in: idsPrioritaires } } : where,
+      where: { ...where, id: { in: idsPrioritaires } },
       orderBy: { date: 'asc' },
       take: limit,
       select: {
@@ -466,12 +573,24 @@ export async function nextAnalysisBatch(
     });
   }
 
+  // Les mails écartés au poids ne sont pas analysés : on les rend tout de
+  // suite, sinon ils resteraient réservés 30 minutes pour rien.
+  await libererLot(reserves.filter((id) => !items.some((it) => it.id === id)));
+
   return {
     scope,
     // `remaining` compte ce qui reste APRÈS ce lot — donc aussi les mails
     // écartés par le budget, sinon la boucle s'arrêterait trop tôt.
     remaining: Math.max(0, total - items.length),
     items,
+    ...(items.length === 0 && total > 0
+      ? {
+          note:
+            `Aucun mail servi alors qu'il en reste ${total} : ils sont ` +
+            "réservés par une autre analyse en cours. N'insiste pas — arrête " +
+            'cette boucle et réessaie dans une trentaine de minutes.',
+        }
+      : {}),
   };
 }
 
@@ -702,6 +821,8 @@ export async function applyVerdicts(
       items,
     });
   }
+  // Lot rendu (même raison que pour les verdicts sémantiques).
+  await libererLot(ids);
   logger.info('verdicts IA appliqués', {
     applied: out.applied,
     skipped: out.skipped,
@@ -1007,6 +1128,16 @@ export async function applySemanticVerdicts(
       items,
     });
   }
+
+  // Le lot est rendu : ces mails ont été examinés (jugés ou rejetés), ils
+  // n'ont plus à rester réservés. Ceux qui ont reçu un verdict quittent le
+  // vivier d'eux-mêmes ; ceux qui ont été rejetés redeviennent disponibles
+  // tout de suite au lieu d'attendre la péremption.
+  await libererLot(
+    bruts
+      .map((b) => (b as { id?: unknown })?.id)
+      .filter((n): n is number => Number.isInteger(n)),
+  );
 
   logger.info('verdicts sémantiques appliqués', {
     applied: out.applied,

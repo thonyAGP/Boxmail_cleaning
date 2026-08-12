@@ -317,17 +317,41 @@ export function registerAssistTools(server: McpServer): void {
               'choisi et le contenu de ses pièces, une centaine de mails ' +
               'dépassait la taille transportable. Demande peu et enchaîne.',
           ),
+        claimant: z
+          .string()
+          .max(60)
+          .optional()
+          .describe(
+            'Ton nom de travail, si PLUSIEURS analyses tournent en même temps ' +
+              "(ex. « agent-brimmo »). Les mails que tu emportes sont réservés " +
+              '30 minutes : un autre agent ne les recevra pas, et toi tu ' +
+              'retrouves les tiens si tu redonnes le même nom. Sans ce ' +
+              'paramètre, chaque appel prend un nom unique — donc pas de ' +
+              'doublon non plus, simplement pas de reprise possible.',
+          ),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: false },
     },
-    guard(async (args: { account?: string; scope: AnalysisScope; limit: number }) => {
-      const account = args.account ? (await resolveAccount(args.account)).account : undefined;
-      const [batch, progress] = await Promise.all([
-        nextAnalysisBatch({ account, scope: args.scope, limit: args.limit }),
-        analysisProgress(account),
-      ]);
-      return jsonResult({ ...batch, progress });
-    }),
+    guard(
+      async (args: {
+        account?: string;
+        scope: AnalysisScope;
+        limit: number;
+        claimant?: string;
+      }) => {
+        const account = args.account ? (await resolveAccount(args.account)).account : undefined;
+        const batch = await nextAnalysisBatch({
+          account,
+          scope: args.scope,
+          limit: args.limit,
+          claimant: args.claimant,
+        });
+        // Après la réservation : sinon les deux compteurs affichés dans la
+        // même réponse ne portent pas sur le même instant.
+        const progress = await analysisProgress(account);
+        return jsonResult({ ...batch, progress });
+      },
+    ),
   );
 
   // --- submit_analysis_batch -----------------------------------------------
