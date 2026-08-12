@@ -153,7 +153,14 @@ export async function readAttachmentsForAccount(
           attachmentKind: r.kind,
           attachmentText: r.text || null,
           attachmentTextAt: new Date(),
-          ...(meta !== m.attachmentMeta ? { attachmentMeta: meta } : {}),
+          // La FICHE des pièces passe aussi par l'assainissement (12/08, second
+          // tour) : elle contient les noms de fichiers venus d'IMAP, et c'est
+          // ELLE qui faisait encore échouer l'écriture après le premier
+          // correctif — le texte était propre, la fiche ne l'était pas. Un seul
+          // demi-caractère isolé dans un nom de pièce, et tout le mail tombe.
+          ...(meta !== m.attachmentMeta
+            ? { attachmentMeta: meta === null ? null : assainirPourBase(meta) }
+            : {}),
         },
       });
       if (r.kind === 'text') report.read++;

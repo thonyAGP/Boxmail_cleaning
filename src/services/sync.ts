@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { imapService, normalizeSubject } from './imap.js';
 import { AUTO_SENDER_RE, isAutoReplySubject } from './attention.js';
 import { categorizeSender, detectIntent } from './categorize.js';
+import { assainirPourBase } from './attachment-text.js';
 import type { AccountRecord } from './accounts.js';
 
 /**
@@ -339,7 +340,12 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
             const flags = msg.flags ?? new Set<string>();
             const attachmentCount = countAttachments(msg.bodyStructure as BodyStructNode);
             const piecesInfo = collectAttachmentInfo(msg.bodyStructure as BodyStructNode);
-            const attachmentNames = piecesInfo.map((x) => x.n).join('\n');
+            // Assaini dès la source (12/08) : les noms viennent d'IMAP et
+            // peuvent porter des demi-caractères isolés. Une chaîne qui en
+            // contient n'est pas encodable, et c'est TOUT le mail dont
+            // l'écriture échoue — pas seulement son nom de pièce. Le même
+            // défaut a fait échouer la lecture des pièces en série ce soir.
+            const attachmentNames = assainirPourBase(piecesInfo.map((x) => x.n).join('\n'));
             const hasListUnsubscribe =
               !!msg.headers && /list-unsubscribe\s*:/i.test(msg.headers.toString('utf8'));
             // Intention (A1) : sur les entrants uniquement, depuis le sujet
@@ -377,7 +383,9 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
               hasAttachments: attachmentCount > 0,
               attachmentCount,
               attachmentNames: attachmentNames || null,
-              attachmentMeta: piecesInfo.length ? JSON.stringify(piecesInfo) : null,
+              attachmentMeta: piecesInfo.length
+                ? assainirPourBase(JSON.stringify(piecesInfo))
+                : null,
               intent: intentInfo?.intent ?? null,
               intentReason: intentInfo?.reason ?? null,
             });
