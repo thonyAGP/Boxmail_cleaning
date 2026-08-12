@@ -3705,7 +3705,7 @@ function renderStatsTable() {
             ${Object.entries(SENDER_CATEGORY_LABELS)
               .map(([v, l]) => `<option value="${v}" ${s.category === v ? 'selected' : ''}>${l}</option>`)
               .join('')}
-          </select>${s.categorySource === 'manual' ? ' <span title="Catégorie choisie par toi — la sync ne l’écrase pas">✍️</span>' : ''}
+          </select>${s.categorySource === 'manual' ? ` <span title="${esc(s.categoryReason || 'Catégorie verrouillée')} — la sync ne l’écrase pas">✍️</span>` : ''}
           <select class="stats-prio" data-address="${esc(s.address)}"
             title="Priorité par relation : ⭐ booste l'importance de tous ses mails, 🔕 la plafonne">
             <option value="normal" ${s.priority === 'normal' || !s.priority ? 'selected' : ''}>Priorité normale</option>

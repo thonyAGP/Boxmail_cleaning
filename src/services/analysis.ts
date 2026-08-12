@@ -249,7 +249,10 @@ export async function nextAnalysisBatch(
   opts: { account?: string; limit?: number; scope?: AnalysisScope } = {},
 ): Promise<AnalysisBatch> {
   await ensureDbReady();
-  let scope = opts.scope ?? 'uncertain';
+  // DÉFAUT = relecture (13/08). Le vrai travail, ce sont les ~17 000 mails sans
+  // verdict sémantique — pas la poignée qui n'a jamais été analysée du tout.
+  // Garder l'ancien défaut faisait servir 5 mails là où 200 étaient demandés.
+  let scope = opts.scope ?? 'relecture';
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), MAX_BATCH);
   let where = candidateWhere(scope, opts.account);
 
