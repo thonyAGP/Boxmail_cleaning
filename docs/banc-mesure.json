@@ -1,5 +1,5 @@
 {
- "genereLe": "2026-08-11T14:22:47.038Z",
+ "genereLe": "2026-08-12T12:59:00.105Z",
  "version": "1",
  "etiquettesGeleesLe": "2026-08-11T14:16:13.153Z",
  "total": 17779,
@@ -7,20 +7,20 @@
  "faibleRisque": 3140,
  "aTraiter": 191,
  "fuite": {
-  "nombre": 107,
-  "taux": 56
+  "nombre": 99,
+  "taux": 51.8
  },
  "fuiteStock": {
-  "nombre": 1375,
+  "nombre": 1367,
   "base": 1459,
-  "taux": 94.2
+  "taux": 93.7
  },
  "parSurface": {
-  "réponses attendues": 189,
+  "réponses attendues": 251,
+  "importants": 116,
   "aujourd'hui": 21,
-  "importants": 115,
-  "factures à traiter": 9,
-  "échéances": 3
+  "échéances": 3,
+  "factures à traiter": 10
  },
  "decoupages": [
   {
@@ -35,14 +35,14 @@
     {
      "nom": "Au-marais",
      "mustSurface": 21,
-     "fuite": 12,
-     "taux": 57.1
+     "fuite": 11,
+     "taux": 52.4
     },
     {
      "nom": "Brimmo",
      "mustSurface": 63,
-     "fuite": 42,
-     "taux": 66.7
+     "fuite": 36,
+     "taux": 57.1
     },
     {
      "nom": "Colocar",
@@ -65,8 +65,8 @@
     {
      "nom": "thony56_gtr",
      "mustSurface": 54,
-     "fuite": 21,
-     "taux": 38.9
+     "fuite": 20,
+     "taux": 37
     }
    ]
   },
@@ -76,14 +76,14 @@
     {
      "nom": "2025",
      "mustSurface": 66,
-     "fuite": 39,
-     "taux": 59.1
+     "fuite": 36,
+     "taux": 54.5
     },
     {
      "nom": "2026",
      "mustSurface": 125,
-     "fuite": 68,
-     "taux": 54.4
+     "fuite": 63,
+     "taux": 50.4
     }
    ]
   },
@@ -93,14 +93,14 @@
     {
      "nom": "connu",
      "mustSurface": 161,
-     "fuite": 90,
-     "taux": 55.9
+     "fuite": 84,
+     "taux": 52.2
     },
     {
      "nom": "inconnu",
      "mustSurface": 30,
-     "fuite": 17,
-     "taux": 56.7
+     "fuite": 15,
+     "taux": 50
     }
    ]
   },
@@ -110,14 +110,14 @@
     {
      "nom": "avec",
      "mustSurface": 118,
-     "fuite": 69,
-     "taux": 58.5
+     "fuite": 62,
+     "taux": 52.5
     },
     {
      "nom": "sans",
      "mustSurface": 73,
-     "fuite": 38,
-     "taux": 52.1
+     "fuite": 37,
+     "taux": 50.7
     }
    ]
   },
@@ -127,8 +127,8 @@
     {
      "nom": "analysé",
      "mustSurface": 176,
-     "fuite": 93,
-     "taux": 52.8
+     "fuite": 85,
+     "taux": 48.3
     },
     {
      "nom": "jamais analysé",
@@ -144,20 +144,20 @@
     {
      "nom": "document à conséquence",
      "mustSurface": 66,
-     "fuite": 52,
-     "taux": 78.8
+     "fuite": 48,
+     "taux": 72.7
     },
     {
      "nom": "verdict pay",
      "mustSurface": 47,
-     "fuite": 33,
-     "taux": 70.2
+     "fuite": 31,
+     "taux": 66
     },
     {
      "nom": "verdict reply",
      "mustSurface": 78,
-     "fuite": 22,
-     "taux": 28.2
+     "fuite": 20,
+     "taux": 25.6
     }
    ]
   }

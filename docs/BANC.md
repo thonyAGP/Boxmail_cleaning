@@ -1,27 +1,27 @@
 # Banc de mesure
 
-> Mesuré le 2026-08-11 à 14:22 · étiquettes gelées le 2026-08-11
+> Mesuré le 2026-08-12 à 12:59 · étiquettes gelées le 2026-08-11
 >
 > Ce fichier est produit par `npm run banc`. Il ne se modifie pas à la main.
 
 ## Le chiffre
 
-**Taux de fuite : 56 %** (-4.2) — ❌ hors limite (< 1 %).
+**Taux de fuite : 51.8 %** — ❌ hors limite (< 1 %).
 
-107 mails sur 191 dont l'oubli a une conséquence, et qui restent à traiter, n'apparaissent sur aucune surface du produit.
+99 mails sur 191 dont l'oubli a une conséquence, et qui restent à traiter, n'apparaissent sur aucune surface du produit.
 
 Périmètre : 17779 mails entrants de boîte de réception. 5479 MUST_SURFACE (30.8 %), dont **191 non résolus dans les 12 derniers mois** — c'est la population jugée. 3140 mails à faible risque (17.7 %).
 
-Sur tout le stock non résolu, sans limite d'âge : 1375 / 1459 (94.2 %). Ce chiffre situe l'arriéré ; il n'est pas le critère — reprocher au produit de ne pas afficher un mail de 2019 n'aurait pas de sens.
+Sur tout le stock non résolu, sans limite d'âge : 1367 / 1459 (93.7 %). Ce chiffre situe l'arriéré ; il n'est pas le critère — reprocher au produit de ne pas afficher un mail de 2019 n'aurait pas de sens.
 
 ## Où les mails apparaissent
 
 | Surface | Mails |
 |---|---|
-| réponses attendues | 189 |
-| importants | 115 |
+| réponses attendues | 251 |
+| importants | 116 |
 | aujourd'hui | 21 |
-| factures à traiter | 9 |
+| factures à traiter | 10 |
 | échéances | 3 |
 
 ## Découpages
@@ -33,48 +33,48 @@ Une moyenne flatteuse masque toujours un trou. Le backtest du 10/08 l'a montré 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
 | Altoen | 4 | 2 | 50 % ⚠️ |
-| Au-marais | 21 | 12 | 57.1 % ⚠️ |
-| Brimmo | 63 | 42 | 66.7 % ⚠️ |
+| Au-marais | 21 | 11 | 52.4 % ⚠️ |
+| Brimmo | 63 | 36 | 57.1 % ⚠️ |
 | Colocar | 22 | 10 | 45.5 % ⚠️ |
 | Econom | 6 | 3 | 50 % ⚠️ |
 | Location_Brest | 21 | 17 | 81 % ⚠️ |
-| thony56_gtr | 54 | 21 | 38.9 % ⚠️ |
+| thony56_gtr | 54 | 20 | 37 % ⚠️ |
 
 ### Par année
 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
-| 2025 | 66 | 39 | 59.1 % ⚠️ |
-| 2026 | 125 | 68 | 54.4 % ⚠️ |
+| 2025 | 66 | 36 | 54.5 % ⚠️ |
+| 2026 | 125 | 63 | 50.4 % ⚠️ |
 
 ### Expéditeur
 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
-| connu | 161 | 90 | 55.9 % ⚠️ |
-| inconnu | 30 | 17 | 56.7 % ⚠️ |
+| connu | 161 | 84 | 52.2 % ⚠️ |
+| inconnu | 30 | 15 | 50 % ⚠️ |
 
 ### Pièce jointe
 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
-| avec | 118 | 69 | 58.5 % ⚠️ |
-| sans | 73 | 38 | 52.1 % ⚠️ |
+| avec | 118 | 62 | 52.5 % ⚠️ |
+| sans | 73 | 37 | 50.7 % ⚠️ |
 
 ### Verdict IA
 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
-| analysé | 176 | 93 | 52.8 % ⚠️ |
+| analysé | 176 | 85 | 48.3 % ⚠️ |
 | jamais analysé | 15 | 14 | 93.3 % ⚠️ |
 
 ### Motif
 
 | Tranche | MUST_SURFACE | Fuite | Taux |
 |---|---|---|---|
-| document à conséquence | 66 | 52 | 78.8 % ⚠️ |
-| verdict pay | 47 | 33 | 70.2 % ⚠️ |
-| verdict reply | 78 | 22 | 28.2 % ⚠️ |
+| document à conséquence | 66 | 48 | 72.7 % ⚠️ |
+| verdict pay | 47 | 31 | 66 % ⚠️ |
+| verdict reply | 78 | 20 | 25.6 % ⚠️ |
 
 ## Cas témoins
 
