@@ -138,37 +138,37 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**CAP ACTÉ PAR L'UTILISATEUR (11/08) : « RETROUVER SANS CLASSER ».** Le
-nettoyage n'est PLUS le chantier : mesuré, il ne peut retirer que 966 mails
-(137 Mo sur 7 471) — le poids est dans les pièces jointes et les documents,
-c'est-à-dire dans ce qu'il faut garder (`docs/PLAN-NETTOYAGE.md`, qui contient
-aussi le modèle complet si on y revient). Ses boîtes ne sont pas sales : ce
-sont des archives non structurées. Il ne range rien et ne rangera pas.
-Premier jalon LIVRÉ le 11/08 : noms des pièces jointes stockés et cherchés,
-recherche étendue au résumé IA, résultats GROUPÉS par interlocuteur, écran
-« Que cherches-tu ? ».
+**CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
+chantier — mesuré, il ne retire que 966 mails. Ses boîtes ne sont pas sales,
+ce sont des archives non structurées. Capacité : plus de sujet (M365 Basic,
+100 Go). `docs/PLAN-ARCHIVE.md` est CLASSÉ, ne pas le relancer.
 
-**En place** (historique : docs/JOURNAL.md) : revue UX 3 phases + refonte
-visuelle, dépouillement, lecture mail HTML fidèle, connecteur Rentila 1+2,
-connecteur Fiscal-Manager V1 (docs/CONNECTEUR-FISCAL-MANAGER.md), suppression
-1 clic + annulation 10 s, lecture des pièces jointes, briefing « Aujourd'hui »,
-veto IA sur les échéances. Cadre produit : `docs/PLAN-ASSISTANT.md` (à lire
-avant tout nouveau chantier) ; audit réutilisable : `docs/PROMPT-AUDIT.md`.
+**Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5 partiel) :
+verdict sémantique immuable + projections, entrée enrichie, résolveur
+d'entités, bascule des 21 consommateurs, réservation des lots. Taux de fuite
+60,2 % → 51,8 %, uniquement en RETIRANT des filtres. Cadre produit :
+`docs/PLAN-ASSISTANT.md`, contrat : `docs/CONTRAT-EXTRACTION.md`.
 
-**Capacité : PLUS DE SUJET (11/08).** Il a souscrit M365 Basic → 100 Go de
-messagerie sur sa boîte principale, contre 13,6 Go pour ses sept boîtes
-réunies. Le plan d'archive froide (`docs/PLAN-ARCHIVE.md`) est CLASSÉ ; ne
-pas le relancer. Son OneDrive, lui, est plein — deux sauvegardes de
-téléphone de 42,5 et 31,5 Go — mais c'est hors Boxmail.
+**Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
+`trig_01SLhekXbwP85yQTnP32Aaof` (« Boxmail — rattrapage & catégorisation
+continue »), toutes les heures à :17, ~40 mails par passage. Vérifiée de bout
+en bout le 13/08. Ne PAS lui redonner d'autres connecteurs que Boxmail.
+Au 13/08 : 249 verdicts sémantiques, ~16 965 mails à relire (~15 jours).
+
+**LIMITE STRUCTURELLE À NE PAS RÉAPPRENDRE** : une conversation ne peut pas
+analyser plus d'une soixantaine de mails — elle CUMULE les lots et meurt sur
+« The request body is not valid JSON ». Le socle d'une session pèse déjà
+~600 Ko de définitions de connecteurs (Rentila ~110 outils, Vercel ~40 ;
+Boxmail = 63 Ko mesurés, donc PAS la cause). Aucun réglage de taille de lot
+n'y changera rien : il faut un contexte NEUF par lot.
 
 **À faire** :
-- Suite « retrouver » : contenu des pièces (27 lues sur 10 191 — c'est le gros
-  manque), puis vue documentaire (Factures · Banque · Fiscal · Immobilier ·
-  Contrats) sans qu'aucun dossier ne soit créé.
-- Fiscal-Manager : confirmer le premier pull réel (https://app.lb2i.com/pieces)
-  et la société d'Au-marais ; V2 = cron Vercel + lot mensuel Cerfrance.
-- À valider en réel avec lui : dépouillement, Rentila, suppression 1 clic,
-  classement des factures scannées transmises par un proche.
-- Connecteurs suivants : frais Jump, CasaSync/livret (Au-marais).
-- Stratégies de rétention : à n'activer QU'AVEC lui. ⚠️ L'ancien chiffre
-  « 8 762 récupérables / 1,3 Go » était FAUX (il comptait la corbeille).
+- **Goulot n° 1 : lire les scans** (PDF sans couche texte, polices brouillées).
+  Trois analyses indépendantes ont buté dessus le 13/08 — sans OCR, les
+  montants restent inconnus. Bloque la vue documentaire et le fiscal.
+- Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
+  sans qu'aucun dossier ne soit créé ; écran des doublons de pièces.
+- Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
+- Fiscal-Manager : confirmer le premier pull réel ; connecteurs suivants
+  (frais Jump, CasaSync/livret).
+- Stratégies de rétention : à n'activer QU'AVEC lui.
