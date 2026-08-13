@@ -139,15 +139,15 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
-chantier — mesuré, il ne retire que 966 mails. Ses boîtes ne sont pas sales,
-ce sont des archives non structurées. Capacité : plus de sujet (M365 Basic,
-100 Go). `docs/PLAN-ARCHIVE.md` est CLASSÉ, ne pas le relancer.
+chantier (mesuré : 966 mails seulement). Ses boîtes ne sont pas sales, ce sont
+des archives non structurées. Capacité : plus de sujet (M365 Basic, 100 Go).
+`docs/PLAN-ARCHIVE.md` est CLASSÉ, ne pas le relancer.
 
-**Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5 partiel) :
-verdict sémantique immuable + projections, entrée enrichie, résolveur
-d'entités, bascule des 21 consommateurs, réservation des lots. Taux de fuite
-60,2 % → 51,8 %, uniquement en RETIRANT des filtres. Cadre produit :
-`docs/PLAN-ASSISTANT.md`, contrat : `docs/CONTRAT-EXTRACTION.md`.
+**Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5) : verdict
+sémantique immuable + projections, entrée enrichie, résolveur d'entités,
+bascule des 21 consommateurs, réservation des lots. Fuite 60,2 % → 51,8 %, en
+RETIRANT des filtres. Cadre : `docs/PLAN-ASSISTANT.md` et
+`docs/CONTRAT-EXTRACTION.md`.
 
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
 `trig_01SLhekXbwP85yQTnP32Aaof` (« Boxmail — rattrapage & catégorisation
@@ -174,10 +174,10 @@ n'y changera rien : il faut un contexte NEUF par lot.
   Trois analyses indépendantes ont buté dessus le 13/08 — sans OCR, les
   montants restent inconnus. Bloque la vue documentaire et le fiscal.
 - Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
-  sans qu'aucun dossier ne soit créé ; écran des doublons de pièces.
+  sans créer de dossier ; écran des doublons de pièces.
 - Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
-- Fiscal-Manager : confirmer le premier pull réel ; connecteurs suivants
-  (frais Jump, CasaSync/livret).
+- Fiscal-Manager : confirmer le premier pull réel ; puis frais Jump,
+  CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
 
 **Déjà tranché par lui le 13/08, ne pas relancer** : les deux IBAN divergents
