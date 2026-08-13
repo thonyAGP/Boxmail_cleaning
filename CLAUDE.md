@@ -135,13 +135,11 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
-chantier (966 mails mesurés) : ses boîtes sont des archives non structurées,
-pas des boîtes sales. Capacité : non-sujet (M365 Basic, 100 Go).
-`docs/PLAN-ARCHIVE.md` est CLASSÉ, ne pas le relancer.
+chantier : ses boîtes sont des archives non structurées, pas des boîtes
+sales. Capacité : non-sujet. `docs/PLAN-ARCHIVE.md` est CLASSÉ.
 
 **Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5) : verdict
-sémantique immuable + projections, bascule des 21 consommateurs, réservation
-des lots. Fuite 60,2 % → 51,8 % en RETIRANT des filtres. Cadre :
+sémantique immuable + projections, 21 consommateurs basculés. Cadre :
 `docs/PLAN-ASSISTANT.md`, `docs/CONTRAT-EXTRACTION.md`.
 
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
