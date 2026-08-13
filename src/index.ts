@@ -196,9 +196,24 @@ async function main() {
         return;
       }
 
-      res
-        .status(400)
-        .json(jsonRpcError(-32000, 'Requête invalide : session inconnue ou init manquant.'));
+      // SESSION INCONNUE → 404, ET C'EST IMPORTANT (13/08).
+      //
+      // On répondait 400 : le client y voit une erreur définitive et abandonne.
+      // Résultat, CHAQUE redémarrage du serveur cassait silencieusement les
+      // analyses en cours — une session ouverte la veille se retrouvait avec
+      // « session inconnue » sur chaque appel, sans moyen de repartir, et le
+      // rattrapage s'arrêtait sans que personne ne le voie. Constaté ce matin
+      // sur mon propre appel après le déploiement de la nuit.
+      //
+      // Le protocole prévoit exactement ce cas : 404 sur une session inconnue,
+      // et le client relance une initialisation tout seul. C'est la différence
+      // entre « ta session est morte, débrouille-toi » et « reconnecte-toi ».
+      if (sessionId) {
+        logger.info('session MCP inconnue — le client va se réinitialiser', { sessionId });
+        res.status(404).json(jsonRpcError(-32001, 'Session inconnue : relance une initialisation.'));
+        return;
+      }
+      res.status(400).json(jsonRpcError(-32000, "Requête invalide : initialisation manquante."));
     } catch (err) {
       logger.error('erreur POST /mcp', { error: (err as Error).message });
       if (!res.headersSent) {
@@ -210,8 +225,13 @@ async function main() {
   // GET /mcp : flux SSE serveur→client pour une session existante.
   const sessionRequest = async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !transports.has(sessionId)) {
-      res.status(400).json(jsonRpcError(-32000, 'Session inconnue ou absente.'));
+    if (!sessionId) {
+      res.status(400).json(jsonRpcError(-32000, 'Session absente.'));
+      return;
+    }
+    if (!transports.has(sessionId)) {
+      // Même raison qu'au POST : 404 = « reconnecte-toi », pas « abandonne ».
+      res.status(404).json(jsonRpcError(-32001, 'Session inconnue : relance une initialisation.'));
       return;
     }
     await transports.get(sessionId)!.handleRequest(req, res);
