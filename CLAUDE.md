@@ -156,18 +156,15 @@ en bout le 13/08, sur DEUX passages successifs (40 verdicts, arrêt propre,
 aucun mail resté réservé). Ne PAS lui redonner d'autres connecteurs que
 Boxmail. Repère au 13/08 15 h 33 : **311 verdicts, 16 905 à relire**, +40/h.
 
-**À FAIRE EN PREMIER À LA REPRISE** : vérifier que le job tourne toujours —
-compter `MailVerdict` et regarder la date du dernier ; s'il n'a rien posé
-depuis plus de 2 h, lire `docs/JOURNAL.md` § 13/08 (37) avant de conclure
-quoi que ce soit (il démarre avec ~9 min de retard, et j'ai déjà crié à la
-panne à tort pour cette raison).
+**À LA REPRISE** : compter `MailVerdict` et regarder la date du dernier. Rien
+depuis 2 h ⇒ lire `docs/JOURNAL.md` § 13/08 (37) AVANT de conclure : le job
+démarre avec ~9 min de retard, j'ai déjà crié à la panne pour ça.
 
-**LIMITE STRUCTURELLE À NE PAS RÉAPPRENDRE** : une conversation ne peut pas
-analyser plus d'une soixantaine de mails — elle CUMULE les lots et meurt sur
-« The request body is not valid JSON ». Le socle d'une session pèse déjà
-~600 Ko de définitions de connecteurs (Rentila ~110 outils, Vercel ~40 ;
-Boxmail = 63 Ko mesurés, donc PAS la cause). Aucun réglage de taille de lot
-n'y changera rien : il faut un contexte NEUF par lot.
+**LIMITE STRUCTURELLE À NE PAS RÉAPPRENDRE** : une conversation n'analyse pas
+plus de ~60 mails — elle CUMULE les lots et meurt sur « request body is not
+valid JSON ». Le socle d'une session pèse déjà ~600 Ko de définitions de
+connecteurs (Rentila ~110 outils, Vercel ~40 ; Boxmail 63 Ko mesurés = PAS la
+cause). Aucune taille de lot n'y change rien : contexte NEUF par lot.
 
 **À faire** :
 - **Goulot n° 1 : lire les scans** (PDF sans couche texte, polices brouillées).
