@@ -155,6 +155,14 @@ export function registerReadTools(server: McpServer): void {
           .min(0)
           .optional()
           .describe('Position de la pièce (voir read_email). Par défaut : la première pièce « document ».'),
+        page: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "Pour un PDF scanné rendu en image : la page à regarder (défaut 1). Utile quand le total d'un contrat est en dernière page.",
+          ),
       },
       annotations: { readOnlyHint: true },
     },
@@ -164,14 +172,16 @@ export function registerReadTools(server: McpServer): void {
         folder,
         uid,
         index,
+        page,
       }: {
         account?: string;
         folder: string;
         uid: number;
         index?: number;
+        page?: number;
       }) => {
         const rec = await resolveAccount(account);
-        const r = await attachmentForVision(rec, folder, uid, index);
+        const r = await attachmentForVision(rec, folder, uid, index, page);
         if (r.kind === 'image') {
           // Contenu mixte : l'image + le rappel de ce qu'on en attend.
           return {

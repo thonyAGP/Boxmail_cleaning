@@ -7,13 +7,17 @@
  * est Sosh, que c'est une facture d'accès internet, ni son montant. Tant qu'on
  * ne lit pas la pièce, ce genre d'erreur est structurel.
  *
- * CHOIX : extraction de texte MAISON, zéro dépendance (zlib est natif) — le
- * serveur est un petit VPS et on ne veut ni pdfjs ni OCR dessus. On couvre les
- * PDF « natifs » (Sosh, OVH, EDF, opérateurs…), qui sont l'immense majorité.
- * Un PDF SCANNÉ ne contient aucun texte : on ne bricole pas, on le DIT
- * (`kind: 'scan'`) et c'est Claude — qui sait lire une image — qui la regarde
- * via le connecteur MCP. Même règle que pour le reste : l'intelligence coûteuse
- * passe par le forfait de l'utilisateur, jamais par une clé API serveur.
+ * CHOIX : extraction de texte MAISON, zéro dépendance npm (zlib est natif).
+ * On couvre ici les PDF « natifs » (Sosh, OVH, EDF, opérateurs…), qui sont
+ * l'immense majorité. Un PDF SCANNÉ ne contient aucun texte : on ne bricole
+ * pas, on le DIT (`kind: 'scan'`) — et depuis le 13/08 c'est services/ocr.ts
+ * (tesseract + poppler, binaires système locaux et GRATUITS, apt sur le VPS)
+ * qui repasse derrière en tâche de fond. Le texte OCR porte sa provenance
+ * (`attachmentTextSource='ocr'`) : il n'est jamais présenté comme équivalent
+ * à une couche texte native. Si même l'OCR rend du charabia, c'est Claude —
+ * qui sait lire une image — qui REGARDE la pièce via read_attachment. Règle
+ * inchangée : l'intelligence coûteuse passe par le forfait de l'utilisateur,
+ * jamais par une clé API serveur.
  */
 
 import { inflateSync, inflateRawSync } from 'node:zlib';

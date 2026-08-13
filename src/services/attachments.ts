@@ -26,7 +26,7 @@ import {
   type DocumentHints,
 } from './attachment-text.js';
 import { detectIntent } from './categorize.js';
-import { ocrPiece, ocrDisponible, OCR_PIPELINE_VERSION } from './ocr.js';
+import { ocrPiece, ocrDisponible, pdfPageEnJpeg, OCR_PIPELINE_VERSION } from './ocr.js';
 import { recordOperation } from './oplog.js';
 import type { AccountRecord } from './accounts.js';
 
@@ -583,6 +583,8 @@ export async function attachmentForVision(
   folder: string,
   uid: number,
   index?: number,
+  /** Page du PDF à rendre en image (défaut 1) — le total d'un contrat est parfois en dernière page. */
+  page?: number,
 ): Promise<
   | { kind: 'text'; filename: string; text: string; hints: DocumentHints }
   | { kind: 'image'; filename: string; mimeType: string; base64: string }
@@ -613,6 +615,27 @@ export async function attachmentForVision(
   // Formats d'image que Claude sait regarder.
   if (/^image\/(jpe?g|png|webp|gif)$/.test(ct)) {
     return { kind: 'image', filename: dl.filename, mimeType: ct, base64: dl.content.toString('base64') };
+  }
+  // PDF scanné (13/08) : c'était le cul-de-sac total — ni extractible, ni
+  // regardable. poppler rend la page demandée en JPEG (taille contrôlée) et
+  // Claude peut ENFIN voir le document.
+  if (/pdf/.test(ct) || /\.pdf$/i.test(dl.filename)) {
+    const jpeg = await pdfPageEnJpeg(dl.content, page ?? 1);
+    if (jpeg) {
+      return {
+        kind: 'image',
+        filename: dl.filename,
+        mimeType: 'image/jpeg',
+        base64: jpeg.toString('base64'),
+      };
+    }
+    const dispo = await ocrDisponible();
+    return {
+      kind: 'none',
+      reason: dispo.ok
+        ? `${r.note} (${dl.filename}) — page ${page ?? 1} non rendable (au-delà de la fin du document, ou rendu trop lourd).`
+        : `${r.note} (${dl.filename}) — le rendu en image demande poppler sur le serveur (${dispo.note}).`,
+    };
   }
   return {
     kind: 'none',
