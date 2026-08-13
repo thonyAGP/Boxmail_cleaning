@@ -152,8 +152,15 @@ d'entités, bascule des 21 consommateurs, réservation des lots. Taux de fuite
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
 `trig_01SLhekXbwP85yQTnP32Aaof` (« Boxmail — rattrapage & catégorisation
 continue »), toutes les heures à :17, ~40 mails par passage. Vérifiée de bout
-en bout le 13/08. Ne PAS lui redonner d'autres connecteurs que Boxmail.
-Au 13/08 : 249 verdicts sémantiques, ~16 965 mails à relire (~15 jours).
+en bout le 13/08, sur DEUX passages successifs (40 verdicts, arrêt propre,
+aucun mail resté réservé). Ne PAS lui redonner d'autres connecteurs que
+Boxmail. Repère au 13/08 15 h 33 : **311 verdicts, 16 905 à relire**, +40/h.
+
+**À FAIRE EN PREMIER À LA REPRISE** : vérifier que le job tourne toujours —
+compter `MailVerdict` et regarder la date du dernier ; s'il n'a rien posé
+depuis plus de 2 h, lire `docs/JOURNAL.md` § 13/08 (37) avant de conclure
+quoi que ce soit (il démarre avec ~9 min de retard, et j'ai déjà crié à la
+panne à tort pour cette raison).
 
 **LIMITE STRUCTURELLE À NE PAS RÉAPPRENDRE** : une conversation ne peut pas
 analyser plus d'une soixantaine de mails — elle CUMULE les lots et meurt sur
@@ -172,3 +179,7 @@ n'y changera rien : il faut un contexte NEUF par lot.
 - Fiscal-Manager : confirmer le premier pull réel ; connecteurs suivants
   (frais Jump, CasaSync/livret).
 - Stratégies de rétention : à n'activer QU'AVEC lui.
+
+**Déjà tranché par lui le 13/08, ne pas relancer** : les deux IBAN divergents
+du règlement Cappelaere (25 000 €) — il a validé, l'alerte est close. Et
+l'horaire du job (:17 au lieu de :15) lui est indifférent.
