@@ -147,7 +147,7 @@ des lots. Fuite 60,2 % → 51,8 % en RETIRANT des filtres. Cadre :
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
 `trig_01SLhekXbwP85yQTnP32Aaof`, toutes les heures à :17, ~40 mails/passage,
 vérifiée de bout en bout le 13/08. Ne PAS lui redonner d'autres connecteurs
-que Boxmail. Repère 13/08 15 h 33 : **311 verdicts, 16 905 à relire**, +40/h.
+que Boxmail. Repère 13/08 15 h 38 UTC : **367 verdicts**, ~28-40/h.
 
 **À LA REPRISE** : compter `MailVerdict` et la date du dernier. Rien depuis
 2 h ⇒ lire `docs/JOURNAL.md` § 13/08 (37) AVANT de conclure : le job part
@@ -159,15 +159,16 @@ d'une session pèse ~600 Ko de connecteurs (Rentila ~110 outils, Vercel ~40 ;
 Boxmail 63 Ko = PAS la cause). Contexte NEUF par lot, aucun réglage n'y
 change rien.
 
-**OCR des scans LIVRÉ, EN COURS sur le serveur** (13/08, § 38) : tesseract+
-poppler sur le VPS, worker (tick 2 min) + backfill sur ~920 scans. Pilote :
-93 % lisibles, ~15 s/doc. Suivi : `GET /api/ocr/status`. Provenance
-`attachmentTextSource='ocr'` ; `OCR_PIPELINE_VERSION` à incrémenter pour
-retraiter. Un backfill tué est sans dommage — le worker reprend seul.
+**OCR : boucle complète VÉRIFIÉE le 13/08 16 h UTC (§ 39)** : 216/~929 scans
+tentés, 194 lisibles (90 %), 33 requeues dont 3 déjà ré-analysés par le
+rattrapage. Backfill pas fini : ~713 restants ≈ 3 h. Qualité sondée : bonne.
+`OCR_PIPELINE_VERSION` à incrémenter pour retraiter ; un backfill tué est
+sans dommage. Suivi : `GET /api/ocr/status` (session requise) ou SQL sur
+`Message` (`attachmentKind='scan'`, `ocrAt`, `attachmentTextSource`).
 
 **À faire** :
-- Vérifier la fin du backfill OCR ; sonder 5-10 textes de plus ; les
-  `requeued` repris par le rattrapage horaire.
+- Confirmer la FIN du backfill OCR (~19 h UTC) : `ocrAt IS NULL` sur les
+  scans ≈ 0 ; re-sonder 2-3 textes.
 - Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
   sans créer de dossier ; écran des doublons de pièces.
 - Lot 6 : retrait des colonnes plates et de la projection de compatibilité.

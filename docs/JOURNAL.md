@@ -5,6 +5,31 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 13/08 (39) — Point de contrôle : OCR et rattrapage vérifiés de bout en bout
+
+Session de vérification pure (rien modifié sur le serveur). État à 15 h 55 UTC :
+
+- **Rattrapage horaire vivant** : 367 verdicts (repère précédent 311 à
+  13 h 33 UTC), dernier posé à 15 h 38 UTC — soit ~28/passage sur les deux
+  derniers passages, dans l'ordre de grandeur attendu (~40).
+- **Backfill OCR en cours, pas fini** : 216 scans tentés sur ~929, dont
+  194 lisibles (90 %, cohérent avec le pilote à 93 %) et 22 restés charabia.
+  713 restants ⇒ ~3 h de backfill à ~15 s/doc. Dernière OCR à 15 h 56 UTC,
+  le worker mouline.
+- **Qualité sondée sur 8 textes au hasard** : fournisseurs, montants, numéros
+  de facture, adresses tous exploitables (Belleguic, Dispano, Mingant, CAF,
+  STGS…). Bruit OCR classique (« Frangois ») mais les champs clés passent.
+- **Boucle requeue → ré-analyse VÉRIFIÉE de bout en bout** : 33 verdicts
+  retirés (`ocr_requeue_analysis` dans operations.jsonl) car la pièce est
+  devenue lisible ; sur les 8 premiers requeues (14 h 56), 3 avaient déjà un
+  NOUVEAU verdict posé par le passage de 15 h 17 (15 h 36-15 h 38). Le reste
+  attend le prochain passage. Rien à corriger.
+
+Astuce d'accès prod réapprise : pas de sqlite3 sur la VM ; requêter via un
+script .cjs copié par scp dans /home/ubuntu/boxmail (résolution de
+@prisma/client) avec `DATABASE_URL="file:...boxmail.db?connection_limit=1"`.
+Attention aux quotes imbriquées ssh/heredoc : écrire le script en local puis scp.
+
 ## 13/08 (38) — OCR des scans : le goulot n° 1 est levé
 
 Reprise sur « goulot n° 1 : lire les scans ». Mesure d'entrée sur la prod :
