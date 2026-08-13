@@ -10,6 +10,7 @@ import { imapService } from './services/imap.js';
 import { buildAdminRouter } from './server/admin.js';
 import { buildAccountingRouter } from './server/accounting.js';
 import { startAutoSync } from './services/autosync.js';
+import { startAutoOcr } from './services/autoocr.js';
 import { runCapabilityBackfills } from './services/whatsnew.js';
 import { startAutoBackup } from './services/backup.js';
 import { startAutoUpdate } from './services/autoupdate.js';
@@ -246,6 +247,7 @@ async function main() {
       smtpEnabled: config.smtp.enabled,
     });
     startAutoSync();
+    startAutoOcr();
     startAutoBackup();
     startAutoUpdate();
     resumeSnippetBackfill();

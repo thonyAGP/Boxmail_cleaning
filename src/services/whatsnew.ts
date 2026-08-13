@@ -233,6 +233,36 @@ const CAPABILITIES: Capability[] = [
   // chaque proposition via le socle sémantique à chaque synchronisation.
   // Leurs marqueurs restent inertes dans data/whatsnew.json — sans danger, et
   // ces identifiants ne doivent jamais être réutilisés (entrées immuables).
+  {
+    id: 'ocr-scans-v1',
+    label: 'Je lis maintenant tes documents scannés',
+    link: '#/search',
+    run: async () => {
+      // ANNONCE seulement — le travail lui-même est fait par le worker de
+      // fond (services/autoocr.ts), un document à la fois : ~900 scans font
+      // des heures d'OCR, pas leur place dans un rattrapage de boot
+      // (contre-revue du 13/08). Si les binaires manquent, on THROW : pas de
+      // marqueur, la carte retentera à chaque démarrage jusqu'à ce que
+      // l'apt install soit passé — c'est le comportement voulu.
+      const { ocrDisponible, OCR_PIPELINE_VERSION } = await import('./ocr.js');
+      const dispo = await ocrDisponible();
+      if (!dispo.ok) throw new Error(dispo.note);
+      const { db } = await import('../db/client.js');
+      const restants = await db.message.count({
+        where: {
+          attachmentKind: 'scan',
+          isDeleted: false,
+          OR: [{ ocrVersion: null }, { ocrVersion: { lt: OCR_PIPELINE_VERSION } }],
+        },
+      });
+      return (
+        `${restants} document(s) scanné(s) (PDF sans texte, photos) vont être lus en ` +
+        `tâche de fond — montants et fournisseurs deviendront cherchables. ` +
+        `Ça avance tout seul ; le bouton « Lire les scans maintenant » (Paramètres → ` +
+        `Compréhension des mails) accélère si besoin.`
+      );
+    },
+  },
 ];
 
 const STATE_FILE = (): string => resolve(process.cwd(), 'data', 'whatsnew.json');
