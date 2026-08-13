@@ -148,8 +148,7 @@ vérifiée de bout en bout le 13/08. Ne PAS lui redonner d'autres connecteurs
 que Boxmail. Repère 13/08 15 h 38 UTC : **367 verdicts**, ~28-40/h.
 
 **À LA REPRISE** : compter `MailVerdict` et la date du dernier. Rien depuis
-2 h ⇒ lire `docs/JOURNAL.md` § 13/08 (37) AVANT de conclure : le job part
-avec ~9 min de retard, j'ai déjà crié à la panne pour ça.
+2 h ⇒ lire JOURNAL § 13/08 (37) AVANT de crier à la panne (retard ~9 min).
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
 elle CUMULE les lots et meurt (« request body is not valid JSON »). Le socle
@@ -158,11 +157,10 @@ Boxmail 63 Ko = PAS la cause). Contexte NEUF par lot, aucun réglage n'y
 change rien.
 
 **OCR : boucle complète VÉRIFIÉE le 13/08 16 h UTC (§ 39)** : 216/~929 scans
-tentés, 194 lisibles (90 %), 33 requeues dont 3 déjà ré-analysés par le
-rattrapage. Backfill pas fini : ~713 restants ≈ 3 h. Qualité sondée : bonne.
-`OCR_PIPELINE_VERSION` à incrémenter pour retraiter ; un backfill tué est
-sans dommage. Suivi : `GET /api/ocr/status` (session requise) ou SQL sur
-`Message` (`attachmentKind='scan'`, `ocrAt`, `attachmentTextSource`).
+tentés, 194 lisibles (90 %), 33 requeues dont 3 déjà ré-analysés. Backfill
+pas fini : ~713 restants ≈ 3 h. Qualité sondée : bonne. Suivi par SQL sur
+`Message` (`attachmentKind='scan'`, `ocrAt`, `attachmentTextSource`) ;
+`OCR_PIPELINE_VERSION` à incrémenter pour retraiter.
 
 **À faire** :
 - Confirmer la FIN du backfill OCR (~19 h UTC) : `ocrAt IS NULL` sur les
@@ -174,6 +172,6 @@ sans dommage. Suivi : `GET /api/ocr/status` (session requise) ou SQL sur
   CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
 
-**Déjà tranché par lui le 13/08, ne pas relancer** : les deux IBAN divergents
-du règlement Cappelaere (25 000 €) — il a validé, l'alerte est close. Et
-l'horaire du job (:17 au lieu de :15) lui est indifférent.
+**Déjà tranché par lui le 13/08, ne pas relancer** : IBAN divergents du
+règlement Cappelaere (25 000 €) — validé, alerte close. Horaire du job
+(:17) : indifférent.
