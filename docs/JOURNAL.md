@@ -178,7 +178,7 @@ regardait que 40 mails sur 60 jours, donc le FONDS n'etait jamais attaque.
    decode en seconde.
 2. **Les factures IKEA resistaient meme apres ca.** Diagnostic sur le fichier
    reel : leur texte n'est pas en hexadecimal mais en codes sur DEUX octets
-   glisses dans des chaines litterales — `( 1 B H F)` vaut
+   glisses dans des chaines litterales — `(\u00001\u0000B\u0000H\u0000F)` vaut
    « Page ». Ces chaines passent desormais par la meme table, et le decodage
    n'est retenu que s'il explique au moins 60 % de la chaine (un PDF simple
    garde son texte intact). Verifie sur la vraie facture : « Facture »,
