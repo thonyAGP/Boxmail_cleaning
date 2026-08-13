@@ -164,6 +164,8 @@ export const api = {
     ),
   attachmentNamesBackfill: () => request('POST', '/attachment-names/backfill'),
   attachmentTextBackfill: (order) => request('POST', '/attachment-text/backfill', { order }),
+  ocrStatus: () => request('GET', '/ocr/status'),
+  ocrBackfill: (order) => request('POST', '/ocr/backfill', { order }),
   duplicates: (params = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {

@@ -9,8 +9,10 @@
  * Garde-fous : on ne télécharge QUE des pièces plausiblement lisibles
  * (PDF/texte/images sous plafond), une par mail au maximum pour le texte, et
  * RIEN n'est conservé sur disque — seul le texte extrait est stocké, tronqué.
- * Les images ne sont pas téléchargées ici du tout : on note « scan », et c'est
- * Claude qui la regardera à la demande (read_attachment).
+ * À la première passe, les images ne sont pas téléchargées : on note « scan ».
+ * C'est la passe OCR (ocrScansForAccount, 13/08) qui repasse derrière avec
+ * tesseract — et pour ce qui reste illisible même à la machine, c'est Claude
+ * qui regarde la pièce à la demande (read_attachment).
  */
 
 import { createHash } from 'node:crypto';
@@ -24,6 +26,8 @@ import {
   type DocumentHints,
 } from './attachment-text.js';
 import { detectIntent } from './categorize.js';
+import { ocrPiece, ocrDisponible, OCR_PIPELINE_VERSION } from './ocr.js';
+import { recordOperation } from './oplog.js';
 import type { AccountRecord } from './accounts.js';
 
 /** Plafond de téléchargement pour l'extraction de texte (le VPS est petit). */
@@ -123,30 +127,7 @@ export async function readAttachmentsForAccount(
     report.bytes += m.sizeBytes ?? 0;
     try {
       const r = await readOne(rec, m.folder.path, m.uid);
-      // On complète la fiche des pièces avec l'empreinte, en rapprochant par
-      // NOM de fichier : la fiche vient de la structure du mail, l'empreinte du
-      // téléchargement, et leurs index ne se correspondent pas.
-      let meta: string | null = m.attachmentMeta;
-      if (r.digests.length && m.attachmentMeta) {
-        try {
-          const fiche = JSON.parse(m.attachmentMeta) as { n: string; s: number; h?: string }[];
-          const parNom = new Map(r.digests.map((d) => [d.n.toLowerCase(), d]));
-          let change = false;
-          for (const piece of fiche) {
-            const d = parNom.get((piece.n ?? '').toLowerCase());
-            if (d && piece.h !== d.h) {
-              piece.h = d.h;
-              // Taille RÉELLE du fichier décodé : bien plus fiable que celle
-              // annoncée par IMAP, qui compte l'encodage base64.
-              piece.s = d.s;
-              change = true;
-            }
-          }
-          if (change) meta = JSON.stringify(fiche);
-        } catch {
-          /* fiche illisible : on la laisse telle quelle */
-        }
-      }
+      const meta = fusionnerEmpreintes(m.attachmentMeta, r.digests);
       await db.message.update({
         where: { id: m.id },
         data: {
@@ -211,6 +192,38 @@ export async function readAttachmentsForAccount(
   }
   report.remaining = await db.message.count({ where });
   return report;
+}
+
+/**
+ * Complète la fiche des pièces (`attachmentMeta`) avec les empreintes des
+ * fichiers réellement descendus, en rapprochant par NOM : la fiche vient de
+ * la structure du mail, l'empreinte du téléchargement, et leurs index ne se
+ * correspondent pas. La taille est remplacée par la taille RÉELLE du fichier
+ * décodé (IMAP annonce celle de l'encodage base64). Renvoie la fiche
+ * inchangée (même référence) quand il n'y a rien à fusionner.
+ */
+function fusionnerEmpreintes(
+  meta: string | null,
+  digests: { n: string; h: string; s: number }[],
+): string | null {
+  if (!digests.length || !meta) return meta;
+  try {
+    const fiche = JSON.parse(meta) as { n: string; s: number; h?: string }[];
+    const parNom = new Map(digests.map((d) => [d.n.toLowerCase(), d]));
+    let change = false;
+    for (const piece of fiche) {
+      const d = parNom.get((piece.n ?? '').toLowerCase());
+      if (d && piece.h !== d.h) {
+        piece.h = d.h;
+        piece.s = d.s;
+        change = true;
+      }
+    }
+    return change ? JSON.stringify(fiche) : meta;
+  } catch {
+    /* fiche illisible : on la laisse telle quelle */
+    return meta;
+  }
 }
 
 /**
@@ -280,6 +293,284 @@ export async function readOne(
   }
   if (sawImage) return { kind: 'scan', text: '', hints: null, digests };
   return { kind: 'other', text: '', hints: null, digests };
+}
+
+export interface OcrReport {
+  /** Mails examinés. */
+  scanned: number;
+  /** Mails passés kind='text' grâce à l'OCR. */
+  ocred: number;
+  /** OCR tenté mais charabia → restent 'scan' (l'IA les regardera en image). */
+  illisibles: number;
+  failures: number;
+  /** Verdicts IA supprimés (la pièce devenue lisible périmait leur analyse). */
+  requeued: number;
+  bytes: number;
+  /** Scans encore éligibles à l'OCR sur ce compte. */
+  remaining: number;
+  /** « OCR non installé » en mode dégradé. */
+  note?: string;
+}
+
+/**
+ * Passe OCR (13/08) : repasse sur les mails déjà marqués `kind='scan'` par la
+ * première extraction — PDF sans couche texte et images — avec tesseract
+ * (services/ocr.ts). Sélecteur DISTINCT de `attachmentTextAt` (posé sur tous
+ * les scans) : l'idempotence est portée par `ocrVersion` — incrémenter
+ * OCR_PIPELINE_VERSION rend tout le monde rééligible.
+ *
+ * Marqueurs : tentative ABOUTIE (texte lisible OU charabia) → ocrAt +
+ * ocrVersion, jamais de reprise en boucle. Erreur TECHNIQUE (IMAP,
+ * téléchargement) → rien posé, le mail est repris plus tard. Les échecs
+ * internes de tesseract sur une pièce sont comptés comme aboutis : l'entrée
+ * est déterministe, retenter ne changerait rien (une amélioration du pipeline
+ * passe par la version).
+ */
+export async function ocrScansForAccount(
+  rec: AccountRecord,
+  opts: {
+    limit?: number;
+    /** 'newest' (défaut) pour le flux courant, 'oldest' pour purger le fonds. */
+    order?: 'newest' | 'oldest';
+    onProgress?: (message: string) => void;
+  } = {},
+): Promise<OcrReport> {
+  await ensureDbReady();
+  const report: OcrReport = {
+    scanned: 0,
+    ocred: 0,
+    illisibles: 0,
+    failures: 0,
+    requeued: 0,
+    bytes: 0,
+    remaining: 0,
+  };
+  const dispo = await ocrDisponible();
+  if (!dispo.ok) {
+    report.note = dispo.note;
+    return report;
+  }
+  const limit = Math.min(opts.limit ?? 1, 200);
+  const progress = opts.onProgress ?? (() => {});
+
+  const where = {
+    accountSlug: rec.account,
+    hasAttachments: true,
+    isDeleted: false,
+    isOutbound: false,
+    folder: { role: { notIn: ['trash', 'spam'] } },
+    attachmentKind: 'scan',
+    OR: [{ ocrVersion: null }, { ocrVersion: { lt: OCR_PIPELINE_VERSION } }],
+  };
+
+  const messages = await db.message.findMany({
+    where,
+    orderBy: { date: opts.order === 'oldest' ? 'asc' : 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      uid: true,
+      subject: true,
+      date: true,
+      fromEmail: true,
+      sizeBytes: true,
+      attachmentMeta: true,
+      hasListUnsubscribe: true,
+      intent: true,
+      intentSource: true,
+      folder: { select: { path: true } },
+    },
+  });
+
+  for (const m of messages) {
+    report.scanned++;
+    report.bytes += m.sizeBytes ?? 0;
+    try {
+      const r = await ocrOne(rec, m.folder.path, m.uid);
+      const meta = fusionnerEmpreintes(m.attachmentMeta, r.digests);
+      if (r.text) {
+        // Assaini UNE DERNIÈRE FOIS après la dernière troncature (les `slice`
+        // travaillent en unités UTF-16 et peuvent couper une paire en deux —
+        // leçon du 12/08), fiche comprise.
+        await db.message.update({
+          where: { id: m.id },
+          data: {
+            attachmentKind: 'text',
+            attachmentText: assainirPourBase(r.text),
+            attachmentTextSource: r.sawOcr ? 'ocr' : null,
+            ocrAt: new Date(),
+            ocrVersion: OCR_PIPELINE_VERSION,
+            ...(meta !== m.attachmentMeta
+              ? { attachmentMeta: meta === null ? null : assainirPourBase(meta) }
+              : {}),
+          },
+        });
+        report.ocred++;
+        progress(`OCR : « ${m.subject ?? '(sans sujet)'} » est devenu lisible.`);
+
+        // Le document peut CONTREDIRE l'expéditeur — même rejeu que la
+        // première extraction : jamais d'écrasement d'un intent IA/manuel.
+        const hints = documentHints(r.text);
+        if (hints.isInvoice && m.intentSource === 'auto' && m.intent !== 'invoice') {
+          const d = detectIntent({
+            subject: m.subject,
+            hasListUnsubscribe: m.hasListUnsubscribe,
+            fromEmail: m.fromEmail,
+            attachmentText: r.text,
+          });
+          if (d.intent === 'invoice') {
+            await db.message.update({
+              where: { id: m.id },
+              data: { intent: d.intent, intentReason: d.reason },
+            });
+            logger.info('intention corrigée par la pièce OCRisée', {
+              account: rec.account,
+              uid: m.uid,
+              avant: m.intent,
+              apres: d.intent,
+              fournisseur: hints.supplier,
+            });
+          }
+        }
+
+        // Remise en vivier IA, CIBLÉE : uniquement les verdicts qui avaient
+        // DÉCLARÉ ne pas avoir pu lire la pièce. Un verdict établi sans
+        // réserve sur le corps du mail n'est pas touché. La suppression
+        // (cascade Prisma sur actions/events/uncertainties…) suffit : le
+        // scope 'relecture' du rattrapage est `verdict IS NULL`.
+        const verdict = await db.mailVerdict.findFirst({
+          where: {
+            messageId: m.id,
+            uncertainties: {
+              some: {
+                OR: [{ resolvableWith: 'attachment_text' }, { reason: 'missing_attachment' }],
+              },
+            },
+          },
+          select: { id: true },
+        });
+        if (verdict) {
+          await db.mailVerdict.delete({ where: { id: verdict.id } });
+          report.requeued++;
+          await recordOperation({
+            account: rec.account,
+            tool: 'ocr_requeue_analysis',
+            params: { uid: m.uid, folder: m.folder.path },
+            items: [
+              {
+                subject: m.subject ?? '',
+                date: m.date ? m.date.toISOString() : null,
+                folder: m.folder.path,
+                uid: m.uid,
+              },
+            ],
+            result:
+              'verdict IA retiré : la pièce scannée est devenue lisible, le mail revient au rattrapage.',
+          });
+        }
+      } else {
+        // Charabia partout : la pièce reste un scan (l'analyse continuera de
+        // proposer read_attachment), mais on ne la retentera pas en boucle.
+        await db.message.update({
+          where: { id: m.id },
+          data: {
+            ocrAt: new Date(),
+            ocrVersion: OCR_PIPELINE_VERSION,
+            ...(meta !== m.attachmentMeta
+              ? { attachmentMeta: meta === null ? null : assainirPourBase(meta) }
+              : {}),
+          },
+        });
+        report.illisibles++;
+      }
+    } catch (err) {
+      // Erreur technique (IMAP, réseau) : rien n'est posé, repris plus tard.
+      report.failures++;
+      logger.warn('passe OCR en échec sur un mail', {
+        account: rec.account,
+        uid: m.uid,
+        error: (err as Error).message,
+      });
+    }
+  }
+  report.remaining = await db.message.count({ where });
+  return report;
+}
+
+/**
+ * OCR des pièces d'UN mail marqué scan. Télécharge — cette fois — les images
+ * « document » (≥ 30 Ko, pas de contentId) EN PLUS des PDF/Office. Pour un
+ * PDF, l'extraction maison est retentée d'abord (gratuite, et elle s'est
+ * améliorée depuis la première passe) ; tesseract ne travaille que si elle ne
+ * rend rien. Chaque buffer est gardé en mémoire le temps de sa tentative,
+ * jamais re-téléchargé, rien n'est conservé.
+ */
+async function ocrOne(
+  rec: AccountRecord,
+  folder: string,
+  uid: number,
+): Promise<{
+  text: string;
+  /** true si au moins un chunk vient de tesseract (provenance 'ocr'). */
+  sawOcr: boolean;
+  digests: { n: string; h: string; s: number }[];
+}> {
+  const digests: { n: string; h: string; s: number }[] = [];
+  const chunks: string[] = [];
+  let sawOcr = false;
+  let total = 0;
+
+  const parts = await imapService.listAttachments(rec, folder, uid);
+  for (let i = 0; i < parts.length && total < MAX_STORED_TEXT; i++) {
+    const p = parts[i];
+    const estImageDocument = IMAGE.test(p.contentType) && !p.contentId && p.sizeBytes >= 30_000;
+    const estLisible = READABLE.test(p.contentType) || READABLE_NAME.test(p.filename ?? '');
+    if (!estImageDocument && !estLisible) continue;
+    if (p.sizeBytes > MAX_FETCH_BYTES) continue;
+
+    const dl = await imapService.downloadAttachment(rec, folder, uid, i);
+    if (!dl) continue;
+    digests.push({
+      n: dl.filename,
+      h: createHash('sha256').update(dl.content).digest('hex').slice(0, 32),
+      s: dl.content.length,
+    });
+
+    let texte = '';
+    let ocr = false;
+    if (estLisible) {
+      const natif = attachmentToText(dl.filename, dl.contentType, dl.content);
+      if (natif.kind === 'text') texte = natif.text;
+    }
+    if (!texte) {
+      const r = await ocrPiece(dl.filename, dl.contentType, dl.content);
+      if (r.kind === 'text') {
+        texte = r.text;
+        ocr = true;
+      }
+    }
+    if (!texte) continue;
+
+    const chunk =
+      `--- ${assainirPourBase(dl.filename)}${ocr ? ' (texte OCR)' : ''} ---\n` +
+      tronquerParPage(texte, MAX_TEXT_PAR_PIECE);
+    chunks.push(chunk);
+    total += chunk.length;
+    if (ocr) sawOcr = true;
+  }
+
+  return { text: chunks.join('\n\n').slice(0, MAX_STORED_TEXT), sawOcr, digests };
+}
+
+/**
+ * Troncature PAR PAGE ENTIÈRE (les pages OCR sont séparées par une ligne
+ * vide) : couper au milieu supprimerait précisément le total en bas de la
+ * dernière page gardée. On coupe à la dernière frontière de page qui tient.
+ */
+function tronquerParPage(texte: string, max: number): string {
+  if (texte.length <= max) return texte;
+  const coupe = texte.lastIndexOf('\n\n', max);
+  return coupe > max / 2 ? texte.slice(0, coupe) : texte.slice(0, max);
 }
 
 /**

@@ -298,6 +298,7 @@ function jobLabel(kind) {
   if (kind.startsWith('deadlines:')) return `📅 Détection échéances ${kind.slice(10)}`;
   if (kind === 'sync-all') return '🔄 Sync de toutes les boîtes';
   if (kind === 'update') return '⬆️ Mise à jour';
+  if (kind === 'ocr') return '🔍 Lecture des scans (OCR)';
   return `⚙️ ${kind}`;
 }
 
@@ -6917,6 +6918,11 @@ function renderSettingsBody() {
             <button class="btn btn-sm" id="snip-all" title="Toute la boîte — beaucoup plus long">📚 Toute la boîte</button>
           </span>
         </div>
+        <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
+          <span><strong>Lire les documents scannés (OCR)</strong><br>
+            <span class="muted" style="font-size:12px" id="ocr-note"><span class="spinner"></span>Chargement…</span></span>
+          <span><button class="btn btn-sm" id="ocr-start" disabled>🔍 Lire les scans maintenant</button></span>
+        </div>
       </div>
     </div>
 
@@ -7234,6 +7240,51 @@ function renderSettingsBody() {
   };
   $('#snip-recent')?.addEventListener('click', (e) => startSnippets('recent', e.currentTarget));
   $('#snip-all')?.addEventListener('click', (e) => startSnippets('all', e.currentTarget));
+
+  // OCR des scans (13/08) : état de la chaîne tesseract/poppler + accélérateur.
+  // Le worker de fond avance tout seul ; ce bouton sert quand il veut le stock
+  // tout de suite. Suivi via la pastille d'activité (jobLabel 'ocr').
+  const loadOcr = async () => {
+    const note = $('#ocr-note');
+    const btn = $('#ocr-start');
+    if (!note || !btn) return;
+    try {
+      const s = await api.ocrStatus();
+      if (!s.installed) {
+        note.textContent = s.note;
+        btn.disabled = true;
+        btn.title = "L'OCR n'est pas encore installé sur le serveur";
+        return;
+      }
+      note.innerHTML =
+        `${fmtNum(s.scansAOcr)} document(s) scanné(s) à lire · ` +
+        `${fmtNum(s.ocrReussis)} déjà lus par OCR` +
+        (s.scansIllisibles
+          ? ` · ${fmtNum(s.scansIllisibles)} illisibles même à la machine (je les regarde en image)`
+          : '');
+      btn.disabled = s.scansAOcr === 0;
+      btn.title =
+        s.scansAOcr === 0
+          ? 'Tous les documents scannés sont déjà passés à l’OCR'
+          : 'La lecture avance toute seule en tâche de fond — ce bouton accélère';
+    } catch (err) {
+      note.textContent = `⚠️ ${err.message}`;
+    }
+  };
+  loadOcr();
+  $('#ocr-start')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api.ocrBackfill();
+      notice(`<div class="notice">🔍 Lecture des scans lancée — montants et fournisseurs
+        deviendront cherchables. Suis l'avancement via la pastille d'activité en bas
+        de la barre latérale.</div>`);
+    } catch (err) {
+      btn.disabled = false;
+      notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
+    }
+  });
 
   $('#set-categorize')?.addEventListener('click', async () => {
     const btn = $('#set-categorize');

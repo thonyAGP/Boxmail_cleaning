@@ -1733,6 +1733,93 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  // OCR des scans (13/08) : état de la chaîne tesseract/poppler et compteurs.
+  // Léger, appelé par le panneau Paramètres.
+  router.get(
+    '/ocr/status',
+    guard(async (_req, res) => {
+      const { ocrDisponible, OCR_PIPELINE_VERSION } = await import('../services/ocr.js');
+      const dispo = await ocrDisponible();
+      const scanEligible = {
+        attachmentKind: 'scan',
+        isDeleted: false,
+        OR: [{ ocrVersion: null }, { ocrVersion: { lt: OCR_PIPELINE_VERSION } }],
+      };
+      const [aOcr, illisibles, reussis] = await Promise.all([
+        db.message.count({ where: scanEligible }),
+        db.message.count({
+          where: { attachmentKind: 'scan', isDeleted: false, ocrVersion: OCR_PIPELINE_VERSION },
+        }),
+        db.message.count({ where: { attachmentTextSource: 'ocr', isDeleted: false } }),
+      ]);
+      res.json({
+        installed: dispo.ok,
+        tesseract: dispo.tesseract,
+        pdftoppm: dispo.pdftoppm,
+        pipelineVersion: OCR_PIPELINE_VERSION,
+        note: dispo.note,
+        scansAOcr: aOcr,
+        scansIllisibles: illisibles,
+        ocrReussis: reussis,
+      });
+    }),
+  );
+
+  // Lance l'OCR du stock à la demande (le worker de fond avance tout seul,
+  // ce bouton sert à accélérer — il tient le verrou, le worker s'abstient).
+  router.post(
+    '/ocr/backfill',
+    guard(async (req, res) => {
+      if (hasRunningJob('ocr')) {
+        res.status(409).json({ error: 'Une lecture des scans est déjà en cours.' });
+        return;
+      }
+      const { ocrDisponible } = await import('../services/ocr.js');
+      const dispo = await ocrDisponible();
+      if (!dispo.ok) {
+        res.status(400).json({ error: dispo.note });
+        return;
+      }
+      const ordre = req.body?.order === 'oldest' ? ('oldest' as const) : ('newest' as const);
+      const job = startJob('ocr', async (progress, setMeta) => {
+        setMeta({ order: ordre });
+        const { ocrScansForAccount } = await import('../services/attachments.js');
+        const noms = await listAccountNames();
+        let ocred = 0;
+        let illisibles = 0;
+        let requeued = 0;
+        let restants = 0;
+        for (const nom of noms) {
+          const rec = await getAccountRecord(nom);
+          if (!rec) continue;
+          progress(`🔍 ${nom}…`);
+          for (let tour = 0; tour < 60; tour++) {
+            const r = await ocrScansForAccount(rec, {
+              limit: 20,
+              order: ordre,
+              onProgress: progress,
+            });
+            ocred += r.ocred;
+            illisibles += r.illisibles;
+            requeued += r.requeued;
+            restants = r.remaining;
+            progress(
+              `${nom} : ${r.ocred} scan(s) devenus lisibles, ${r.illisibles} illisible(s), ${r.remaining} restant(s).`,
+            );
+            if (r.scanned === 0 || r.remaining === 0) break;
+          }
+        }
+        return (
+          `${ocred} scan(s) devenus lisibles (montants et fournisseurs cherchables), ` +
+          `${illisibles} illisible(s) même à la machine (je pourrai les regarder en image)` +
+          `${requeued ? `, ${requeued} mail(s) renvoyés à l'analyse` : ''}` +
+          `${restants ? ` — ${restants} restant(s), le fond continue tout seul.` : '.'}`
+        );
+      });
+      res.status(202).json({ jobId: job.id });
+    }),
+  );
+
   // Pièces jointes en double (11/08). Lecture seule : on ne supprime rien,
   // la déduplication est d'abord cognitive (« 1 document · 4 exemplaires »).
   router.get(
