@@ -74,14 +74,13 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
 
 - Branche : `claude/new-session-gutt6f` — commits en français, descriptifs,
   pousser après chaque passe (canal de livraison de l'utilisateur).
-- Interface en français, ton tutoiement.
+- Interface en français, tutoiement.
 - Tester avant de pousser : `npx tsc --noEmit`, `node --check web/js/*.js`,
   seeds synthétiques, serveur sur PORT=8799 en test local, captures
   navigateur via playwright-core.
-- `.env` de test à créer (MCP_BEARER_TOKEN, TOKEN_ENCRYPTION_KEY=32 octets
-  base64 via `npm run genkey`, MS_CLIENT_ID factice, PORT=8799, LOG_LEVEL=error).
-- Pas d'IMAP réel accessible depuis l'environnement de dev : tester la logique
-  DB/API/UI avec des seeds, l'utilisateur valide l'IMAP en réel.
+- `.env` de test : déjà présent en dev (sinon `npm run genkey` pour la clé).
+- Pas d'IMAP réel en dev : tester DB/API/UI avec des seeds, l'utilisateur
+  valide l'IMAP en réel.
 - Client ID Entra réel : `00449d9d-90ad-4891-939b-7e55f4d4d816` (public,
   comptes perso uniquement, redirect `http://localhost:8787/api/enroll/callback`).
 - **Fin de session : REMPLACER la section « État courant » ci-dessous
@@ -98,8 +97,6 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   sur une seule boîte est une coïncidence.
 - **On ne migre JAMAIS la base pendant que l'app sert** (database is locked) —
   update.ts/autoupdate.ts font `db:generate` seulement ; migrations au boot.
-- **Analyse massive : un agent par boîte, scopes DISJOINTS** —
-  `next_analysis_batch` n'a aucun mécanisme de réservation.
 - **Chronométrer avant d'optimiser** ; vérifier qu'un constat d'audit atteint
   réellement l'écran avant de le juger grave.
 - Sur le serveur : `npm run audit -- --out logs` (écrire dans `docs/` ferait
@@ -108,10 +105,9 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   « binaire » et le saute en silence) — utiliser l'échappement `\u0000`.
 - IMAP Outlook : jamais de longues listes d'UIDs (plages uniquement) ;
   jamais de repli « mail complet » dans un rattrapage de masse.
-- **NE PLUS RETIRER d'emojis existants** (dé-émojisation annulée après
-  marche arrière — l'utilisateur tient à l'identité chaleureuse ; réduire
-  seulement les cumuls emoji+pastille+badge). Lister les changements AVANT
-  toute passe de ce type.
+- **NE PLUS RETIRER d'emojis existants** (marche arrière subie — il tient à
+  l'identité chaleureuse ; réduire seulement les cumuls emoji+pastille+badge,
+  et lister les changements AVANT toute passe de ce type).
 - Jamais de classes de modale (`modal-body`/`modal-foot`) hors d'une
   modale : plusieurs écrans les ciblent par sélecteur global.
 
@@ -131,40 +127,37 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
   (symptôme : `pm2: command not found`). Invite `cloudshell` = mauvaise machine.
 - Mise à jour : minuteur systemd `boxmail-update.timer` (04:00 UTC) →
   `deploy/update-boot.sh`. `AUTO_UPDATE_HOUR=-1` dans le `.env` serveur.
-- Vérifier qu'un déploiement a pris : `GET /api/analysis/coverage` → **401**
-  (route existante) et non 404.
+- Déploiement pris ? route récente → **401**, pas 404.
 - Ne JAMAIS déposer de clé dans le dossier du projet (`.gitignore` couvre
-  `*.key`, `*.pem`, `id_rsa*`).
+  `*.key`, `*.pem`, `id_rsa*`). `npm install` COMPLET sur le serveur
+  (`--omit=dev` retire @types/node et casse le build).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
-chantier (mesuré : 966 mails seulement). Ses boîtes ne sont pas sales, ce sont
-des archives non structurées. Capacité : plus de sujet (M365 Basic, 100 Go).
+chantier (966 mails mesurés) : ses boîtes sont des archives non structurées,
+pas des boîtes sales. Capacité : non-sujet (M365 Basic, 100 Go).
 `docs/PLAN-ARCHIVE.md` est CLASSÉ, ne pas le relancer.
 
 **Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5) : verdict
-sémantique immuable + projections, entrée enrichie, résolveur d'entités,
-bascule des 21 consommateurs, réservation des lots. Fuite 60,2 % → 51,8 %, en
-RETIRANT des filtres. Cadre : `docs/PLAN-ASSISTANT.md` et
-`docs/CONTRAT-EXTRACTION.md`.
+sémantique immuable + projections, bascule des 21 consommateurs, réservation
+des lots. Fuite 60,2 % → 51,8 % en RETIRANT des filtres. Cadre :
+`docs/PLAN-ASSISTANT.md`, `docs/CONTRAT-EXTRACTION.md`.
 
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
-`trig_01SLhekXbwP85yQTnP32Aaof` (« Boxmail — rattrapage & catégorisation
-continue »), toutes les heures à :17, ~40 mails par passage. Vérifiée de bout
-en bout le 13/08, sur DEUX passages successifs (40 verdicts, arrêt propre,
-aucun mail resté réservé). Ne PAS lui redonner d'autres connecteurs que
-Boxmail. Repère au 13/08 15 h 33 : **311 verdicts, 16 905 à relire**, +40/h.
+`trig_01SLhekXbwP85yQTnP32Aaof`, toutes les heures à :17, ~40 mails/passage,
+vérifiée de bout en bout le 13/08. Ne PAS lui redonner d'autres connecteurs
+que Boxmail. Repère 13/08 15 h 33 : **311 verdicts, 16 905 à relire**, +40/h.
 
-**À LA REPRISE** : compter `MailVerdict` et regarder la date du dernier. Rien
-depuis 2 h ⇒ lire `docs/JOURNAL.md` § 13/08 (37) AVANT de conclure : le job
-démarre avec ~9 min de retard, j'ai déjà crié à la panne pour ça.
+**À LA REPRISE** : compter `MailVerdict` et la date du dernier. Rien depuis
+2 h ⇒ lire `docs/JOURNAL.md` § 13/08 (37) AVANT de conclure : le job part
+avec ~9 min de retard, j'ai déjà crié à la panne pour ça.
 
-**LIMITE STRUCTURELLE À NE PAS RÉAPPRENDRE** : une conversation n'analyse pas
-plus de ~60 mails — elle CUMULE les lots et meurt sur « request body is not
-valid JSON ». Le socle d'une session pèse déjà ~600 Ko de définitions de
-connecteurs (Rentila ~110 outils, Vercel ~40 ; Boxmail 63 Ko mesurés = PAS la
-cause). Aucune taille de lot n'y change rien : contexte NEUF par lot.
+**LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
+elle CUMULE les lots et meurt (« request body is not valid JSON »). Le socle
+d'une session pèse ~600 Ko de connecteurs (Rentila ~110 outils, Vercel ~40 ;
+Boxmail 63 Ko = PAS la cause). Contexte NEUF par lot, aucun réglage n'y
+change rien.
 
 **OCR des scans LIVRÉ, EN COURS sur le serveur** (13/08, § 38) : tesseract+
 poppler sur le VPS, worker (tick 2 min) + backfill sur ~920 scans. Pilote :
