@@ -265,12 +265,19 @@ export function registerAssistTools(server: McpServer): void {
         'mail, renvoyer les verdicts avec submit_semantic_batch, puis ' +
         'RECOMMENCER IMMÉDIATEMENT — et ainsi de suite jusqu’à atteindre le ' +
         'nombre demandé par l’utilisateur, ou jusqu’à `remaining` = 0. ' +
-        'UN SEUL LOT NE SUFFIT JAMAIS : un lot vaut au plus 100 mails, et ' +
+        'UN SEUL LOT NE SUFFIT JAMAIS : un lot vaut au plus 15 mails, et ' +
         'l’utilisateur en demande couramment plusieurs centaines. Ne redemande ' +
         'PAS l’autorisation entre deux lots, ne t’arrête pas pour commenter, ' +
         'n’attends pas qu’on te relance : c’est lui qui a lancé le rattrapage, ' +
         'et s’arrêter au premier lot revient à ne rien faire (constaté le ' +
         '12/08 : « relis 200 mails » avait produit 5 verdicts). ' +
+        'MAIS AU-DELÀ D’UNE CINQUANTAINE DE MAILS DANS LA MÊME CONVERSATION, ' +
+        'ARRÊTE-TOI ET DIS-LE. La conversation cumule tous les lots ; passé ce ' +
+        'point elle tombe en pleine boucle (constaté deux fois le 13/08, à ' +
+        '821 Ko puis 934 Ko) et le rattrapage s’interrompt sans prévenir. Un ' +
+        'gros volume se fait avec un contexte NEUF par lot — un sous-agent par ' +
+        'lot, ou /clear entre deux vagues. Mieux vaut rendre la main en ' +
+        'annonçant « 50 faits, il en reste N » que planter à 52. ' +
         'Les plus ANCIENS d’abord (ce sont eux qui encombrent la boîte). ' +
         'scope=uncertain (défaut) vise les cas douteux ; quand ils sont ' +
         'ÉPUISÉS, le tool bascule TOUT SEUL sur le reste des mails sans ' +
@@ -309,13 +316,20 @@ export function registerAssistTools(server: McpServer): void {
           .number()
           .int()
           .min(1)
-          .max(40)
-          .default(20)
+          .max(15)
+          .default(10)
           .describe(
-            'Mails par lot (cap 40, défaut 20). Le lot est AUSSI coupé au ' +
-              "poids : depuis que chaque mail porte 2 200 caractères de texte " +
-              'choisi et le contenu de ses pièces, une centaine de mails ' +
-              'dépassait la taille transportable. Demande peu et enchaîne.',
+            'Mails par lot (cap 15, défaut 10). Le lot est AUSSI coupé au ' +
+              'poids, à 30 Ko. NE DEMANDE PAS PLUS EN ESPÉRANT ALLER PLUS ' +
+              'VITE : chaque mail porte 2 200 caractères de texte choisi et le ' +
+              'contenu de ses pièces, et un lot de 40 (120 Ko) ne tient pas ' +
+              'dans une réponse — il finit dans un fichier que tu relis, donc ' +
+              'le poids revient quand même. ' +
+              'SURTOUT : la conversation CUMULE les lots. Une session tient une ' +
+              "soixantaine de mails, pas 300. Pour un gros rattrapage, un " +
+              'contexte NEUF par lot (sous-agent dédié, ou /clear entre deux ' +
+              'vagues) — sinon la session tombe en cours de route et le travail ' +
+              "s'arrête sans prévenir.",
           ),
         claimant: z
           .string()

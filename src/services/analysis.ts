@@ -155,21 +155,29 @@ export interface AnalysisBatch {
 /**
  * Taille d'un lot — en NOMBRE et surtout en OCTETS.
  *
- * INCIDENT DU 13/08 : « analyse les 300 mails prioritaires » a échoué avec
- * « The request body is not valid JSON: unexpected end of data: line 1 column
- * 821431 ». Le lot pesait 800 Ko. Cause : le lot 2 a enrichi chaque mail —
- * 2 200 caractères de corps choisi, jusqu'à 2 500 de pièces jointes, les
- * destinataires, les noms de pièces, les indices de document — sans que
- * personne ne réduise le NOMBRE de mails par lot. Cent mails d'environ 8 Ko ne
- * passent plus.
+ * INCIDENT DU 13/08, PUIS RÉCIDIVE LE MÊME JOUR. Première tentative :
+ * « analyse les 300 mails prioritaires » échoue à 821 Ko. J'ai posé un budget
+ * de 180 Ko « large sous la limite de transport » — et ça a recommencé, à
+ * 934 Ko. Le budget n'avait JAMAIS servi : un lot de 40 pèse 120 Ko, donc
+ * toujours sous 180. J'avais mis un plafond au-dessus du plafond réel, ce qui
+ * revient à n'en mettre aucun. Le chiffre n'était comparé à rien.
  *
- * Le garde-fou qui compte est le budget en octets : il tient quelle que soit
- * l'évolution future du contenu d'un mail. Le plafond en nombre n'est qu'une
- * seconde barrière.
+ * LE VRAI PLAFOND, mesuré : un résultat d'outil au-delà d'environ 25 000
+ * jetons (~85 Ko) ne tient pas dans une réponse — il part dans un fichier, que
+ * l'agent relit aussitôt, donc le poids revient dans la conversation par la
+ * fenêtre. 30 Ko laisse une marge franche sous cette limite.
+ *
+ * ET LA LIMITE QUI COMPTE VRAIMENT EST AILLEURS : la conversation CUMULE tous
+ * les lots. À ~2,5 Ko par mail lu plus autant pour le verdict rendu, une
+ * session tient une soixantaine de mails, quelle que soit la taille des lots.
+ * Aucun réglage ici ne permettra de faire 300 mails d'affilée dans une seule
+ * conversation, encore moins 17 000 : il faut un contexte neuf par lot
+ * (sous-agent, ou /clear entre deux vagues). Ces constantes empêchent
+ * seulement UN appel de faire tomber la session.
  */
-const MAX_BATCH = 40;
-/** ~180 Ko : large sous la limite de transport, et déjà beaucoup de lecture. */
-const MAX_BATCH_BYTES = 180_000;
+const MAX_BATCH = 15;
+/** ~30 Ko ≈ 8 500 jetons : marge franche sous la limite mesurée (25 000). */
+const MAX_BATCH_BYTES = 30_000;
 
 /**
  * Mails analysables : lecture du texte TENTÉE (snippet non null), pas encore
@@ -397,7 +405,7 @@ export async function nextAnalysisBatch(
   // verdict sémantique — pas la poignée qui n'a jamais été analysée du tout.
   // Garder l'ancien défaut faisait servir 5 mails là où 200 étaient demandés.
   let scope = opts.scope ?? 'relecture';
-  const limit = Math.min(Math.max(opts.limit ?? 20, 1), MAX_BATCH);
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), MAX_BATCH);
   let where = candidateWhere(scope, opts.account);
 
   // TRAITEMENT INTÉGRAL (décision utilisateur 02/08) : quand les cas douteux
