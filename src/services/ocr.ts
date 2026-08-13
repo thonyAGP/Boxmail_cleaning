@@ -247,8 +247,11 @@ function mediane(valeurs: number[]): number | null {
 
 /**
  * Rend UNE page d'un PDF en image, dans `dir`. Renvoie le chemin du fichier
- * produit, ou null si la page n'existe pas (pdftoppm ne produit alors rien —
- * c'est ainsi qu'on découvre la fin du document sans pdfinfo).
+ * produit, ou null si la page n'existe pas — pdftoppm SORT EN ERREUR au-delà
+ * de la dernière page (« Wrong page range given », constaté en production le
+ * 13/08 : la première version supposait qu'il ne produisait juste rien, et la
+ * pièce entière était jetée avec les pages déjà lues). Cette erreur-là est
+ * donc la fin normale du document ; les autres remontent.
  */
 async function rendrePage(
   pdfPath: string,
@@ -269,7 +272,12 @@ async function rendrePage(
     pdfPath,
     racine,
   ];
-  await lancer('pdftoppm', args, TIMEOUT_PDFTOPPM_MS);
+  try {
+    await lancer('pdftoppm', args, TIMEOUT_PDFTOPPM_MS);
+  } catch (err) {
+    if (/wrong page range/i.test(err instanceof Error ? err.message : String(err))) return null;
+    throw err;
+  }
   const prefixe = `p${page}-`;
   const fichiers = (await readdir(dir)).filter((f) => f.startsWith(prefixe));
   return fichiers.length ? join(dir, fichiers[0]) : null;
