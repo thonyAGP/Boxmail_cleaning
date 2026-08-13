@@ -160,6 +160,19 @@ model Message {
   attachmentText     String?
   attachmentKind     String?
   attachmentTextAt   DateTime?
+  // Provenance du texte des pièces (13/08) : 'ocr' = lu par tesseract sur un
+  // scan, null = couche texte native du document. Un montant OCRisé n'a PAS la
+  // fiabilité d'une couche texte — l'aval doit pouvoir le dire.
+  attachmentTextSource String?
+  // Idempotence du job OCR (13/08). Posés après CHAQUE tentative ABOUTIE
+  // (texte lisible OU charabia — dans ce cas kind reste 'scan'), JAMAIS sur
+  // erreur technique (timeout, IMAP) pour que le mail soit repris plus tard.
+  // ocrVersion porte OCR_PIPELINE_VERSION (services/ocr.ts) : changer le DPI,
+  // les langues ou les seuils = incrémenter la constante, et les scans déjà
+  // tentés redeviennent éligibles d'eux-mêmes. Distincts d'attachmentTextAt
+  // (première extraction, posée aussi sur les scans).
+  ocrAt              DateTime?
+  ocrVersion         Int?
   aiSummary          String?
   aiAction           String?   // reply | pay | read | archive | none
   aiVerdictAt        DateTime?
