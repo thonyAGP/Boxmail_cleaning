@@ -166,10 +166,17 @@ valid JSON ». Le socle d'une session pèse déjà ~600 Ko de définitions de
 connecteurs (Rentila ~110 outils, Vercel ~40 ; Boxmail 63 Ko mesurés = PAS la
 cause). Aucune taille de lot n'y change rien : contexte NEUF par lot.
 
+**OCR des scans LIVRÉ et EN COURS sur le serveur** (13/08, § 38 du journal) :
+tesseract+poppler installés sur le VPS, worker de fond (tick 2 min) + backfill
+lancé sur les ~920 scans. Pilote validé : 93 % lisibles, ~15 s/doc,
+échantillon sans faux « lisible ». Suivi : `GET /api/ocr/status` (ou la ligne
+Paramètres → Compréhension des mails). Provenance `attachmentTextSource='ocr'`;
+`OCR_PIPELINE_VERSION` à incrémenter pour retraiter. Le backfill peut mourir
+sans dommage (marqueurs par mail) — le worker reprend seul.
+
 **À faire** :
-- **Goulot n° 1 : lire les scans** (PDF sans couche texte, polices brouillées).
-  Trois analyses indépendantes ont buté dessus le 13/08 — sans OCR, les
-  montants restent inconnus. Bloque la vue documentaire et le fiscal.
+- Vérifier la fin du backfill OCR (~820 restants au départ) ; sonder 5-10
+  textes de plus ; les `requeued` repris par le rattrapage horaire.
 - Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
   sans créer de dossier ; écran des doublons de pièces.
 - Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
