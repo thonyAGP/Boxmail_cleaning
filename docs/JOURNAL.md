@@ -5,6 +5,23 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 14/08 (40) — Nuit vérifiée : backfill OCR terminé, rattrapage à plein régime
+
+Point du matin (11 h 15 UTC), rien modifié sur le serveur :
+
+- **Backfill OCR TERMINÉ** hier à 18 h 37 UTC (~3 h 45 comme prévu) :
+  976 scans traités, **811 lisibles (83 %)**, 164 restés charabia — un peu
+  sous le pilote (93 %) : la fin de la file portait plus de photos/TIF
+  dégradés. 41 requeues au total. Sondé les 3 derniers textes : lisibles
+  (bon de retour La Redoute, recommandé Solly Azar). Chantier OCR CLOS.
+- **Rattrapage à plein régime toute la nuit** : 1 119 verdicts (+752 depuis
+  hier 15 h 38 UTC ≈ 40/h, exactement le débit attendu), dernier posé à
+  10 h 30 UTC. Reste **16 101 à relire** ⇒ ~17 jours à ce rythme.
+- **Piège de mesure évité** : un `COUNT(*)` naïf des messages sans verdict
+  donne 35 135 — le vrai vivier suit `candidateWhere` d'analysis.ts
+  (hors corbeille/spam/sortants/supprimés, snippet non null) : 16 101,
+  cohérent avec les 16 905 d'avant-hier. Ne jamais publier le count naïf.
+
 ## 13/08 (39) — Point de contrôle : OCR et rattrapage vérifiés de bout en bout
 
 Session de vérification pure (rien modifié sur le serveur). État à 15 h 55 UTC :

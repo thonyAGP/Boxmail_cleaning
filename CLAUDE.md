@@ -145,7 +145,8 @@ sémantique immuable + projections, 21 consommateurs basculés. Cadre :
 **Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
 `trig_01SLhekXbwP85yQTnP32Aaof`, toutes les heures à :17, ~40 mails/passage,
 vérifiée de bout en bout le 13/08. Ne PAS lui redonner d'autres connecteurs
-que Boxmail. Repère 13/08 15 h 38 UTC : **367 verdicts**, ~28-40/h.
+que Boxmail. Repère 14/08 11 h 15 UTC : **1 119 verdicts, 16 101 à relire**
+(scope réel : candidateWhere d'analysis.ts, PAS un count naïf), ~40/h.
 
 **À LA REPRISE** : compter `MailVerdict` et la date du dernier. Rien depuis
 2 h ⇒ lire JOURNAL § 13/08 (37) AVANT de crier à la panne (retard ~9 min).
@@ -156,15 +157,12 @@ d'une session pèse ~600 Ko de connecteurs (Rentila ~110 outils, Vercel ~40 ;
 Boxmail 63 Ko = PAS la cause). Contexte NEUF par lot, aucun réglage n'y
 change rien.
 
-**OCR : boucle complète VÉRIFIÉE le 13/08 16 h UTC (§ 39)** : 216/~929 scans
-tentés, 194 lisibles (90 %), 33 requeues dont 3 déjà ré-analysés. Backfill
-pas fini : ~713 restants ≈ 3 h. Qualité sondée : bonne. Suivi par SQL sur
-`Message` (`attachmentKind='scan'`, `ocrAt`, `attachmentTextSource`) ;
-`OCR_PIPELINE_VERSION` à incrémenter pour retraiter.
+**OCR : backfill TERMINÉ le 13/08 18 h 37 UTC** (vérifié 14/08, § 39) :
+976 scans traités, 811 lisibles (83 %), 164 charabia (cul-de-sac assumé),
+41 requeues. Qualité sondée : bonne. `OCR_PIPELINE_VERSION` à incrémenter
+pour retraiter. Ce chantier est CLOS.
 
 **À faire** :
-- Confirmer la FIN du backfill OCR (~19 h UTC) : `ocrAt IS NULL` sur les
-  scans ≈ 0 ; re-sonder 2-3 textes.
 - Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
   sans créer de dossier ; écran des doublons de pièces.
 - Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
