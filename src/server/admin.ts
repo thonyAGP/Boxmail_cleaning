@@ -2,6 +2,10 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { isIP } from 'node:net';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { ImapFlow } from 'imapflow';
+import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import {
@@ -9,6 +13,7 @@ import {
   getAccountRecord,
   resolveAccount,
   upsertAccount,
+  upsertImapAccount,
   renameAccount,
   removeAccount,
 } from '../services/accounts.js';
@@ -256,6 +261,86 @@ function requireSession(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   next();
+}
+
+// --- Enrôlement IMAP : gardes réseau et messages d'erreur ---------------------
+
+/** IP privée/locale (v4 ou v6) — le serveur ne doit pas se connecter dessus. */
+function ipInterdite(ip: string): boolean {
+  if (isIP(ip) === 4) {
+    const [a, b] = ip.split('.').map(Number);
+    return (
+      a === 127 ||
+      a === 10 ||
+      a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      a >= 224
+    );
+  }
+  const v6 = ip.toLowerCase();
+  return (
+    v6 === '::1' ||
+    v6 === '::' ||
+    v6.startsWith('fc') ||
+    v6.startsWith('fd') ||
+    v6.startsWith('fe80') ||
+    v6.startsWith('::ffff:127.') ||
+    v6.startsWith('::ffff:10.') ||
+    v6.startsWith('::ffff:192.168.')
+  );
+}
+
+/**
+ * Garde SSRF : un hôte saisi dans le formulaire fait ouvrir des connexions TCP
+ * par le serveur — refuser tout ce qui pointe vers la machine ou le réseau
+ * privé (littéral OU résolution DNS). Renvoie la raison du refus, ou null.
+ */
+async function hoteRefuse(host: string): Promise<string | null> {
+  if (!host || /\s/.test(host) || host.length > 253) return 'nom de serveur invalide';
+  const nu = host.replace(/^\[|\]$/g, '');
+  if (nu === 'localhost' || nu.endsWith('.local') || nu.endsWith('.internal')) {
+    return 'adresse locale';
+  }
+  if (isIP(nu)) {
+    return ipInterdite(nu) ? 'adresse IP privée ou locale' : null;
+  }
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(nu)) {
+    return 'nom de serveur invalide';
+  }
+  try {
+    const found = await dnsLookup(nu, { all: true });
+    for (const { address } of found) {
+      if (ipInterdite(address)) return 'ce nom pointe vers une adresse privée ou locale';
+    }
+  } catch {
+    return 'nom introuvable (DNS)';
+  }
+  return null;
+}
+
+/**
+ * Message d'erreur SEMANTIQUE pour l'utilisateur : distingue identifiants
+ * refusés / TLS / serveur injoignable, sans jamais recopier la réponse brute
+ * du serveur (qui peut contenir des détails de protocole).
+ */
+function messageConnexion(err: unknown, proto: 'IMAP' | 'SMTP'): string {
+  const e = err as { message?: string; code?: string; authenticationFailed?: boolean; responseText?: string };
+  const texte = `${e?.code ?? ''} ${e?.message ?? ''}`.toLowerCase();
+  if (e?.authenticationFailed || /auth|535|login|credentials|password/.test(texte)) {
+    return `identifiants refusés par le serveur ${proto} (vérifie l'adresse et le mot de passe).`;
+  }
+  if (/tls|ssl|certificate|handshake/.test(texte)) {
+    return `échec de la négociation TLS avec le serveur ${proto} (vérifie le port).`;
+  }
+  if (/enotfound|eai_again/.test(texte)) {
+    return `serveur ${proto} introuvable (vérifie le nom du serveur).`;
+  }
+  if (/etimedout|timeout|econnrefused|econnreset|ehostunreach|greeting/.test(texte)) {
+    return `serveur ${proto} injoignable (vérifie le nom du serveur et le port).`;
+  }
+  return `erreur de connexion au serveur ${proto}.`;
 }
 
 export function buildAdminRouter(): Router {
@@ -3204,6 +3289,131 @@ export function buildAdminRouter(): Router {
         };
       });
       res.json({ jobId: job.id, replacing: existing?.username ?? null });
+    }),
+  );
+
+  // --- Enrôlement d'un compte IMAP par mot de passe (OVH…) ----------------------
+  // Chantier 14/08 (.chantier/2026-08-14-comptes-imap-mot-de-passe). Le mot de
+  // passe transite UNE fois en HTTPS, n'est ni loggé ni renvoyé, et n'est
+  // stocké (chiffré) qu'après un test COMPLET : IMAP (connexion + LIST + INBOX)
+  // ET SMTP (verify) — un compte semi-fonctionnel n'entre pas en production.
+  router.post(
+    '/enroll/imap',
+    guard(async (req, res) => {
+      const account = String(req.body?.account ?? '').trim();
+      const email = String(req.body?.email ?? '').trim();
+      const password = String(req.body?.password ?? '');
+      const imapHost = String(req.body?.imapHost ?? '').trim().toLowerCase();
+      const smtpHost = String(req.body?.smtpHost ?? '').trim().toLowerCase();
+      const imapPort = Number(req.body?.imapPort ?? 993);
+      const smtpPort = Number(req.body?.smtpPort ?? 465);
+      const imapUser = String(req.body?.imapUser ?? '').trim() || email;
+
+      if (!/^[a-z0-9_-]{1,40}$/i.test(account)) {
+        res.status(400).json({ error: 'Nom invalide : lettres, chiffres, tirets et underscores uniquement.' });
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        res.status(400).json({ error: 'Adresse email invalide.' });
+        return;
+      }
+      if (!password) {
+        res.status(400).json({ error: 'Mot de passe requis.' });
+        return;
+      }
+      // Ports limités aux modes chiffrés (contre-revue : jamais de port 25,
+      // jamais de mot de passe sans TLS).
+      if (![993, 143].includes(imapPort)) {
+        res.status(400).json({ error: 'Port IMAP invalide (993 ou 143 uniquement).' });
+        return;
+      }
+      if (![465, 587].includes(smtpPort)) {
+        res.status(400).json({ error: 'Port SMTP invalide (465 ou 587 uniquement).' });
+        return;
+      }
+      for (const h of [imapHost, smtpHost]) {
+        const refus = await hoteRefuse(h);
+        if (refus) {
+          res.status(400).json({ error: `Serveur « ${h} » refusé : ${refus}` });
+          return;
+        }
+      }
+      // Anti-écrasement (contre-revue) : jamais de conversion silencieuse
+      // OAuth → password. Vérifié AVANT les tests pour répondre vite.
+      const existing = await getAccountRecord(account);
+      if (existing && existing.authType !== 'password') {
+        res.status(409).json({
+          error: `Le nom « ${account} » désigne déjà un compte Outlook (OAuth). Choisis un autre nom.`,
+        });
+        return;
+      }
+
+      const imapSecure = imapPort === 993;
+      const smtpSecure = smtpPort === 465;
+
+      // 1. Test IMAP : connexion, LIST, ouverture d'INBOX en lecture seule.
+      try {
+        const testClient = new ImapFlow({
+          host: imapHost,
+          port: imapPort,
+          secure: imapSecure,
+          auth: { user: imapUser, pass: password },
+          logger: false,
+          connectionTimeout: 15_000,
+          greetingTimeout: 15_000,
+        });
+        await testClient.connect();
+        try {
+          await testClient.list();
+          const lock = await testClient.getMailboxLock('INBOX', { readOnly: true });
+          lock.release();
+        } finally {
+          await testClient.logout().catch(() => {});
+        }
+      } catch (err) {
+        res.status(400).json({ error: `Connexion IMAP impossible — ${messageConnexion(err, 'IMAP')}` });
+        return;
+      }
+
+      // 2. Test SMTP : verify() authentifie sans envoyer de mail.
+      try {
+        const transport = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure: smtpSecure,
+          ...(smtpSecure ? {} : { requireTLS: true }),
+          auth: { user: imapUser, pass: password },
+          connectionTimeout: 15_000,
+          greetingTimeout: 15_000,
+        });
+        try {
+          await transport.verify();
+        } finally {
+          transport.close();
+        }
+      } catch (err) {
+        res.status(400).json({
+          error:
+            `Le serveur IMAP accepte la connexion mais pas le serveur d'ENVOI (SMTP) — ` +
+            `${messageConnexion(err, 'SMTP')} Rien n'a été enregistré : une boîte doit ` +
+            `savoir recevoir ET envoyer.`,
+        });
+        return;
+      }
+
+      // 3. Tout est vérifié : stockage (mot de passe chiffré AES-256-GCM).
+      await upsertImapAccount(account, {
+        username: email,
+        password,
+        imapHost,
+        imapPort,
+        imapSecure,
+        smtpHost,
+        smtpPort,
+        smtpSecure,
+        ...(imapUser !== email ? { imapUser, smtpUser: imapUser } : {}),
+      });
+      res.json({ ok: true, account, username: email, replaced: Boolean(existing) });
     }),
   );
 

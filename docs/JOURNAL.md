@@ -5,6 +5,39 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 14/08 (41) — Rattrapage ×4 par sous-agents + comptes IMAP par mot de passe (OVH)
+
+**1. Rattrapage accéléré ×4** (demande : « 17 jours c'est super long »). Le
+prompt du déclencheur claude.ai a été réécrit en ORCHESTRATEUR : il ne juge
+plus aucun mail lui-même, il lance jusqu'à 4 sous-agents en séquence (tool
+Task, dispo dans la session Cowork), chacun avec un contexte neuf qui juge
+~40 mails et rend UNE ligne (« jugés=n restants=m etat=ok|vide|note »).
+Repli automatique vers l'ancien mode direct (40 max) si les sous-agents sont
+indisponibles. Testé par run manuel : **+263 verdicts en 49 min** (run manuel
++ passage planifié de 15 h 17) contre ~40 avant — mécanique PROUVÉE. Débit
+~160/h ⇒ fin du rattrapage ~4 jours. Rappel utile : le serveur sert les mails
+PAR PRIORITÉ (argent, échéances, réponses attendues d'abord) — les oublis
+importants remontent dans les premiers jours, pas à la fin.
+
+**2. Comptes IMAP par mot de passe** (boîte lb2i chez OVH — POP3 écarté :
+incompatible dossiers/corbeille/soft delete). Chantier niveau ÉLEVÉ
+(`.chantier/2026-08-14-comptes-imap-mot-de-passe/change.md`), contre-revue
+ChatGPT en protocole aveugle (`.consult/2026-08-14-comptes-imap/synthese.md`,
+verdict : architecture confirmée + amendements intégrés : test SMTP `verify()`
+avant stockage, 409 anti-écrasement OAuth→password, users/secure explicites,
+garde SSRF, ports 993/143/465/587 seulement, erreurs sémantiques).
+Livré : `authType`/`passwordBlob` (AES-256-GCM, même module que les tokens)
++ host/port/secure PAR COMPTE dans accounts.json (zéro migration, absent =
+OAuth) ; branches password aux 3 points de contact (pool IMAP, SMTP avec
+requireTLS sur 587, tokenStatus honnête) ; garde explicite `accessTokenFor` ;
+`POST /api/enroll/imap` qui teste IMAP (connect+LIST+INBOX) ET SMTP (verify)
+avant tout stockage ; formulaire dans la modale d'ajout, préréglage
+`ssl0.ovh.net` 993/465. Preuves : tsc OK, 409/SSRF/DNS/port testés en local,
+vrais identifiants refusés par le vrai OVH → 400 propre et accounts.json
+octet pour octet intact, 8/8 preuves unitaires (aller-retour chiffrement,
+legacy intact). Reste : l'enrôlement réel lb2i par Anthony (validation de
+bout en bout), puis 24 h d'observation de la sync du parc.
+
 ## 14/08 (40) — Nuit vérifiée : backfill OCR terminé, rattrapage à plein régime
 
 Point du matin (11 h 15 UTC), rien modifié sur le serveur :

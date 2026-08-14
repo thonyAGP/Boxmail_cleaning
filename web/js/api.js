@@ -132,6 +132,7 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/sync`, { mode }),
   enroll: (account) => request('POST', '/enroll', { account }),
   enrollStart: (account) => request('POST', '/enroll/start', { account }),
+  enrollImap: (payload) => request('POST', '/enroll/imap', payload),
   tasks: () => request('GET', '/tasks'),
   taskCreate: (payload) => request('POST', '/tasks', payload),
   taskAction: (id, action) => request('POST', `/tasks/${id}/${action}`),

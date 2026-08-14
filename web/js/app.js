@@ -4128,6 +4128,9 @@ function openEnrollModal() {
         (« Utiliser un autre compte » pour une boîte non connectée). Le mot de
         passe ne passe jamais par cette page.
         <a href="#" id="enroll-code-method">Méthode alternative par code</a></p>
+      <p class="muted" style="margin-top:6px; font-size:12.5px">
+        📮 Boîte hébergée ailleurs que chez Microsoft (OVH, autre fournisseur) ?
+        <a href="#" id="enroll-imap-method">Ajouter un compte IMAP</a></p>
       <div id="enroll-zone"></div>
     </div>
     <div class="modal-foot"><button class="btn" id="enroll-cancel">Fermer</button></div>
@@ -4142,6 +4145,10 @@ function openEnrollModal() {
     method = 'code';
     $('#enroll-form').querySelector('button').textContent = 'Obtenir le code';
     e.target.remove();
+  });
+  $('#enroll-imap-method').addEventListener('click', (e) => {
+    e.preventDefault();
+    showImapEnrollForm();
   });
 
   // Succès commun aux deux méthodes (popup et code).
@@ -4177,6 +4184,65 @@ function openEnrollModal() {
       else location.hash = target; // hashchange déclenche route()
     });
   };
+
+  // Formulaire compte IMAP classique (OVH…) — mot de passe envoyé UNE fois en
+  // HTTPS au serveur, qui teste réception ET envoi avant de l'enregistrer
+  // (chiffré). Rien n'est stocké si le test échoue.
+  function showImapEnrollForm() {
+    const inp =
+      'border:1px solid var(--border); border-radius:8px; padding:9px 12px; width:100%; box-sizing:border-box';
+    $('#modal-body').innerHTML = `
+      <p>Boîte <strong>OVH</strong> ou d'un autre fournisseur classique (connexion IMAP
+      par mot de passe) :</p>
+      <form id="imap-form" style="display:flex; flex-direction:column; gap:10px; margin-top:12px">
+        <input type="text" id="imap-name" placeholder="nom court (ex. lb2i)" pattern="[A-Za-z0-9_-]{1,40}" style="${inp}" required>
+        <input type="email" id="imap-email" placeholder="adresse email complète (ex. contact@lb2i.com)" style="${inp}" required>
+        <input type="password" id="imap-password" placeholder="mot de passe de la boîte" style="${inp}" autocomplete="new-password" required>
+        <details id="imap-advanced">
+          <summary class="muted" style="cursor:pointer; font-size:12.5px">Paramètres serveur (préréglés pour OVH)</summary>
+          <div style="display:grid; grid-template-columns: 1fr 110px; gap:8px; margin-top:8px">
+            <input type="text" id="imap-host" value="ssl0.ovh.net" placeholder="serveur IMAP (réception)" style="${inp}">
+            <select id="imap-port" style="${inp}"><option value="993" selected>993 (SSL)</option><option value="143">143 (STARTTLS)</option></select>
+            <input type="text" id="smtp-host" value="ssl0.ovh.net" placeholder="serveur SMTP (envoi)" style="${inp}">
+            <select id="smtp-port" style="${inp}"><option value="465" selected>465 (SSL)</option><option value="587">587 (STARTTLS)</option></select>
+            <input type="text" id="imap-user" placeholder="identifiant si différent de l'adresse (rare)" style="${inp}; grid-column:1 / -1">
+          </div>
+        </details>
+        <button type="submit" class="btn btn-primary">Tester et ajouter la boîte</button>
+      </form>
+      <p class="muted" style="margin-top:10px; font-size:12.5px">
+        La connexion (réception <em>et</em> envoi) est testée avant tout enregistrement ;
+        le mot de passe est chiffré sur le serveur, comme les autres comptes.</p>
+      <div id="enroll-zone"></div>`;
+    $('#imap-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const zone = $('#enroll-zone');
+      const name = $('#imap-name').value.trim();
+      const btn = $('#imap-form').querySelector('button[type=submit]');
+      btn.disabled = true;
+      zone.innerHTML = `<div class="empty"><span class="spinner"></span>Test de la connexion
+        (réception puis envoi)… jusqu'à 30 secondes.</div>`;
+      try {
+        const r = await api.enrollImap({
+          account: name,
+          email: $('#imap-email').value.trim(),
+          password: $('#imap-password').value,
+          imapHost: $('#imap-host').value.trim(),
+          imapPort: Number($('#imap-port').value),
+          smtpHost: $('#smtp-host').value.trim(),
+          smtpPort: Number($('#smtp-port').value),
+          imapUser: $('#imap-user').value.trim(),
+        });
+        showEnrollSuccess(r, name);
+      } catch (err) {
+        btn.disabled = false;
+        zone.innerHTML = `<div class="notice warn">❌ ${esc(err.message)}</div>
+          <p class="muted" style="font-size:12px">Rien n'a été enregistré — corrige et réessaie.
+          Chez OVH, l'identifiant est l'adresse email complète et le mot de passe celui de la
+          boîte (pas celui du compte OVH).</p>`;
+      }
+    });
+  }
 
   $('#enroll-form').addEventListener('submit', async (e) => {
     e.preventDefault();

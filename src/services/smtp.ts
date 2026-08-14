@@ -1,13 +1,17 @@
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { config } from '../config.js';
-import { accessTokenFor, type AccountRecord } from './accounts.js';
+import { accessTokenFor, imapPasswordOf, isPasswordAccount, type AccountRecord } from './accounts.js';
 
 /**
- * Envoi SMTP via XOAUTH2 (L5.3). Activé par défaut depuis le rattrapage
- * maquette (07/2026) — ENABLE_SMTP_SEND=false pour couper. Garde-fous côté
- * appelants : confirmation explicite avant envoi, journalisation complète,
- * jamais d'envoi automatique.
+ * Envoi SMTP (L5.3) : XOAUTH2 pour les comptes Outlook, mot de passe pour les
+ * comptes IMAP classiques (OVH…, 14/08 — host/port/secure stockés par compte,
+ * STARTTLS rendu OBLIGATOIRE via requireTLS quand la connexion démarre en
+ * clair : un mot de passe ne part jamais sur une connexion non chiffrée).
+ * Activé par défaut depuis le rattrapage maquette (07/2026) —
+ * ENABLE_SMTP_SEND=false pour couper. Garde-fous côté appelants :
+ * confirmation explicite avant envoi, journalisation complète, jamais
+ * d'envoi automatique.
  *
  * Le message est composé UNE fois (RFC822 brut) : le même contenu part par
  * SMTP et est déposé dans « Éléments envoyés » (Outlook ne le fait pas tout
@@ -83,20 +87,35 @@ export async function sendEmail(
   if (msg.to.length === 0) throw new Error('Aucun destinataire.');
   if (!msg.subject.trim()) throw new Error('Objet vide.');
 
-  const { accessToken, username } = await accessTokenFor(rec);
+  let transport: nodemailer.Transporter;
+  let username: string;
+  if (isPasswordAccount(rec)) {
+    username = rec.username;
+    const secure = rec.smtpSecure ?? false;
+    transport = nodemailer.createTransport({
+      host: rec.smtpHost ?? config.smtp.host,
+      port: rec.smtpPort ?? config.smtp.port,
+      secure,
+      // Départ en clair (587) → l'upgrade STARTTLS est obligatoire.
+      ...(secure ? {} : { requireTLS: true }),
+      auth: { user: rec.smtpUser ?? rec.username, pass: imapPasswordOf(rec) },
+    });
+  } else {
+    const oauth = await accessTokenFor(rec);
+    username = oauth.username;
+    transport = nodemailer.createTransport({
+      host: config.smtp.host,
+      port: config.smtp.port,
+      secure: false, // STARTTLS sur 587
+      auth: {
+        type: 'OAuth2',
+        user: username,
+        accessToken: oauth.accessToken,
+      },
+    });
+  }
   const raw = await composeMessage(username, msg);
   const recipients = [...msg.to, ...(msg.cc ?? [])];
-
-  const transport = nodemailer.createTransport({
-    host: config.smtp.host,
-    port: config.smtp.port,
-    secure: false, // STARTTLS sur 587
-    auth: {
-      type: 'OAuth2',
-      user: username,
-      accessToken,
-    },
-  });
   await transport.sendMail({
     envelope: { from: username, to: recipients },
     raw,

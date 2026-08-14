@@ -136,31 +136,34 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
 chantier : ses boîtes sont des archives non structurées, pas des boîtes
-sales. Capacité : non-sujet. `docs/PLAN-ARCHIVE.md` est CLASSÉ.
+sales. `docs/PLAN-ARCHIVE.md` est CLASSÉ.
 
 **Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5) : verdict
-sémantique immuable + projections, 21 consommateurs basculés. Cadre :
-`docs/PLAN-ASSISTANT.md`, `docs/CONTRAT-EXTRACTION.md`.
+sémantique immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 
-**Le rattrapage tourne TOUT SEUL** : tâche planifiée claude.ai
-`trig_01SLhekXbwP85yQTnP32Aaof`, toutes les heures à :17, ~40 mails/passage,
-vérifiée de bout en bout le 13/08. Ne PAS lui redonner d'autres connecteurs
-que Boxmail. Repère 14/08 11 h 15 UTC : **1 119 verdicts, 16 101 à relire**
-(scope réel : candidateWhere d'analysis.ts, PAS un count naïf), ~40/h.
+**Le rattrapage tourne TOUT SEUL, ×4 depuis le 14/08** : tâche planifiée
+claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), réécrite en ORCHESTRATEUR +
+4 sous-agents séquentiels (~160 mails/h, repli mode direct 40 si Task
+indisponible). Prouvé : +263 verdicts en 49 min. Ne PAS lui redonner d'autres
+connecteurs que Boxmail. Repère 14/08 15 h 47 UTC : **1 540 verdicts**,
+vivier ~15 800 (compter via candidateWhere d'analysis.ts, PAS un count
+naïf) ⇒ fin ~4 jours.
 
-**À LA REPRISE** : compter `MailVerdict` et la date du dernier. Rien depuis
-2 h ⇒ lire JOURNAL § 13/08 (37) AVANT de crier à la panne (retard ~9 min).
+**À LA REPRISE** : compter `MailVerdict` + date du dernier. Rien depuis 2 h ⇒
+JOURNAL § 13/08 (37) AVANT de crier à la panne (retard ~9 min).
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
-elle CUMULE les lots et meurt (« request body is not valid JSON »). Le socle
-d'une session pèse ~600 Ko de connecteurs (Rentila ~110 outils, Vercel ~40 ;
-Boxmail 63 Ko = PAS la cause). Contexte NEUF par lot, aucun réglage n'y
-change rien.
+elle CUMULE les lots et meurt (« request body is not valid JSON »).
+Contexte NEUF par lot (d'où les sous-agents), aucun réglage n'y change rien.
 
-**OCR : backfill TERMINÉ le 13/08 18 h 37 UTC** (vérifié 14/08, § 39) :
-976 scans traités, 811 lisibles (83 %), 164 charabia (cul-de-sac assumé),
-41 requeues. Qualité sondée : bonne. `OCR_PIPELINE_VERSION` à incrémenter
-pour retraiter. Ce chantier est CLOS.
+**OCR : CLOS le 13/08** (§ 39-40) : 976 scans traités, 811 lisibles (83 %),
+164 charabia assumés. `OCR_PIPELINE_VERSION` à incrémenter pour retraiter.
+
+**Comptes IMAP par mot de passe LIVRÉS le 14/08** (§ 41) : `authType:
+'password'` + host/port/secure par compte (absent = OAuth, zéro migration),
+`POST /api/enroll/imap` teste IMAP ET SMTP avant stockage, formulaire
+préréglé OVH (`ssl0.ovh.net` 993/465). Cadrage : `.chantier/2026-08-14-…`.
+ATTENTE : enrôlement réel lb2i par Anthony, puis 24 h d'observation.
 
 **À faire** :
 - Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
@@ -170,6 +173,5 @@ pour retraiter. Ce chantier est CLOS.
   CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
 
-**Déjà tranché par lui le 13/08, ne pas relancer** : IBAN divergents du
-règlement Cappelaere (25 000 €) — validé, alerte close. Horaire du job
-(:17) : indifférent.
+**Déjà tranché par lui le 13/08** : IBAN divergents du règlement Cappelaere
+(25 000 €) — validé, alerte close. Horaire du job (:17) : indifférent.

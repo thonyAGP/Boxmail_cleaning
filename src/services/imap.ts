@@ -2,12 +2,19 @@ import { ImapFlow, type ListResponse, type SearchObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { accessTokenFor, type AccountRecord } from './accounts.js';
+import { accessTokenFor, imapPasswordOf, isPasswordAccount, type AccountRecord } from './accounts.js';
 
 /**
- * Couche IMAP (imapflow + XOAUTH2). Un pool d'une connexion par compte actif ;
+ * Couche IMAP (imapflow). Un pool d'une connexion par compte actif ;
  * la connexion est recréée quand l'access token approche de l'expiration ou
  * que la socket n'est plus utilisable.
+ *
+ * Deux modes d'authentification, résolus ICI et nulle part ailleurs :
+ *  - OAuth (Outlook historique) : XOAUTH2, host/port globaux de la config ;
+ *  - mot de passe (OVH…, 14/08) : LOGIN, host/port/secure stockés PAR compte,
+ *    mot de passe déchiffré au moment de la connexion, jamais persisté en
+ *    clair. Le recyclage du pool garde la même politique (~50 min) pour tous
+ *    les comptes : c'est une propriété du pool, pas du type d'authentification.
  *
  * Toutes les opérations verrouillent la mailbox le temps de la commande.
  */
@@ -109,26 +116,38 @@ class ImapService {
       this.pool.delete(rec.account);
     }
 
-    const { accessToken, username, expiresOn } = await accessTokenFor(rec);
-    const client = new ImapFlow({
-      host: config.imap.host,
-      port: config.imap.port,
-      secure: true,
-      auth: { user: username, accessToken },
-      logger: false,
-      // Ne pas garder d'IDLE ouvert : connexions courtes déclenchées à la demande.
-      disableAutoIdle: true,
-    });
+    let client: ImapFlow;
+    let expiresAt: number;
+    if (isPasswordAccount(rec)) {
+      client = new ImapFlow({
+        host: rec.imapHost ?? config.imap.host,
+        port: rec.imapPort ?? config.imap.port,
+        secure: rec.imapSecure ?? true,
+        auth: { user: rec.imapUser ?? rec.username, pass: imapPasswordOf(rec) },
+        logger: false,
+        disableAutoIdle: true,
+      });
+      expiresAt = Date.now() + 50 * 60_000;
+    } else {
+      const { accessToken, username, expiresOn } = await accessTokenFor(rec);
+      client = new ImapFlow({
+        host: config.imap.host,
+        port: config.imap.port,
+        secure: true,
+        auth: { user: username, accessToken },
+        logger: false,
+        // Ne pas garder d'IDLE ouvert : connexions courtes déclenchées à la demande.
+        disableAutoIdle: true,
+      });
+      expiresAt = expiresOn ? expiresOn.getTime() : Date.now() + 50 * 60_000;
+    }
 
     client.on('error', (err) => {
       logger.warn('erreur socket IMAP', { account: rec.account, error: (err as Error).message });
     });
 
     await client.connect();
-    this.pool.set(rec.account, {
-      client,
-      expiresAt: expiresOn ? expiresOn.getTime() : Date.now() + 50 * 60_000,
-    });
+    this.pool.set(rec.account, { client, expiresAt });
     logger.debug('connexion IMAP établie', { account: rec.account });
     return client;
   }
