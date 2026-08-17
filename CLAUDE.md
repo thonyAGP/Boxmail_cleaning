@@ -145,9 +145,9 @@ sémantique immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), réécrite en ORCHESTRATEUR +
 4 sous-agents séquentiels (~160 mails/h, repli mode direct 40 si Task
 indisponible). Prouvé : +263 verdicts en 49 min. Ne PAS lui redonner d'autres
-connecteurs que Boxmail. Repère 17/08 08 h 21 UTC : **13 081 verdicts,
-4 140 à relire** (~4 300/jour) ⇒ fin le 18/08. Compter le vivier via
-candidateWhere d'analysis.ts, PAS un count naïf.
+connecteurs que Boxmail. Repère 17/08 10 h 15 UTC : **13 436 verdicts,
+6 185 à relire** (dont 2 400 lb2i, rendus analysables ce jour) ⇒ fin ~19/08.
+Compter le vivier via candidateWhere d'analysis.ts, PAS un count naïf.
 
 **À LA REPRISE** : compter `MailVerdict` + date du dernier. ⚠️ Le job est
 passé en **claude-sonnet-5** le 17/08 (forfait en limite) — le REPASSER en
