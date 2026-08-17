@@ -149,7 +149,9 @@ connecteurs que Boxmail. Repère 17/08 08 h 21 UTC : **13 081 verdicts,
 4 140 à relire** (~4 300/jour) ⇒ fin le 18/08. Compter le vivier via
 candidateWhere d'analysis.ts, PAS un count naïf.
 
-**À LA REPRISE** : compter `MailVerdict` + date du dernier.
+**À LA REPRISE** : compter `MailVerdict` + date du dernier. ⚠️ Le job est
+passé en **claude-sonnet-5** le 17/08 (forfait en limite) — le REPASSER en
+Opus/Fable dès le 18/08 si la qualité des verdicts a baissé.
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
 elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
@@ -157,13 +159,10 @@ elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
 
 **OCR : CLOS le 13/08** (§ 39-40) : 811/976 scans lisibles (83 %).
 
-**Comptes IMAP par mot de passe LIVRÉS le 14/08** (§ 41) : `authType:
-'password'` + host/port/secure par compte (absent = OAuth, zéro migration),
-`POST /api/enroll/imap` teste IMAP ET SMTP avant stockage, formulaire
-préréglé OVH. Cadrage : `.chantier/2026-08-14-…`. ATTENTE au 17/08 : lb2i
-PAS ENCORE enrôlé — c'est à LUI de le faire dans l'interface, ne pas
-re-livrer. Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR (depuis le 06/08),
-aucune sync en échec : ne pas crier à la régression.
+**Comptes IMAP par mot de passe (§ 41-42)** : `authType:'password'` +
+host/port/secure par compte (absent = OAuth), enrôlement testé IMAP+SMTP
+avant stockage. **lb2i VALIDÉ le 17/08** (ssl0.ovh.net, 5 254 mails) —
+chantier clos. Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
 
 **À faire** :
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans

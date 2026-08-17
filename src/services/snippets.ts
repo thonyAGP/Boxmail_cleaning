@@ -147,6 +147,46 @@ export function stripSignature(text: string): string {
   return coupe.length >= 25 ? coupe : text;
 }
 
+/**
+ * Rend une chaîne écrivable en base, quelle que soit sa provenance.
+ *
+ * POURQUOI `toWellFormed()` ET PAS DEUX REGEX (corrigé le 17/08, boîte lb2i).
+ * Le nettoyage précédent enchaînait deux `replace` ; le second
+ * (`(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]`) CONSOMME le caractère qui précède,
+ * si bien que sur des demi-caractères CONSÉCUTIFS il n'en traitait qu'un sur
+ * deux. Mesuré : « deux low consécutifs », « trois low consécutifs » et « low
+ * en tout début » survivaient tous les trois. Un seul survivant suffisait à
+ * faire échouer l'écriture Prisma (« unexpected end of hex escape ») pour le
+ * PAQUET ENTIER de 100 mails — c'est ainsi que les 5 254 mails d'OVH sont
+ * restés sans extrait, donc invisibles à l'analyse. `toWellFormed()` remplace
+ * chaque demi-caractère isolé par U+FFFD et laisse les paires valides
+ * intactes (les emoji ne bougent pas).
+ */
+function assainirTexte(raw: string): string {
+  // `toWellFormed` est ES2024 : présent sur Node 20 (donc en production), mais
+  // pas dans la `lib` TypeScript du projet — d'où l'accès typé explicitement.
+  const natif = raw as string & { toWellFormed?: () => string };
+  const wellFormed =
+    typeof natif.toWellFormed === 'function'
+      ? natif.toWellFormed()
+      : // Repli pour un runtime plus ancien : boucle sur les unités de code,
+        // sans le défaut de recouvrement des regex.
+        Array.from({ length: raw.length }, (_, i) => {
+          const c = raw.charCodeAt(i);
+          if (c >= 0xd800 && c <= 0xdbff) {
+            const n = raw.charCodeAt(i + 1);
+            return n >= 0xdc00 && n <= 0xdfff ? raw[i] : '�';
+          }
+          if (c >= 0xdc00 && c <= 0xdfff) {
+            const p = raw.charCodeAt(i - 1);
+            return p >= 0xd800 && p <= 0xdbff ? raw[i] : '�';
+          }
+          return raw[i];
+        }).join('');
+  // Caractères de contrôle C0 (hors \t \n \r) : illisibles et sans valeur.
+  return wellFormed.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ');
+}
+
 export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string {
   const flatten = (s: string): string =>
     s
@@ -164,10 +204,7 @@ export function cleanSnippet(raw: string, maxChars = SNIPPET_MAX_CHARS): string 
   // pouvoir bloquer une passe entière.
   // Et mojibake réparé À LA SOURCE : les nouveaux extraits sont lisibles dès
   // leur capture (« Ã©chÃ©ance » → « échéance ») et detectIntent lit un vrai texte.
-  const sain = reparerMojibake(raw)
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
-    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  const sain = assainirTexte(reparerMojibake(raw));
   const source = ressembleAduHtml(sain) ? htmlEnTexte(sain) : sain;
   // Ordre voulu : d'abord la citation (le fil recopié dessous), puis la
   // signature (le bloc de fin). Chacun a son propre repli si la coupe vide tout.
@@ -219,10 +256,7 @@ export function selectionnerPourAnalyse(raw: string, budget = ANALYSIS_INPUT_CHA
 
   // Même assainissement que l'extrait : un demi-caractère de substitution isolé
   // rend la chaîne inencodable et fait échouer l'écriture pour TOUTE la boîte.
-  const sain = reparerMojibake(raw)
-    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ' ')
-    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1 ')
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  const sain = assainirTexte(reparerMojibake(raw));
   const source = ressembleAduHtml(sain) ? htmlEnTexte(sain) : sain;
 
   // Mêmes replis que cleanSnippet : un transfert peut n'être QUE du texte cité,
@@ -520,24 +554,56 @@ export async function backfillSnippets(
 
   // Écriture groupée : SQLite est en connection_limit=1, une transaction par
   // paquet vaut mieux que des centaines d'écritures isolées.
+  //
+  // REPLI PAR MAIL (17/08). Un paquet est une transaction : si UN SEUL mail
+  // porte un texte que le pilote refuse d'encoder, les 99 autres tombent avec
+  // lui, l'exception remonte, la passe s'arrête — et la boîte entière reste
+  // sans extrait. C'est exactement ce qui est arrivé à lb2i : 5 254 mails
+  // indexés, ZÉRO extrait, donc invisibles à l'analyse. `assainirTexte` traite
+  // désormais la cause connue, mais aucune liste de caractères ne sera jamais
+  // exhaustive : on garde donc un filet. En cas d'échec du paquet, on réécrit
+  // mail par mail et on isole le fautif (extrait vide + version posée, pour
+  // qu'il ne revienne pas en boucle) au lieu de perdre tout le lot.
   const now = new Date();
+  const donnees = (u: { snippet: string; analysisInput: string }) => ({
+    snippet: u.snippet,
+    snippetAt: now,
+    analysisInput: u.analysisInput,
+    // La version est posée MÊME quand le texte est vide : sinon le
+    // mail repasserait à chaque tour et le rattrapage tournerait en
+    // rond, exactement comme l'anti-boucle du 29/07.
+    analysisInputVersion: INPUT_VERSION,
+  });
   for (let i = 0; i < updates.length; i += 100) {
-    await db.$transaction(
-      updates.slice(i, i + 100).map((u) =>
-        db.message.update({
-          where: { id: u.id },
-          data: {
-            snippet: u.snippet,
-            snippetAt: now,
-            analysisInput: u.analysisInput,
-            // La version est posée MÊME quand le texte est vide : sinon le
-            // mail repasserait à chaque tour et le rattrapage tournerait en
-            // rond, exactement comme l'anti-boucle du 29/07.
-            analysisInputVersion: INPUT_VERSION,
-          },
-        }),
-      ),
-    );
+    const paquet = updates.slice(i, i + 100);
+    try {
+      await db.$transaction(
+        paquet.map((u) => db.message.update({ where: { id: u.id }, data: donnees(u) })),
+      );
+    } catch (err) {
+      logger.warn('extraits : paquet refusé, reprise mail par mail', {
+        account: rec.account,
+        taille: paquet.length,
+        error: (err as Error).message,
+      });
+      for (const u of paquet) {
+        try {
+          await db.message.update({ where: { id: u.id }, data: donnees(u) });
+        } catch (err2) {
+          result.filled = Math.max(0, result.filled - (u.snippet ? 1 : 0));
+          result.empty++;
+          await db.message.update({
+            where: { id: u.id },
+            data: { snippet: '', snippetAt: now, analysisInput: '', analysisInputVersion: INPUT_VERSION },
+          });
+          logger.warn('extrait illisible pour ce mail — laissé vide', {
+            account: rec.account,
+            id: u.id,
+            error: (err2 as Error).message,
+          });
+        }
+      }
+    }
   }
   // Dossiers en panne : on date la tentative sans poser d'extrait.
   for (let i = 0; i < failed.length; i += 200) {

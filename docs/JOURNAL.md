@@ -5,6 +5,54 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 17/08 (42) — lb2i validé, et le bug qui rendait ses 5 254 mails invisibles
+
+**1. Le chantier IMAP par mot de passe est VALIDÉ EN RÉEL.** Anthony a enrôlé
+lb2i lui-même depuis l'interface : `authType=password`, `ssl0.ovh.net:993`,
+**5 254 mails** synchronisés (juin 2022 → août 2026), 6 dossiers. Aucune
+intervention nécessaire. Chantier clos.
+
+**2. MAIS les 5 254 mails étaient invisibles à l'analyse** : 0 extrait sur
+5 254, donc 0 éligible au rattrapage (`candidateWhere` exige `snippet` non
+null). Cause lue dans les logs : `extraits post-sync en échec — Invalid
+prisma.message.update(): unexpected end of hex escape at line 1 column 40825`.
+
+Diagnostic : le nettoyage des demi-caractères de substitution enchaînait deux
+`replace`, et le second (`(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]`) CONSOMME le
+caractère précédent — donc sur des demi-caractères CONSÉCUTIFS il n'en
+traitait qu'un sur deux. **Prouvé avant de corriger** : « deux low
+consécutifs », « trois low consécutifs » et « low en tout début » survivaient
+tous les trois. Un seul survivant suffisait à faire échouer la transaction de
+100 mails, l'exception remontait, la passe s'arrêtait — d'où zéro extrait pour
+la boîte entière. Le même bug avait déjà frappé le 30/07 sur `codePoint()` :
+c'est la troisième fois que ce motif coûte cher.
+
+Correctif en deux temps (les deux nécessaires) :
+- `assainirTexte()` s'appuie sur **`toWellFormed()`** (ES2024, présent sur le
+  Node 20 du serveur, avec repli boucle) — il n'y a plus de recouvrement
+  possible. Vérifié : 6 cas sur 6 écrivables, emoji et accents intacts.
+- **Repli mail par mail** si un paquet est refusé : le mail fautif est isolé
+  (extrait vide + version posée, donc pas de boucle) au lieu de faire tomber
+  les 99 autres. Aucune liste de caractères ne sera jamais exhaustive — le
+  filet compte autant que la cause traitée.
+
+Piège rencontré au passage : éditer littéralement `\u0000` dans le source
+insère de VRAIS octets de contrôle (6 introduits, dont un octet nul — la
+leçon déjà consignée). Corrigé par script ; vérification « 0 octet de contrôle
+littéral » ajoutée aux preuves.
+
+**3. Zentra identifié et réparé** (autre repo) : `thonyAGP/zentra`, monorepo
+Nx sur Vercel, gère déjà contrats, garanties, historique de prix, comparaison,
+et les catégories `LOAN` / `INSURANCE_LOAN`. Sa production ne se déployait
+plus depuis le 05/08 : `useSearchParams()` sans frontière `<Suspense>` sur
+`/reset-password` — et `/verify-email` avait le même défaut, qui aurait cassé
+le build juste après. Les deux corrigés, `next build` vérifié en local,
+branche `fix/build-suspense-searchparams` poussée.
+
+**4. Rattrapage** : 13 081 verdicts au matin, 4 140 restants (~4 300/jour).
+Passé en **claude-sonnet-5** à sa demande (forfait en limite) — à repasser en
+Opus/Fable le 18/08.
+
 ## 14/08 (41) — Rattrapage ×4 par sous-agents + comptes IMAP par mot de passe (OVH)
 
 **1. Rattrapage accéléré ×4** (demande : « 17 jours c'est super long »). Le
