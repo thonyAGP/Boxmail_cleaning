@@ -145,33 +145,33 @@ sémantique immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), réécrite en ORCHESTRATEUR +
 4 sous-agents séquentiels (~160 mails/h, repli mode direct 40 si Task
 indisponible). Prouvé : +263 verdicts en 49 min. Ne PAS lui redonner d'autres
-connecteurs que Boxmail. Repère 14/08 15 h 47 UTC : **1 540 verdicts**,
-vivier ~15 800 (compter via candidateWhere d'analysis.ts, PAS un count
-naïf) ⇒ fin ~4 jours.
+connecteurs que Boxmail. Repère 17/08 08 h 21 UTC : **13 081 verdicts,
+4 140 à relire** (~4 300/jour) ⇒ fin le 18/08. Compter le vivier via
+candidateWhere d'analysis.ts, PAS un count naïf.
 
-**À LA REPRISE** : compter `MailVerdict` + date du dernier. Rien depuis 2 h ⇒
-JOURNAL § 13/08 (37) AVANT de crier à la panne (retard ~9 min).
+**À LA REPRISE** : compter `MailVerdict` + date du dernier.
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
-elle CUMULE les lots et meurt (« request body is not valid JSON »).
-Contexte NEUF par lot (d'où les sous-agents), aucun réglage n'y change rien.
+elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
+(d'où les sous-agents), aucun réglage n'y change rien.
 
-**OCR : CLOS le 13/08** (§ 39-40) : 976 scans traités, 811 lisibles (83 %),
-164 charabia assumés. `OCR_PIPELINE_VERSION` à incrémenter pour retraiter.
+**OCR : CLOS le 13/08** (§ 39-40) : 811/976 scans lisibles (83 %).
 
 **Comptes IMAP par mot de passe LIVRÉS le 14/08** (§ 41) : `authType:
 'password'` + host/port/secure par compte (absent = OAuth, zéro migration),
 `POST /api/enroll/imap` teste IMAP ET SMTP avant stockage, formulaire
-préréglé OVH (`ssl0.ovh.net` 993/465). Cadrage : `.chantier/2026-08-14-…`.
-ATTENTE : enrôlement réel lb2i par Anthony, puis 24 h d'observation.
+préréglé OVH. Cadrage : `.chantier/2026-08-14-…`. ATTENTE au 17/08 : lb2i
+PAS ENCORE enrôlé — c'est à LUI de le faire dans l'interface, ne pas
+re-livrer. Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR (depuis le 06/08),
+aucune sync en échec : ne pas crier à la régression.
 
 **À faire** :
-- Puis vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats)
-  sans créer de dossier ; écran des doublons de pièces.
+- Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans
+  créer de dossier ; écran des doublons de pièces. Matière DÉJÀ extraite au
+  17/08 : 858 factures, 546 reçus, 481 devis, 348 relevés, 282 contrats.
 - Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
 - Fiscal-Manager : confirmer le premier pull réel ; puis frais Jump,
   CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
 
-**Déjà tranché par lui le 13/08** : IBAN divergents du règlement Cappelaere
-(25 000 €) — validé, alerte close. Horaire du job (:17) : indifférent.
+**Tranché le 13/08** : IBAN divergents Cappelaere (25 000 €) — validé, clos.
