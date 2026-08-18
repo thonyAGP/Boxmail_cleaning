@@ -435,6 +435,8 @@ export interface ContexteMail {
   email: string;
   displayName: string;
   accounts: string[];
+  /** Identifiant du mail courant — sert au repère « vous êtes ici ». */
+  messageIdCourant: number;
   focale: Focale;
   /** Les trois compteurs, hors mail courant — ils remplissent les onglets. */
   compteurs: { sujet: number; lie: number; tout: number };
@@ -453,15 +455,34 @@ const normaliserSujet = (s: string | null | undefined): string =>
   (s ?? '').replace(/^((re|tr|fwd?)\s*:\s*)+/i, '').trim().toLowerCase();
 
 export async function contexteDuMail(opts: {
-  messageId: number;
+  /** Identifiant interne, quand l'écran appelant le connaît. */
+  messageId?: number;
+  /**
+   * REPÈRE DE SECOURS (18/08, correctif) : la plupart des écrans ouvrent le
+   * lecteur avec un simple `{account, folder, uid}` et ne transportent PAS
+   * `messageId` — la Vue du jour la première. S'appuyer sur le seul
+   * `messageId` faisait donc répondre « ce mail n'est pas encore indexé » sur
+   * des mails parfaitement indexés. Le trio compte/dossier/UID, lui, est
+   * TOUJOURS disponible : le lecteur en a besoin pour télécharger le corps.
+   */
+  account?: string;
+  folder?: string;
+  uid?: number;
   focale?: Focale;
   limit?: number;
 }): Promise<ContexteMail> {
   await ensureDbReady();
   const focale: Focale = opts.focale ?? 'lie';
 
-  const courant = await db.message.findUnique({
-    where: { id: opts.messageId },
+  const ou = opts.messageId
+    ? { id: opts.messageId }
+    : opts.account && opts.folder && opts.uid
+      ? { accountSlug: opts.account, folder: { path: opts.folder }, uid: opts.uid }
+      : null;
+  if (!ou) throw new Error('Mail non identifié (ni identifiant, ni compte/dossier/UID).');
+
+  const courant = await db.message.findFirst({
+    where: ou,
     select: {
       id: true, subject: true, normalizedSubject: true, threadId: true,
       fromEmail: true, fromName: true, isOutbound: true, toEmails: true,
@@ -547,6 +568,7 @@ export async function contexteDuMail(opts: {
     email: cible,
     displayName: nom,
     accounts: [...new Set(tous.map((m) => m.accountSlug))],
+    messageIdCourant: courant.id,
     focale,
     compteurs,
     messages: focale === 'tout' ? [] : messages,

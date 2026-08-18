@@ -1956,6 +1956,35 @@ export function buildAdminRouter(): Router {
   // ouvrir une mise en demeure URSSAF affichait « COUCOU » et « 100 ans de la
   // PLM ». Trois focales : `sujet` (fil + objet), `lie` (défaut : + dossiers
   // en commun), `tout` (tous les échanges, regroupés par conversation).
+  // Deux repères acceptés : l'identifiant interne quand l'écran le connaît,
+  // sinon compte + dossier + UID — que le lecteur possède TOUJOURS puisqu'il
+  // en a besoin pour télécharger le corps. Sans ce second chemin, la Vue du
+  // jour (qui ne transporte pas `messageId`) recevait « mail non indexé ».
+  const focaleDe = (q: unknown): 'sujet' | 'lie' | 'tout' => {
+    const f = String(q ?? 'lie');
+    return f === 'sujet' || f === 'tout' ? f : 'lie';
+  };
+  router.get(
+    '/contexte',
+    guard(async (req, res) => {
+      const account = String(req.query.account ?? '').trim();
+      const folder = String(req.query.folder ?? '').trim();
+      const uid = Number.parseInt(String(req.query.uid ?? ''), 10);
+      const messageId = Number.parseInt(String(req.query.messageId ?? ''), 10);
+      try {
+        res.json(await contexteDuMail({
+          messageId: Number.isInteger(messageId) && messageId > 0 ? messageId : undefined,
+          account: account || undefined,
+          folder: folder || undefined,
+          uid: Number.isInteger(uid) ? uid : undefined,
+          focale: focaleDe(req.query.focale),
+        }));
+      } catch (e) {
+        res.status(404).json({ error: e instanceof Error ? e.message : 'Contexte indisponible.' });
+      }
+    }),
+  );
+
   router.get(
     '/messages/:id/contexte',
     guard(async (req, res) => {
@@ -1964,10 +1993,8 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'Identifiant de mail invalide.' });
         return;
       }
-      const f = String(req.query.focale ?? 'lie');
-      const focale = f === 'sujet' || f === 'tout' || f === 'lie' ? f : 'lie';
       try {
-        res.json(await contexteDuMail({ messageId: id, focale }));
+        res.json(await contexteDuMail({ messageId: id, focale: focaleDe(req.query.focale) }));
       } catch (e) {
         res.status(404).json({ error: e instanceof Error ? e.message : 'Contexte indisponible.' });
       }

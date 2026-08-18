@@ -10099,7 +10099,9 @@ function renderReaderAnalysis(a, item, opts = {}) {
         </select>
         <span class="muted" id="ra-class-note" style="font-size:11.5px">une correction s'applique à tous ses mails</span>
         <button class="btn btn-sm" id="ra-echanges" data-email="${esc(c.sender.email)}"
-          data-mid="${item.messageId ?? ''}" data-sujet="${esc(item.subject ?? '')}"
+          data-mid="${item.messageId ?? ''}" data-account="${esc(item.account ?? '')}"
+          data-folder="${esc(item.folder ?? '')}" data-uid="${item.uid ?? ''}"
+          data-sujet="${esc(item.subject ?? '')}"
           title="Voir les échanges liés à CE mail — pas tout l'historique">📚 Contexte</button>
       </div>
       <div id="ra-echanges-body" class="hidden"></div>` : ''}`
@@ -10218,20 +10220,29 @@ function renderReaderAnalysis(a, item, opts = {}) {
     }
     zone.classList.remove('hidden');
     bouton.textContent = '📚 Masquer';
-    const mid = Number(bouton.dataset.mid);
-    if (!mid) {
+    // Repère : l'identifiant interne s'il est connu, sinon compte/dossier/UID
+    // — que le lecteur possède toujours. Exiger `messageId` faisait répondre
+    // « ce mail n'est pas encore indexé » depuis la Vue du jour, qui ne le
+    // transporte pas (constaté en production le 18/08).
+    const ref = {
+      messageId: Number(bouton.dataset.mid) || undefined,
+      account: bouton.dataset.account || undefined,
+      folder: bouton.dataset.folder || undefined,
+      uid: bouton.dataset.uid ? Number(bouton.dataset.uid) : undefined,
+    };
+    if (!ref.messageId && !(ref.account && ref.folder && ref.uid != null)) {
       zone.innerHTML = '<div class="empty">Ce mail n\'est pas encore indexé — synchronise la boîte.</div>';
       return;
     }
-    await chargerContexte(zone, mid, 'lie', bouton.dataset.sujet || '');
+    await chargerContexte(zone, ref, 'lie', bouton.dataset.sujet || '');
   });
 
   /** Charge et rend une focale. Rappelable sans reconstruire le lecteur. */
-  async function chargerContexte(zone, mid, focale, sujetCourant) {
+  async function chargerContexte(zone, ref, focale, sujetCourant) {
     zone.innerHTML = '<div class="empty"><span class="spinner"></span>Je rassemble le contexte…</div>';
     let d;
     try {
-      d = await api.contexteMail(mid, focale);
+      d = await api.contexteMail(ref, focale);
     } catch (err) {
       zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
       return;
@@ -10259,7 +10270,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
                 <span class="muted">${fmtNum(sj.count)} message(s) · ${esc(fmtDate(sj.lastAt))}</span>
               </button>
               <div class="ctx-conv-body hidden" data-convbody="${i}">
-                ${sj.messages.map((m) => ligneContexte(m, mid)).join('')}
+                ${sj.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}
               </div>
             </div>`).join('')
         : '<div class="empty">Aucun autre échange retrouvé.</div>');
@@ -10277,7 +10288,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
           : ''}</div>`;
     } else {
       zone.innerHTML = barre +
-        `<div class="ctx-fil">${d.messages.map((m) => ligneContexte(m, mid)).join('')}</div>` +
+        `<div class="ctx-fil">${d.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}</div>` +
         (d.tronque > 0
           ? `<div class="ctx-plus">${fmtNum(d.tronque)} autre(s) échange(s) lié(s) non affiché(s) —
              <button class="btn btn-sm" data-focale="tout">tout voir →</button></div>`
@@ -10287,7 +10298,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
     // Changement de focale : on recharge la même zone, le mail reste intact.
     zone.querySelectorAll('[data-focale]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.focale === d.focale) return;
-      chargerContexte(zone, mid, b.dataset.focale, sujetCourant);
+      chargerContexte(zone, ref, b.dataset.focale, sujetCourant);
     }));
 
     // UN CLIC DÉPLIE SUR PLACE. Le mail courant n'est jamais remplacé.

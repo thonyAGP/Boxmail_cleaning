@@ -81,8 +81,17 @@ export const api = {
   // Contexte d'un mail : trois focales (sujet / lie / tout). Remplace l'usage
   // principal de `correspondence`, qui listait les 12 conversations les plus
   // récentes sans aucun critère de pertinence.
-  contexteMail: (messageId, focale = 'lie') =>
-    request('GET', `/messages/${messageId}/contexte?focale=${focale}`),
+  // `ref` = { messageId } quand l'écran le connaît, sinon { account, folder,
+  // uid } — que le lecteur a toujours. Sans ce second chemin, la Vue du jour
+  // affichait « ce mail n'est pas encore indexé » sur des mails indexés.
+  contexteMail: (ref, focale = 'lie') => {
+    const p = new URLSearchParams({ focale });
+    if (ref.messageId) p.set('messageId', String(ref.messageId));
+    if (ref.account) p.set('account', ref.account);
+    if (ref.folder) p.set('folder', ref.folder);
+    if (ref.uid != null) p.set('uid', String(ref.uid));
+    return request('GET', `/contexte?${p.toString()}`);
+  },
 
   // Affaires en cours : les engagements pris qui n'ont pas abouti. Rien à voir
   // avec les dossiers ci-dessus (qui regroupent des mails par sujet) — ici le
