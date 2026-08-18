@@ -1430,6 +1430,96 @@ function briefWhy({ kind, x }) {
 }
 
 /**
+ * RANG D'UN CANDIDAT — clé de tri lexicographique, du plus prioritaire au
+ * moins. Remplace le score additif du 17/08 et avant (colère utilisateur du
+ * 17/08 : trois publicités présentées comme « les 3 choses qui méritent ton
+ * attention », pendant qu'une mise en demeure URSSAF de 418 € reçue 4 jours
+ * plus tôt n'apparaissait pas).
+ *
+ * POURQUOI PAS UN SCORE. L'ancien calcul faisait 50 (réponse attendue) + 50
+ * (seuil dépassé) + jusqu'à 10 (ancienneté). MESURÉ sur la production :
+ * 8 candidats sur 8 obtenaient exactement 110 — le tri ne discriminait donc
+ * plus rien et l'ordre final était l'ordre d'insertion. Pire, les paiements
+ * valaient une constante (60) et perdaient TOUJOURS. Des dimensions
+ * incomparables ne s'additionnent pas : une classe inférieure ne doit jamais
+ * pouvoir rattraper une classe supérieure en vieillissant.
+ *
+ * L'ANCIENNETÉ EST PIÉGEUSE et arrive donc en dernier, par tranches : elle
+ * mesure le temps écoulé, pas le besoin d'agir. Plus une présomption est
+ * vieille, plus il est probable qu'elle soit fausse (sujet clos ailleurs,
+ * offre périmée, message jamais destiné à recevoir une réponse).
+ */
+function rangCandidat({ kind, x }) {
+  const JOUR = 86_400_000;
+  const jours = (d) => (d ? (new Date(d).getTime() - Date.now()) / JOUR : null);
+
+  // Échéance applicable : la date qui OBLIGE à agir.
+  const dueJours = kind === 'deadline' ? jours(x.date) : kind === 'invoice' ? jours(x.dueAt) : null;
+  const enRetard = kind === 'invoice' ? !!x.enRetard : dueJours !== null && dueJours < 0;
+  const dateProche = dueJours !== null && dueJours <= 14;
+  // Corroboration : un fait supplémentaire qui CONFIRME l'obligation. Elle
+  // promeut ; son absence n'efface jamais une obligation explicite.
+  const corrobore = kind === 'invoice' ? x.montant != null || x.dueAt != null : dueJours !== null;
+
+  let classe;
+  if ((kind === 'invoice' || kind === 'deadline') && (enRetard || dateProche)) {
+    classe = 0; // obligation datée, dépassée ou imminente — le risque concret
+  } else if (kind === 'invoice' && !corrobore) {
+    classe = 1; // obligation réelle dont la date n'a pas été extraite : « date
+                // inconnue » ne veut pas dire « pas urgent »
+  } else if (kind === 'reply' && x.preuve === 'verdict') {
+    classe = 2; // une réponse EXPLICITEMENT demandée, établie par l'analyse
+  } else if (kind === 'followup') {
+    classe = 3; // il attend quelqu'un
+  } else if (kind === 'invoice' || kind === 'deadline') {
+    classe = 4; // obligation datée lointaine : elle existe, pas pour aujourd'hui
+  } else {
+    classe = 5; // PRÉSOMPTION de structure (dernier entrant sans réponse) :
+                // ne prend une carte que s'il ne reste aucun fait établi
+  }
+
+  // Départages, dans l'ordre : échéance la plus contraignante, puis
+  // corroboration, puis ancienneté en TRANCHES (jamais linéaire).
+  const bucketEcheance =
+    dueJours === null ? 5 : dueJours < 0 ? 0 : dueJours <= 3 ? 1 : dueJours <= 7 ? 2 : dueJours <= 14 ? 3 : 4;
+  const jAttente = (x.waitingHours ?? 0) / 24;
+  const trancheAge = jAttente > 30 ? 0 : jAttente > 7 ? 1 : jAttente > 2 ? 2 : 3;
+  return [classe, bucketEcheance, corrobore ? 0 : 1, trancheAge];
+}
+
+/** Compare deux rangs lexicographiquement (le plus petit passe devant). */
+function comparerRangs(a, b) {
+  const ra = rangCandidat(a);
+  const rb = rangCandidat(b);
+  for (let i = 0; i < ra.length; i += 1) {
+    if (ra[i] !== rb[i]) return ra[i] - rb[i];
+  }
+  return 0;
+}
+
+/**
+ * DÉDOUBLONNAGE des candidats — à appliquer APRÈS le tri, pour garder de
+ * chaque groupe le représentant le mieux classé. Deux lignes en base qui
+ * désignent la même chose pour lui (deux relances du même impayé, deux fois
+ * la même échéance) ne font qu'UNE décision à prendre ; les montrer deux fois
+ * donne l'impression d'un système qui radote (constaté 10/08, étendu aux
+ * paiements le 18/08).
+ */
+function dedoublonnerCandidats(liste) {
+  const vus = new Set();
+  return liste.filter((c) => {
+    const cle = c.kind === 'deadline'
+      ? `d|${c.x.title}|${String(c.x.date).slice(0, 10)}`
+      : c.kind === 'reply' || c.kind === 'followup'
+        ? `${c.kind}|${c.x.threadId ?? c.x.uid}`
+        : `i|${c.x.account}|${c.x.fromEmail ?? ''}|${c.x.subject ?? ''}`;
+    if (vus.has(cle)) return false;
+    vus.add(cle);
+    return true;
+  });
+}
+
+/**
  * Construit et affiche le briefing. `t` = la réponse de /today.
  * Règle de conception (test à s'appliquer à chaque ajout) : est-ce que ceci
  * demande à Anthony de GÉRER ses mails, ou est-ce que ça lui ÉVITE de les
@@ -1437,37 +1527,14 @@ function briefWhy({ kind, x }) {
  */
 function renderBriefing(t, el) {
   if (!el) return;
-  const urgency = ({ kind, x }) => {
-    if (kind === 'deadline') {
-      const j = (new Date(x.date).getTime() - Date.now()) / 86_400_000;
-      return 80 - Math.max(-10, Math.min(j, 30)) * 2;
-    }
-    const waited = Math.min((x.waitingHours ?? 0) / 24, 10);
-    if (kind === 'reply') return 50 + (x.overdue ? 50 : 0) + waited;
-    if (kind === 'invoice') return 60;
-    return 40 + (x.overdue ? 30 : 0) + waited;
-  };
   const brut = [
     ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
     ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
     ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
     ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
-  ].sort((a, b) => urgency(b) - urgency(a));
+  ].sort(comparerRangs);
 
-  // DÉDOUBLONNAGE. Deux échéances identiques (même sujet, même date) sont la
-  // même chose pour lui, même si ce sont deux lignes en base : les afficher
-  // deux fois donne l'impression d'un système qui radote (constaté 10/08).
-  const vus = new Set();
-  const queue = brut.filter((c) => {
-    const cle = c.kind === 'deadline'
-      ? `d|${c.x.title}|${String(c.x.date).slice(0, 10)}`
-      : c.kind === 'reply' || c.kind === 'followup'
-        ? `${c.kind}|${c.x.threadId ?? c.x.uid}`
-        : `i|${c.x.account}|${c.x.uid}`;
-    if (vus.has(cle)) return false;
-    vus.add(cle);
-    return true;
-  });
+  const queue = dedoublonnerCandidats(brut);
 
   // TROIS décisions visibles, pas dix-sept. Le reste existe, mais plus tard.
   const MAX = 3;
@@ -1636,25 +1703,16 @@ function todoEstimateLabel(t) {
 
 function startTodoAssistant(t, { limit } = {}) {
   // File de missions UNIFIÉE (Phase 3) : toutes catégories mélangées, triées
-  // par urgence — un retard passe devant, une échéance qui approche grimpe,
-  // l'ancienneté départage. Les poids sont grossiers à dessein : il s'agit de
-  // choisir par quoi COMMENCER, pas de noter les mails.
-  const urgency = ({ kind, x }) => {
-    if (kind === 'deadline') {
-      const daysLeft = (new Date(x.date).getTime() - Date.now()) / 86_400_000;
-      return 80 - Math.max(-10, Math.min(daysLeft, 30)) * 2; // passée > imminente > lointaine
-    }
-    const waited = Math.min((x.waitingHours ?? 0) / 24, 10); // plafonné : 10 j comptent comme 10
-    if (kind === 'reply') return 50 + (x.overdue ? 50 : 0) + waited;
-    if (kind === 'invoice') return 60;
-    return 40 + (x.overdue ? 30 : 0) + waited; // followup
-  };
+  // par le MÊME rang que l'accueil (`rangCandidat`) — une seule définition de
+  // l'urgence pour tout le produit. Il y avait ici une COPIE du score additif,
+  // qui pouvait diverger de celle du briefing sans que rien ne le signale.
   let queue = [
     ...t.todo.replies.map((x) => ({ kind: 'reply', x })),
     ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
     ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
     ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
-  ].sort((a, b) => urgency(b) - urgency(a));
+  ].sort(comparerRangs);
+  queue = dedoublonnerCandidats(queue);
   const totalActions = queue.length;
   if (limit) queue = queue.slice(0, limit);
   if (queue.length === 0) return;

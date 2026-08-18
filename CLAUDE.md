@@ -134,37 +134,44 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
-**CAP : « RETROUVER SANS CLASSER »** (11/08). Le nettoyage n'est plus le
-chantier : ses boîtes sont des archives non structurées, pas des boîtes
-sales. `docs/PLAN-ARCHIVE.md` est CLASSÉ.
-
-**Refonte de la couche d'analyse LIVRÉE** (12-13/08, lots 0 à 5) : verdict
-sémantique immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
+**CAP : « RETROUVER SANS CLASSER »** (11/08) — ses boîtes sont des archives non
+structurées, pas des boîtes sales ; `docs/PLAN-ARCHIVE.md` est CLASSÉ. Refonte
+de la couche d'analyse LIVRÉE (12-13/08, lots 0 à 5) : verdict sémantique
+immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 
 **Le rattrapage tourne TOUT SEUL, ×4 depuis le 14/08** : tâche planifiée
-claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), réécrite en ORCHESTRATEUR +
-4 sous-agents séquentiels (~160 mails/h, repli mode direct 40 si Task
-indisponible). Prouvé : +263 verdicts en 49 min. Ne PAS lui redonner d'autres
-connecteurs que Boxmail. Repère 17/08 10 h 15 UTC : **13 436 verdicts,
-6 185 à relire** (dont 2 400 lb2i, rendus analysables ce jour) ⇒ fin ~19/08.
-Compter le vivier via candidateWhere d'analysis.ts, PAS un count naïf.
-
-**À LA REPRISE** : compter `MailVerdict` + date du dernier. ⚠️ Le job est
-passé en **claude-sonnet-5** le 17/08 (forfait en limite) — le REPASSER en
-Opus/Fable dès le 18/08 si la qualité des verdicts a baissé.
+claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), ORCHESTRATEUR + 4 sous-agents
+séquentiels (repli mode direct 40 si Task indisponible). Ne PAS lui redonner
+d'autres connecteurs que Boxmail. Repère **18/08 07 h 45 UTC : 14 221
+verdicts, 5 393 sans verdict** (1 185/24 h) ⇒ fin ~22-23/08. Compter le vivier
+via candidateWhere d'analysis.ts, PAS un count naïf. Tourne en
+**claude-sonnet-5** depuis le 17/08 (forfait en limite) ; qualité VÉRIFIÉE
+inchangée ⇒ **le laisser ainsi**, n'en reparler qu'avec lui.
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
 elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
 (d'où les sous-agents), aucun réglage n'y change rien.
 
-**OCR : CLOS le 13/08** (§ 39-40) : 811/976 scans lisibles (83 %).
+**CLOS** : OCR le 13/08 (§ 39-40, 811/976 scans lisibles) ; comptes IMAP par
+mot de passe (§ 41-42, `authType:'password'`, lb2i validé en réel le 17/08,
+5 254 mails). Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
 
-**Comptes IMAP par mot de passe (§ 41-42)** : `authType:'password'` +
-host/port/secure par compte (absent = OAuth), enrôlement testé IMAP+SMTP
-avant stockage. **lb2i VALIDÉ le 17/08** (ssl0.ovh.net, 5 254 mails) —
-chantier clos. Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
+**Vue du jour repriorisée (18/08, § 43)** : le score additif saturait à 110 sur
+8 candidats sur 8 — trois publicités devant une mise en demeure URSSAF de
+418 €. Remplacé par `rangCandidat()` (classes NON additionnables) ;
+`intent='info'` ajouté à NO_REPLY_INTENTS (le trou par lequel elles passaient).
+Banc serveur : fuite 45 % → 45 %, « réponses attendues » 165 → 79.
+**Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
+fuite, mesure absurde).
 
 **À faire** :
+- **« Dossiers en cours »** (demandé le 17/08) : ses 3 exemples — URSSAF via
+  Mylène, parts de son frère dans la SARL (mandat d'il y a un an, rien fait
+  sur Infogreffe), changement de direction LB2i payé à moitié. Ces deux
+  derniers n'ont NI date, NI montant dû, NI mail entrant : aucune règle
+  fondée sur les mails reçus ne les fera remonter. Objet `OpenCommitment`
+  avec `reviewAt` ≠ `dueAt` (contre-revue du 18/08). Inclut les propositions
+  de réponse et les relances. À cadrer.
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans
   créer de dossier ; écran des doublons de pièces. Matière DÉJÀ extraite au
   17/08 : 858 factures, 546 reçus, 481 devis, 348 relevés, 282 contrats.
@@ -172,5 +179,3 @@ chantier clos. Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
 - Fiscal-Manager : confirmer le premier pull réel ; puis frais Jump,
   CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
-
-**Tranché le 13/08** : IBAN divergents Cappelaere (25 000 €) — validé, clos.

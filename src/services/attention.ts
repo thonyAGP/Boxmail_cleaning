@@ -72,6 +72,14 @@ export interface ReplyItem {
   inCopy: boolean;
   /** Justification explicite, affichée telle quelle. */
   reason: string;
+  /**
+   * SUR QUOI REPOSE la qualification (18/08) : `verdict` = l'analyse déclare
+   * une action `reply` de l'utilisateur encore ouverte ; `structure` = simple
+   * forme du fil (dernier entrant, rien envoyé depuis), qui ne prouve rien.
+   * L'accueil s'en sert pour ne JAMAIS donner une des trois cartes à une
+   * présomption tant qu'il reste un fait établi à montrer.
+   */
+  preuve: 'verdict' | 'structure';
   state: ReplyState;
   snoozedUntil: string | null;
 }
@@ -302,6 +310,22 @@ const NO_REPLY_INTENTS = new Set([
   'document',
   'reminder',
   'appointment',
+  // `info` AJOUTÉ LE 18/08 — le trou par lequel passaient les publicités.
+  // MESURÉ sur la production : sur les 9 « réponses attendues » qualifiées
+  // sans verdict ce matin-là, 8 portaient `intent = 'info'` — « Joyeux
+  // anniversaire 🎉 un cadeau rien que pour vous », « Le Galaxy S26 Ultra à
+  // 1€ », « +250 € de titres cadeaux », « We're updating our Privacy
+  // Policy »… L'ancienne analyse les avait pourtant correctement rangées
+  // « information » ; personne ne l'écoutait, et la carte tombait sur le
+  // `return attendue: true` final. L'utilisateur : « ces mails n'attendaient
+  // même pas de réponse ».
+  //
+  // Les 7 écartés sont TOUS des expéditeurs `company`. Les 2 candidats
+  // légitimes du même lot — « SAS LB2I – Remise de résultat » (sa comptable)
+  // et « RECOMMANDES URSSAF » (via Mylène) — sont classés `person` et
+  // survivent donc par l'exception ci-dessous, qui fait ici exactement son
+  // travail. C'est pourquoi `info` est sûr ICI et le serait pas sans elle.
+  'info',
 ]);
 
 /** Verdict de l'ancienne analyse plate : « rien à faire » (repli uniquement). */
@@ -750,6 +774,7 @@ export async function getUnansweredEmails(
       requestKindLabel: REQUEST_KIND_LABELS[request.kind],
       inCopy,
       reason: reasons.join(' · '),
+      preuve: evaluations.get(threadId)?.source === 'verdict' ? 'verdict' : 'structure',
       state,
       snoozedUntil,
     });

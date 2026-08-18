@@ -5,6 +5,86 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 18/08 (43) — « Vue du jour » : trois publicités devant une mise en demeure
+
+**Le déclencheur.** Capture d'Anthony : « 3 choses méritent ton attention
+aujourd'hui » = une offre d'anniversaire Europcar de 56 jours, une promo
+Galaxy S26, une notification Airbnb. Sa mise en demeure **URSSAF de 418 €**,
+correctement analysée et à régler avant le 29/08, **absente de l'écran**.
+« Qu'est-ce que c'est que ton analyse de merde ? » — justifié.
+
+Ma première explication (le score) était incomplète. Sa correction a désigné
+le vrai défaut : « ces emails n'attendaient même pas de réponse (juste
+notification de gratification de 50 points), c'est donc super mal pensé ».
+
+**Deux défauts distincts, mesurés sur la production.**
+
+1. **Qualification par preuve négative.** 9 des 10 « réponses attendues »
+   n'étaient qualifiées que par la forme du fil — dernier message entrant,
+   rien envoyé depuis. Aucune preuve positive exigée.
+2. **Score saturé.** 50 (réponse attendue) + 50 (seuil dépassé) + ≤ 10
+   (ancienneté) ⇒ **8 candidats sur 8 exactement à 110**. Le tri ne
+   discriminait plus rien : l'ordre affiché était l'ordre d'insertion. Et les
+   paiements, figés à 60, perdaient TOUJOURS — y compris l'URSSAF.
+
+**La cause racine, trouvée en creusant.** Les 8 fautifs portaient tous
+`intent = 'info'` de l'ancienne analyse — un intent **absent de
+`NO_REPLY_INTENTS`**, qui contenait pourtant `promo`, `invoice`,
+`confirmation`… Le signal existait et personne ne l'écoutait ; la carte
+tombait sur le `return attendue: true` final. Les 7 écartés sont tous des
+expéditeurs `company` ; les 2 candidats légitimes du même lot (sa comptable,
+l'URSSAF via Mylène) sont classés `person` et survivent par l'exception
+« personne », qui a donc fait exactement son travail.
+
+**Deux fausses pistes traversées, notées pour ne pas les refaire.**
+Ma première mesure cherchait le mot « repli » dans une justification qui ne le
+contient pas (elle dit « Dernier message du fil, reçu il y a N jours ») :
+elle affichait « 0 qualifié par repli » alors qu'il y en avait 9. Puis le banc
+d'essai lancé **en local** a affiché 100 % de fuite — il lit des étiquettes
+gelées calculées sur le serveur mais interroge les moteurs sur la base locale,
+qui ne contient que 31 mails. **Le banc n'a de sens que sur le serveur.**
+
+**Contre-revue ChatGPT en protocole aveugle (2 tours)** —
+`.consult/2026-08-17-score-attention/synthese.md`. Il a révisé sur les trois
+points où je lui ai opposé des mesures, notamment son veto par en-têtes de
+diffusion (déjà réfuté ici le 12/08 : 21 des 191 mails « à traiter » écartés,
+dont cinq AXA et « [ACTION REQUISE] Mise en conformité »). Il a en revanche
+**réfuté à juste titre mon garde-fou « deux signaux indépendants »** : une
+vraie mise en demeure d'un cabinet non catégorisé, au montant mal extrait,
+serait tombée hors classe haute. La corroboration **promeut**, elle ne filtre
+pas — position retenue : la sienne.
+
+**Livré.**
+- `intent = 'info'` ajouté à `NO_REPLY_INTENTS`.
+- `preuve: 'verdict' | 'structure'` exposé sur chaque réponse attendue.
+- Paiements : `dueAt`, `montant`, `enRetard` remontés en clés **structurées** —
+  l'interface classait jusqu'ici en relisant une phrase française.
+- Score additif remplacé par `rangCandidat()` : rang lexicographique
+  [classe, échéance, corroboration, tranche d'âge], **classes non
+  additionnables** (une classe basse ne rattrape jamais en vieillissant).
+  Il en existait **deux copies** dans `app.js`, libres de diverger — une seule
+  définition désormais, partagée par l'accueil et la file de missions.
+- Dédoublonnage étendu aux paiements (expéditeur + sujet) : cinq
+  « igloohome API Payment Grace Period » et deux « TRAKmy » occupaient sept
+  places de file, invisibles tant que les publicités les enterraient.
+
+**Preuves — banc d'essai sur le SERVEUR, avant → après :**
+fuite **45 % → 45 %** (86/191 : aucun mail à conséquence perdu) ;
+surface « réponses attendues » **165 → 79** (86 fausses affirmations
+retirées) ; importants (749), factures (10), échéances (3) inchangées.
+Simulation de l'écran : les 7 publicités disparaissent, l'URSSAF 418 € entre
+en carte n° 2, la file passe de 30 à 19 sans radotage.
+
+**Ce qui reste ouvert, assumé.** L'écran ne sait toujours pas représenter
+l'**engagement silencieux** : le mandat d'il y a un an pour les parts de son
+frère (rien fait, constaté sur Infogreffe) et le changement de direction LB2i
+payé à moitié n'ont ni date, ni montant qu'il doive, ni mail entrant — rien
+ne les fera jamais remonter. C'est l'objet du chantier « Dossiers en cours »
+(`OpenCommitment` avec un `reviewAt` distinct du `dueAt`). Manque aussi un
+champ de **conséquence** dans le verdict : sans lui, une obligation `pay` sans
+date d'igloohome se classe au-dessus d'un « capitaux propres inférieurs à la
+moitié du capital ».
+
 ## 17/08 (42) — lb2i validé, et le bug qui rendait ses 5 254 mails invisibles
 
 **1. Le chantier IMAP par mot de passe est VALIDÉ EN RÉEL.** Anthony a enrôlé

@@ -93,6 +93,12 @@ export interface InvoiceItem {
   date: string | null;
   isSeen: boolean;
   reason: string;
+  /** Échéance de paiement (ISO) si l'analyse en a extrait une. */
+  dueAt: string | null;
+  /** Montant dû si l'analyse l'a extrait. */
+  montant: number | null;
+  /** Échéance dépassée sans résolution. */
+  enRetard: boolean;
 }
 
 /**
@@ -107,7 +113,7 @@ export interface InvoiceItem {
  */
 export function paiementOuvert(
   etat: EtatSemantique | null | undefined,
-): { pourquoi: string } | null {
+): { pourquoi: string; dueAt: string | null; montant: number | null; enRetard: boolean } | null {
   if (!etat?.analyse.verdictPresent) return null;
   const pay = getOpenActions(etat).filter((a) => a.fait.kind === 'pay');
   if (pay.length === 0) return null;
@@ -123,6 +129,13 @@ export function paiementOuvert(
       : '';
   return {
     pourquoi: `l'analyse du mail déclare un paiement encore à faire de ta part : « ${a.fait.label ?? 'paiement'} »${montant}${quand}`,
+    // CLÉS DE TRI STRUCTURÉES (18/08). L'interface classait les cartes en
+    // relisant `pourquoi` — donc en devinant. Elle reçoit désormais les faits
+    // eux-mêmes : sans eux, un paiement valait une constante (60) et perdait
+    // TOUJOURS contre une « réponse attendue » saturée à 110.
+    dueAt: a.fait.dueAt ? a.fait.dueAt.toISOString() : null,
+    montant: a.fait.montant,
+    enRetard: a.enRetard,
   };
 }
 
@@ -265,6 +278,9 @@ export async function generateToday(): Promise<TodaySummary> {
       date: rawDate(r.date),
       isSeen: r.isSeen === 1,
       reason: paiement.pourquoi,
+      dueAt: paiement.dueAt,
+      montant: paiement.montant,
+      enRetard: paiement.enRetard,
     });
   }
   type InvoiceRow = PayRow & { intentReason: string | null };
@@ -291,6 +307,12 @@ export async function generateToday(): Promise<TodaySummary> {
       date: rawDate(r.date),
       isSeen: r.isSeen === 1,
       reason: `${r.intentReason ?? 'facture détectée dans le sujet'} — repli, pas encore de verdict d'analyse`,
+      // Repli sans verdict : AUCUN fait extrait. Ne rien inventer — c'est
+      // l'absence de ces clés qui interdira à ce candidat de prendre une carte
+      // devant une obligation réellement analysée.
+      dueAt: null,
+      montant: null,
+      enRetard: false,
     })),
   );
 
