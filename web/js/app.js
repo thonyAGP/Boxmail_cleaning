@@ -616,6 +616,7 @@ const HUBS = {
     ['followups', '#/followups', '⏰ À relancer'],
     ['important', '#/important', '⭐ À ne pas manquer'],
     ['deadlines', '#/deadlines', '📅 Dates'],
+    ['affaires', '#/affaires', '🧭 Affaires en cours'],
     ['tasks', '#/tasks', '☑️ Mes tâches'],
   ],
   clean: [
@@ -675,6 +676,8 @@ function route() {
     renderBigClean();
   } else if (hash.startsWith('#/rules')) {
     renderRules();
+  } else if (hash.startsWith('#/affaires')) {
+    renderAffaires();
   } else if (hash.startsWith('#/dossiers')) {
     renderDossiers();
   } else if (hash.startsWith('#/suggestions')) {
@@ -1396,6 +1399,10 @@ async function todayFillActivity() {
 /** Phrase qui explique POURQUOI ce mail est devant lui. Aucune IA appelée : on
  *  réutilise ce qui est déjà en base (résumé, montant, échéance, ancienneté). */
 function briefWhy({ kind, x }) {
+  if (kind === 'engagement') {
+    const paye = x.amountPaid != null ? `, ${fmtNum(x.amountPaid)} € déjà réglés` : '';
+    return `Engagée il y a ${fmtNum(x.joursOuvert)} jours${paye}, et rien ne prouve que ce soit fait.`;
+  }
   if (kind === 'invoice') {
     const somme = x.amount ? `${fmtNum(x.amount)} €` : 'un montant';
     return x.dueDate
@@ -1467,6 +1474,13 @@ function rangCandidat({ kind, x }) {
   } else if (kind === 'invoice' && !corrobore) {
     classe = 1; // obligation réelle dont la date n'a pas été extraite : « date
                 // inconnue » ne veut pas dire « pas urgent »
+  } else if (kind === 'engagement') {
+    // AFFAIRE EN SOUFFRANCE (18/08). Engagement PROUVÉ (il l'a saisi, ou un
+    // fait analysé l'a ouvert) dont la date de vérification est passée sans
+    // preuve d'aboutissement. Au niveau des demandes explicites : c'est établi,
+    // mais ce n'est pas une obligation datée. Ne peut donc pas évincer une
+    // échéance dépassée, et ne dépend d'aucun mail récent — c'est tout l'objet.
+    classe = 2;
   } else if (kind === 'reply' && x.preuve === 'verdict') {
     classe = 2; // une réponse EXPLICITEMENT demandée, établie par l'analyse
   } else if (kind === 'followup') {
@@ -1482,6 +1496,13 @@ function rangCandidat({ kind, x }) {
   // corroboration, puis ancienneté en TRANCHES (jamais linéaire).
   const bucketEcheance =
     dueJours === null ? 5 : dueJours < 0 ? 0 : dueJours <= 3 ? 1 : dueJours <= 7 ? 2 : dueJours <= 14 ? 3 : 4;
+  // Pour une affaire, « l'attente » est l'ancienneté de l'engagement : une
+  // formalité confiée il y a un an doit passer devant une engagée la semaine
+  // dernière, dans la même classe.
+  if (kind === 'engagement') {
+    const j = x.joursOuvert ?? 0;
+    return [classe, bucketEcheance, corrobore ? 0 : 1, j > 180 ? 0 : j > 60 ? 1 : j > 14 ? 2 : 3];
+  }
   const jAttente = (x.waitingHours ?? 0) / 24;
   const trancheAge = jAttente > 30 ? 0 : jAttente > 7 ? 1 : jAttente > 2 ? 2 : 3;
   return [classe, bucketEcheance, corrobore ? 0 : 1, trancheAge];
@@ -1510,9 +1531,14 @@ function dedoublonnerCandidats(liste) {
   return liste.filter((c) => {
     const cle = c.kind === 'deadline'
       ? `d|${c.x.title}|${String(c.x.date).slice(0, 10)}`
-      : c.kind === 'reply' || c.kind === 'followup'
-        ? `${c.kind}|${c.x.threadId ?? c.x.uid}`
-        : `i|${c.x.account}|${c.x.fromEmail ?? ''}|${c.x.subject ?? ''}`;
+      : c.kind === 'engagement'
+        // Une affaire est identifiée par son id. Sans ce cas, elles tombaient
+        // toutes sur la même clé de paiement (`i|undefined|undefined|…`) et se
+        // seraient dédoublonnées les unes les autres jusqu'à n'en laisser qu'une.
+        ? `e|${c.x.id}`
+        : c.kind === 'reply' || c.kind === 'followup'
+          ? `${c.kind}|${c.x.threadId ?? c.x.uid}`
+          : `i|${c.x.account}|${c.x.fromEmail ?? ''}|${c.x.subject ?? ''}`;
     if (vus.has(cle)) return false;
     vus.add(cle);
     return true;
@@ -1532,6 +1558,9 @@ function renderBriefing(t, el) {
     ...t.todo.invoices.map((x) => ({ kind: 'invoice', x })),
     ...t.todo.deadlines.map((x) => ({ kind: 'deadline', x })),
     ...t.todo.followups.map((x) => ({ kind: 'followup', x })),
+    // Les affaires en souffrance : elles n'ont ni mail récent ni échéance,
+    // c'est exactement pour cela qu'elles doivent pouvoir prendre une carte.
+    ...(t.todo.engagements ?? []).map((x) => ({ kind: 'engagement', x })),
   ].sort(comparerRangs);
 
   const queue = dedoublonnerCandidats(brut);
@@ -1552,11 +1581,13 @@ function renderBriefing(t, el) {
     return `<div class="brief-card" data-card="${i}">
       <div class="brief-head">
         <div class="brief-title">${briefTitle(c)}</div>
-        ${accountChip(c.x.account)}
+        ${accountChip(c.x.account ?? c.x.accountSlug)}
       </div>
       <div class="brief-why">${briefWhy(c)}</div>
       <div class="brief-foot">
-        <span class="brief-open" data-open="${i}">Voir le mail</span>
+        ${c.kind === 'engagement'
+          ? `<a class="brief-open" href="#/affaires">Voir l'affaire</a>`
+          : `<span class="brief-open" data-open="${i}">Voir le mail</span>`}
         <span style="margin-left:auto; display:flex; gap:6px; align-items:center">
           ${more.length ? `<button class="btn btn-sm brief-more" data-more="${i}" title="Autres possibilités">⋯</button>` : ''}
           <button class="btn btn-primary btn-sm brief-do" data-do="${i}">${a.label}</button>
@@ -1610,6 +1641,14 @@ function renderBriefing(t, el) {
     const a = briefAction(c);
     const node = btn.closest('.brief-card');
     if (a.open) { openBriefReader(c); return; }
+    // Une affaire n'a pas de mail à ouvrir : son geste est le brouillon de
+    // relance. La carte reste en place — rédiger n'est pas avoir traité.
+    if (a.affaire) {
+      api.brouillonRelance(a.affaire)
+        .then((br) => modaleBrouillon(br, c.x))
+        .catch((err) => alert(err.message));
+      return;
+    }
     agir(c, a.label.replace(/^[^\s]+\s/, ''), a.run, node);
   }));
   el.querySelectorAll('[data-open]').forEach((s) => s.addEventListener('click', () => {
@@ -1640,6 +1679,7 @@ function openBriefReader(c) {
 
 /** Le titre de la carte : qui, et ce qu'on attend de lui — pas un objet de mail. */
 function briefTitle({ kind, x }) {
+  if (kind === 'engagement') return `${esc(x.label)} — toujours pas abouti`;
   if (kind === 'invoice') return `${esc(x.fromName || x.fromEmail || 'Facture')} — à régler`;
   if (kind === 'reply') return `${esc(x.fromName || x.fromEmail || '?')} attend ta réponse`;
   if (kind === 'followup') return `${esc(x.counterpartyName || x.counterpartyEmail || '?')} ne t'a pas répondu`;
@@ -1648,6 +1688,8 @@ function briefTitle({ kind, x }) {
 
 /** L'UNIQUE action recommandée. Le reste passe derrière le menu « ⋯ ». */
 function briefAction({ kind, x }) {
+  // L'affaire n'a pas de mail à ouvrir : son geste utile est le brouillon.
+  if (kind === 'engagement') return { label: '✉️ Relancer', affaire: x.id };
   if (kind === 'invoice') return { label: '✓ C\'est réglé', run: () => api.messageAction(x.account, { folder: x.folder, uid: x.uid, action: 'seen' }) };
   if (kind === 'reply') return { label: '↩️ Répondre', open: true };
   if (kind === 'followup') return { label: '✓ Plus besoin', run: () => api.followupDismiss(x.account, x.threadId) };
@@ -1665,6 +1707,9 @@ function briefMore({ kind, x }) {
     m.push(['Me le rappeler dans 3 jours', () => api.followupSnooze(x.account, x.threadId, 3)]);
   } else if (kind === 'deadline' && x.status === 'proposed') {
     m.push(['Ce n\'est pas une échéance', () => api.deadlineAction(x.account, x.id, 'dismiss')]);
+  } else if (kind === 'engagement') {
+    m.push(['C’est fait', () => api.engagementClore(x.id)]);
+    m.push(['Revoir dans 30 jours', () => api.engagementReporter(x.id, 30)]);
   } else if (kind === 'invoice') {
     m.push(['En faire une tâche', () => api.taskCreate({ title: `Payer : ${x.subject}`, account: x.account, messageRef: { folder: x.folder, uid: x.uid } })]);
   }
@@ -5786,6 +5831,240 @@ async function loadRetention() {
 // correction qu'on efface est une correction qu'on ne refait pas.
 let _dossiers = [];
 let _fusionSource = null;
+
+/**
+ * Ouvre une modale simple (titre + corps + pied). Reprend l'ossature maison
+ * `.modal-overlay > .modal > .modal-head/.modal-body/.modal-foot` — ces classes
+ * ne doivent JAMAIS servir hors d'une modale, plusieurs écrans les ciblent par
+ * sélecteur global. On n'utilise pas non plus l'id `modal-body`, déjà pris par
+ * la modale de nettoyage.
+ */
+function ouvrirModale(titre, corpsHtml, piedHtml = '') {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay under-reader';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-head"><h2>${titre}</h2>
+      <button class="modal-close" title="Fermer">✕</button></div>
+    <div class="modal-body">${corpsHtml}</div>
+    ${piedHtml ? `<div class="modal-foot">${piedHtml}</div>` : ''}
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  return overlay;
+}
+
+// ════════════════════════════ AFFAIRES EN COURS (18/08) ════════════════════
+// Les engagements pris qui n'ont pas abouti. À NE PAS CONFONDRE avec
+// « 📁 Mes dossiers », qui regroupe des mails par sujet : ici, le déclencheur
+// est un SILENCE. Un mandat confié il y a un an et jamais inscrit au greffe
+// n'a ni échéance, ni montant dû, ni mail entrant — rien ne le rappellerait.
+let _affaires = [];
+
+async function renderAffaires() {
+  const main = $('#main');
+  // Pas de hubTabs() ici : le routeur les injecte lui-même en tête de #main
+  // après l'appel du renderer (cf. `insertAdjacentHTML('afterbegin', tabs)`).
+  // Les poser aussi ici les afficherait EN DOUBLE — constaté à la capture.
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🧭 Affaires en cours</h1>
+      <div class="sub">Ce que tu as engagé et qui n'est pas terminé : une formalité confiée à un
+      cabinet, une procédure payée à moitié, un dossier au greffe. Quand la date de vérification
+      arrive sans preuve que c'est fait, l'affaire passe en <strong>à relancer</strong>.
+      Aucun mail n'est jamais envoyé sans que tu cliques.</div></div>
+    <div class="head-actions">
+      <button class="btn btn-primary" id="aff-new">➕ Nouvelle affaire</button>
+      <button class="btn" id="aff-refresh">↻ Actualiser</button></div></div>
+    <div id="aff-body"><div class="empty"><span class="spinner"></span>Chargement des affaires…</div></div>`;
+  $('#aff-refresh').addEventListener('click', loadAffaires);
+  $('#aff-new').addEventListener('click', () => formulaireAffaire());
+  await loadAffaires();
+}
+
+async function loadAffaires() {
+  const body = $('#aff-body');
+  if (!body) return;
+  body.innerHTML = '<div class="empty"><span class="spinner"></span>Chargement des affaires…</div>';
+  let d;
+  try {
+    d = await api.engagements();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+  _affaires = d.items ?? [];
+
+  if (!_affaires.length) {
+    body.innerHTML = `<div class="empty">
+      <p>🧭 Aucune affaire en cours pour l'instant.</p>
+      <p class="muted">Une affaire, c'est quelque chose que tu as lancé et qui doit aboutir :
+      une cession de parts confiée à un cabinet, un changement de gérant, un dossier au greffe.
+      L'assistant ne peut pas les deviner tout seul — mais une fois notée, il te rappellera
+      de vérifier si rien ne bouge.</p>
+      <button class="btn btn-primary" id="aff-empty-new">➕ Noter ma première affaire</button></div>`;
+    $('#aff-empty-new')?.addEventListener('click', () => formulaireAffaire());
+    return;
+  }
+
+  const c = d.compteurs ?? {};
+  const alerte = c.aRelancer > 0
+    ? `<div class="notice warn">⚠️ <strong>${fmtNum(c.aRelancer)} affaire${c.aRelancer > 1 ? 's' : ''}</strong>
+       ${c.aRelancer > 1 ? 'dorment' : 'dort'} sans preuve d'aboutissement — à relancer.</div>`
+    : `<div class="notice">✅ Aucune affaire en souffrance : toutes ont une vérification à venir.</div>`;
+
+  body.innerHTML = alerte + _affaires.map(carteAffaire).join('');
+  brancherAffaires();
+}
+
+function carteAffaire(a) {
+  const badge = a.aRelancer
+    ? '<span class="badge red">⚠️ à relancer</span>'
+    : a.status === 'propose'
+      ? '<span class="badge orange">💡 proposée</span>'
+      : '<span class="badge green">🕐 en cours</span>';
+  const qui = a.contactName || a.contactEmail || null;
+  // Le montant est DÉJÀ dans `pourquoi` (construit côté serveur) : l'ajouter
+  // ici l'affichait deux fois sur la même ligne — constaté à la capture.
+  const preuves = (a.preuves ?? []).length
+    ? `<details class="aff-preuves"><summary>${a.preuves.length} mail${a.preuves.length > 1 ? 's' : ''}
+         qui le prouvent</summary><ul>${a.preuves.map((p) => `<li>
+         ${p.isOutbound ? '→' : '←'} ${esc(fmtDate(p.date))} —
+         ${esc((p.subject || '(sans objet)').slice(0, 70))}</li>`).join('')}</ul></details>`
+    : '';
+  return `<div class="card aff-card" data-id="${a.id}">
+    <div class="aff-head">
+      <div class="aff-title">${badge} <strong>${esc(a.label)}</strong></div>
+      ${a.dossierLabel ? `<span class="muted">📁 ${esc(a.dossierLabel)}</span>` : ''}
+    </div>
+    <div class="aff-why">${esc(a.pourquoi)}</div>
+    ${a.expected ? `<div class="aff-attendu">Attendu : ${esc(a.expected)}</div>` : ''}
+    ${qui ? `<div class="muted">Interlocuteur : ${esc(qui)}</div>` : ''}
+    <div class="aff-actions">
+      <button class="btn btn-primary btn-sm" data-act="relance" data-id="${a.id}">✉️ Préparer la relance</button>
+      <button class="btn btn-sm" data-act="clore" data-id="${a.id}">✅ C'est fait</button>
+      <button class="btn btn-sm" data-act="reporter" data-id="${a.id}">⏰ Revoir plus tard</button>
+      <button class="btn btn-sm" data-act="editer" data-id="${a.id}">✏️ Modifier</button>
+    </div>
+    ${preuves}</div>`;
+}
+
+function brancherAffaires() {
+  document.querySelectorAll('#aff-body [data-act]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const id = Number(b.dataset.id);
+      const a = _affaires.find((x) => x.id === id);
+      try {
+        if (b.dataset.act === 'relance') {
+          const br = await api.brouillonRelance(id);
+          modaleBrouillon(br, a);
+        } else if (b.dataset.act === 'clore') {
+          if (!confirm(`Marquer « ${a?.label ?? ''} » comme terminée ?\n\nElle sortira de cet écran et de la vue du jour, mais restera consultable.`)) return;
+          await api.engagementClore(id);
+          await loadAffaires();
+        } else if (b.dataset.act === 'reporter') {
+          const j = prompt('Revoir cette affaire dans combien de jours ?', '30');
+          if (!j) return;
+          await api.engagementReporter(id, Number(j) || 30);
+          await loadAffaires();
+        } else if (b.dataset.act === 'editer') {
+          formulaireAffaire(a);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+/** Formulaire de création / modification. Cinq champs, pas trente. */
+function formulaireAffaire(a = null) {
+  const v = (x) => esc(x ?? '');
+  const dateVal = (d) => (d ? String(d).slice(0, 10) : '');
+  ouvrirModale(a ? '✏️ Modifier l\'affaire' : '➕ Nouvelle affaire', `
+    <div class="form-vert">
+      <p class="muted">Note ce que tu as engagé et quand tu veux qu'on vérifie que ça a abouti.
+      Tu peux le faire même s'il n'y a aucun mail : c'est justement le cas des choses qu'on oublie.</p>
+      <label>Intitulé
+        <input id="aff-label" type="text" value="${v(a?.label)}"
+          placeholder="ex. Remontée de mes parts dans la holding"></label>
+      <label>Ce que j'attends concrètement
+        <input id="aff-expected" type="text" value="${v(a?.expected)}"
+          placeholder="ex. les parts inscrites au greffe"></label>
+      <label>Engagée le
+        <input id="aff-opened" type="date" value="${dateVal(a?.openedAt) || new Date().toISOString().slice(0, 10)}"></label>
+      <label>Vérifier le <span class="muted">(si rien n'a bougé d'ici là, l'affaire passera « à relancer »)</span>
+        <input id="aff-review" type="date" value="${dateVal(a?.reviewAt)}"></label>
+      <label>Montant déjà réglé <span class="muted">(facultatif — sert d'argument dans la relance)</span>
+        <input id="aff-amount" type="number" step="0.01" value="${a?.amountPaid ?? ''}"></label>
+      <label>Interlocuteur à relancer <span class="muted">(email)</span>
+        <input id="aff-contact" type="email" value="${v(a?.contactEmail)}" placeholder="ex. contact@cabinet.fr"></label>
+      <label>Notes
+        <textarea id="aff-notes" rows="3" placeholder="ce que tu veux te rappeler">${v(a?.notes)}</textarea></label>
+    </div>`,
+    `${a ? '<button class="btn btn-danger" id="aff-del">🗑️ Supprimer</button>' : ''}
+      <button class="btn" id="aff-cancel">Annuler</button>
+      <button class="btn btn-primary" id="aff-save">${a ? 'Enregistrer' : 'Créer l\'affaire'}</button>`);
+
+  $('#aff-cancel').addEventListener('click', closeModal);
+  $('#aff-del')?.addEventListener('click', async () => {
+    if (!confirm('Supprimer cette affaire ?\n\nAucun mail ne sera touché.')) return;
+    await api.engagementSupprimer(a.id);
+    closeModal();
+    await loadAffaires();
+  });
+  $('#aff-save').addEventListener('click', async () => {
+    const data = {
+      label: $('#aff-label').value.trim(),
+      expected: $('#aff-expected').value.trim() || null,
+      openedAt: $('#aff-opened').value || null,
+      reviewAt: $('#aff-review').value || null,
+      amountPaid: $('#aff-amount').value ? Number($('#aff-amount').value) : null,
+      contactEmail: $('#aff-contact').value.trim() || null,
+      notes: $('#aff-notes').value.trim() || null,
+    };
+    if (!data.label) { alert('Il faut au moins un intitulé.'); return; }
+    try {
+      if (a) await api.engagementModifier(a.id, data);
+      else await api.engagementCreer(data);
+      closeModal();
+      await loadAffaires();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+}
+
+/**
+ * Le brouillon. Il s'ouvre PRÉ-REMPLI de ce qui est prouvé (date d'engagement,
+ * montant réglé, dernier message reçu) et se copie en un clic. Il n'est JAMAIS
+ * envoyé d'ici : c'est lui qui envoie, depuis sa messagerie.
+ */
+function modaleBrouillon(br, a) {
+  ouvrirModale('✉️ Brouillon de relance', `
+    <div class="form-vert">
+      <p class="muted">Rien ne part tant que tu n'as pas envoyé toi-même. Relis, corrige, copie.</p>
+      <label>À<input id="br-to" type="text" value="${esc(br.to)}"></label>
+      <label>Objet<input id="br-subject" type="text" value="${esc(br.subject)}"></label>
+      <label>Message<textarea id="br-body" rows="14">${esc(br.body)}</textarea></label>
+      ${(br.appuis ?? []).length ? `<details><summary>Sur quoi ce brouillon s'appuie</summary>
+        <ul>${br.appuis.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+    </div>`,
+    `<button class="btn" id="br-close">Fermer</button>
+      <button class="btn primary" id="br-copy">📋 Copier le message</button>`);
+  $('#br-close').addEventListener('click', closeModal);
+  $('#br-copy').addEventListener('click', async () => {
+    const txt = $('#br-body').value;
+    try {
+      await navigator.clipboard.writeText(txt);
+      $('#br-copy').textContent = '✅ Copié';
+    } catch {
+      $('#br-body').select();
+      $('#br-copy').textContent = 'Sélectionné — Ctrl+C';
+    }
+  });
+}
 
 async function renderDossiers() {
   const main = $('#main');

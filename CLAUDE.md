@@ -164,14 +164,20 @@ Banc serveur : fuite 45 % → 45 %, « réponses attendues » 165 → 79.
 **Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
 fuite, mesure absurde).
 
+**« 🧭 Affaires en cours » LIVRÉ (18/08, § 44)** : modèle `Engagement` +
+`reviewAt` (≠ `dueAt`) + brouillons de relance + écran. L'ouverture exige une
+PREUVE POSITIVE ; ensuite seulement le silence devient signal. Les brouillons
+ne partent JAMAIS seuls (aucun import de smtp.ts — invariant).
+⚠️ **Détection automatique impossible aujourd'hui** : les 6 246 mails ENVOYÉS
+n'ont ni extrait ni verdict. C'est le prochain verrou.
+**Trouvé en fouillant ses 2 affaires** : le dossier LEGALFREE (parts/holding,
+1 131,26 € réglés) a été **ANNULÉ le 19/01/2026** faute de réponse de sa part ;
+le dossier CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de
+Ludovic** avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
+
 **À faire** :
-- **« Dossiers en cours »** (demandé le 17/08) : ses 3 exemples — URSSAF via
-  Mylène, parts de son frère dans la SARL (mandat d'il y a un an, rien fait
-  sur Infogreffe), changement de direction LB2i payé à moitié. Ces deux
-  derniers n'ont NI date, NI montant dû, NI mail entrant : aucune règle
-  fondée sur les mails reçus ne les fera remonter. Objet `OpenCommitment`
-  avec `reviewAt` ≠ `dueAt` (contre-revue du 18/08). Inclut les propositions
-  de réponse et les relances. À cadrer.
+- **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection
+  automatique des affaires ET pour savoir ce qu'il a déjà demandé.
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans
   créer de dossier ; écran des doublons de pièces. Matière DÉJÀ extraite au
   17/08 : 858 factures, 546 reçus, 481 devis, 348 relevés, 282 contrats.

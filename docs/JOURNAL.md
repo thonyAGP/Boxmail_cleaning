@@ -5,6 +5,79 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 18/08 (44) — « Affaires en cours » : ce que le courrier ne rappellera jamais
+
+**Sa demande, répétée** : des propositions de retour pour les mails qui
+attendent une réponse, des relances sur les échéances dépassées, et une entrée
+de menu. Trois exemples : l'URSSAF via Mylène ; une société mandatée il y a un
+an pour transférer les parts de son frère dans la SARL et remonter ses parts
+dans la holding — rien fait, constaté **sur Infogreffe** ; un changement de
+direction LB2i **payé à moitié**, procédure jamais terminée.
+
+**Le point dur.** Pour les deux derniers, il n'y a ni échéance, ni montant
+qu'il doive, ni mail entrant. **Personne ne lui écrira.** Le déclencheur est un
+SILENCE. Aucun moteur fondé sur le courrier reçu ne peut les faire remonter —
+d'où un objet nouveau, qui n'est ni un mail, ni un dossier, ni une échéance.
+
+**Sa correction, décisive** : « j'ai déjà dû envoyer des mails en ce sens, donc
+tu dois avoir l'email et les détails ». Vérifié, et il avait raison :
+
+- **LEGALFREE** (`romain@legalfree.fr`, boîte Brimmo) : devis « augmentation de
+  capital par apport de titres » le 24/06/2025, **1 131,26 € réglés le 05/08**
+  (840 € de commissariat aux apports + 2 × 145,63 €), rapport du commissaire
+  livré en novembre, puis deux demandes d'informations manquantes le 21/11, une
+  relance restée sans réponse le 25/11 (« Sauf erreur ce mail reste sans
+  réponse »), et le **19/01/2026 : « Nous vous confirmons que nous avons bien
+  annulé votre dossier ECONOM-LEG8007 »**. Voilà pourquoi Infogreffe ne montre
+  rien : le dossier n'a pas traîné, il a été ANNULÉ faute de réponse.
+- **CAPTAIN CONTRAT** (boîte lb2i) : commande « Modification de société —
+  Pack Standard » le 13/11/2025, bloquée le 26/11 — « votre dossier est encore
+  en cours de signature, **Ludovic n'ayant pas signé** ses documents » — puis
+  **échec du prélèvement de 294,67 € le 13/12/2025** (« sans régularisation de
+  ce paiement, vous ne pourrez plus accéder… »). « Payé à moitié » : exactement.
+
+**Cadrage niveau ÉLEVÉ** (nouveau modèle + migration sur base en service +
+écran en production + ambiguïté réelle sur « propositions de retour ») :
+`.chantier/2026-08-18-dossiers-en-cours/change.md`. Contre-revue aveugle déjà
+menée le matin même (§ 43) — c'est elle qui a produit l'objet `OpenCommitment`
+et la distinction **`reviewAt` ≠ `dueAt`** : « à cette date, si je n'ai
+toujours aucune preuve de réalisation, je dois regarder ».
+
+**Livré**
+- `Engagement` + `EngagementMessage` (migration **purement additive** :
+  5 CREATE, zéro ALTER, zéro DROP ⇒ retour arrière sans perte).
+- `services/engagements.ts` — cycle de vie, `reviewAt`, report, clôture.
+  **L'ouverture exige toujours une preuve positive** ; ensuite seulement le
+  silence devient un signal. Sans cette règle on retombait exactement dans la
+  qualification par preuve négative corrigée le matin même.
+- `services/brouillons.ts` — relance et réponse construites depuis le fil RÉEL
+  (destinataire, objet, date d'engagement, montant réglé). **Aucun import de
+  `smtp.ts`** : rien ne part sans qu'il clique. Invariant vérifié au grep.
+- Écran **🧭 Affaires en cours** — nom qu'il a choisi lui-même pour ne pas le
+  confondre avec « 📁 Mes dossiers » (2 527 regroupements de mails par sujet).
+  Entrée de menu + onglet dans le hub « À traiter ».
+- Les affaires en souffrance entrent dans les **3 cartes de l'accueil**, en
+  classe 2 : établies, mais pas obligation datée — elles ne peuvent donc pas
+  évincer une échéance dépassée.
+
+**Preuves** : 14 assertions fonctionnelles vertes ; aller-retour HTTP complet
+(création → liste → brouillon → suppression) ; `/api/today` cohérent ; captures
+d'écran sans aucune erreur JS.
+
+**Quatre défauts attrapés avant livraison, dont trois PAR LA CAPTURE** : les
+onglets du hub s'affichaient en double (le routeur les injecte déjà) ; le
+montant réglé apparaissait deux fois sur la même ligne ; les champs de la
+modale restaient en ligne, réduisant la zone de texte à une colonne illisible.
+Le quatrième vient d'une relecture : sans cas dédié, `dedoublonnerCandidats`
+faisait tomber **toutes** les affaires sur la même clé
+(`i|undefined|undefined|…`) et les réduisait à une seule carte. Sans capture
+d'écran, les trois premiers partaient en production.
+
+**Assumé** : les affaires n'entrent pas dans la file de dépouillement, qui
+affiche un mail dans le panneau de droite — une affaire n'en a pas un seul.
+Et la détection automatique reste à faire : les **6 246 mails ENVOYÉS n'ont ni
+extrait ni verdict**, la matière première n'existe donc pas encore.
+
 ## 18/08 (43) — « Vue du jour » : trois publicités devant une mise en demeure
 
 **Le déclencheur.** Capture d'Anthony : « 3 choses méritent ton attention

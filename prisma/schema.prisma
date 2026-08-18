@@ -119,6 +119,7 @@ model Message {
   // des noms propres, sans tomber sur des chiffres de taille.
   attachmentMeta     String?
   dossiers           DossierMessage[]
+  engagements        EngagementMessage[]
   // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
   // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
   // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le
@@ -627,6 +628,7 @@ model Dossier {
   updatedAt   DateTime @updatedAt
 
   messages    DossierMessage[]
+  engagements Engagement[]
   aliasRows   DossierAlias[]
   identifiers DossierIdentifier[]
   mergedInto  Dossier?  @relation("Fusion", fields: [mergedIntoId], references: [id])
@@ -909,5 +911,90 @@ model DossierMessage {
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@id([dossierId, messageId])
+  @@index([messageId])
+}
+
+/// AFFAIRE EN COURS — un engagement pris qui n'a pas encore abouti.
+///
+/// CE QUE CE MODÈLE RÉSOUT, ET QUE RIEN D'AUTRE NE RÉSOLVAIT (18/08/2026).
+/// Anthony a mandaté une société en 2025 pour transférer les parts de son
+/// frère et remonter ses parts dans la holding ; il a payé ; un an plus tard
+/// il constate SUR INFOGREFFE que rien n'est fait. Aucun mail ne le lui dira :
+/// le déclencheur est un SILENCE. Un mail (Message), un regroupement
+/// thématique (Dossier) et une date (Deadline) sont tous incapables de le
+/// représenter — d'où cette table.
+///
+/// LA CLÉ EST `reviewAt`, ET ELLE N'EST PAS `dueAt` :
+///   · `dueAt`    = « ceci DEVAIT être fait avant cette date » (obligation) ;
+///   · `reviewAt` = « à cette date, si je n'ai TOUJOURS aucune preuve que
+///                    c'est fait, je dois regarder » (vérification).
+/// Une affaire sans échéance contractuelle a quand même une date de
+/// vérification — c'est tout l'intérêt.
+///
+/// L'OUVERTURE EXIGE UNE PREUVE POSITIVE (geste de l'utilisateur, ou fait
+/// analysé : mandat, paiement d'une prestation, procédure engagée). Le silence
+/// ne prouve JAMAIS qu'un engagement existe ; il prouve seulement qu'un
+/// engagement déjà établi n'a pas de clôture connue. Sans cette règle on
+/// retomberait dans la qualification par preuve négative corrigée le 18/08.
+model Engagement {
+  id          Int      @id @default(autoincrement())
+  /// Intitulé affiché. Renommable sans rien casser.
+  label       String
+  /// Ce qu'on attend concrètement (« les parts inscrites au greffe »).
+  expected    String?
+  /// Qui doit agir : user | tiers | inconnu.
+  actor       String   @default("tiers")
+  /// propose = déduit des mails, à confirmer ; ouvert = confirmé et actif ;
+  /// clos = abouti ; abandonne = renoncé. Un `clos` ne se rouvre JAMAIS seul.
+  status      String   @default("propose")
+  /// manual = saisi par l'utilisateur, JAMAIS réécrit par une analyse ;
+  /// auto = proposé par le moteur. Même règle que Dossier.labelSource.
+  source      String   @default("auto")
+  /// Depuis quand l'affaire est engagée.
+  openedAt    DateTime
+  /// Date de VÉRIFICATION (voir en-tête). Null = jamais de relance proposée.
+  reviewAt    DateTime?
+  /// Échéance contractuelle, si elle existe. Distincte de reviewAt.
+  dueAt       DateTime?
+  /// Montant déjà engagé/payé — un argument de relance, pas une dette.
+  amountPaid  Float?
+  /// Interlocuteur à relancer.
+  contactEmail String?
+  contactName  String?
+  /// Compte mail d'où partirait la relance.
+  accountSlug String?
+  /// Rattachement optionnel au regroupement thématique.
+  dossierId   Int?
+  /// Pourquoi le moteur l'a proposée — affiché tel quel, jamais inventé.
+  reason      String?
+  /// Notes libres de l'utilisateur.
+  notes       String?
+  /// Report manuel : masquée jusqu'à cette date.
+  snoozedUntil DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  dossier  Dossier?            @relation(fields: [dossierId], references: [id], onDelete: SetNull)
+  messages EngagementMessage[]
+
+  @@index([status, reviewAt])
+  @@index([dossierId])
+}
+
+/// Les mails qui PROUVENT l'affaire : le mandat, le paiement, la relance
+/// restée sans réponse. Ils justifient l'affaire à l'écran (« d'après ces
+/// mails ») et alimentent le brouillon de relance.
+model EngagementMessage {
+  engagementId Int
+  messageId    Int
+  /// mandat | paiement | relance | reponse | cloture | contexte
+  role         String   @default("contexte")
+  createdAt    DateTime @default(now())
+
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  message    Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([engagementId, messageId])
   @@index([messageId])
 }

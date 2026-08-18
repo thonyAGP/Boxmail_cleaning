@@ -82,6 +82,16 @@ import {
   masquer,
   migrerAliasJson,
 } from '../services/dossiers.js';
+import {
+  listerEngagements,
+  creerEngagement,
+  modifierEngagement,
+  cloreEngagement,
+  reporterEngagement,
+  supprimerEngagement,
+  lierMessages,
+} from '../services/engagements.js';
+import { brouillonRelance, brouillonReponse } from '../services/brouillons.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -1938,6 +1948,120 @@ export function buildAdminRouter(): Router {
           limit: Number.parseInt(String(req.query.limit ?? '12'), 10) || 12,
         }),
       );
+    }),
+  );
+
+  // AFFAIRES EN COURS (18/08) : les engagements pris qui n'ont pas abouti.
+  // À ne pas confondre avec les DOSSIERS ci-dessous, qui regroupent des mails
+  // par sujet. Ici, le déclencheur est un SILENCE : rien n'arrivera dans la
+  // boîte pour rappeler qu'une formalité n'a jamais été inscrite au greffe.
+  router.get(
+    '/engagements',
+    guard(async (req, res) => {
+      res.json(await listerEngagements({ inclureClos: req.query.clos === '1' }));
+    }),
+  );
+
+  router.post(
+    '/engagements',
+    guard(async (req, res) => {
+      try {
+        const id = await creerEngagement(req.body ?? {}, 'manual');
+        await recordOperation({
+          account: String(req.body?.accountSlug ?? '(global)'),
+          tool: 'engagement_creer',
+          params: { id, label: req.body?.label },
+          result: `Affaire créée : « ${req.body?.label} »`,
+        });
+        res.status(201).json({ id });
+      } catch (e) {
+        res.status(400).json({ error: e instanceof Error ? e.message : 'Création impossible.' });
+      }
+    }),
+  );
+
+  router.patch(
+    '/engagements/:id',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      try {
+        const body = req.body ?? {};
+        if (body.action === 'clore' || body.action === 'abandonner') {
+          await cloreEngagement(id, body.action === 'abandonner');
+        } else if (body.action === 'reporter') {
+          await reporterEngagement(id, Number.parseInt(String(body.jours ?? '30'), 10) || 30);
+        } else if (body.action === 'lier' && Array.isArray(body.messageIds)) {
+          await lierMessages(id, body.messageIds.map(Number).filter(Number.isInteger), body.role);
+        } else {
+          await modifierEngagement(id, body);
+        }
+        await recordOperation({
+          account: '(global)',
+          tool: 'engagement_modifier',
+          params: { id, action: body.action ?? 'patch' },
+          result: `Affaire ${id} mise à jour (${body.action ?? 'modification'})`,
+        });
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(400).json({ error: e instanceof Error ? e.message : 'Mise à jour impossible.' });
+      }
+    }),
+  );
+
+  router.delete(
+    '/engagements/:id',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      await supprimerEngagement(id);
+      await recordOperation({
+        account: '(global)',
+        tool: 'engagement_supprimer',
+        params: { id },
+        result: `Affaire ${id} supprimée (aucun mail touché)`,
+      });
+      res.json({ ok: true });
+    }),
+  );
+
+  // BROUILLONS. Ces routes ne font que RÉDIGER : aucune n'envoie quoi que ce
+  // soit — c'est un invariant du chantier (cf. .chantier/2026-08-18-*).
+  router.get(
+    '/engagements/:id/brouillon',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      try {
+        res.json(await brouillonRelance(id));
+      } catch (e) {
+        res.status(404).json({ error: e instanceof Error ? e.message : 'Brouillon impossible.' });
+      }
+    }),
+  );
+
+  router.get(
+    '/messages/:id/brouillon',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant invalide.' });
+        return;
+      }
+      try {
+        res.json(await brouillonReponse(id));
+      } catch (e) {
+        res.status(404).json({ error: e instanceof Error ? e.message : 'Brouillon impossible.' });
+      }
     }),
   );
 

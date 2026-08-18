@@ -4,6 +4,7 @@ import { getUnansweredEmails, type ReplyItem } from './attention.js';
 import { getFollowupsDue, type FollowupItem } from './followups.js';
 import { getImportantEmails, type ImportantItem } from './importance.js';
 import { listDeadlines, type DeadlineItem } from './deadlines.js';
+import { engagementsDus, type EngagementItem } from './engagements.js';
 import { previewSnippet } from './search.js';
 import { logger } from '../logger.js';
 import {
@@ -170,6 +171,14 @@ export interface TodaySummary {
     replies: ReplyItem[];
     followups: FollowupItem[];
     deadlines: DeadlineItem[];
+    /**
+     * AFFAIRES EN COURS dont la date de vérification est atteinte sans preuve
+     * d'aboutissement (18/08). Elles n'ont souvent NI date, NI montant dû,
+     * NI mail entrant — leur déclencheur est un silence. Sans elles, l'accueil
+     * ne peut pas représenter ce qu'il oublie le plus : une formalité confiée
+     * il y a un an et jamais inscrite au greffe.
+     */
+    engagements: EngagementItem[];
     invoices: InvoiceItem[];
     total: number;
     /** Actions réellement présentes dans les listes (= ce que le parcours traitera). */
@@ -326,6 +335,19 @@ export async function generateToday(): Promise<TodaySummary> {
     invoices,
   ).slice(0, TOP);
 
+  // Les affaires en souffrance. Elles ne passent PAS par `uneCarteParMail` :
+  // une affaire n'est pas un mail, elle en agrège plusieurs — et c'est
+  // justement quand aucun mail récent n'existe qu'elle doit apparaître.
+  // Un échec ici ne doit jamais faire tomber tout l'accueil.
+  let affairesDues: EngagementItem[] = [];
+  try {
+    affairesDues = (await engagementsDus()).slice(0, TOP);
+  } catch (e) {
+    logger.warn('affaires en cours indisponibles pour la vue du jour', {
+      error: (e as Error).message,
+    });
+  }
+
   // Bruit : compteurs par catégorie sur toutes les boîtes de réception.
   // Un mail récent (< NOISE_MIN_AGE_DAYS) n'est PAS du bruit : il bascule
   // dans « peut attendre » (bucket NULL) au lieu d'être supprimable.
@@ -390,10 +412,13 @@ export async function generateToday(): Promise<TodaySummary> {
       followups: followups.slice(0, TOP),
       deadlines: deadlines.slice(0, TOP),
       invoices: invoicesUniques,
+      engagements: affairesDues,
       // Totaux sur les listes DÉDOUBLONNÉES : un mail = une carte, donc un
       // seul point dans le compte (sinon « 52 actions » en contenait 3 fois
       // certaines — même famille d'incohérence que le 10/08).
-      total: repliesUniques.length + followups.length + deadlines.length + invoicesUniques.length,
+      total:
+        repliesUniques.length + followups.length + deadlines.length +
+        invoicesUniques.length + affairesDues.length,
       // Ce que le parcours « Commencer » pourra RÉELLEMENT traiter : les
       // listes sont plafonnées à TOP par famille. Sans ce chiffre, l'écran
       // annonçait « ≈ 78 min » pour 52 actions et le parcours disait

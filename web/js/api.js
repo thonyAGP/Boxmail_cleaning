@@ -78,6 +78,20 @@ export const api = {
   dossierFusionner: (source, target) => request('POST', '/dossiers/merge', { source, target }),
   dossiersPropager: (id) => request('POST', '/dossiers/spread', id ? { id } : {}),
 
+  // Affaires en cours : les engagements pris qui n'ont pas abouti. Rien à voir
+  // avec les dossiers ci-dessus (qui regroupent des mails par sujet) — ici le
+  // déclencheur est un SILENCE, pas un mail.
+  engagements: (clos = false) => request('GET', `/engagements${clos ? '?clos=1' : ''}`),
+  engagementCreer: (data) => request('POST', '/engagements', data),
+  engagementModifier: (id, patch) => request('PATCH', `/engagements/${id}`, patch),
+  engagementClore: (id, abandon = false) =>
+    request('PATCH', `/engagements/${id}`, { action: abandon ? 'abandonner' : 'clore' }),
+  engagementReporter: (id, jours) => request('PATCH', `/engagements/${id}`, { action: 'reporter', jours }),
+  engagementSupprimer: (id) => request('DELETE', `/engagements/${id}`),
+  // Brouillons — RÉDIGENT seulement, n'envoient jamais.
+  brouillonRelance: (id) => request('GET', `/engagements/${id}/brouillon`),
+  brouillonReponse: (messageId) => request('GET', `/messages/${messageId}/brouillon`),
+
   suggestions: () => request('GET', '/suggestions'),
   suggestionDismiss: (kind, refKey) => request('POST', '/suggestions/dismiss', { kind, refKey }),
   reviewSample: (n = 10) => request('GET', `/review/sample?n=${n}`),

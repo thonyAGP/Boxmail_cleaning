@@ -1011,3 +1011,53 @@ th.sortable:hover { color: var(--primary); }
   border-radius: 999px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; margin-left: 4px;
 }
 .ech-voisin:hover { background: var(--primary-soft); }
+
+/* ═══════════════ AFFAIRES EN COURS (18/08) ═══════════════
+   Les engagements pris qui n'ont pas abouti. Volontairement sobre : la carte
+   doit se lire en trois secondes — état, intitulé, pourquoi, gestes. */
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(0.92); }
+
+.aff-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--surface, #fff);
+}
+/* Une affaire en souffrance se voit au premier coup d'œil, sans lire. */
+.aff-card:has(.badge.red) { border-left: 4px solid var(--danger); }
+.aff-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.aff-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aff-why { color: var(--muted, #666); font-size: 13px; margin-bottom: 4px; }
+.aff-attendu { font-size: 13px; margin-bottom: 4px; }
+.aff-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.aff-preuves { margin-top: 10px; font-size: 12px; color: var(--muted, #666); }
+.aff-preuves summary { cursor: pointer; }
+.aff-preuves ul { margin: 6px 0 0 18px; padding: 0; }
+
+/* Formulaire vertical en modale (affaires, brouillons). Sans cela, les
+   <label> restent en ligne et la zone de texte se réduit à une colonne
+   illisible — constaté à la capture du 18/08. */
+.form-vert label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.form-vert label > input,
+.form-vert label > textarea,
+.form-vert label > select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font-weight: 400;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+}
+.form-vert label > textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
+.form-vert label .muted { font-weight: 400; }
