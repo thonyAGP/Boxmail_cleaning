@@ -3,9 +3,15 @@ import { db, ensureDbReady } from '../db/client.js';
 /**
  * BROUILLONS DE RELANCE ET DE RÉPONSE.
  *
- * CE QUE CE SERVICE NE FAIT PAS, ET NE FERA JAMAIS : envoyer. Il produit un
- * texte que l'utilisateur lit, corrige, puis envoie lui-même. Aucun import de
- * `smtp.ts` ici — c'est un invariant du chantier, pas une prudence passagère.
+ * CE SERVICE N'ENVOIE RIEN : il RÉDIGE. Aucun import de `smtp.ts` ici.
+ *
+ * NUANCE APPRISE LE 18/08 : l'invariant est « rien ne part sans un clic
+ * explicite d'Anthony », PAS « rien ne part ». Livré sans bouton d'envoi, le
+ * brouillon était inutile — il devait le copier-coller dans sa messagerie
+ * (« super le brouillon, je ne peux même pas l'envoyer… »). L'interface a donc
+ * un bouton « ✉️ Envoyer » qui passe par la route d'envoi existante, après
+ * confirmation nommant le destinataire et la boîte. Le geste reste le sien ;
+ * ce service, lui, ne sait toujours pas envoyer.
  *
  * D'OÙ VIENT LA MATIÈRE. Anthony l'a formulé exactement : « j'ai déjà dû
  * envoyer des mails en ce sens, donc tu dois avoir l'email et les détails ».
@@ -61,18 +67,37 @@ export async function brouillonRelance(engagementId: number): Promise<Brouillon>
   const mails = e.messages.map((m) => m.message).sort(
     (a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0),
   );
-  const dernierEntrant = [...mails].reverse().find((m) => !m.isOutbound);
-  const dernier = mails[mails.length - 1];
 
-  // Destinataire : la saisie manuelle prime, sinon le dernier interlocuteur
-  // humain connu du fil. On ne devine pas au-delà.
-  const to = e.contactEmail ?? dernierEntrant?.fromEmail ?? '';
+  /**
+   * ADRESSE À LAQUELLE ON NE PEUT PAS RÉPONDRE. Mesuré le 18/08 : le brouillon
+   * URSSAF proposait d'écrire à `veuillez-ne-pas-repondre@urssaf.fr`. Le motif
+   * doit couvrir les formes françaises composées, pas seulement `noreply`.
+   */
+  const SANS_REPONSE = /(no-?reply|donotreply|ne[-._]?pas[-._]?repondre|nepasrepondre|no[-._]?responder|notification[s]?@|mailer-daemon|postmaster)/i;
+  const repliable = (adresse: string | null | undefined): boolean =>
+    !!adresse && !SANS_REPONSE.test(adresse);
+
+  // DESTINATAIRE : la saisie manuelle prime TOUJOURS — c'est le seul repère
+  // qu'Anthony contrôle et qu'il peut corriger en un endroit. À défaut, le
+  // dernier interlocuteur à qui l'on PEUT écrire. Jamais une adresse
+  // no-reply : proposer d'y répondre serait un faux service.
+  const entrants = mails.filter((m) => !m.isOutbound);
+  const dernierEntrant = [...entrants].reverse().find((m) => repliable(m.fromEmail));
+  const to = (repliable(e.contactEmail) ? e.contactEmail : null) ?? dernierEntrant?.fromEmail ?? '';
   const toName = e.contactName ?? dernierEntrant?.fromName ?? null;
 
-  // Objet : reprendre CELUI DU FIL fait remonter la relance dans sa
-  // messagerie à lui comme dans celle du destinataire.
-  const sujetFil = dernier?.subject?.replace(/^((re|tr|fwd?)\s*:\s*)+/i, '').trim();
-  const subject = sujetFil ? `Relance — ${sujetFil}` : `Relance — ${e.label}`;
+  /**
+   * OBJET : l'INTITULÉ DE L'AFFAIRE, point.
+   *
+   * J'ai essayé deux fois de le déduire du fil, et deux fois c'était faux :
+   * d'abord le dernier message (« Relance — Invitation: LE BERRE et Romain |
+   * Legalfree - mar. 20 janv. 2026 11:45 »), puis le plus ancien de fond
+   * (« Relance — [LEGALFREE] Des informations sur ANTHONY LE BERRE sont
+   * manquantes… »). Les fils administratifs sont faits de LEURS notifications,
+   * pas du nom de l'affaire. Celui qui sait nommer le dossier, c'est lui —
+   * et il l'a déjà fait en saisissant l'affaire.
+   */
+  const subject = `Relance — ${e.label}`;
 
   const appuis: string[] = [];
   const lignes: string[] = ['Bonjour,', ''];
@@ -115,7 +140,16 @@ export async function brouillonRelance(engagementId: number): Promise<Brouillon>
 
   if (mails.length) appuis.push(`${mails.length} mail(s) rattachés à l'affaire`);
 
-  return { to, toName, subject, body: lignes.join('\n'), accountSlug: e.accountSlug ?? dernier?.accountSlug ?? null, appuis };
+  return {
+    to,
+    toName,
+    subject,
+    body: lignes.join('\n'),
+    // Compte d'envoi : celui saisi sur l'affaire, sinon celui des mails
+    // rattachés. Sans lui, le bouton « Envoyer » ne saurait pas d'où partir.
+    accountSlug: e.accountSlug ?? mails[mails.length - 1]?.accountSlug ?? null,
+    appuis,
+  };
 }
 
 /**

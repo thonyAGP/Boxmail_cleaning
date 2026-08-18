@@ -6068,9 +6068,47 @@ function modaleBrouillon(br, a) {
       ${(br.appuis ?? []).length ? `<details><summary>Sur quoi ce brouillon s'appuie</summary>
         <ul>${br.appuis.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
     </div>`,
-    `<button class="btn" id="br-close">Fermer</button>
-      <button class="btn primary" id="br-copy">📋 Copier le message</button>`);
+    `<span class="muted" id="br-etat"></span>
+      <button class="btn" id="br-close">Fermer</button>
+      <button class="btn" id="br-copy">📋 Copier</button>
+      <button class="btn btn-primary" id="br-send">✉️ Envoyer</button>`);
   $('#br-close').addEventListener('click', closeModal);
+
+  // ENVOYER (18/08). L'invariant du chantier était « rien ne part sans son
+  // clic » ; je l'avais appliqué en « rien ne part du tout », ce qui rendait
+  // le brouillon inutile — il fallait copier-coller dans sa messagerie. Son
+  // retour : « super le brouillon, je ne peux même pas l'envoyer… ». Le clic
+  // sur ce bouton EST le consentement explicite : l'invariant est tenu, et
+  // c'est bien lui qui décide, après avoir relu et corrigé.
+  $('#br-send').addEventListener('click', async () => {
+    const bouton = $('#br-send');
+    const etat = $('#br-etat');
+    const to = $('#br-to').value.trim();
+    const subject = $('#br-subject').value.trim();
+    const text = $('#br-body').value;
+    const compte = br.accountSlug;
+    if (!compte) { alert('Aucune boîte d\'envoi connue pour cette affaire — ouvre « ✏️ Modifier » et renseigne-la.'); return; }
+    if (!to) { alert('Il manque le destinataire.'); return; }
+    if (!subject) { alert('Il manque l\'objet.'); return; }
+    if (!confirm(`Envoyer ce message à ${to}, depuis la boîte ${compte} ?`)) return;
+    bouton.disabled = true;
+    etat.textContent = 'envoi en cours…';
+    try {
+      await api.sendMail(compte, { to, subject, text });
+      closeModal();
+      showUndoToast(`✉️ Relance envoyée à ${to}.`, null);
+      // Une relance envoyée repousse la vérification : inutile de le relancer
+      // demain sur une affaire qu'il vient de relancer aujourd'hui.
+      if (a?.id) {
+        try { await api.engagementReporter(a.id, 15); } catch { /* pas bloquant */ }
+        await loadAffaires();
+      }
+    } catch (err) {
+      bouton.disabled = false;
+      etat.textContent = '';
+      alert(`L'envoi a échoué : ${err.message}`);
+    }
+  });
   $('#br-copy').addEventListener('click', async () => {
     const txt = $('#br-body').value;
     try {
