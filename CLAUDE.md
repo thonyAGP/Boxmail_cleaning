@@ -164,6 +164,10 @@ Banc serveur : fuite 45 % → 45 %, « réponses attendues » 165 → 79.
 **Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
 fuite, mesure absurde).
 
+⚠️ **Chantier touchant `schema.prisma` : `npm run db:generate` AVANT
+`npm run build` sur le serveur** — sinon le build échoue et `pm2 restart`
+repart sur l'ancien `dist` sans rien dire (vécu le 18/08).
+
 **« 🧭 Affaires en cours » LIVRÉ (18/08, § 44)** : modèle `Engagement` +
 `reviewAt` (≠ `dueAt`) + brouillons de relance + écran. L'ouverture exige une
 PREUVE POSITIVE ; ensuite seulement le silence devient signal. Les brouillons

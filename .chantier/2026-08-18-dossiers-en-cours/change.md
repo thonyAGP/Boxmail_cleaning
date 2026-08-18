@@ -283,4 +283,22 @@ affaire n'a pas de mail unique à y montrer.
   dizaines) ; taux de fuite du banc au prochain passage ; `logs/operations.jsonl`
   pour les créations/clôtures. Un engagement manqué étant silencieux par
   nature, le contrôle est le **rodage avec lui**, pas une métrique.
-- **Clôture** : <à remplir>
+- **Déploiement réel (18/08)** : `git pull` + `npm run build` → **le build a
+  ÉCHOUÉ** (`Property 'engagement' does not exist on type 'PrismaClient'`) et
+  `pm2 restart` s'est exécuté quand même sur l'ancien `dist`. Cause : le client
+  Prisma n'est pas régénéré par `npm run build`. Corrigé par
+  `npm run db:generate` puis rebuild + restart. **À retenir : tout chantier qui
+  touche `schema.prisma` doit faire `db:generate` AVANT `build` sur le
+  serveur.** Migration ensuite appliquée au boot :
+  `{"msg":"base mise à jour au démarrage","migrations":1}`.
+- **Vérifications post-déploiement** : `/health` 200 · `renderAffaires` servi ·
+  moteur interrogeable · `/api/today` porte `todo.engagements` ·
+  **banc d'essai : fuite 45 % (86/191) — inchangée**, donc aucune régression.
+- **Amorçage** : ses 3 affaires réelles créées en statut **`propose`**
+  (donc à confirmer par lui, pas imposées), construites à partir des mails et
+  rattachées à leurs preuves : Legalfree (8 mails, 1 131,26 €, dossier annulé
+  le 19/01/2026), Captain Contrat (6 mails, 294,67 € rejetés, signature de
+  Ludovic manquante), URSSAF (4 mails, 418 € avant le 29/08). Deux d'entre
+  elles remontent bien dans la Vue du jour.
+- **Clôture** : livré et vérifié le 18/08. **Le rodage commence** : 2-3 boucles
+  de retours attendues de sa part avant de considérer le chantier fini.
