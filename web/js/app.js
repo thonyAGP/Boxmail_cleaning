@@ -1587,7 +1587,9 @@ function renderBriefing(t, el) {
       <div class="brief-foot">
         ${c.kind === 'engagement'
           ? `<a class="brief-open" href="#/affaires">Voir l'affaire</a>`
-          : `<span class="brief-open" data-open="${i}">Voir le mail</span>`}
+          : peutOuvrirLeMail(c)
+            ? `<span class="brief-open" data-open="${i}">Voir le mail</span>`
+            : ''}
         <span style="margin-left:auto; display:flex; gap:6px; align-items:center">
           ${more.length ? `<button class="btn btn-sm brief-more" data-more="${i}" title="Autres possibilités">⋯</button>` : ''}
           <button class="btn btn-primary btn-sm brief-do" data-do="${i}">${a.label}</button>
@@ -1668,12 +1670,27 @@ function renderBriefing(t, el) {
 }
 
 /** Ouvre le mail d'une carte dans le lecteur (le geste « Voir le mail »). */
+/**
+ * Y a-t-il un mail à ouvrir derrière cette carte ? (18/08)
+ *
+ * Une échéance survit à son mail : Anthony avait mis « Votre facture Freebox »
+ * à la corbeille, l'échéance est restée, et le lien « Voir le mail » ouvrait
+ * une alerte « Le mail d'origine n'est plus dans l'index ». Un lien qui ne
+ * peut QUE échouer ne doit pas être affiché — on ne propose pas un geste pour
+ * s'excuser ensuite de ne pas pouvoir le rendre.
+ */
+function peutOuvrirLeMail(c) {
+  const x = c.x;
+  if (c.kind === 'engagement') return false;
+  return !!(x.account && x.folder && x.uid);
+}
+
 function openBriefReader(c) {
   const x = c.x;
+  if (!peutOuvrirLeMail(c)) return;
   const ref = c.kind === 'deadline'
-    ? (x.folder && x.uid ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: true } : null)
+    ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: true }
     : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
-  if (!ref) { alert('Le mail d\'origine n\'est plus dans l\'index.'); return; }
   openReaderFor(ref, { onRemoved: () => renderToday(), onReplied: () => renderToday() });
 }
 

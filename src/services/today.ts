@@ -328,7 +328,15 @@ export async function generateToday(): Promise<TodaySummary> {
   // UNE carte par mail : un mail déjà présenté comme échéance ne redevient ni
   // « réponse attendue » ni « paiement » ; un mail « réponse attendue » ne
   // redevient pas « paiement ». Voir uneCarteParMail pour l'ordre choisi.
-  const deadlinesCartes = deadlines.map((d) => ({ messageId: d.messageId }));
+  // UNE ÉCHÉANCE DONT LE MAIL SOURCE EST À LA CORBEILLE NE FAIT PAS UNE CARTE
+  // (18/08). Cas réel : « Votre facture Freebox est disponible » — il avait
+  // supprimé le mail, l'échéance a survécu, et le nouveau tri du matin l'a
+  // promue carte n° 1 avec un « Voir le mail » qui ouvrait une alerte d'erreur.
+  // Supprimer le mail est un geste : c'est SA façon de dire que c'est traité.
+  // L'échéance reste consultable dans le Calendrier ; elle ne réclame juste
+  // plus une des trois places de l'accueil.
+  const deadlinesVivantes = deadlines.filter((d) => d.folder !== null && d.uid !== null);
+  const deadlinesCartes = deadlinesVivantes.map((d) => ({ messageId: d.messageId }));
   const repliesUniques = uneCarteParMail(deadlinesCartes, replies);
   const invoicesUniques = uneCarteParMail(
     [...deadlinesCartes, ...repliesUniques],
@@ -410,14 +418,14 @@ export async function generateToday(): Promise<TodaySummary> {
     todo: {
       replies: repliesUniques.slice(0, TOP),
       followups: followups.slice(0, TOP),
-      deadlines: deadlines.slice(0, TOP),
+      deadlines: deadlinesVivantes.slice(0, TOP),
       invoices: invoicesUniques,
       engagements: affairesDues,
       // Totaux sur les listes DÉDOUBLONNÉES : un mail = une carte, donc un
       // seul point dans le compte (sinon « 52 actions » en contenait 3 fois
       // certaines — même famille d'incohérence que le 10/08).
       total:
-        repliesUniques.length + followups.length + deadlines.length +
+        repliesUniques.length + followups.length + deadlinesVivantes.length +
         invoicesUniques.length + affairesDues.length,
       // Ce que le parcours « Commencer » pourra RÉELLEMENT traiter : les
       // listes sont plafonnées à TOP par famille. Sans ce chiffre, l'écran
@@ -426,7 +434,7 @@ export async function generateToday(): Promise<TodaySummary> {
       queued:
         Math.min(repliesUniques.length, TOP) +
         Math.min(followups.length, TOP) +
-        Math.min(deadlines.length, TOP) +
+        Math.min(deadlinesVivantes.length, TOP) +
         invoicesUniques.length,
     },
     important: important.slice(0, 5),
