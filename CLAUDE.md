@@ -44,17 +44,16 @@ Production : `https://boxmail.lb2i.com` (Oracle, déployé le 28/07).
 - `mcp/tools/*` — 52 tools MCP (accounts, folders, read, write, sync, export,
   attention, échéances, briefs, tâches, règles, assist + analyse fine)
 - `server/admin.ts` — API REST de l'interface
-- `services/` — logique partagée MCP/interface : `imap.ts` (pool imapflow
-  XOAUTH2 ; IMPORTANT : plages `a:b` ou `1:*`, jamais de longues listes
-  d'UIDs — limite de commande Outlook), `sync.ts` (sync incrémentale
-  IMAP→SQLite), `cleanup.ts`, `accounts.ts` (accounts.json chiffré
-  AES-256-GCM), `oauth.ts` (MSAL), `jobs.ts`, `oplog.ts`, `update.ts`,
-  `brief.ts`, `tasks.ts`, `rules.ts`, `smtp.ts` (envoi XOAUTH2 actif par
-  défaut), `snippets.ts` (extraits ~500 car., ne télécharge QUE la partie
-  texte), `categorize.ts`, `retention.ts`, `analysis.ts` (verdicts IA),
-  `attention.ts`, `importance.ts`, `deadlines.ts`, `today.ts`, `report.ts`,
-  `learning.ts`, `quality.ts`, `unsubscribe.ts`, `backup.ts`, `health.ts`,
-  `autosync.ts`, `autoupdate.ts`, `portability.ts`
+- `services/` — logique partagée MCP/interface (~30 fichiers, `ls` pour la
+  liste). Ceux qui portent une contrainte non devinable :
+  `imap.ts` (pool imapflow ; plages `a:b` ou `1:*`, JAMAIS de longues listes
+  d'UIDs — limite Outlook), `accounts.ts` (accounts.json chiffré AES-256-GCM),
+  `snippets.ts` (extraits ~500 car., ne télécharge QUE la partie texte),
+  `smtp.ts` (envoi XOAUTH2 actif par défaut), `analysis.ts` (verdicts IA,
+  `candidateWhere` définit le vivier), `attention.ts` / `importance.ts` /
+  `today.ts` (ce qui remonte à l'écran), `engagements.ts` + `brouillons.ts`
+  (affaires en cours ; brouillons SANS envoi), `correspondance.ts`
+  (`contexteDuMail` : les 3 focales).
 - `prisma/schema.prisma` — Account, Folder, Message, Thread, Sender…
   (SQLite, `connection_limit=1` forcé dans `db/client.ts`)
 - `web/` — SPA vanilla (AUCUN framework/build) : `js/app.js`, `js/api.js`,
@@ -101,6 +100,9 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   réellement l'écran avant de le juger grave.
 - Sur le serveur : `npm run audit -- --out logs` (écrire dans `docs/` ferait
   échouer le `git merge --ff-only` de la mise à jour).
+- **Capture d'écran obligatoire avant de livrer une interface** : 6 défauts
+  d'affichage attrapés ainsi le 18/08 (onglets en double, montant répété,
+  champs de modale écrasés). Aucun test automatique ne les voyait.
 - Pas d'octet nul littéral dans les sources (ripgrep classe le fichier
   « binaire » et le saute en silence) — utiliser l'échappement `\u0000`.
 - IMAP Outlook : jamais de longues listes d'UIDs (plages uniquement) ;
@@ -140,13 +142,12 @@ de la couche d'analyse LIVRÉE (12-13/08, lots 0 à 5) : verdict sémantique
 immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 
 **Le rattrapage tourne TOUT SEUL, ×4 depuis le 14/08** : tâche planifiée
-claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), ORCHESTRATEUR + 4 sous-agents
-séquentiels (repli mode direct 40 si Task indisponible). Ne PAS lui redonner
-d'autres connecteurs que Boxmail. Repère **18/08 07 h 45 UTC : 14 221
-verdicts, 5 393 sans verdict** (1 185/24 h) ⇒ fin ~22-23/08. Compter le vivier
-via candidateWhere d'analysis.ts, PAS un count naïf. Tourne en
-**claude-sonnet-5** depuis le 17/08 (forfait en limite) ; qualité VÉRIFIÉE
-inchangée ⇒ **le laisser ainsi**, n'en reparler qu'avec lui.
+claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), orchestrateur + 4 sous-agents
+séquentiels. Ne PAS lui redonner d'autres connecteurs que Boxmail.
+Repère **18/08 : 14 221 verdicts, 5 393 restants** (1 185/24 h) ⇒ fin ~22-23/08.
+Compter le vivier via candidateWhere d'analysis.ts, PAS un count naïf. Tourne
+en **claude-sonnet-5** (forfait en limite), qualité vérifiée inchangée ⇒ **le
+laisser ainsi**, n'en reparler qu'avec lui.
 
 **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
 elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
@@ -156,28 +157,32 @@ elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
 mot de passe (§ 41-42, `authType:'password'`, lb2i validé en réel le 17/08,
 5 254 mails). Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
 
-**Vue du jour repriorisée (18/08, § 43)** : le score additif saturait à 110 sur
-8 candidats sur 8 — trois publicités devant une mise en demeure URSSAF de
-418 €. Remplacé par `rangCandidat()` (classes NON additionnables) ;
-`intent='info'` ajouté à NO_REPLY_INTENTS (le trou par lequel elles passaient).
-Banc serveur : fuite 45 % → 45 %, « réponses attendues » 165 → 79.
-**Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
-fuite, mesure absurde).
+**LIVRÉ le 18/08** (détail § 43-45 du journal) :
+- **Vue du jour** repriorisée — `rangCandidat()`, classes NON additionnables ;
+  `intent='info'` ajouté à NO_REPLY_INTENTS. Banc : fuite 45 % → 45 %.
+- **🧭 Affaires en cours** — `Engagement` + `reviewAt` (≠ `dueAt`) +
+  brouillons. L'ouverture exige une PREUVE POSITIVE ; ensuite seulement le
+  silence devient signal. Rien ne s'envoie seul (aucun import de smtp.ts).
+  3 affaires au statut `propose`, à confirmer par lui.
+- **Contexte d'un mail** — `contexteDuMail()`, trois focales (`Ce sujet` ·
+  **`Lié à ce mail`** défaut · `Tout avec X`). LIÉ = même correspondant ET
+  (même fil OU même sujet OU ≥1 dossier commun) ; médiane 41 → 1 mail.
+  L'historique se déplie SUR PLACE ; `_pileLecture` = retour possible et nommé.
 
-⚠️ **Chantier touchant `schema.prisma` : `npm run db:generate` AVANT
-`npm run build` sur le serveur** — sinon le build échoue et `pm2 restart`
-repart sur l'ancien `dist` sans rien dire (vécu le 18/08).
+**Pièges payés le 18/08 — ne pas les repayer :**
+- **Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
+  fuite, mesure absurde qui ressemble à une régression).
+- **`npm run db:generate` AVANT `npm run build`** après tout changement de
+  `schema.prisma` — sinon le build échoue et `pm2 restart` repart sur l'ancien
+  `dist` sans rien dire.
+- **Les dossiers sont des SIGNAUX DE LIAISON, pas des conteneurs** : 31 % de
+  couverture, 28 % de multiplicité, médiane 1 mail. Ne jamais bâtir une
+  ergonomie qui suppose « le dossier du mail » au singulier.
 
-**« 🧭 Affaires en cours » LIVRÉ (18/08, § 44)** : modèle `Engagement` +
-`reviewAt` (≠ `dueAt`) + brouillons de relance + écran. L'ouverture exige une
-PREUVE POSITIVE ; ensuite seulement le silence devient signal. Les brouillons
-ne partent JAMAIS seuls (aucun import de smtp.ts — invariant).
-⚠️ **Détection automatique impossible aujourd'hui** : les 6 246 mails ENVOYÉS
-n'ont ni extrait ni verdict. C'est le prochain verrou.
-**Trouvé en fouillant ses 2 affaires** : le dossier LEGALFREE (parts/holding,
+**Ses 2 affaires bloquées, élucidées** : le dossier LEGALFREE (parts/holding,
 1 131,26 € réglés) a été **ANNULÉ le 19/01/2026** faute de réponse de sa part ;
-le dossier CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de
-Ludovic** avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
+CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de Ludovic**,
+avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
 
 **À faire** :
 - **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection

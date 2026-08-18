@@ -1061,3 +1061,86 @@ th.sortable:hover { color: var(--primary); }
 }
 .form-vert label > textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .form-vert label .muted { font-weight: 400; }
+
+/* ═══════════ CONTEXTE D'UN MAIL (18/08) ═══════════
+   Règle : le contexte ne doit JAMAIS ressembler au mail en cours. Fond
+   différent, typographie plus compacte, aucune barre d'actions principale —
+   pour qu'il ne se demande jamais « quel mail suis-je en train de lire ? ». */
+.ctx-barre { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
+.ctx-focale {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+}
+.ctx-focale:hover { background: var(--info-soft, #eef2ff); }
+.ctx-focale.actif { background: var(--primary); border-color: var(--primary); color: #fff; }
+.ctx-focale[data-vide] { opacity: 0.5; }
+
+.ctx-lead, .ctx-plus, .ctx-vide { font-size: 12.5px; color: var(--muted, #666); margin: 8px 0; }
+.ctx-vide { padding: 10px 12px; background: var(--bg-soft, #f6f6f7); border-radius: 8px; }
+.ctx-vide .btn { margin-left: 8px; }
+
+.ctx-fil { border-left: 2px solid var(--border); margin-left: 6px; padding-left: 10px; }
+
+/* Repère « vous êtes ici » : la frontière entre le passé et le mail traité. */
+.ctx-ici {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 0 2px;
+}
+
+.ctx-msg { margin-bottom: 2px; }
+.ctx-msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: inherit;
+}
+.ctx-msg-head:hover { background: var(--bg-soft, #f6f6f7); }
+.ctx-msg-date { color: var(--muted, #666); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ctx-msg-qui { font-weight: 600; white-space: nowrap; }
+.ctx-msg-sujet { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* « Pourquoi ce message est là » — discret, jamais un contrôle. */
+.ctx-lien { font-size: 11px; color: var(--muted, #888); white-space: nowrap; }
+
+.ctx-msg-body { padding: 4px 8px 12px 8px; }
+.ctx-apercu { font-size: 12.5px; color: var(--muted, #555); font-style: italic; }
+.ctx-corps {
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--bg-soft, #f6f6f7);
+  border-radius: 6px;
+  white-space: normal;
+}
+.ctx-pj { font-size: 12px; color: var(--muted, #666); margin-top: 6px; }
+.ctx-msg-actions { margin-top: 8px; }
+
+.ctx-conv { border-bottom: 1px solid var(--border); }
+.ctx-conv-head {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  background: transparent; border: 0; padding: 8px 4px; cursor: pointer;
+  font-size: 13px; color: inherit;
+}
+.ctx-conv-head:hover { background: var(--bg-soft, #f6f6f7); }
+.ctx-conv-titre { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Retour NOMMÉ vers le mail d'origine — jamais un simple « ← Retour ». */
+.reader-back { margin-right: 10px; white-space: nowrap; flex-shrink: 0; }

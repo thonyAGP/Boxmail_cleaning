@@ -78,6 +78,12 @@ export const api = {
   dossierFusionner: (source, target) => request('POST', '/dossiers/merge', { source, target }),
   dossiersPropager: (id) => request('POST', '/dossiers/spread', id ? { id } : {}),
 
+  // Contexte d'un mail : trois focales (sujet / lie / tout). Remplace l'usage
+  // principal de `correspondence`, qui listait les 12 conversations les plus
+  // récentes sans aucun critère de pertinence.
+  contexteMail: (messageId, focale = 'lie') =>
+    request('GET', `/messages/${messageId}/contexte?focale=${focale}`),
+
   // Affaires en cours : les engagements pris qui n'ont pas abouti. Rien à voir
   // avec les dossiers ci-dessus (qui regroupent des mails par sujet) — ici le
   // déclencheur est un SILENCE, pas un mail.

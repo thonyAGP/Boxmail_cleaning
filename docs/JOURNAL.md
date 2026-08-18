@@ -5,6 +5,57 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 18/08 (45) — « Nos échanges » : un contexte qui parlait d'autre chose
+
+**Ses trois reproches**, capture à l'appui, sur une mise en demeure URSSAF
+transférée par Mylène : trop d'étapes (« cliquer sur un message pour avoir un
+bandeau, puis ensuite voir le détail à nouveau »), **impasse** (« plus de
+possibilité de revenir en arrière sur le mail principal »), et hors sujet
+(« nos échanges ne se cantonne pas qu'au sujet traité » — il y voyait
+« COUCOU » et « 100 ans de la PLM »).
+
+**Les deux causes, trouvées dans le code avant toute proposition.**
+1. `correspondance.ts` triait les conversations par date décroissante puis
+   `slice(0, 12)`. **Aucun critère de pertinence.** Il ne voyait pas « 12
+   sujets » mais **les 12 plus récents sur 264**.
+2. Cliquer un message appelait `openReader()`, qui commence par
+   `closeReader()` : le mail en cours était **détruit**, sans pile de
+   navigation. Ce n'était pas un bouton « retour » manquant — le modèle était
+   « remplacer » au lieu de « consulter ».
+
+**Contre-revue aveugle 2 tours** (`.consult/2026-08-18-nos-echanges/`). Accord
+immédiat sur le principe : l'historique est du CONTENU inline, pas une
+navigation ; donc **aucun bouton retour dans le parcours normal**, il n'y a
+rien dont il faille revenir.
+
+**Trois mesures ont fait RÉVISER sa proposition initiale** (défaut fondé sur
+le dossier IA) : seulement **31 %** des mails portent un dossier, **28 %** en
+portent plusieurs, et leur **médiane est de 1 mail**. Le cas qui tranche : sur
+le mail URSSAF, le dossier le plus PRÉCIS (« URSSAF Bretagne », 2 mails) est
+le moins utile ; c'est le plus LARGE (« SAS LB2I », 10 mails avec Mylène) qui
+porte le contexte. **Les dossiers sont d'excellents signaux de liaison, pas
+un conteneur navigable** — d'où l'union plutôt qu'un choix.
+
+**La règle retenue** : `LIÉ À CE MAIL = même correspondant ET (même fil OU
+même sujet normalisé OU ≥ 1 dossier en commun)`. Trois focales — `Ce sujet` ·
+**`Lié à ce mail`** (défaut) · `Tout avec X` — triées par FORCE DU LIEN, la
+date ne départageant qu'à force égale. Libellé choisi contre « Cette affaire »
+(singulier faux dans 28 % des cas) et « Dossiers liés » (expose
+l'implémentation).
+
+**Mesuré sur 250 mails réels** : médiane 41 → **1**. 92 % des cas tiennent en
+≤ 20 liés (plafond retenu) ; **41 % n'ont aucun lié**, d'où le soin porté au
+cas vide — on ne s'élargit JAMAIS en douce, sinon le même bouton voudrait dire
+tantôt « voici les liens », tantôt « je n'ai rien trouvé, voilà autre chose ».
+
+**Livré** : `contexteDuMail()` + route `/messages/:id/contexte` ; panneau
+refondu (accordéon sur place, repère « vous êtes ici », un seul corps ouvert à
+la fois, « Ouvrir ce mail ↗ » en geste secondaire) ; **pile de lecture** dont
+le bouton de retour NOMME sa destination (`← URSSAF`, pas `← Retour`).
+
+**Preuve de l'invariant central** : titre du lecteur avant/après dépliement
+d'un message du contexte → **identique**. L'impasse est fermée.
+
 ## 18/08 (44) — « Affaires en cours » : ce que le courrier ne rappellera jamais
 
 **Sa demande, répétée** : des propositions de retour pour les mails qui

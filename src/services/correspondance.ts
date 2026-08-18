@@ -389,3 +389,172 @@ async function voisinsParEntite(
   }
   return [...parAdresse.values()].sort((a, b) => b.count - a.count).slice(0, 6);
 }
+
+/* ═══════════════════ CONTEXTE D'UN MAIL — refonte du 18/08 ═══════════════════
+ *
+ * POURQUOI CETTE REFONTE. « Nos échanges » triait les conversations par date
+ * décroissante puis coupait aux 12 premières. AUCUN critère de pertinence :
+ * ouvrir une mise en demeure URSSAF affichait « COUCOU », « 100 ans de la
+ * PLM », « facture sosh » — les 12 conversations les plus RÉCENTES sur 264.
+ * Retour utilisateur : « nos échanges ne se cantonne pas qu'au sujet traité ».
+ *
+ * LA RÈGLE, issue d'une contre-revue aveugle en 2 tours
+ * (.consult/2026-08-18-nos-echanges/synthese.md) :
+ *
+ *   LIÉ À CE MAIL = même correspondant
+ *                   ET ( même fil
+ *                        OU même sujet normalisé
+ *                        OU au moins un dossier en commun )
+ *
+ * Le premier réflexe — « prendre le dossier du mail » — a été MESURÉ et
+ * écarté : 31 % seulement des mails portent un dossier, 28 % en portent
+ * plusieurs, et leur médiane est de 1 mail. Sur le cas URSSAF, le dossier le
+ * plus PRÉCIS (« URSSAF Bretagne », 2 mails) est le moins utile ; c'est le
+ * plus LARGE (« SAS LB2I », 10 mails avec Mylène) qui porte le contexte. Les
+ * dossiers sont donc d'excellents SIGNAUX DE LIAISON, pas un conteneur
+ * navigable — d'où l'union plutôt qu'un choix.
+ *
+ * Le tri se fait par FORCE DU LIEN, pas par date : mêler un mail du même fil
+ * et un mail relié par un dossier large sur le seul critère de récence ferait
+ * remonter le moins pertinent.
+ */
+
+/** Un message du contexte, avec la raison de sa présence. */
+export interface MessageLie extends MessageEchange {
+  /** Ce qui relie ce message au mail courant, en clair. */
+  lienPar: string;
+  /** Force du lien (0 = le plus fort) — sert au tri, pas à l'affichage. */
+  force: number;
+  /** true quand ce message EST le mail courant (repère « vous êtes ici »). */
+  estCourant: boolean;
+}
+
+export type Focale = 'sujet' | 'lie' | 'tout';
+
+export interface ContexteMail {
+  email: string;
+  displayName: string;
+  accounts: string[];
+  focale: Focale;
+  /** Les trois compteurs, hors mail courant — ils remplissent les onglets. */
+  compteurs: { sujet: number; lie: number; tout: number };
+  /** Messages de la focale demandée (focales `sujet` et `lie`). */
+  messages: MessageLie[];
+  /** Combien de liés n'ont pas été renvoyés (garde-fou des dossiers géants). */
+  tronque: number;
+  /** Regroupement par conversation — UNIQUEMENT pour la focale `tout`. */
+  sujets: SujetEchange[];
+}
+
+/** Plafond d'affichage : 92 % des cas tiennent en 20 (mesuré sur 250 mails). */
+const PLAFOND_LIES = 20;
+
+const normaliserSujet = (s: string | null | undefined): string =>
+  (s ?? '').replace(/^((re|tr|fwd?)\s*:\s*)+/i, '').trim().toLowerCase();
+
+export async function contexteDuMail(opts: {
+  messageId: number;
+  focale?: Focale;
+  limit?: number;
+}): Promise<ContexteMail> {
+  await ensureDbReady();
+  const focale: Focale = opts.focale ?? 'lie';
+
+  const courant = await db.message.findUnique({
+    where: { id: opts.messageId },
+    select: {
+      id: true, subject: true, normalizedSubject: true, threadId: true,
+      fromEmail: true, fromName: true, isOutbound: true, toEmails: true,
+      dossiers: { select: { dossierId: true } },
+    },
+  });
+  if (!courant) throw new Error('Mail introuvable.');
+
+  // L'INTERLOCUTEUR n'est pas toujours l'expéditeur : sur un mail que
+  // l'utilisateur a ENVOYÉ, c'est le destinataire qu'il faut suivre.
+  const email = (courant.isOutbound
+    ? (JSON.parse(courant.toEmails || '[]') as string[])[0]
+    : courant.fromEmail) ?? courant.fromEmail ?? '';
+  if (!email) throw new Error('Aucun interlocuteur identifiable sur ce mail.');
+  const cible = email.toLowerCase();
+
+  // Tous les échanges avec cette personne (les deux sens).
+  const tous = await db.message.findMany({
+    where: {
+      isDeleted: false,
+      folder: { role: { notIn: ['spam'] } },
+      OR: [{ fromEmail: cible }, { toEmails: { contains: cible } }],
+    },
+    orderBy: { date: 'desc' },
+    take: 600,
+    select: { ...selection(), threadId: true, dossiers: { select: { dossierId: true } } },
+  });
+
+  const sujetRef = normaliserSujet(courant.normalizedSubject ?? courant.subject);
+  const dossiersRef = new Set(courant.dossiers.map((d) => d.dossierId));
+
+  // Force du lien : plus le nombre est petit, plus le lien est fort.
+  const evaluer = (m: (typeof tous)[number]): { force: number; lienPar: string } | null => {
+    if (courant.threadId !== null && m.threadId === courant.threadId) {
+      return { force: 0, lienPar: 'même conversation' };
+    }
+    if (sujetRef && normaliserSujet(m.normalizedSubject ?? m.subject) === sujetRef) {
+      return { force: 1, lienPar: 'même objet' };
+    }
+    const communs = m.dossiers.filter((d) => dossiersRef.has(d.dossierId)).length;
+    if (communs > 1) return { force: 2, lienPar: `${communs} dossiers en commun` };
+    if (communs === 1) return { force: 3, lienPar: 'même dossier' };
+    return null;
+  };
+
+  const lies: MessageLie[] = [];
+  let compteurSujet = 0;
+  for (const m of tous) {
+    const l = evaluer(m);
+    if (!l) continue;
+    if (l.force <= 1 && m.id !== courant.id) compteurSujet += 1;
+    lies.push({
+      ...versEchange(m),
+      lienPar: l.lienPar,
+      force: l.force,
+      estCourant: m.id === courant.id,
+    });
+  }
+  // Tri par FORCE du lien, la date ne départage qu'à force égale.
+  lies.sort((a, b) => a.force - b.force || (a.date ?? '').localeCompare(b.date ?? ''));
+
+  const compteurs = {
+    sujet: compteurSujet,
+    lie: lies.filter((m) => !m.estCourant).length,
+    tout: tous.filter((m) => m.id !== courant.id).length,
+  };
+
+  // La focale « sujet » resserre sur le fil et l'objet ; « lie » garde tout.
+  const retenus = focale === 'sujet' ? lies.filter((m) => m.force <= 1) : lies;
+  // Chronologie pour la lecture (le tri par force servait à choisir QUI).
+  const parDate = [...retenus].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+  const plafond = Math.min(Math.max(opts.limit ?? PLAFOND_LIES, 1), 200);
+  // On garde les plus FORTS, puis on les remet en ordre chronologique : sinon
+  // un dossier géant noierait le fil courant sous des mails anciens.
+  const gardes = retenus.slice(0, plafond + 1).map((m) => m.messageId);
+  const messages = parDate.filter((m) => gardes.includes(m.messageId));
+
+  const nom = courant.isOutbound
+    ? (tous.find((m) => !m.isOutbound && m.fromName)?.fromName ?? email)
+    : (courant.fromName ?? email);
+
+  return {
+    email: cible,
+    displayName: nom,
+    accounts: [...new Set(tous.map((m) => m.accountSlug))],
+    focale,
+    compteurs,
+    messages: focale === 'tout' ? [] : messages,
+    tronque: Math.max(0, retenus.filter((m) => !m.estCourant).length - plafond),
+    // La vue élargie garde le regroupement par conversation : c'est là qu'il
+    // explore vraiment, et 800 messages à plat seraient illisibles.
+    sujets: focale === 'tout'
+      ? (await correspondance({ email: cible, limit: 40 })).subjects
+      : [],
+  };
+}

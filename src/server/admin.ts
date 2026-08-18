@@ -73,7 +73,7 @@ import {
 } from '../services/search.js';
 import { find } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
-import { correspondance } from '../services/correspondance.js';
+import { correspondance, contexteDuMail } from '../services/correspondance.js';
 import {
   listerDossiers,
   propager,
@@ -1948,6 +1948,29 @@ export function buildAdminRouter(): Router {
           limit: Number.parseInt(String(req.query.limit ?? '12'), 10) || 12,
         }),
       );
+    }),
+  );
+
+  // CONTEXTE D'UN MAIL (18/08) — remplace l'usage principal de /correspondence,
+  // qui triait par date et coupait aux 12 conversations les plus récentes :
+  // ouvrir une mise en demeure URSSAF affichait « COUCOU » et « 100 ans de la
+  // PLM ». Trois focales : `sujet` (fil + objet), `lie` (défaut : + dossiers
+  // en commun), `tout` (tous les échanges, regroupés par conversation).
+  router.get(
+    '/messages/:id/contexte',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Identifiant de mail invalide.' });
+        return;
+      }
+      const f = String(req.query.focale ?? 'lie');
+      const focale = f === 'sujet' || f === 'tout' || f === 'lie' ? f : 'lie';
+      try {
+        res.json(await contexteDuMail({ messageId: id, focale }));
+      } catch (e) {
+        res.status(404).json({ error: e instanceof Error ? e.message : 'Contexte indisponible.' });
+      }
     }),
   );
 
