@@ -184,7 +184,31 @@ mot de passe (§ 41-42, `authType:'password'`, lb2i validé en réel le 17/08,
 CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de Ludovic**,
 avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
 
+**LIVRÉ le 19/08** (détail § 46) — **recherche : 132 s → ~300 ms**. Le coupable
+était `verdict.mentions.some` traduit par Prisma en sous-requête CORRÉLÉE
+(41 607 mails × 29 039 mentions). Passée en SQL à la main, CTE non corrélées,
+`matchMask` calculé en SQL. Le `take 400` bornait l'UNIVERS, pas l'affichage :
+on classait « les plus pertinents parmi les 400 plus récents ». Phase A
+exhaustive compacte → tri global → phase B d'hydratation. Tri à 5 ordres
+(défaut « les plus récents »), côté serveur. Les 5 976 mails ENVOYÉS sont
+groupés sur leur DESTINATAIRE : les deux sens d'un échange dans une carte.
+
+**Pièges payés le 19/08 :**
+- **`id: { in: [...] }` de plus de 999 valeurs fait PANIQUER le moteur Prisma**
+  (`PrismaClientRustPanicError`, pas une erreur rattrapable). 999 passe, 1 000
+  casse. Les gros ensembles d'ids restent DANS SQLite (CTE / sous-requête).
+- **Attendre la disparition d'un spinner ne prouve rien** : au moment du clic
+  la page porte encore l'écran précédent, la condition est vraie tout de suite
+  et on relit l'ancien DOM. Attendre la RÉPONSE RÉSEAU. Un test mal synchronisé
+  a accusé le tri, qui marchait.
+- **`$queryRaw` rend des BigInt** et Prisma résout un chemin SQLite relatif
+  depuis `prisma/`, pas depuis la racine (`file:../data/…`).
+
 **À faire** :
+- **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :
+  « republique » → 64 mails, « République » → 294. Défaut silencieux. FTS5
+  (`remove_diacritics 2`) réglerait le fond mais change la sémantique de
+  matching (« RIB » ≠ « Ribéroux ») et exige un backfill complet.
 - **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection
   automatique des affaires ET pour savoir ce qu'il a déjà demandé.
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans

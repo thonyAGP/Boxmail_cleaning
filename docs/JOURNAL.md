@@ -5,6 +5,93 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 19/08 (46) — La recherche : 132 s → 300 ms, et un ordre qu'on choisit
+
+**Son retour**, capture de `/admin/#/search` à l'appui sur le mot « avocat » :
+« la recherche est bonne mais **elle est très lente**, et **le tri est fait
+n'importe comment** ; ce serait judicieux de les avoir par défaut par ordre de
+dernier échange, mais de pouvoir trier par ordre inverse, destinataire, etc. »
+Et : « voir avec ChatGPT ce qu'il imagine, construisez ensemble ».
+
+**La lenteur, chronométrée morceau par morceau avant de toucher à quoi que ce
+soit** (base de production, 41 607 mails) :
+
+| Morceau | Temps |
+|---|---|
+| LIKE sujet / snippet / résumé | 35-46 ms |
+| LIKE attachmentText (OCR) | 144 ms |
+| LIKE verdict.contexts | 17 ms |
+| **LIKE verdict.mentions** | **132 763 ms** |
+| OR complet (count) | 136 457 ms |
+
+Un seul coupable, et il valait 99,9 % du temps. `EXPLAIN QUERY PLAN` l'a dit :
+Prisma traduit `verdict.mentions.some.nameRaw.contains` en sous-requête
+**corrélée** — pour CHACUN des 41 607 mails, un `SCAN` des 29 039
+`EntityMention` (l'index `(kind, nameRaw)` ne sert à rien pour un `LIKE '%x%'`),
+soit ~1,2 milliard de comparaisons. Le même LIKE sur la table **seule** : 6 ms.
+
+**Contre-revue ChatGPT** (`.consult/2026-08-19-recherche/`, 2 tours). Deux
+apports qui ont changé la livraison :
+
+1. **Ne pas garder la pré-requête d'ids + `id IN [...]`** que j'envisageais :
+   le gros ensemble doit rester DANS SQLite. Vérifié ensuite empiriquement, et
+   il avait raison au-delà de son argument : un `IN` de **1 000** valeurs ne
+   renvoie pas une erreur, il fait **PANIQUER** le moteur Prisma
+   (`PrismaClientRustPanicError`, limite SQLite de 999 paramètres). 999 passe,
+   1 000 casse. Le remède naïf aurait introduit un nouveau bug.
+2. **Le vrai problème n'était pas le tri mais le `take 400`.** On ne classait
+   pas « les interlocuteurs les plus pertinents » mais « les plus pertinents
+   **parmi les 400 mails les plus récents** » : un résultat fort de 2019 était
+   écarté avant même d'être scoré. Le 400 ne bornait pas l'affichage, il
+   bornait l'UNIVERS.
+
+**Ce qui est livré.** Phase A : une requête SQL écrite à la main (CTE non
+corrélées) qui rend TOUT le vivier en lignes maigres, avec un `matchMask`
+calculé en SQL — obligatoire, puisque la ligne compacte ne porte plus l'OCR et
+que « trouvé dans le contenu de la pièce » ne serait plus reconstituable.
+Groupement, scoring et tri **globaux**. Phase B : hydratation des seuls mails
+montrés. Le `count()` séparé disparaît (il se disputait l'unique connexion) et
+le total affiché devient exact.
+
+Mesuré **sur la production** après déploiement : avocat 280 ms, quittance
+234 ms, facture 316 ms, république 334 ms, et le pire cas absolu — « de »,
+21 602 mails, 1 897 interlocuteurs — **731 ms**.
+
+**Le tri.** Un seul réglage, qui décide de l'ordre des interlocuteurs ET des
+mails dans leur carte : les plus récents (défaut), les plus anciens, A→Z, Z→A,
+les plus pertinents. On dit **« interlocuteur »** et pas « destinataire » :
+dans une recherche l'autre partie est tantôt l'un tantôt l'autre. Deux détails
+qui comptent : le classement se fait sur la date du mail **qui correspond**
+(sinon une newsletter d'hier ferait remonter un interlocuteur dont le seul
+rapport avec « avocat » date de 2021), et le tri est refait **côté serveur** —
+retrier les lignes déjà chargées lui montrerait « les plus anciennes » de la
+page en les faisant passer pour les plus anciennes tout court.
+
+**Les mails envoyés** (repérés par ChatGPT, vérifiés ensuite) : le corpus en
+compte **5 976**. Groupés sur l'expéditeur, ils tombaient tous dans une carte
+« moi-même ». L'interlocuteur d'un mail envoyé est son **destinataire**
+(`toEmails` est rempli sur 5 975/5 976) : les deux sens d'un échange se
+rejoignent maintenant dans une seule carte, avec ↗ / ↘ par ligne. Un envoi à
+plusieurs compte chez chacun d'eux.
+
+**Piège du test, payé une fois.** Le premier passage Playwright a conclu « le
+tri ne change rien — ANOMALIE ». C'était faux : j'attendais la disparition du
+spinner, or au moment du clic la page porte encore les résultats précédents,
+donc la condition est vraie **immédiatement** et on relit l'ancien écran. Il
+faut attendre la **réponse réseau** `/api/find`. L'API, elle, était juste
+depuis le début. Un test mal synchronisé accuse le code innocent.
+
+**Reste ouvert, mesuré mais NON traité — les ACCENTS.** `LIKE '%republique%'`
+→ 64 mails, `LIKE '%République%'` → 294. La casse est insensible (ASCII),
+l'accent non : « echeance », « reglement », « electricite » ratent la majorité
+des résultats, **en silence**. ChatGPT a changé d'avis en cours de route et
+préconise FTS5 (`unicode61 remove_diacritics 2`) pour ça. Non retenu
+aujourd'hui : il a signalé deux problèmes, c'est un troisième, il touche le
+schéma, exige un backfill des 41 607 mails et de l'OCR, et changerait la
+sémantique de matching sur une fonction qu'il juge « bonne » (le distinguo
+« RIB » ≠ « Ribéroux » vient précisément du LIKE + scoring mot entier).
+**À trancher avec lui.**
+
 ## 18/08 (45) — « Nos échanges » : un contexte qui parlait d'autre chose
 
 **Ses trois reproches**, capture à l'appui, sur une mise en demeure URSSAF
