@@ -611,6 +611,8 @@ a.tab { text-decoration: none; }
   padding: 11px 16px; border-bottom: 1px solid var(--border); background: var(--surface-muted);
 }
 .find-group-name { font-weight: 650; font-size: 14px; }
+/* Départage deux cartes qui portent le même nom sans être le même expéditeur. */
+.find-group-via { font-weight: 400; font-size: 11.5px; color: var(--text-secondary); }
 .find-group-meta { font-size: 12.5px; color: var(--text-secondary); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .find-files { display: flex; gap: 7px; flex-wrap: wrap; padding: 9px 16px 3px; }
 .find-file {
@@ -671,8 +673,30 @@ a.tab { text-decoration: none; }
 /* Le sujet et les commandes restent sous la main même au bas d'un long mail. */
 .reader.is-expanded .reader-head {
   position: sticky; top: 0; z-index: 2; background: var(--surface-main);
-  padding-inline: max(20px, calc((100% - 1100px) / 2));
+  padding-block: 9px;
 }
+
+/* Les BANDEAUX se resserrent en grand (19/08) — « en agrandissant on ne voit
+   rien de plus si le mail est dans la hauteur ; dommage de ne pas profiter de
+   cet espace en largeur pour réduire les bandeaux haut et bas ».
+   Exactement ça : ce qui était EMPILÉ passe côte à côte. Rien n'est masqué —
+   la largeur gagnée profite au mail, plus aux marges. */
+.reader.is-expanded .reader-meta {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  column-gap: 16px; row-gap: 2px; padding-block: 7px;
+}
+.reader.is-expanded .reader-meta div { margin: 0; }
+.reader.is-expanded .reader-analysis {
+  display: flex; flex-wrap: wrap; align-items: center;
+  column-gap: 24px; row-gap: 2px; padding-block: 7px;
+}
+/* La ligne de résumé garde toute la largeur : son « Voir le détail » est calé
+   à droite, et le détail déplié ne doit pas se retrouver en colonne. */
+.reader.is-expanded .reader-analysis > .ra-line:first-child,
+.reader.is-expanded .reader-analysis > #ra-detail { flex: 1 1 100%; }
+.reader.is-expanded .reader-analysis .ra-line { padding: 1px 0; }
+.reader.is-expanded .reader-attachments { padding-block: 7px; }
+.reader.is-expanded .reader-actions { padding-block: 8px; }
 /* Texte brut : surtout PAS étiré sur toute la largeur — au-delà d'environ 85
    caractères, l'œil se perd en revenant à la ligne. Page de lecture centrée.
    Le HTML, lui, garde toute la place (l'iframe n'est pas touchée) : un mail
@@ -681,13 +705,11 @@ a.tab { text-decoration: none; }
 .reader.is-expanded .reader-body > .mail-text {
   max-width: 82ch; margin-inline: auto;
 }
-/* Métadonnées, pièces jointes, analyse ET actions suivent la même colonne :
-   sans cela, les boutons restaient collés au bord gauche pendant que l'analyse
-   juste au-dessus était rentrée de 200 px — décalage visible à la capture. */
-.reader.is-expanded .reader-meta,
-.reader.is-expanded .reader-attachments,
-.reader.is-expanded .reader-analysis,
-.reader.is-expanded .reader-actions { padding-inline: max(20px, calc((100% - 1100px) / 2)); }
+/* Les bandeaux, eux, prennent TOUTE la largeur (19/08) : c'est ce qui leur
+   permet de tenir en moins de lignes, donc de rendre de la hauteur au mail —
+   la demande exacte d'Anthony. Les brider à une colonne les faisait retomber
+   sur trois lignes et mangeait l'écran pour rien. Seul le TEXTE du mail reste
+   borné, parce que là c'est la lisibilité qui commande. */
 /* La poignée n'a plus de sens quand le lecteur occupe déjà tout l'écran. */
 .reader.is-expanded .reader-resize { display: none; }
 .reader-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }

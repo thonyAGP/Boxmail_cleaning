@@ -9236,7 +9236,16 @@ function renderSearchResults() {
   el.innerHTML = `
     <div class="find-lead">${entete}
       ${nbDocs ? ` <span class="muted">· ${fmtNum(nbDocs)} portent un document.</span>` : ''}</div>
-    ${d.groups.map((g) => carteGroupe(g)).join('')}
+    ${(() => {
+      // Deux cartes peuvent porter le même nom sans être le même expéditeur
+      // (« Airbnb » depuis airbnb.com, et « Airbnb » depuis le prestataire qui
+      // envoie ses questionnaires). On ne les réunit pas — ce serait faux —
+      // mais on dit alors d'où vient chacune, plutôt que de laisser deux
+      // cartes jumelles sans explication.
+      const vus = new Map();
+      for (const g of d.groups) vus.set(g.label, (vus.get(g.label) ?? 0) + 1);
+      return d.groups.map((g) => carteGroupe(g, vus.get(g.label) > 1)).join('');
+    })()}
     <div class="panel-body muted" style="font-size:12.5px; padding:4px">
       🛟 Rien n'est déplacé ni rangé : je retrouve tes mails là où ils sont.
       Clique une ligne pour lire le mail ici.</div>`;
@@ -9258,7 +9267,7 @@ function renderSearchResults() {
   });
 }
 
-function carteGroupe(g) {
+function carteGroupe(g, montrerOrigine = false) {
   const ouvert = searchState.open.has(g.key);
   const montres = ouvert ? g.items : g.items.slice(0, 3);
   const reste = g.count - montres.length;
@@ -9268,7 +9277,11 @@ function carteGroupe(g) {
   if (g.lastAt) bits.push(`dernier échange le ${fmtDate(g.lastAt)}`);
   return `<div class="panel find-group">
     <div class="find-group-head">
-      <div class="find-group-name">${esc(g.label)}</div>
+      <div class="find-group-name">${esc(g.label)}${
+        montrerOrigine && g.via
+          ? ` <span class="find-group-via" title="Deux interlocuteurs portent ce nom : celui-ci écrit depuis ${esc(g.via)}">via ${esc(g.via)}</span>`
+          : ''
+      }</div>
       <div class="find-group-meta">${bits.join(' · ')}
         ${g.accounts.map((a) => accountChip(a)).join(' ')}</div>
     </div>

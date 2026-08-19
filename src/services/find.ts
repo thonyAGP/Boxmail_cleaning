@@ -216,6 +216,113 @@ export function labelDuGroupe(
 }
 
 /**
+ * Réunir les cartes d'un MÊME interlocuteur (19/08) — « très bizarre d'avoir
+ * 2 expéditeurs alors que les 2 viennent du domaine volotea, même si les
+ * adresses sont différentes (ce sont des messages automatiques de la même
+ * société) ».
+ *
+ * Il a raison : Volotea écrit depuis `volotea.com` ET depuis
+ * `voloteahelp.zendesk.com` (son guichet de support). Le domaine racine ne
+ * suffit donc pas — une société parle par plusieurs portes.
+ *
+ * MAIS fusionner sur le nom affiché seul serait catastrophique. Simulé sur les
+ * 1 819 interlocuteurs réels avant d'écrire une ligne : 107 noms sont portés
+ * par plusieurs domaines, et parmi eux « Équipe des comptes Microsoft »
+ * regroupait `microsoft.com` avec `daum.net` (usurpation), « Isabelle LE
+ * CALLOCH » trois domaines de spam sans rapport, « Comptastar » trois
+ * sociétés différentes, « fr » un fournisseur de propreté avec Bosch.
+ *
+ * D'où la GARDE : on ne réunit que si le nom se retrouve DANS le domaine.
+ * `voloteahelp.zendesk.com` contient « volotea » — c'est bien Volotea ;
+ * `trustpilotmail.com`, qui écrit pourtant sous le nom « Volotea », ne le
+ * contient pas et reste à part — c'est bien un autre expéditeur.
+ *
+ * Résultat simulé : 48 réunions, 61 clés absorbées, toutes vérifiées une par
+ * une (Airbnb, Leroy Merlin, Air France, AXA, IKEA, EDF, Enedis, La Poste,
+ * Antai, France Travail…), zéro rapprochement abusif. Bonus : les personnes
+ * qui écrivent depuis deux adresses (Daniel HELAOUET en free/orange/yahoo) se
+ * retrouvent enfin dans une seule carte.
+ */
+const LONGUEUR_MIN_NOM = 4;
+
+/**
+ * Mots trop courants pour identifier qui que ce soit. Sans eux, « Support
+ * Machin » et « Support Truc » se retrouveraient réunis sous « support » dès
+ * que leurs domaines contiennent le mot — ce qui arrive tout le temps.
+ */
+const MOTS_GENERIQUES = new Set([
+  'support', 'service', 'services', 'contact', 'info', 'infos', 'client',
+  'clients', 'equipe', 'team', 'noreply', 'reply', 'notification',
+  'notifications', 'newsletter', 'news', 'assistance', 'compte', 'mon',
+  'espace', 'groupe', 'group', 'mail', 'email', 'message', 'messages',
+  'centre', 'agence', 'boutique', 'app', 'web', 'online', 'direct', 'pro',
+  'atelier', 'cabinet', 'societe', 'maison', 'sarl', 'sasu', 'sci',
+]);
+
+/** Réduit un texte à ses lettres et chiffres, sans accents ni casse. */
+export function compacte(s: string | null | undefined): string {
+  return (s ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/** Les mots du nom affiché, sans accents ni ponctuation. */
+function motsDe(label: string): string[] {
+  return (label ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * La clé de réunion d'un groupe : le PLUS LONG début de son nom affiché qui se
+ * retrouve dans son propre domaine — sinon `null`, et le groupe reste seul.
+ *
+ * Pourquoi un « début » et pas le nom entier : les expéditeurs signent
+ * « Air France pour ANTHONY LE BERRE », « Airbnb Photo Team », « Airbnb
+ * Team ». Exiger le nom complet laissait ces cartes à part alors que leurs
+ * domaines (`service-airfrance.com`, `photography.airbnb.com`) disent
+ * clairement de qui il s'agit.
+ *
+ * Deux gardes, et elles font tout le travail :
+ *  - le début retenu doit se lire DANS le domaine — « Air France Info Vol »
+ *    envoyé depuis `connect-passengers.com` reste donc séparé, à raison :
+ *    c'est un prestataire, pas la compagnie ;
+ *  - il doit faire au moins 4 caractères et ne pas être un mot passe-partout,
+ *    sinon « Support X » et « Support Y » se retrouveraient réunis.
+ */
+export function cleDeReunion(label: string, cleDomaine: string): string | null {
+  const domaine = compacte(cleDomaine);
+  const mots = motsDe(label);
+  if (!mots.length) return null;
+
+  // PERSONNE PHYSIQUE (la clé est l'adresse entière, chez un fournisseur grand
+  // public) : on exige le nom COMPLET. Simulé sans cette réserve, un début
+  // suffisant réunissait « Philippe Cottet » et « philippe jacquot », ou
+  // « Mélanie Baltazar » et « Melanie Duran » — deux personnes, une carte.
+  // Avec elle, « Daniel HELAOUET » retrouve bien ses trois adresses (free,
+  // orange, yahoo), parce que son nom entier est dans chacune.
+  if (cleDomaine.includes('@')) {
+    const entier = mots.join('');
+    return entier.length >= LONGUEUR_MIN_NOM && domaine.includes(entier) ? entier : null;
+  }
+
+  // ENTREPRISE : du plus long au plus court, on garde la désignation la plus
+  // précise que le domaine confirme.
+  for (let n = mots.length; n >= 1; n--) {
+    const debut = mots.slice(0, n).join('');
+    if (debut.length < LONGUEUR_MIN_NOM) continue;
+    if (n === 1 && MOTS_GENERIQUES.has(mots[0])) continue;
+    if (domaine.includes(debut)) return debut;
+  }
+  return null;
+}
+
+/**
  * Les ordres proposés à l'écran. Un SEUL réglage visible, qui décide de tout :
  * l'ordre des interlocuteurs ET celui des mails dans leur carte. Deux
  * sélecteurs séparés seraient techniquement plus purs et ergonomiquement pires.
@@ -228,6 +335,15 @@ export interface FindGroup {
   key: string;
   /** Nom lisible : « Crédit Agricole », « Nathalie HATEM ». */
   label: string;
+  /**
+   * D'où viennent ces mails (le domaine, ou l'adresse pour une personne).
+   * L'écran ne le montre QUE si deux cartes portent le même nom — sinon c'est
+   * du bruit. Cas réel : « Airbnb » depuis `airbnb.com` et « Airbnb » depuis
+   * `express.medallia.com`, le prestataire qui envoie ses questionnaires. Les
+   * réunir serait faux (medallia écrit pour d'autres marques) ; ne rien dire
+   * laisserait Anthony devant deux cartes identiques.
+   */
+  via: string;
   /** Boîtes dans lesquelles cet interlocuteur apparaît. */
   accounts: string[];
   /** Nombre de mails retenus pour ce groupe. */
@@ -348,8 +464,12 @@ export async function find(opts: FindOptions): Promise<FindResult> {
     );
   }
 
+  // Une société parle par plusieurs portes : on réunit ses cartes AVANT de
+  // trier, sinon le classement porterait sur des morceaux d'interlocuteur.
+  const reunis = reunirMemeInterlocuteur([...parGroupe.values()]);
+
   // --- Tri GLOBAL, sur tous les interlocuteurs ------------------------------
-  const groupesTries = [...parGroupe.values()].sort(comparateurGroupes(sort));
+  const groupesTries = reunis.sort(comparateurGroupes(sort));
   const retenus = groupesTries.slice(0, maxGroups);
 
   // --- Phase B : on n'hydrate que les mails réellement montrés --------------
@@ -387,6 +507,7 @@ export async function find(opts: FindOptions): Promise<FindResult> {
         items.map((i) => ({ fromName: i.fromName, entites: i.entites })),
         g.key,
       ) || g.labelProvisoire,
+      via: g.key,
       accounts: [...g.accounts],
       count: g.candidats.length,
       withAttachments: g.candidats.filter((c) => c.hasAttachments).length,
@@ -415,8 +536,10 @@ export async function find(opts: FindOptions): Promise<FindResult> {
   return {
     query: q,
     total: candidats.length,
-    totalGroups: parGroupe.size,
-    truncated: parGroupe.size > groupes.length,
+    // Le nombre d'interlocuteurs annoncé est celui d'APRÈS réunion : c'est ce
+    // qu'il voit à l'écran, pas le décompte interne des domaines.
+    totalGroups: reunis.length,
+    truncated: reunis.length > groupes.length,
     examined: candidats.length,
     sort,
     groups: groupes,
@@ -430,6 +553,44 @@ export async function find(opts: FindOptions): Promise<FindResult> {
         .sort((a, b) => b.count - a.count),
     },
   };
+}
+
+/**
+ * Réunit les groupes qui désignent le même interlocuteur (voir `cleDeReunion`).
+ * Le groupe le plus volumineux donne sa clé — celle qui sert au dépliage — et
+ * les mails sont dédoublonnés : un envoi à plusieurs destinataires d'une même
+ * société pourrait sinon être compté deux fois dans la carte réunie.
+ */
+function reunirMemeInterlocuteur(groupes: GroupeInterne[]): GroupeInterne[] {
+  const parNom = new Map<string, GroupeInterne[]>();
+  const seuls: GroupeInterne[] = [];
+  for (const g of groupes) {
+    const cle = cleDeReunion(g.labelProvisoire, g.key);
+    if (!cle) { seuls.push(g); continue; }
+    const l = parNom.get(cle);
+    if (l) l.push(g);
+    else parNom.set(cle, [g]);
+  }
+  const out = [...seuls];
+  for (const lot of parNom.values()) {
+    if (lot.length === 1) { out.push(lot[0]); continue; }
+    lot.sort((a, b) => b.candidats.length - a.candidats.length);
+    const chef = lot[0];
+    const vus = new Set(chef.candidats.map((c) => c.id));
+    for (const autre of lot.slice(1)) {
+      for (const c of autre.candidats) {
+        if (vus.has(c.id)) continue;
+        vus.add(c.id);
+        chef.candidats.push(c);
+      }
+      for (const a of autre.accounts) chef.accounts.add(a);
+      chef.score += autre.score;
+      if (autre.maxDate && (!chef.maxDate || autre.maxDate > chef.maxDate)) chef.maxDate = autre.maxDate;
+      if (autre.minDate && (!chef.minDate || autre.minDate < chef.minDate)) chef.minDate = autre.minDate;
+    }
+    out.push(chef);
+  }
+  return out;
 }
 
 /** L'ordre des interlocuteurs. La pertinence sert de départage partout. */
