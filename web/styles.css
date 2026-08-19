@@ -640,12 +640,57 @@ a.tab { text-decoration: none; }
   box-shadow: var(--shadow-1); overflow: hidden;
 }
 
-/* Poignée de redimensionnement du lecteur (bord gauche, taille mémorisée). */
+/* Poignée de redimensionnement du lecteur (bord gauche, taille mémorisée).
+   Elle existait depuis des mois sans qu'Anthony la trouve : 6 px sans aucun
+   repère au repos, ça ne s'invente pas. D'où le petit trait central. */
 .reader-resize {
-  position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+  position: absolute; left: 0; top: 0; bottom: 0; width: 8px;
   cursor: col-resize; z-index: 5; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.reader-resize::before {
+  content: ''; width: 2px; height: 34px; border-radius: 2px;
+  background: var(--border); transition: background .15s;
 }
 .reader-resize:hover, .reader-resize:active { background: var(--primary-soft); }
+.reader-resize:hover::before, .reader-resize:active::before { background: var(--primary); }
+
+/* ------------------------------------------------- Lecture agrandie (19/08)
+   « Un bouton permettant d'avoir la lecture du mail en plein écran. » Ce n'est
+   PAS le plein écran du navigateur (requestFullscreen) : il confisque la
+   touche Échap, sort du cadre de l'application et empêche les modales du
+   lecteur (Répondre, Transférer, Tâche, Rentila) de s'ouvrir par-dessus.
+   C'est le MÊME lecteur, qui respire — pas un troisième mode de lecture :
+   rien ne disparaît, ni les actions, ni l'analyse, ni les pièces jointes. */
+.reader.is-expanded,
+.reader.docked.is-expanded,
+#rv-wrap .reader.docked.is-expanded {
+  position: fixed; inset: 0; width: 100%; max-width: none;
+  height: 100dvh; z-index: 97; border-left: 0; border-radius: 0;
+}
+/* Le sujet et les commandes restent sous la main même au bas d'un long mail. */
+.reader.is-expanded .reader-head {
+  position: sticky; top: 0; z-index: 2; background: var(--surface-main);
+  padding-inline: max(20px, calc((100% - 1100px) / 2));
+}
+/* Texte brut : surtout PAS étiré sur toute la largeur — au-delà d'environ 85
+   caractères, l'œil se perd en revenant à la ligne. Page de lecture centrée.
+   Le HTML, lui, garde toute la place (l'iframe n'est pas touchée) : un mail
+   conçu pour 600 px garde sa composition, un relevé bancaire ou un tableau
+   gagne enfin de la largeur. Une seule commande, deux régimes automatiques. */
+.reader.is-expanded .reader-body > .mail-text {
+  max-width: 82ch; margin-inline: auto;
+}
+/* Métadonnées, pièces jointes, analyse ET actions suivent la même colonne :
+   sans cela, les boutons restaient collés au bord gauche pendant que l'analyse
+   juste au-dessus était rentrée de 200 px — décalage visible à la capture. */
+.reader.is-expanded .reader-meta,
+.reader.is-expanded .reader-attachments,
+.reader.is-expanded .reader-analysis,
+.reader.is-expanded .reader-actions { padding-inline: max(20px, calc((100% - 1100px) / 2)); }
+/* La poignée n'a plus de sens quand le lecteur occupe déjà tout l'écran. */
+.reader.is-expanded .reader-resize { display: none; }
+.reader-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @media (max-width: 1100px) {
   .inbox-layout.with-reader { grid-template-columns: 1fr; }
   .inbox-dock { position: static; }

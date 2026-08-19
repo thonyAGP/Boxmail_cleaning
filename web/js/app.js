@@ -111,9 +111,21 @@ function installGlobalUx() {
 
   // Échap ferme le panneau de lecture, puis les modales — partout. Si un
   // brouillon est en cours dans la modale d'envoi, on demande confirmation.
+  //
+  // 19/08 : Échap retire UN niveau d'engagement à la fois. Sur une lecture
+  // agrandie, il réduit d'abord ; c'est seulement au deuxième appui qu'on
+  // quitte le mail. Sortir du grand format ET perdre le mail d'un seul geste
+  // serait brutal — d'autant qu'en grand il n'y a plus de voile où cliquer.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (document.querySelector('.reader')) {
+    const lecteur = document.querySelector('.reader');
+    if (lecteur) {
+      if (lecteur.classList.contains('is-expanded')) {
+        basculerAgrandissement(lecteur, false);
+        return;
+      }
+      _pileLecture = [];
+      _lectureAgrandie = false;
       closeReader();
       return;
     }
@@ -9539,6 +9551,38 @@ const readBodyCache = new Map();
  */
 let _pileLecture = [];
 
+/**
+ * Lecture agrandie (19/08) — état de SÉANCE, jamais mémorisé sur le disque.
+ *
+ * La largeur réglée à la poignée est une préférence durable ; « agrandir » est
+ * une façon de lire ce mail-ci, maintenant. Elle suit donc la séance de lecture
+ * (mail suivant, mail empilé, retour au précédent) mais retombe dès qu'il ferme
+ * vraiment — sinon il rouvrirait un jour la Recherche en se demandant pourquoi
+ * sa liste a disparu.
+ */
+let _lectureAgrandie = false;
+
+/** Passe le lecteur en grand (ou l'en fait revenir) sans RIEN reconstruire. */
+function basculerAgrandissement(panel, force) {
+  const grand = force ?? !panel.classList.contains('is-expanded');
+  _lectureAgrandie = grand;
+  // Une simple classe : recréer le corps ou l'iframe renverrait Anthony en haut
+  // du mail alors qu'il en lisait le milieu.
+  panel.classList.toggle('is-expanded', grand);
+  const btn = panel.querySelector('#reader-expand');
+  if (btn) {
+    // Pictogrammes VÉRIFIÉS au rendu : ⛶ (U+26F6), le symbole habituel du
+    // plein écran, s'affiche en carré vide à la taille d'un petit bouton sur
+    // Windows. La paire ↗️/↙️ rend en couleur et se distingue d'un coup d'œil.
+    btn.textContent = grand ? '↙️ Réduire' : '↗️ Agrandir';
+    const t = grand ? 'Réduire la lecture' : 'Agrandir la lecture';
+    btn.title = t;
+    btn.setAttribute('aria-label', t);
+  }
+  // Le voile n'a plus lieu d'être quand le lecteur couvre tout l'écran.
+  document.querySelector('.reader-overlay')?.classList.toggle('hidden', grand);
+}
+
 async function readMessageCached(account, folder, uid) {
   const key = `${account}|${folder}|${uid}`;
   const hit = readBodyCache.get(key);
@@ -9579,7 +9623,10 @@ async function openReader(item, row, opts = {}) {
   const dock = opts.dock && opts.dock.isConnected && window.innerWidth > 1100 ? opts.dock : null;
   const overlay = document.createElement('div');
   overlay.className = 'reader-overlay';
-  overlay.addEventListener('click', closeReader);
+  overlay.addEventListener('click', () => {
+    _lectureAgrandie = false;
+    closeReader();
+  });
   const panel = document.createElement('div');
   panel.className = dock ? 'reader docked' : 'reader';
   panel.innerHTML = `
@@ -9588,7 +9635,11 @@ async function openReader(item, row, opts = {}) {
         title="Revenir au mail que tu étais en train de traiter">←&nbsp;${esc(
           (_pileLecture[_pileLecture.length - 1].label || 'mail précédent').slice(0, 34))}</button>` : ''}
       <h2>${esc(item.subject)}</h2>
-      <button class="modal-close" title="Fermer">✕</button>
+      <div class="reader-head-actions">
+        <button class="btn btn-sm" id="reader-expand"
+          title="Agrandir la lecture" aria-label="Agrandir la lecture">↗️ Agrandir</button>
+        <button class="modal-close" title="Fermer">✕</button>
+      </div>
     </div>
     <div class="reader-meta">
       <div><strong>${esc(item.fromName || item.fromEmail)}</strong>
@@ -9622,9 +9673,14 @@ async function openReader(item, row, opts = {}) {
     document.body.appendChild(panel);
   }
   installReaderResize(panel, dock);
+  // La lecture reprend dans l'état où il l'avait mise : rouvrir chaque mail en
+  // petit après avoir demandé du grand serait un réglage à refaire sans cesse.
+  if (_lectureAgrandie) basculerAgrandissement(panel, true);
+  panel.querySelector('#reader-expand').addEventListener('click', () => basculerAgrandissement(panel));
   // Fermer VIDE la pile : on quitte la lecture, il n'y a plus de « retour ».
   panel.querySelector('.modal-close').addEventListener('click', () => {
     _pileLecture = [];
+    _lectureAgrandie = false;
     closeReader();
   });
   // Retour au mail d'où l'on vient, avec son propre contexte de rappel.
@@ -9650,13 +9706,11 @@ async function openReader(item, row, opts = {}) {
     }
     btn.disabled = false;
   });
-  const onKey = (e) => {
-    if (e.key === 'Escape') {
-      closeReader();
-      document.removeEventListener('keydown', onKey);
-    }
-  };
-  document.addEventListener('keydown', onKey);
+  // (La touche Échap est traitée par l'unique gestionnaire global posé au
+  // démarrage : celui qui vivait ici faisait doublon — et comme il n'était
+  // retiré que s'il gérait lui-même l'appui, il s'en accumulait un par mail
+  // ouvert. Le gestionnaire global s'exécutait de toute façon en premier,
+  // ayant été enregistré avant : il gagnait toujours.)
 
   // Analyse heuristique du mail (L5.4) : importance, état du fil, échéances
   // trouvées dans le texte affiché. Local, sans IMAP supplémentaire, sans LLM.
@@ -9700,6 +9754,9 @@ async function openReader(item, row, opts = {}) {
       // mais leurs URLs deviennent de VRAIS liens — comme dans la boîte mail.
       const brut = (body.text || '(mail sans contenu texte)').replace(/\n{3,}/g, '\n\n');
       const zone = document.createElement('div');
+      // Nommée pour que la lecture agrandie puisse la centrer et lui garder
+      // une largeur de lecture confortable (voir .reader.is-expanded).
+      zone.className = 'mail-text';
       zone.innerHTML = esc(brut).replace(
         /(https?:\/\/[^\s<>"«»]+?)([.,;:!?)\]]*)(?=\s|$)/g,
         '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>$2',
