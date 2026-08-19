@@ -126,6 +126,9 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
 - **Attendre la disparition d'un spinner ne prouve rien** : au clic la page
   porte encore l'écran précédent, donc c'est vrai tout de suite et on relit
   l'ancien DOM. Attendre la RÉPONSE RÉSEAU.
+- Un **pictogramme se vérifie au rendu** (⛶ U+26F6 = carré vide à taille de
+  bouton sous Windows) ; un **gestionnaire global d'Échap existe déjà** — en
+  rajouter un dans un composant fait doublon, s'accumule, et perd toujours.
 
 ## Contenu des boîtes (à ne plus redécouvrir)
 
@@ -188,6 +191,12 @@ l'affichage : on classait « les plus pertinents parmi les 400 plus récents ».
 Désormais phase A exhaustive compacte → tri GLOBAL → phase B d'hydratation.
 Tri à 5 ordres côté serveur (défaut « les plus récents »). Les 5 976 mails
 ENVOYÉS se groupent sur leur DESTINATAIRE : les 2 sens dans une même carte.
+
+**LIVRÉ le 19/08 (2)** (détail § 47) — **« ↗️ Agrandir »** dans l'en-tête du
+lecteur : bascule CSS, PAS `requestFullscreen()` (confisquerait Échap, bloquerait
+les modales Répondre/Tâche/Rentila). Texte borné à 82 caractères et centré, HTML
+en pleine largeur. Rien ne disparaît. Échap réduit d'abord, ferme ensuite. État
+de séance, jamais sur disque (la largeur de la poignée, elle, est durable).
 
 **À faire** :
 - **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :

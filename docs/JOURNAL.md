@@ -5,6 +5,73 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 19/08 (47) — Lire un mail en grand, sans en faire un troisième lecteur
+
+**Sa demande**, capture d'une confirmation Volotea à l'appui (mail HTML très
+graphique, comprimé dans le panneau de 880 px) : « il serait bon d'avoir un
+bouton permettant d'avoir la lecture du mail en plein écran. Regarde avec
+ChatGPT ce qui serait le mieux à faire. »
+
+**Ce n'est PAS `requestFullscreen()`**, et c'est délibéré : le plein écran du
+navigateur confisque la touche Échap, sort du cadre de l'application et
+empêcherait les modales du lecteur (Répondre, Transférer, Tâche, Rentila) de
+s'ouvrir par-dessus. Une simple classe CSS suffit. D'où le mot **« Agrandir »**
+plutôt que « plein écran » : ce n'est pas la même promesse.
+
+**Deux régimes de largeur, une seule commande.** Le texte brut est borné à
+82 caractères et centré (mesuré : 824 → 692 px) — étiré sur 1 500 px, l'œil se
+perd en revenant à la ligne. Le HTML garde 100 % (mesuré : 1 500 px) : un mail
+conçu pour 600 px conserve sa composition, un relevé bancaire gagne enfin ses
+colonnes. Anthony n'a pas à savoir ce qui distingue les deux.
+
+**Rien ne disparaît.** Les 7 actions, l'analyse et les pièces jointes restent
+en place ; seule l'en-tête devient collante. « C'est mon lecteur habituel, mais
+en grand » — pas un troisième mode de lecture. Faire s'évanouir des boutons
+qu'il chercherait ensuite serait une faute chez un utilisateur non technique.
+
+**Échap retire un niveau à la fois** : il réduit d'abord, il ferme ensuite. En
+grand, il n'y a plus de voile où cliquer à côté ; perdre le mail d'un seul
+appui serait brutal. En le câblant, découverte d'un doublon : un gestionnaire
+de touches vivait dans `openReader` alors qu'un gestionnaire **global** posé au
+démarrage faisait déjà le travail — et comme le premier n'était retiré que s'il
+gérait lui-même l'appui, **il s'en accumulait un par mail ouvert**. Le global
+gagnait de toute façon (enregistré avant), ce qui a d'abord fait croire que
+« réduire d'abord » ne marchait pas. Supprimé.
+
+**L'agrandissement suit la SÉANCE**, pas le disque : il survit au mail suivant,
+à la pile de lecture, au retour arrière, et retombe à la fermeture. La largeur
+réglée à la poignée est une préférence durable ; la façon de lire ce mail-ci ne
+l'est pas. La poignée reste d'ailleurs — son défaut n'était pas d'exister mais
+d'être **invisible** (6 px sans aucun repère au repos), d'où le petit trait
+central.
+
+**Contre-revue ChatGPT** (`.consult/2026-08-19-lecture-plein-ecran/`, 1 tour —
+la réponse suffisait). Son apport décisif, le piège que je n'avais pas vu :
+**ne RIEN reconstruire au basculement**. Pas d'`innerHTML`, pas d'iframe
+recréée — sinon on lit le milieu d'une réservation, on clique « Agrandir » et
+on se retrouve projeté en haut du mail. Vérifié en marquant le nœud de contenu :
+il survit, et le défilement reste à 500 px. Corollaire respecté : le lecteur
+ancré n'est pas déplacé dans un autre conteneur, il reçoit la classe sur place.
+
+**Vérifications de géométrie** (copie de la base de production, fenêtre 1500) :
+lecteur 880 → 1500 px ; colonne ancrée 646×926 → 1500×950 à (0,0) — et aucun
+ancêtre de `.inbox-dock` ne porte de `transform`/`filter`/`will-change`/
+`contain`, ce qui aurait neutralisé `position: fixed` en silence.
+
+**Deux défauts d'affichage attrapés à la CAPTURE, pas par les tests** — la
+règle du 18/08 continue de payer :
+1. la barre d'actions restait collée au bord gauche pendant que l'analyse juste
+   au-dessus était rentrée de 200 px ;
+2. **⛶ (U+26F6)**, le symbole habituel du plein écran, sort en **carré vide** à
+   la taille d'un petit bouton sous Windows. Vingt candidats ont été rendus côte
+   à côte pour trancher : retenu la paire couleur **↗️ / ↙️**, lisible à toute
+   taille et visuellement opposée.
+
+**Limite du banc en local** : le corps des mails ne se charge pas (aucun compte
+IMAP en dev — « Compte lb2i inconnu »). Les deux régimes de contenu ont donc
+été **injectés** dans le vrai lecteur pour éprouver la géométrie et l'invariant.
+Dit ici pour que personne ne relise ces mesures comme un test de bout en bout.
+
 ## 19/08 (46) — La recherche : 132 s → 300 ms, et un ordre qu'on choisit
 
 **Son retour**, capture de `/admin/#/search` à l'appui sur le mot « avocat » :
