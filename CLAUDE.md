@@ -112,6 +112,20 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   et lister les changements AVANT toute passe de ce type).
 - Jamais de classes de modale (`modal-body`/`modal-foot`) hors d'une
   modale : plusieurs écrans les ciblent par sélecteur global.
+- **Le banc n'a de sens QUE sur le serveur** (local : 31 mails ⇒ 100 % de fuite,
+  faux air de régression). **`db:generate` AVANT `build`** après tout changement
+  de `schema.prisma`, sinon `pm2 restart` repart sur l'ancien `dist` en silence.
+- **Les dossiers sont des SIGNAUX de liaison, pas des conteneurs** (31 % de
+  couverture, médiane 1 mail) : pas d'ergonomie qui suppose « le dossier » au
+  singulier.
+- **Prisma/SQLite** : `id: { in: [...] }` > 999 valeurs fait **PANIQUER** le
+  moteur (pas une erreur rattrapable) — les gros ensembles d'ids restent DANS
+  SQLite ; `relation.some.champ.contains` part en sous-requête **CORRÉLÉE**,
+  mortel sur un `LIKE` (132 s le 19/08) — vérifier le plan avant ; `$queryRaw`
+  rend des BigInt ; chemin relatif résolu depuis `prisma/` (`file:../data/…`).
+- **Attendre la disparition d'un spinner ne prouve rien** : au clic la page
+  porte encore l'écran précédent, donc c'est vrai tout de suite et on relit
+  l'ancien DOM. Attendre la RÉPONSE RÉSEAU.
 
 ## Contenu des boîtes (à ne plus redécouvrir)
 
@@ -143,66 +157,37 @@ immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
 
 **Le rattrapage tourne TOUT SEUL, ×4 depuis le 14/08** : tâche planifiée
 claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), orchestrateur + 4 sous-agents
-séquentiels. Ne PAS lui redonner d'autres connecteurs que Boxmail.
-Repère **18/08 : 14 221 verdicts, 5 393 restants** (1 185/24 h) ⇒ fin ~22-23/08.
-Compter le vivier via candidateWhere d'analysis.ts, PAS un count naïf. Tourne
-en **claude-sonnet-5** (forfait en limite), qualité vérifiée inchangée ⇒ **le
-laisser ainsi**, n'en reparler qu'avec lui.
-
-**LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails —
-elle CUMULE les lots et meurt (« not valid JSON »). Contexte NEUF par lot
-(d'où les sous-agents), aucun réglage n'y change rien.
+séquentiels ; ne PAS lui donner d'autre connecteur que Boxmail. Repère 18/08 :
+14 221 verdicts, 5 393 restants (1 185/24 h) ⇒ fin ~22-23/08. Compter le vivier
+via `candidateWhere` d'analysis.ts, PAS un count naïf. Tourne en
+**claude-sonnet-5** (forfait en limite), qualité inchangée ⇒ le laisser ainsi.
+**LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails
+(elle CUMULE les lots et meurt) — contexte NEUF par lot, aucun réglage n'y fait.
 
 **CLOS** : OCR le 13/08 (§ 39-40, 811/976 scans lisibles) ; comptes IMAP par
-mot de passe (§ 41-42, `authType:'password'`, lb2i validé en réel le 17/08,
-5 254 mails). Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
+mot de passe (§ 41-42, `authType:'password'`, lb2i validé le 17/08, 5 254
+mails). Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
 
-**LIVRÉ le 18/08** (détail § 43-45 du journal) :
-- **Vue du jour** repriorisée — `rangCandidat()`, classes NON additionnables ;
-  `intent='info'` ajouté à NO_REPLY_INTENTS. Banc : fuite 45 % → 45 %.
-- **🧭 Affaires en cours** — `Engagement` + `reviewAt` (≠ `dueAt`) +
-  brouillons. L'ouverture exige une PREUVE POSITIVE ; ensuite seulement le
-  silence devient signal. Rien ne s'envoie seul (aucun import de smtp.ts).
-  3 affaires au statut `propose`, à confirmer par lui.
-- **Contexte d'un mail** — `contexteDuMail()`, trois focales (`Ce sujet` ·
-  **`Lié à ce mail`** défaut · `Tout avec X`). LIÉ = même correspondant ET
-  (même fil OU même sujet OU ≥1 dossier commun) ; médiane 41 → 1 mail.
-  L'historique se déplie SUR PLACE ; `_pileLecture` = retour possible et nommé.
-
-**Pièges payés le 18/08 — ne pas les repayer :**
-- **Le banc n'a de sens QUE sur le serveur** (en local : 31 mails ⇒ 100 % de
-  fuite, mesure absurde qui ressemble à une régression).
-- **`npm run db:generate` AVANT `npm run build`** après tout changement de
-  `schema.prisma` — sinon le build échoue et `pm2 restart` repart sur l'ancien
-  `dist` sans rien dire.
-- **Les dossiers sont des SIGNAUX DE LIAISON, pas des conteneurs** : 31 % de
-  couverture, 28 % de multiplicité, médiane 1 mail. Ne jamais bâtir une
-  ergonomie qui suppose « le dossier du mail » au singulier.
+**LIVRÉ le 18/08** (détail § 43-45) : Vue du jour repriorisée (`rangCandidat()`,
+classes NON additionnables) ; **🧭 Affaires en cours** (`Engagement` +
+`reviewAt` ≠ `dueAt` + brouillons — l'ouverture exige une PREUVE POSITIVE, rien
+ne s'envoie seul ; 3 affaires `propose` à confirmer par lui) ; **Contexte d'un
+mail** (`contexteDuMail()`, 3 focales, défaut `Lié à ce mail` = même
+correspondant ET (même fil OU sujet OU dossier) ; médiane 41 → 1 mail).
 
 **Ses 2 affaires bloquées, élucidées** : le dossier LEGALFREE (parts/holding,
 1 131,26 € réglés) a été **ANNULÉ le 19/01/2026** faute de réponse de sa part ;
 CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de Ludovic**,
 avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
 
-**LIVRÉ le 19/08** (détail § 46) — **recherche : 132 s → ~300 ms**. Le coupable
-était `verdict.mentions.some` traduit par Prisma en sous-requête CORRÉLÉE
-(41 607 mails × 29 039 mentions). Passée en SQL à la main, CTE non corrélées,
-`matchMask` calculé en SQL. Le `take 400` bornait l'UNIVERS, pas l'affichage :
-on classait « les plus pertinents parmi les 400 plus récents ». Phase A
-exhaustive compacte → tri global → phase B d'hydratation. Tri à 5 ordres
-(défaut « les plus récents »), côté serveur. Les 5 976 mails ENVOYÉS sont
-groupés sur leur DESTINATAIRE : les deux sens d'un échange dans une carte.
-
-**Pièges payés le 19/08 :**
-- **`id: { in: [...] }` de plus de 999 valeurs fait PANIQUER le moteur Prisma**
-  (`PrismaClientRustPanicError`, pas une erreur rattrapable). 999 passe, 1 000
-  casse. Les gros ensembles d'ids restent DANS SQLite (CTE / sous-requête).
-- **Attendre la disparition d'un spinner ne prouve rien** : au moment du clic
-  la page porte encore l'écran précédent, la condition est vraie tout de suite
-  et on relit l'ancien DOM. Attendre la RÉPONSE RÉSEAU. Un test mal synchronisé
-  a accusé le tri, qui marchait.
-- **`$queryRaw` rend des BigInt** et Prisma résout un chemin SQLite relatif
-  depuis `prisma/`, pas depuis la racine (`file:../data/…`).
+**LIVRÉ le 19/08** (détail § 46) — **recherche : 132 s → ~300 ms en prod**.
+Coupable unique : `verdict.mentions.some`, que Prisma traduisait en sous-requête
+CORRÉLÉE (41 607 mails × 29 039 mentions). Passée en SQL à la main (CTE non
+corrélées, `matchMask` calculé en SQL). Le `take 400` bornait l'UNIVERS et pas
+l'affichage : on classait « les plus pertinents parmi les 400 plus récents ».
+Désormais phase A exhaustive compacte → tri GLOBAL → phase B d'hydratation.
+Tri à 5 ordres côté serveur (défaut « les plus récents »). Les 5 976 mails
+ENVOYÉS se groupent sur leur DESTINATAIRE : les 2 sens dans une même carte.
 
 **À faire** :
 - **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :
