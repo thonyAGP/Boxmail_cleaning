@@ -9045,11 +9045,34 @@ const searchState = {
   q: '',
   account: '',
   attachments: false,
+  /** Ordre demandé — voir TRIS_LABELS. Défaut : les échanges les plus récents. */
+  sort: 'recent',
   data: null,
   searched: false,
   /** Groupes dépliés (clé d'entité) — l'utilisateur en ouvre un à la fois. */
   open: new Set(),
 };
+
+/**
+ * Un SEUL réglage d'ordre (19/08) — retour d'Anthony : « le tri est fait
+ * n'importe comment ». Il l'était : les cartes sortaient par score de
+ * pertinence, sans que rien ne le dise ni ne permette d'en changer.
+ *
+ * On dit « interlocuteur » et pas « destinataire » : dans une recherche, l'autre
+ * partie est tantôt l'un tantôt l'autre — ce qu'il cherche, c'est la personne
+ * avec qui il a échangé.
+ *
+ * Chaque changement REFAIT la recherche côté serveur : retrier ici les seules
+ * lignes déjà chargées afficherait « les plus anciennes » de la page en cours
+ * en les faisant passer pour les plus anciennes tout court.
+ */
+const TRIS_LABELS = [
+  ['recent', '🕑 les plus récents'],
+  ['ancien', '🕰️ les plus anciens'],
+  ['az', '🔤 interlocuteur de A à Z'],
+  ['za', '🔤 interlocuteur de Z à A'],
+  ['pertinence', '🎯 les plus pertinents'],
+];
 
 // Exemples tirés de SES boîtes : quittance, bail, avis d'imposition… Un
 // exemple concret vaut mieux qu'une explication de syntaxe.
@@ -9080,6 +9103,10 @@ function pourquoiLigne(item) {
     'contenu de la pièce': 'le contenu de la pièce jointe',
     résumé: 'le résumé',
     'texte du mail': 'le texte du mail',
+    // Ce que l'analyse a NOMMÉ dans le mail : c'est ce qui retrouve « 46 rue de
+    // la République » quand ni le sujet ni le texte ne le disent.
+    'entité citée': 'ce dont parle le mail',
+    'dossier cité': 'le dossier rattaché',
   };
   const l = item.matchedIn.map((m) => dit[m] ?? m);
   const txt = l.length === 1 ? l[0] : `${l.slice(0, -1).join(', ')} et ${l[l.length - 1]}`;
@@ -9114,24 +9141,35 @@ async function renderSearch() {
       </select></label>
       <label><input type="checkbox" id="s-attachments" ${searchState.attachments ? 'checked' : ''}>
         📎 seulement ce qui porte un document</label>
+      <label>Trier par <select id="s-sort">
+        ${TRIS_LABELS.map(([v, l]) => `<option value="${v}" ${v === searchState.sort ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+      </select></label>
     </div>
     <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot, ou clique un exemple ci-dessus.</div>`}</div>`;
 
+  const lireFiltres = () => {
+    searchState.account = $('#s-account').value;
+    searchState.attachments = $('#s-attachments').checked;
+    searchState.sort = $('#s-sort').value;
+  };
   $('#find-form').addEventListener('submit', (e) => {
     e.preventDefault();
     searchState.q = $('#s-q').value.trim();
-    searchState.account = $('#s-account').value;
-    searchState.attachments = $('#s-attachments').checked;
+    lireFiltres();
     runSearch();
   });
   main.querySelectorAll('.find-chip').forEach((b) => {
     b.addEventListener('click', () => {
       searchState.q = b.dataset.q;
       $('#s-q').value = searchState.q;
-      searchState.account = $('#s-account').value;
-      searchState.attachments = $('#s-attachments').checked;
+      lireFiltres();
       runSearch();
     });
+  });
+  // Changer l'ordre relance la recherche : pas besoin de recliquer « Chercher ».
+  $('#s-sort').addEventListener('change', () => {
+    lireFiltres();
+    if (searchState.searched && searchState.q) runSearch();
   });
   $('#s-q').focus();
   if (searchState.data) renderSearchResults();
@@ -9151,6 +9189,7 @@ async function runSearch() {
       q: searchState.q,
       account: searchState.account,
       attachments: searchState.attachments,
+      sort: searchState.sort,
       groups: 8,
       per: 25,
     });
@@ -9172,11 +9211,15 @@ function renderSearchResults() {
     return;
   }
 
+  // La recherche voit maintenant TOUT le corpus : le total est exact, et le
+  // nombre d'interlocuteurs dit franchement combien de cartes restent derrière.
   const nbDocs = d.facets.withAttachments;
-  const entete = d.total > d.examined
-    ? `J'ai trouvé <strong>${fmtNum(d.total)}</strong> mails ; je te montre les plus pertinents,
-       regroupés par interlocuteur.`
-    : `<strong>${fmtNum(d.examined)}</strong> mail(s) trouvé(s), regroupés par interlocuteur.`;
+  const nbGroupes = d.totalGroups ?? d.groups.length;
+  const reste = nbGroupes - d.groups.length;
+  const entete = `<strong>${fmtNum(d.total)}</strong> mail${d.total > 1 ? 's' : ''} trouvé${d.total > 1 ? 's' : ''}
+    chez <strong>${fmtNum(nbGroupes)}</strong> interlocuteur${nbGroupes > 1 ? 's' : ''}${
+      reste > 0 ? ` — je te montre les ${d.groups.length} premiers` : ''
+    }.`;
 
   el.innerHTML = `
     <div class="find-lead">${entete}
@@ -9210,7 +9253,7 @@ function carteGroupe(g) {
   // Une phrase, pas un tableau de colonnes.
   const bits = [`${fmtNum(g.count)} mail${g.count > 1 ? 's' : ''}`];
   if (g.withAttachments) bits.push(`${fmtNum(g.withAttachments)} avec document`);
-  if (g.lastAt) bits.push(`dernier le ${fmtDate(g.lastAt)}`);
+  if (g.lastAt) bits.push(`dernier échange le ${fmtDate(g.lastAt)}`);
   return `<div class="panel find-group">
     <div class="find-group-head">
       <div class="find-group-name">${esc(g.label)}</div>
@@ -9222,6 +9265,7 @@ function carteGroupe(g) {
       ${montres.map((i, idx) => `
         <div class="result-row ${i.isSeen ? '' : 'unread'}" data-key="${esc(g.key)}" data-idx="${idx}">
           <span class="mail-date">${fmtDate(i.date)}</span>
+          <span class="sens-mail" title="${i.isOutbound ? 'Tu as écrit ce mail' : 'Tu as reçu ce mail'}">${i.isOutbound ? '↗' : '↘'}</span>
           <span class="result-subject">${esc(i.subject)}</span>
           ${i.hasAttachments ? `<span class="badge gray" title="${i.attachmentCount} pièce(s) jointe(s)">📎</span>` : ''}
           ${folderBadge(i)}

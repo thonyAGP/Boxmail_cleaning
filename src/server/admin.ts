@@ -71,7 +71,7 @@ import {
   reflectBulkInIndex,
   reflectRestoreInIndex,
 } from '../services/search.js';
-import { find } from '../services/find.js';
+import { find, TRIS, type TriRecherche } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance, contexteDuMail } from '../services/correspondance.js';
 import {
@@ -1727,6 +1727,11 @@ export function buildAdminRouter(): Router {
       }
       const sinceRaw = String(req.query.since ?? '').trim();
       const since = sinceRaw ? new Date(sinceRaw) : undefined;
+      // Le tri est appliqué CÔTÉ SERVEUR, sur tout le vivier : retrier dans le
+      // navigateur les seuls mails déjà chargés donnerait « les plus anciens
+      // du haut de la pile » en les présentant comme les plus anciens tout
+      // court — un mensonge qu'Anthony n'aurait aucun moyen de repérer.
+      const triDemande = String(req.query.sort ?? '').trim();
       res.json(
         await find({
           q,
@@ -1735,6 +1740,9 @@ export function buildAdminRouter(): Router {
           since: since && !Number.isNaN(since.getTime()) ? since : undefined,
           maxGroups: Number.parseInt(String(req.query.groups ?? '8'), 10) || 8,
           perGroup: Number.parseInt(String(req.query.per ?? '3'), 10) || 3,
+          sort: TRIS.includes(triDemande as TriRecherche)
+            ? (triDemande as TriRecherche)
+            : undefined,
         }),
       );
     }),

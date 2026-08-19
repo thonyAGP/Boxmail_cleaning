@@ -524,6 +524,9 @@ a.tab { text-decoration: none; }
 .mail-row:hover { background: var(--surface-hover); }
 .mail-row.personal { background: var(--warning-soft); }
 .mail-date { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; min-width: 82px; }
+/* Sens de l'échange dans une carte d'interlocuteur : ↗ ce qu'il a écrit,
+   ↘ ce qu'il a reçu. Les deux sens vivent dans la même carte depuis le 19/08. */
+.sens-mail { color: var(--text-muted); font-size: 12px; width: 14px; text-align: center; flex: 0 0 auto; }
 .mail-subject { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mail-snip { color: var(--text-muted); font-weight: 400; }
 .op-details summary {

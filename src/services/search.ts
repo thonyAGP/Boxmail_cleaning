@@ -124,6 +124,211 @@ export interface SearchResult {
   items: SearchResultItem[];
 }
 
+/**
+ * PHASE A de « retrouver » (19/08) — le vivier COMPLET des mails correspondants,
+ * en lignes compactes.
+ *
+ * Pourquoi une requête SQL écrite à la main plutôt que du Prisma : mesuré sur la
+ * base de production (41 607 mails), la clause
+ * `verdict.mentions.some.nameRaw.contains` que produisait Prisma est traduite en
+ * sous-requête CORRÉLÉE — pour CHACUN des 41 607 mails, un scan des 29 039
+ * `EntityMention`, soit ~1,2 milliard de comparaisons : **132 763 ms**. Le même
+ * LIKE sur la table seule prend 6 ms. Les CTE ci-dessous parcourent les mentions
+ * UNE fois : la recherche entière retombe à ~200 ms.
+ *
+ * Pourquoi pas une pré-requête d'ids passée en `id: { in: [...] }` : au-delà de
+ * 999 valeurs, le moteur Prisma ne renvoie pas une erreur mais **panique**
+ * (`PrismaClientRustPanicError`, limite SQLite de paramètres) — vérifié : 999
+ * passe, 1 000 casse. Le gros ensemble d'ids doit rester DANS SQLite.
+ *
+ * Pourquoi exhaustif : tant qu'on ne ramenait que les 400 mails les plus
+ * récents, on ne classait pas « les interlocuteurs les plus pertinents » mais
+ * « les plus pertinents parmi les 400 plus récents » — un résultat fort de 2019
+ * était écarté avant même d'être vu. D'où des lignes volontairement maigres
+ * (pas d'OCR, pas de résumé) : le pire cas mesuré (« de ») fait 21 605 lignes
+ * pour 5 Mo, le cas courant quelques centaines.
+ *
+ * `mask` dit dans QUELS champs le terme a été vu — il doit être calculé ici :
+ * la ligne compacte ne porte plus `attachmentText`, donc « trouvé dans le
+ * contenu de la pièce » ne serait plus reconstituable en aval.
+ */
+export const MATCH_SUJET = 1;
+export const MATCH_EXPEDITEUR = 2;
+export const MATCH_TEXTE = 4;
+export const MATCH_CONTENU_PIECE = 8;
+export const MATCH_NOM_PIECE = 16;
+export const MATCH_RESUME = 32;
+export const MATCH_ENTITE = 64;
+export const MATCH_CONTEXTE = 128;
+
+export interface CandidatRecherche {
+  id: number;
+  account: string;
+  date: string | null;
+  fromEmail: string;
+  fromName: string;
+  toEmails: string;
+  isOutbound: boolean;
+  subject: string;
+  attachmentNames: string;
+  hasAttachments: boolean;
+  mask: number;
+}
+
+/**
+ * Échappe les jokers LIKE du terme tapé : sans ça, chercher « 100% » ou
+ * « devis_2024 » fait de `%` et `_` des jokers et ramène n'importe quoi.
+ */
+function motifLike(terme: string): string {
+  return `%${terme.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+const SQL_CANDIDATS = `
+WITH mh AS (SELECT DISTINCT messageId FROM EntityMention WHERE nameRaw LIKE ?1 ESCAPE '\\'),
+     ch AS (SELECT DISTINCT messageId FROM VerdictContext WHERE label LIKE ?1 ESCAPE '\\')
+SELECT m.id, m.accountSlug, m.date, m.fromEmail, m.fromName, m.toEmails, m.isOutbound,
+       m.subject, m.attachmentNames, m.hasAttachments,
+        (CASE WHEN m.subject         LIKE ?1 ESCAPE '\\' THEN ${MATCH_SUJET} ELSE 0 END)
+      + (CASE WHEN m.fromEmail       LIKE ?1 ESCAPE '\\'
+                OR m.fromName        LIKE ?1 ESCAPE '\\' THEN ${MATCH_EXPEDITEUR} ELSE 0 END)
+      + (CASE WHEN m.snippet         LIKE ?1 ESCAPE '\\' THEN ${MATCH_TEXTE} ELSE 0 END)
+      + (CASE WHEN m.attachmentText  LIKE ?1 ESCAPE '\\' THEN ${MATCH_CONTENU_PIECE} ELSE 0 END)
+      + (CASE WHEN m.attachmentNames LIKE ?1 ESCAPE '\\' THEN ${MATCH_NOM_PIECE} ELSE 0 END)
+      + (CASE WHEN m.aiSummary       LIKE ?1 ESCAPE '\\' THEN ${MATCH_RESUME} ELSE 0 END)
+      + (CASE WHEN m.id IN (SELECT messageId FROM mh)    THEN ${MATCH_ENTITE} ELSE 0 END)
+      + (CASE WHEN m.id IN (SELECT messageId FROM ch)    THEN ${MATCH_CONTEXTE} ELSE 0 END) AS mask
+FROM Message m
+JOIN Folder f ON f.id = m.folderId
+WHERE m.isDeleted = 0
+  AND f.role NOT IN ('trash', 'drafts')
+  AND (?2 IS NULL OR m.accountSlug = ?2)
+  AND (?3 = 0 OR m.hasAttachments = 1)
+  AND (?4 IS NULL OR m.date >= ?4)
+  AND (   m.subject         LIKE ?1 ESCAPE '\\'
+       OR m.fromEmail       LIKE ?1 ESCAPE '\\'
+       OR m.fromName        LIKE ?1 ESCAPE '\\'
+       OR m.snippet         LIKE ?1 ESCAPE '\\'
+       OR m.attachmentText  LIKE ?1 ESCAPE '\\'
+       OR m.attachmentNames LIKE ?1 ESCAPE '\\'
+       OR m.aiSummary       LIKE ?1 ESCAPE '\\'
+       OR m.id IN (SELECT messageId FROM mh)
+       OR m.id IN (SELECT messageId FROM ch))`;
+
+/** Le vivier complet des mails correspondants (corbeille et brouillons exclus). */
+export async function candidatsRecherche(opts: {
+  q: string;
+  account?: string;
+  withAttachments?: boolean;
+  since?: Date;
+}): Promise<CandidatRecherche[]> {
+  await ensureDbReady();
+  const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(
+    SQL_CANDIDATS,
+    motifLike(opts.q),
+    opts.account ?? null,
+    opts.withAttachments ? 1 : 0,
+    opts.since ? opts.since.toISOString() : null,
+  );
+  // $queryRaw rend les entiers SQLite en BigInt et les booléens en 0/1 : on
+  // remet des types JS ordinaires une bonne fois, ici.
+  return rows.map((r) => ({
+    id: Number(r.id),
+    account: String(r.accountSlug ?? ''),
+    date: r.date ? new Date(r.date as string | number | Date).toISOString() : null,
+    fromEmail: String(r.fromEmail ?? ''),
+    fromName: String(r.fromName ?? ''),
+    toEmails: String(r.toEmails ?? ''),
+    isOutbound: !!Number(r.isOutbound ?? 0),
+    subject: String(r.subject ?? ''),
+    attachmentNames: String(r.attachmentNames ?? ''),
+    hasAttachments: !!Number(r.hasAttachments ?? 0),
+    mask: Number(r.mask ?? 0),
+  }));
+}
+
+/** Les libellés de `matchedIn`, reconstitués depuis le masque calculé en SQL. */
+export function libellesDuMasque(mask: number): string[] {
+  const out: string[] = [];
+  if (mask & MATCH_NOM_PIECE) out.push('pièce jointe');
+  if (mask & MATCH_SUJET) out.push('sujet');
+  if (mask & MATCH_EXPEDITEUR) out.push('expéditeur');
+  if (mask & MATCH_ENTITE) out.push('entité citée');
+  if (mask & MATCH_CONTEXTE) out.push('dossier cité');
+  if (mask & MATCH_CONTENU_PIECE) out.push('contenu de la pièce');
+  if (mask & MATCH_RESUME) out.push('résumé');
+  if (mask & MATCH_TEXTE) out.push('texte du mail');
+  return out;
+}
+
+/**
+ * PHASE B : les mails à MONTRER, hydratés en une seule requête (jamais une par
+ * carte). Les ids viennent des groupes retenus — au plus quelques centaines,
+ * donc très en dessous des 999 paramètres qui font paniquer le moteur.
+ */
+export async function hydraterMessages(ids: number[]): Promise<Map<number, SearchResultItem>> {
+  await ensureDbReady();
+  const out = new Map<number, SearchResultItem>();
+  if (!ids.length) return out;
+  const rows: Awaited<ReturnType<typeof lireLot>> = [];
+  for (let i = 0; i < ids.length; i += 500) rows.push(...(await lireLot(ids.slice(i, i + 500))));
+  const etats = await resolveMailSemanticState(rows.map((r) => r.id));
+  for (const m of rows) {
+    out.set(m.id, {
+      account: m.accountSlug,
+      folder: m.folder.path,
+      folderRole: m.folder.role,
+      uid: m.uid,
+      messageId: m.id,
+      threadId: m.threadId,
+      subject: m.subject ?? '(sans sujet)',
+      fromName: m.fromName ?? '',
+      fromEmail: m.fromEmail ?? '',
+      date: m.date?.toISOString() ?? null,
+      isSeen: m.isSeen,
+      isFlagged: m.isFlagged,
+      isOutbound: m.isOutbound,
+      ...partieSemantique(etats.get(m.id), m.intent),
+      hasListUnsubscribe: m.hasListUnsubscribe,
+      hasAttachments: m.hasAttachments,
+      attachmentCount: m.attachmentCount,
+      sizeBytes: m.sizeBytes,
+      snippet: previewSnippet(m.snippet),
+      attachmentNames: splitNames(m.attachmentNames),
+      summary: m.aiSummary ? m.aiSummary.slice(0, 220) : null,
+      matchedIn: [],
+    });
+  }
+  return out;
+}
+
+function lireLot(ids: number[]) {
+  return db.message.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      accountSlug: true,
+      uid: true,
+      threadId: true,
+      subject: true,
+      fromName: true,
+      fromEmail: true,
+      date: true,
+      isSeen: true,
+      isFlagged: true,
+      isOutbound: true,
+      intent: true,
+      hasListUnsubscribe: true,
+      hasAttachments: true,
+      attachmentCount: true,
+      sizeBytes: true,
+      snippet: true,
+      attachmentNames: true,
+      aiSummary: true,
+      folder: { select: { path: true, role: true } },
+    },
+  });
+}
+
 /** Recherche métadata dans l'index, tous comptes si `account` absent. */
 export async function searchIndex(opts: SearchOptions): Promise<SearchResult> {
   await ensureDbReady();
