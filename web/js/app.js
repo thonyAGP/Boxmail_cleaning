@@ -7393,6 +7393,15 @@ function renderSettingsBody() {
             <span class="muted" style="font-size:12px" id="ocr-note"><span class="spinner"></span>Chargement…</span></span>
           <span><button class="btn btn-sm" id="ocr-start" disabled>🔍 Lire les scans maintenant</button></span>
         </div>
+        <div class="set-line" style="align-items:flex-start; flex-wrap:wrap; gap:8px">
+          <span><strong>🖼️ Images des mails</strong><br>
+            <span class="muted" style="font-size:12px">Par défaut je les bloque : les charger prévient
+            l'expéditeur que tu as ouvert son mail (c'est comme ça que les publicitaires savent qui lit).
+            Coche si tu préfères voir tes mails tels qu'ils ont été conçus — c'est ton choix, et il se
+            change ici quand tu veux.</span></span>
+          <span><label style="white-space:nowrap"><input type="checkbox" id="set-images-auto">
+            Afficher les images automatiquement</label></span>
+        </div>
       </div>
     </div>
 
@@ -7755,6 +7764,19 @@ function renderSettingsBody() {
       notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
     }
   });
+
+  // Images des mails : réglage local (le serveur n'a pas à connaître ce choix,
+  // c'est le navigateur qui charge — ou non — les images).
+  const caseImages = $('#set-images-auto');
+  if (caseImages) {
+    caseImages.checked = imagesAuto();
+    caseImages.addEventListener('change', () => {
+      setImagesAuto(caseImages.checked);
+      notice(caseImages.checked
+        ? `<div class="notice">🖼️ Les images s'afficheront directement dans tes mails.</div>`
+        : `<div class="notice">🖼️ Les images seront de nouveau bloquées, avec un bouton pour les afficher au cas par cas.</div>`);
+    });
+  }
 
   $('#set-categorize')?.addEventListener('click', async () => {
     const btn = $('#set-categorize');
@@ -9468,6 +9490,29 @@ function sanitizeMailHtml(html, withImages, cidMap) {
   return { html: head + out, blocked };
 }
 
+/**
+ * Afficher les images sans redemander (20/08) — « ce serait pas mal de charger
+ * les images aussi si moins de 300 k, c'est rapide ».
+ *
+ * Le seuil de poids ne peut PAS servir de filtre : on ne connaît la taille
+ * d'une image qu'après l'avoir téléchargée, et c'est justement ce
+ * téléchargement qui signale la lecture à l'expéditeur. Pire, le pixel espion
+ * pèse moins d'un kilo-octet : « charger en dessous de 300 Ko » chargerait
+ * donc TOUS les traceurs et n'écarterait que les grandes photos — l'inverse de
+ * ce qu'il veut voir.
+ *
+ * Mesuré sur 18 de ses mails HTML : 17 portent des images distantes (jusqu'à
+ * 56 dans un seul), aucun n'a d'image embarquée. Le vrai besoin est donc :
+ * « arrête de me faire cliquer ». C'est son choix à faire une fois, pas une
+ * heuristique à deviner mail par mail.
+ */
+function imagesAuto() {
+  try { return localStorage.getItem('reader-images-auto') === '1'; } catch { return false; }
+}
+function setImagesAuto(on) {
+  try { localStorage.setItem('reader-images-auto', on ? '1' : '0'); } catch { /* navigation privée */ }
+}
+
 function renderReaderHtml(el, body, relocatedNote, item) {
   // Table Content-ID → URL inline (les pièces jointes du mail, même ordre que
   // l'endpoint /attachments/:index).
@@ -9481,15 +9526,22 @@ function renderReaderHtml(el, body, relocatedNote, item) {
     el.innerHTML = `
       ${relocatedNote ? `<div class="notice" style="margin:10px 14px 0">${esc(relocatedNote)}</div>` : ''}
       ${blocked ? `<div class="html-imgbar">🖼️ ${fmtNum(blocked)} image(s) bloquée(s) — les afficher peut signaler ta lecture à l'expéditeur.
-        <button class="btn btn-sm" id="reader-show-images">Afficher les images</button></div>` : ''}
+        <button class="btn btn-sm" id="reader-show-images">Afficher les images</button>
+        <button class="btn btn-sm" id="reader-always-images"
+          title="Les images s'afficheront directement dans tous tes mails. Réversible dans Réglages › Images des mails.">Toujours les afficher</button></div>` : ''}
       ${body.htmlTruncated ? '<div class="notice warn" style="margin:8px 14px">✂️ Mail très lourd : seul le début est affiché.</div>' : ''}
       ${'' /* allow-popups-to-escape-sandbox : sans lui, un lien du mail ouvre
             un onglet SANDBOXÉ (page blanche) — les liens semblaient perdus. */}
       <iframe class="reader-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" title="Contenu du mail"></iframe>`;
     el.querySelector('.reader-frame').setAttribute('srcdoc', html);
     $('#reader-show-images')?.addEventListener('click', () => draw(true));
+    $('#reader-always-images')?.addEventListener('click', () => {
+      setImagesAuto(true);
+      draw(true);
+    });
   };
-  draw(false);
+  // Son réglage d'abord : s'il a dit « toujours », on ne le redemande plus.
+  draw(imagesAuto());
 }
 
 // ------------------------------------------- Redimensionnement du lecteur
