@@ -9863,7 +9863,15 @@ async function openReader(item, row, opts = {}) {
       Téléchargement du mail depuis la boîte…</div></div>
     <div class="reader-attachments hidden" id="reader-attachments"></div>
     <div class="reader-analysis hidden" id="reader-analysis"></div>
+    <!-- CE QU'ON ATTEND DE LUI, en tête (20/08) — « la liste des boutons
+         devrait être dynamique en fonction de son contenu ». Rempli par
+         l'analyse (renderReaderActions) ; vide tant qu'elle n'a rien dit. -->
+    <div class="reader-todo hidden" id="reader-todo"></div>
     <div class="reader-actions" id="reader-actions">
+      <span class="reader-actions-lead" id="reader-lead"></span>
+      <button class="btn btn-sm" id="reader-all-actions" aria-expanded="false"
+        title="Toutes les commandes disponibles sur ce mail">Toutes les actions ▾</button>
+      <div class="reader-actions-menu hidden" id="reader-menu">
       ${smtpEnabled ? `<button class="btn btn-sm btn-primary" id="reader-reply" title="Répondre à l'expéditeur">↩️ Répondre</button>
       <button class="btn btn-sm" id="reader-forward" title="Transférer ce mail à quelqu'un d'autre">➡️ Transférer</button>` : ''}
       <button class="btn btn-sm" id="reader-task" title="Créer une tâche liée à ce mail">☑️ Tâche</button>
@@ -9874,11 +9882,20 @@ async function openReader(item, row, opts = {}) {
       <select id="reader-move" title="Déplace ce mail vers un autre dossier de la même boîte"><option value="">📦 Déplacer vers…</option></select>
       <button class="btn btn-sm" id="reader-delete" style="color:var(--red)" title="Met ce mail à la corbeille — récupérable ~30 jours, rien n'est effacé définitivement">🗑️ Corbeille</button>
       <span class="muted" style="font-size:11.5px; margin-left:auto">soft delete — récupérable ~30 j</span>
+      </div>
     </div>`;
   if (dock) {
     dock.replaceChildren(panel);
     dock.classList.remove('hidden');
     dock.closest('.inbox-layout')?.classList.add('with-reader');
+    // La colonne se cale en haut de l'écran (20/08). Mesuré sur la Recherche :
+    // sans ça, elle démarre sous l'en-tête de l'écran, sa hauteur d'une pleine
+    // fenêtre la fait déborder, et la barre d'actions tombe 222 px SOUS le bord
+    // — invisible sans défiler. Le dock est déjà « sticky » : il suffit de
+    // l'amener à sa position collée.
+    const zone = dock.closest('.inbox-layout') ?? dock;
+    const y = window.scrollY + zone.getBoundingClientRect().top - 12;
+    if (y > 1) window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
   } else {
     document.body.appendChild(overlay);
     document.body.appendChild(panel);
@@ -9888,6 +9905,15 @@ async function openReader(item, row, opts = {}) {
   // petit après avoir demandé du grand serait un réglage à refaire sans cesse.
   if (_lectureAgrandie) basculerAgrandissement(panel, true);
   panel.querySelector('#reader-expand').addEventListener('click', () => basculerAgrandissement(panel));
+  // « Toutes les actions » : tout ce qui existait reste là, à un endroit STABLE.
+  // La barre du dessus change avec le mail, ce menu jamais — c'est lui qui fait
+  // qu'on ne perd pas une commande parce que l'analyse ne l'a pas proposée.
+  panel.querySelector('#reader-all-actions')?.addEventListener('click', (e) => {
+    const m = panel.querySelector('#reader-menu');
+    const ouvert = m.classList.toggle('hidden');
+    e.currentTarget.setAttribute('aria-expanded', String(!ouvert));
+    e.currentTarget.textContent = ouvert ? 'Toutes les actions ▾' : 'Toutes les actions ▴';
+  });
   // Fermer VIDE la pile : on quitte la lecture, il n'y a plus de « retour ».
   panel.querySelector('.modal-close').addEventListener('click', () => {
     _pileLecture = [];
@@ -9927,7 +9953,10 @@ async function openReader(item, row, opts = {}) {
   // trouvées dans le texte affiché. Local, sans IMAP supplémentaire, sans LLM.
   const loadAnalysis = (text) => {
     api.analyzeMessage(item.account, { folder: item.folder, uid: item.uid, text })
-      .then((a) => renderReaderAnalysis(a, item, opts))
+      .then((a) => {
+        renderReaderAnalysis(a, item, opts);
+        renderReaderActions(a.actions, item, opts);
+      })
       .catch(() => {});
   };
 
@@ -10387,6 +10416,102 @@ const INTENT_LABELS = {
 };
 
 // Section « 🤖 Analyse » du panneau de lecture (L5.4) — heuristiques locales.
+/**
+ * CE QU'ON ATTEND DE LUI (20/08) — « le bouton "c'est réglé" n'apparaît pas
+ * dans la lecture du mail ; la liste des boutons devrait être dynamique en
+ * fonction de son contenu et de ce que l'on attend de moi ».
+ *
+ * Il avait mis le doigt sur une incohérence du produit : la Vue du jour dit
+ * « ce mail attend un paiement » et propose « ✓ C'est réglé » ; on ouvre le
+ * mail, et Boxmail oublie sa propre conclusion pour proposer neuf boutons
+ * identiques à ceux d'une publicité.
+ *
+ * Ce n'est pas une nouvelle intelligence : l'analyse a déjà produit un verdict
+ * sur 96 % de la boîte de réception, avec pour chaque mail ce qui est attendu
+ * ET DE QUI. On se contente de mettre à l'écran ce que Boxmail sait déjà.
+ *
+ * Deux boutons contextuels au maximum : au-delà, la barre saute d'un mail à
+ * l'autre et il ne retrouve plus rien. Le reste vit sous « Toutes les
+ * actions », à un endroit qui, lui, ne bouge jamais.
+ */
+const LIBELLES_ACTION = {
+  pay: '✓ Paiement fait',
+  reply: '↩️ Répondre',
+  provide_document: '✓ Document fourni',
+  sign: '✓ Document signé',
+  confirm: '✓ Confirmation faite',
+  review: '✓ Vérifié',
+  call: '✓ Appel passé',
+  book: '✓ Réservation faite',
+  declare: '✓ Déclaration faite',
+  renew: '✓ Renouvellement fait',
+  attend: '✓ C\'est noté',
+  other: '✓ C\'est réglé',
+};
+
+/** « Payer 160,36 € · avant le 25 août » — la phrase, pas le code. */
+function phraseAction(a) {
+  const verbe = {
+    pay: 'Payer', reply: 'Répondre', provide_document: 'Fournir un document',
+    sign: 'Signer', confirm: 'Confirmer', review: 'Vérifier', call: 'Appeler',
+    book: 'Réserver', declare: 'Déclarer', renew: 'Renouveler', attend: 'Y être',
+  }[a.kind] ?? 'À traiter';
+  const bits = [a.label?.trim() || verbe];
+  if (a.amount) bits.push(`${fmtNum(Math.round(a.amount * 100) / 100)} ${esc(a.currency || '€')}`);
+  if (a.dueAt) bits.push(`avant le ${fmtDate(a.dueAt)}`);
+  return bits.join(' · ');
+}
+
+/**
+ * Compose la barre du haut à partir des actions du verdict. Ne fait RIEN quand
+ * l'analyse n'a rien conclu (4 % des mails, ou verdict muet) : mieux vaut la
+ * barre habituelle qu'un « C'est réglé » inventé.
+ */
+function renderReaderActions(actions, item, opts = {}) {
+  const zone = $('#reader-todo');
+  const lead = $('#reader-lead');
+  if (!zone || !lead) return;
+  const utiles = (actions ?? []).filter((a) => LIBELLES_ACTION[a.kind]);
+  if (!utiles.length) return;
+
+  // Ce qu'il a à faire, écrit en français au-dessus des boutons.
+  const doute = utiles.some((a) => a.certainty === 'weak_inference' || a.certainty === 'unknown');
+  zone.classList.remove('hidden');
+  zone.innerHTML = `<span class="reader-todo-tag">${doute ? 'À vérifier' : 'À faire'}</span>
+    <span>${utiles.slice(0, 2).map((a) => esc(phraseAction(a))).join(' · ')}</span>
+    ${utiles.length > 2 ? `<span class="muted">· et ${fmtNum(utiles.length - 2)} autre(s)</span>` : ''}
+    ${utiles[0]?.evidence ? `<span class="reader-todo-why" title="${esc(utiles[0].evidence)}">pourquoi ?</span>` : ''}`;
+
+  // Au plus DEUX boutons : le reste reste sous « Toutes les actions ».
+  lead.innerHTML = utiles.slice(0, 2).map((a, i) => {
+    const montant = a.kind === 'pay' && a.amount
+      ? ` · ${fmtNum(Math.round(a.amount * 100) / 100)} ${esc(a.currency || '€')}` : '';
+    return `<button class="btn btn-sm ${i === 0 ? 'btn-primary' : ''}" data-todo="${i}"
+      title="${esc(a.evidence || phraseAction(a))}">${esc(LIBELLES_ACTION[a.kind])}${montant}</button>`;
+  }).join('');
+
+  lead.querySelectorAll('[data-todo]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const a = utiles[Number(b.dataset.todo)];
+      // « Répondre » est la seule action que Boxmail sait vraiment EXÉCUTER.
+      if (a.kind === 'reply') { $('#reader-reply')?.click(); return; }
+      // Les autres disent seulement « c'est fait de mon côté » — comme le
+      // « ✓ C'est réglé » des cartes. On ne prétend pas payer à sa place.
+      b.disabled = true;
+      try {
+        await api.messageAction(item.account, { folder: item.folder, uid: item.uid, action: 'seen' });
+        item.isSeen = true;
+        b.textContent = '✓ noté';
+        zone.classList.add('reader-todo-done');
+        opts.onSeen?.();
+      } catch (err) {
+        b.disabled = false;
+        alert(err.message);
+      }
+    });
+  });
+}
+
 function renderReaderAnalysis(a, item, opts = {}) {
   const el = $('#reader-analysis');
   if (!el) return;

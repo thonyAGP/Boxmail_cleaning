@@ -2847,7 +2847,39 @@ export function buildAdminRouter(): Router {
         };
       }
 
+      // CE QU'ON ATTEND DE LUI (20/08) — « la liste des boutons devrait être
+      // dynamique en fonction du contenu et de ce que l'on attend de moi ».
+      // L'analyse le sait déjà pour 96 % de sa boîte : on ne crée pas une
+      // intelligence, on met à l'écran ce que Boxmail a compris. Le filtre
+      // `actor = 'user'` est décisif — sans lui, « maman transmet une facture
+      // Sosh » deviendrait « payer maman ».
+      const actions = (
+        await db.verdictAction.findMany({
+          where: { messageId: m.id, actor: 'user' },
+          orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+          take: 6,
+          select: {
+            kind: true, label: true, strength: true, dueAt: true,
+            amount: true, currency: true, reference: true,
+            certainty: true, evidence: true,
+          },
+        })
+      ).map((a) => ({
+        kind: a.kind,
+        label: a.label,
+        strength: a.strength,
+        dueAt: a.dueAt?.toISOString() ?? null,
+        amount: a.amount,
+        currency: a.currency,
+        reference: a.reference,
+        certainty: a.certainty,
+        // La citation qui justifie l'action : c'est elle qui permet de dire
+        // POURQUOI ce bouton est proposé, au lieu de l'imposer.
+        evidence: a.evidence ? a.evidence.slice(0, 220) : null,
+      }));
+
       res.json({
+        actions,
         messageId: m.id,
         importance,
         reply,
