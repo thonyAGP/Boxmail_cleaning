@@ -5,6 +5,93 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 20/08 (49) — « L'affichage complet des emails est à reprendre »
+
+Son message, en trois griefs : le mail s'ouvre **par-dessus** la liste (« je ne
+peux pas passer d'un mail à l'autre sans fermer puis rouvrir ») ; le bouton
+« C'est réglé » **disparaît** quand on ouvre le mail ; la barre devrait
+**refléter ce qu'on attend de lui**, pas offrir neuf boutons identiques.
+
+### 1. Le mail s'ouvre à CÔTÉ de la liste
+
+Le remède existait déjà dans le produit : la lecture **ancrée en colonne**, en
+service sur la Boîte de réception, « À traiter » et la Revue. Elle n'était
+simplement pas branchée sur les deux écrans d'où il travaille le plus — la Vue
+du jour et la Recherche. Une fonction manquante ? Non : un branchement manquant.
+
+Vérifié en rejouant SON geste : ouvrir un mail, puis cliquer directement le
+suivant sans fermer. Vue du jour « URSSAF » → « igloohome » ; Recherche, ligne
+0 → 1. Les cartes et leurs boutons restent cliquables à gauche pendant la
+lecture.
+
+**Bug de fond trouvé en testant, antérieur au changement** : deux rendus
+concurrents de la Vue du jour (retour arrière, double clic, rendu initial suivi
+d'un `hashchange`) posaient chacun leurs écouteurs sur le même écran. Un clic
+« Voir le mail » ouvrait alors **deux** lecteurs et l'écran retombait fermé une
+fois sur deux — mesuré : 2 lectures déclenchées par clic. Un jeton de rendu fait
+abandonner les rendus périmés. Au passage, `closeReader` ne refermait que la
+PREMIÈRE colonne de la page ; il y en a maintenant plusieurs.
+
+### 2. La barre dit ce qu'on attend de lui
+
+C'est le grief le plus juste, et ChatGPT l'a formulé mieux que moi :
+**« Boxmail oublie sa propre conclusion au moment précis où Anthony ouvre la
+preuve. »** La Vue du jour annonce « ce mail attend un paiement » ; on ouvre le
+mail, et il n'y a plus que Répondre / Transférer / Tâche / Comptabilité…
+
+Rien à inventer : le verdict couvre **19 133 des 20 005 mails de la boîte de
+réception (96 %)** et sait, pour chacun, ce qui est attendu **et de qui**. Sur
+ses non lus : review 349 · reply 225 · other 178 · provide_document 121 ·
+confirm 95 · **pay 79** · book 35 · sign 18. Tout cela dormait en base.
+
+Livré : un bandeau en français au-dessus des boutons (« Payer 418 € · avant le
+29 août »), un « pourquoi ? » qui montre la citation qui le justifie, et **deux
+boutons contextuels au maximum**. Les neuf commandes d'origine passent sous
+**« Toutes les actions »** — un endroit qui, lui, ne bouge jamais : la barre est
+contextuelle, le menu est la mémoire musculaire.
+
+Garde-fous : le filtre `actor = 'user'` (sans lui, « maman transmet une facture
+Sosh » deviendrait « payer maman ») ; « À vérifier » au lieu de « À faire »
+quand la confiance est faible — on n'enlève pas le bouton, on annonce la
+couleur ; les 4 % sans verdict gardent la barre habituelle, **pas de « C'est
+réglé » inventé**. Et un bouton « ✓ Paiement fait » ne prétend pas payer : il
+note que c'est fait, comme le « C'est réglé » des cartes. Seul « Répondre »
+exécute vraiment.
+
+Vérifié sur un VRAI mail (avis Urssaf) : bandeau, bouton « ✓ Vérifié », menu
+replié contenant les 7 autres commandes, et après clic le mail **reste à
+l'écran** avec son corps NON reconstruit (témoin posé sur l'iframe, retrouvé
+après l'action).
+
+**Défaut vu à la capture, pas par les tests** : en colonne ancrée sur la
+Recherche, la barre d'actions tombait **222 px sous le bord de l'écran** — le
+lecteur fait une pleine hauteur mais démarrait à 247 px. La colonne se cale
+maintenant en haut à l'ouverture (elle était déjà `sticky`) : barre à 937 px
+sur 950.
+
+### Le pilote ChatGPT réparé — trois consultations perdues avant
+
+Trois lancements d'affilée ont rapporté **9 caractères** : le driver prenait le
+bloc **« Réflexion »** des modèles qui raisonnent pour la réponse finale (texte
+stable → il concluait au bout de 6 s), puis déclarait la génération **avortée à
+180 s** alors qu'elle travaillait encore. Deux correctifs dans
+`~/.claude/tools/chatgpt/driver.mjs` : ignorer ce libellé pour la détection de
+fin, et allonger la patience à 300/480 s. La réponse suivante faisait 19 231
+caractères.
+
+**Incident à noter** : entre-temps, le driver a lu une conversation personnelle
+d'Anthony (« Vérifier un montage immobilier ») au lieu de notre fil. Vérifié en
+cherchant une phrase propre à notre message : **elle n'y est pas — rien n'a été
+écrit chez lui**. Cause probable, de son propre aveu : Chrome proposait de
+rouvrir les sessions précédentes. Une fenêtre restée ouverte par les tests a été
+fermée après avoir vérifié qu'elle n'affichait qu'`about:blank`.
+
+**Reste de la contre-revue, non livré** : Précédent/Suivant dans le lecteur
+(série figée à l'ouverture, jamais recalculée après une action), et la
+restructuration du chrome (métadonnées repliées derrière « Détails », menus de
+correction déplacés dans « Pourquoi Boxmail me montre ça ? »). ChatGPT
+recommandait cet ordre, et la barre d'actions passait en premier.
+
 ## 19-20/08 (48) — Rendre la hauteur au mail, réunir les Volotea, et le seuil qui ne protégeait de rien
 
 Trois retours d'affilée, tous réglés en mesurant avant de coder.

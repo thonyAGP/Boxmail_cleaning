@@ -134,6 +134,15 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   `page.route` — tout le code réel s'exécute alors, contrairement à une
   injection dans le DOM. Surveiller les requêtes SORTANTES quand la vie privée
   est en jeu : c'est la seule preuve qui vaut.
+- **Deux rendus concurrents d'un écran posent leurs écouteurs en DOUBLE** (le
+  premier câble le DOM du second) : un clic déclenchait deux ouvertures. Jeton
+  de rendu incrémenté à l'entrée, abandon après l'await si un plus récent existe.
+- **Une colonne ancrée qui démarre bas DÉBORDE** : `height: calc(100vh - …)`
+  suppose qu'elle commence en haut. Sur la Recherche, la barre d'actions tombait
+  222 px sous l'écran — recaler la colonne (elle est `sticky`) à l'ouverture.
+- **Le pilote ChatGPT prend « Réflexion » pour la réponse** des modèles qui
+  raisonnent (3 consultations perdues, 9 caractères chacune). Corrigé dans
+  `~/.claude/tools/chatgpt/driver.mjs` ; patience portée à 300/480 s.
 
 ## Contenu des boîtes (à ne plus redécouvrir)
 
@@ -215,6 +224,18 @@ repèrent sans les charger (1×1, masqués, URL parlante) et sont retirés dans 
 les cas : 37 sur 286 images, 249 gardées. Critère « hébergeur de mailing »
 ESSAYÉ PUIS JETÉ (attrapait les icônes réseaux servies par iterable). Limite
 dite à l'écran : ~1 image sur 6 porte un identifiant unique.
+
+**LIVRÉ le 20/08 (2)** (détail § 49) — **lecture ancrée** branchée sur la Vue du
+jour et la Recherche (elle existait déjà ailleurs) : il enchaîne les mails sans
+fermer. **Barre d'actions DYNAMIQUE** : le verdict (96 % de l'INBOX) sait ce qui
+est attendu et DE QUI (`actor='user'`) — le lecteur affiche « Payer 418 € avant
+le 29 août » + 2 boutons au plus ; les 9 anciennes commandes passent sous
+« Toutes les actions », à un endroit qui ne bouge jamais. Confiance faible →
+« À vérifier », jamais de bouton inventé sur les 4 % sans verdict.
+
+**Reste de la contre-revue du 20/08, NON livré** : Précédent/Suivant dans le
+lecteur (série figée à l'ouverture) ; repli des métadonnées derrière « Détails »
+et des menus de correction dans « Pourquoi Boxmail me montre ça ? ».
 
 **À faire** :
 - **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :
