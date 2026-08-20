@@ -756,6 +756,12 @@ a.tab { text-decoration: none; }
   padding: 7px 14px; background: var(--warning-soft);
   border-bottom: 1px solid #EBD3AE; font-size: 12.5px; color: #8A4E0B;
 }
+/* Mouchards retirés : une ligne fine, sans alarme — c'est une bonne nouvelle,
+   pas un avertissement. Elle n'apparaît que s'il y en avait vraiment. */
+.html-shieldbar {
+  padding: 4px 14px; background: var(--surface-muted);
+  border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text-secondary);
+}
 .reader-attachments { padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12.5px; }
 .reader-attachments .att-head {
   display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;

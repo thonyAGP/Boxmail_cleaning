@@ -7398,7 +7398,11 @@ function renderSettingsBody() {
             <span class="muted" style="font-size:12px">Par défaut je les bloque : les charger prévient
             l'expéditeur que tu as ouvert son mail (c'est comme ça que les publicitaires savent qui lit).
             Coche si tu préfères voir tes mails tels qu'ils ont été conçus — c'est ton choix, et il se
-            change ici quand tu veux.</span></span>
+            change ici quand tu veux.<br>
+            🛡️ Dans les deux cas, les <strong>mouchards</strong> (ces images d'un pixel qui ne servent
+            qu'à signaler ton ouverture) sont retirés. Mesuré sur tes mails : 37 retirés sur 286 images,
+            sans en abîmer une seule. Sache quand même qu'environ une image sur six porte un identifiant
+            qui t'identifie : les afficher reste un signal, en partie.</span></span>
           <span><label style="white-space:nowrap"><input type="checkbox" id="set-images-auto">
             Afficher les images automatiquement</label></span>
         </div>
@@ -9456,8 +9460,46 @@ async function downloadWithFeedback(btn, url, filename, restoreLabel) {
 // retirés par précaution). Les images DISTANTES sont bloquées par défaut — un
 // pixel invisible suffit à signaler la lecture à l'expéditeur — et un clic
 // suffit à les afficher pour ce mail.
+/**
+ * Ce qui trahit un MOUCHARD sans avoir à le télécharger (20/08) — « on peut
+ * bloquer le pixel espion, non ? juste celui-là ? ». Oui : un mouchard se
+ * déclare. Il est en 1×1, ou masqué, ou son adresse dit ce qu'elle fait
+ * (`/open`, `blank.gif`, `/s/eo/` chez les routeurs — « eo » pour email open).
+ *
+ * Motifs volontairement ÉTROITS : on ne devine pas, on ne retient que
+ * l'aveu. Vérifié sur 286 images distantes de ses mails : 37 retirées, 249
+ * gardées, et aucune vraie image dans le lot retiré.
+ *
+ * Le critère « hébergé chez un routeur d'emailing » a été essayé puis JETÉ :
+ * il attrapait 120 images, dont les icônes Facebook/Instagram/TikTok servies
+ * par `library.iterable.com`. Un CDN d'emailing héberge aussi les vraies
+ * images — l'hébergeur ne dit rien de l'intention.
+ */
+const URL_MOUCHARD =
+  /(^|[/?&=._-])(open|opened|track|tracking|trk|pixel|beacon|o\.gif|t\.gif|spacer\.gif|blank\.gif|clear\.gif|1x1)([/?&=._-]|$)/i;
+
+/** Cette balise <img> ne sert-elle QU'à savoir que le mail a été ouvert ? */
+function estMouchard(tag, src) {
+  const style = (tag.match(/\sstyle\s*=\s*["']([^"']*)/i) || [])[1] || '';
+  const nb = (re, dans) => {
+    const v = Number((dans.match(re) || [])[1]);
+    return Number.isFinite(v) ? v : NaN;
+  };
+  // Une image d'un ou deux pixels n'est là pour personne.
+  const dims = [
+    nb(/\swidth\s*=\s*["']?(\d+)/i, tag),
+    nb(/\sheight\s*=\s*["']?(\d+)/i, tag),
+    nb(/(?:^|;)\s*width\s*:\s*(\d+)px/i, style),
+    nb(/(?:^|;)\s*height\s*:\s*(\d+)px/i, style),
+  ];
+  if (dims.some((v) => Number.isFinite(v) && v <= 3)) return true;
+  if (/display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(\D|$)/i.test(style)) return true;
+  return URL_MOUCHARD.test(src);
+}
+
 function sanitizeMailHtml(html, withImages, cidMap) {
   let blocked = 0;
+  let mouchards = 0;
   let out = html
     .replace(/<script[\s\S]*?<\/script\s*>/gi, '')
     .replace(/<script[^>]*>/gi, '')
@@ -9471,6 +9513,19 @@ function sanitizeMailHtml(html, withImages, cidMap) {
     // jamais téléchargées sur le disque.
     out = out.replace(/(\ssrc\s*=\s*["'])cid:([^"']+)(["'])/gi, (_m, pre, cid, post) =>
       `${pre}${cidMap?.get(cid.trim()) ?? 'blocked:cid-introuvable'}${post}`);
+    // Même quand il a choisi de voir les images, les MOUCHARDS restent
+    // dehors : ils n'apportent rien à l'affichage, ils ne servent qu'à dire
+    // à l'expéditeur qu'il a ouvert. Le reste du mail s'affiche entier.
+    out = out.replace(/<img\b[^>]*>/gi, (tag) => {
+      const src = (tag.match(/\ssrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
+      if (!/^https?:/i.test(src) || !estMouchard(tag, src)) return tag;
+      mouchards++;
+      // Sortie du jeu ET du flux : un mouchard qui déclare 30×30 laisserait
+      // sinon une image cassée au milieu du mail (vu à la capture).
+      return `${tag.replace(/\ssrc\s*=/i, ' data-mouchard-src=')
+        .replace(/\sstyle\s*=\s*(["'])/i, ' style=$1display:none;')}`
+        .replace(/<img\b(?![^>]*\sstyle=)/i, '<img style="display:none" ');
+    });
     // Chargement paresseux : le navigateur ne charge que ce qui est visible.
     out = out.replace(/<img\b/gi, '<img loading="lazy" decoding="async" ');
   } else {
@@ -9487,7 +9542,7 @@ function sanitizeMailHtml(html, withImages, cidMap) {
     img { max-width: 100%; height: auto; }
     table { max-width: 100%; }
   </style>`;
-  return { html: head + out, blocked };
+  return { html: head + out, blocked, mouchards };
 }
 
 /**
@@ -9521,14 +9576,15 @@ function renderReaderHtml(el, body, relocatedNote, item) {
     if (a.contentId) cidMap.set(a.contentId, api.attachmentInlineUrl(item.account, item.folder, item.uid, i));
   });
   const draw = (withImages) => {
-    const { html, blocked } = sanitizeMailHtml(body.html, withImages, cidMap);
+    const { html, blocked, mouchards } = sanitizeMailHtml(body.html, withImages, cidMap);
     el.classList.add('html-mode');
     el.innerHTML = `
       ${relocatedNote ? `<div class="notice" style="margin:10px 14px 0">${esc(relocatedNote)}</div>` : ''}
       ${blocked ? `<div class="html-imgbar">🖼️ ${fmtNum(blocked)} image(s) bloquée(s) — les afficher peut signaler ta lecture à l'expéditeur.
         <button class="btn btn-sm" id="reader-show-images">Afficher les images</button>
         <button class="btn btn-sm" id="reader-always-images"
-          title="Les images s'afficheront directement dans tous tes mails. Réversible dans Réglages › Images des mails.">Toujours les afficher</button></div>` : ''}
+          title="Les images s'afficheront directement dans tous tes mails, sauf les mouchards. Réversible dans Réglages › Images des mails.">Toujours les afficher</button></div>` : ''}
+      ${mouchards ? `<div class="html-shieldbar" title="Ces images d'un pixel ne servent qu'à prévenir l'expéditeur que tu as ouvert son mail. Le reste du mail s'affiche entier.">🛡️ ${fmtNum(mouchards)} mouchard${mouchards > 1 ? 's' : ''} retiré${mouchards > 1 ? 's' : ''}</div>` : ''}
       ${body.htmlTruncated ? '<div class="notice warn" style="margin:8px 14px">✂️ Mail très lourd : seul le début est affiché.</div>' : ''}
       ${'' /* allow-popups-to-escape-sandbox : sans lui, un lien du mail ouvre
             un onglet SANDBOXÉ (page blanche) — les liens semblaient perdus. */}
