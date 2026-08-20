@@ -809,7 +809,18 @@ function bindTodayRows(root) {
   });
 }
 
+/**
+ * Jeton de rendu de la Vue du jour (20/08). Deux rendus lancés coup sur coup
+ * (retour arrière du navigateur, double clic sur « Aujourd'hui », rendu initial
+ * suivi d'un hashchange) se terminaient tous les deux : le premier posait ses
+ * écouteurs sur le DOM du second, si bien qu'un clic « Voir le mail » ouvrait
+ * DEUX lecteurs — et l'écran retombait fermé une fois sur deux.
+ * Le dernier rendu demandé gagne ; les précédents abandonnent après leur await.
+ */
+let _renduToday = 0;
+
 async function renderToday() {
+  const monRendu = ++_renduToday;
   const main = $('#main');
   const todayDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   main.innerHTML = `<div class="page-head"><div><h1>Vue du jour</h1>
@@ -840,6 +851,9 @@ async function renderToday() {
     return;
   }
   if (location.hash && !(location.hash === '#/today' || location.hash === '' || location.hash === '#/')) return;
+  // Un rendu plus récent a été demandé pendant qu'on attendait : celui-ci n'a
+  // plus lieu d'être, et surtout il ne doit pas recâbler l'écran de l'autre.
+  if (monRendu !== _renduToday) return;
   todayReaderRefs = [];
 
   // Badges sidebar : nombre d'actions à faire (Vue du jour + hub À traiter).
@@ -947,7 +961,14 @@ async function renderToday() {
     ${t.skippedAccounts.length ? `<div class="notice warn"><strong>Boîte(s) ignorée(s)</strong> : ${t.skippedAccounts.map((s) => esc(s.account)).join(', ')} — lance une synchronisation.</div>` : ''}
     ${!t.categorized ? `<div class="notice warn">Les catégories n'ont pas encore été calculées : la partie « nettoyage » sera vide.
       Va dans <a href="#/settings">Paramètres</a> → « Réexaminer les expéditeurs » (une fois, quelques secondes).</div>` : ''}
-    <div id="today-brief"></div>
+    <!-- Le mail s'ouvre À CÔTÉ des cartes, pas par-dessus (20/08) : « il se met
+         devant et je ne peux donc pas passer d'un mail à l'autre sans fermer
+         puis rouvrir ». La colonne existait déjà sur « À traiter » et la Boîte
+         de réception ; elle manquait ici, sur l'écran d'accueil. -->
+    <div class="inbox-layout" id="today-layout">
+      <div id="today-brief"></div>
+      <div class="inbox-dock hidden" id="today-dock"></div>
+    </div>
     <div id="today-whatsnew"></div>
     <div id="today-review"></div>
     <div id="today-rentila"></div>
@@ -1703,7 +1724,14 @@ function openBriefReader(c) {
   const ref = c.kind === 'deadline'
     ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: true }
     : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
-  openReaderFor(ref, { onRemoved: () => renderToday(), onReplied: () => renderToday() });
+  // Ancré à droite quand l'écran le permet : les cartes restent visibles et
+  // cliquables, il enchaîne d'un mail à l'autre sans fermer.
+  const dock = $('#today-dock');
+  openReaderFor(ref, {
+    dock: dock && dock.isConnected && window.innerWidth > 1100 ? dock : null,
+    onRemoved: () => renderToday(),
+    onReplied: () => renderToday(),
+  });
 }
 
 /** Le titre de la carte : qui, et ce qu'on attend de lui — pas un objet de mail. */
@@ -9233,7 +9261,12 @@ async function renderSearch() {
         ${TRIS_LABELS.map(([v, l]) => `<option value="${v}" ${v === searchState.sort ? 'selected' : ''}>${esc(l)}</option>`).join('')}
       </select></label>
     </div>
-    <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot, ou clique un exemple ci-dessus.</div>`}</div>`;
+    <!-- Même règle qu'ailleurs : le mail s'ouvre À CÔTÉ de la liste, pour
+         passer d'un résultat au suivant sans fermer. -->
+    <div class="inbox-layout" id="search-layout">
+      <div id="search-results">${searchState.searched ? '' : `<div class="empty">Tape un mot, ou clique un exemple ci-dessus.</div>`}</div>
+      <div class="inbox-dock hidden" id="search-dock"></div>
+    </div>`;
 
   const lireFiltres = () => {
     searchState.account = $('#s-account').value;
@@ -9338,7 +9371,12 @@ function renderSearchResults() {
     row.addEventListener('click', () => {
       const g = searchState.data.groups.find((x) => x.key === row.dataset.key);
       const item = g?.items[Number(row.dataset.idx)];
-      if (item) openReader(item, row);
+      const dock = $('#search-dock');
+      if (item) {
+        openReader(item, row, {
+          dock: dock && dock.isConnected && window.innerWidth > 1100 ? dock : null,
+        });
+      }
     });
   });
 }
@@ -9773,11 +9811,13 @@ function closeReader() {
   document.querySelector('.reader')?.remove();
   // Lecture ancrée (Boîte de réception) : on referme aussi la colonne.
   document.querySelectorAll('.inbox-dock').forEach((d) => { d.classList.add('hidden'); d.replaceChildren(); });
-  const layout = document.querySelector('.inbox-layout');
-  if (layout) {
+  // TOUTES les colonnes, pas seulement la première : depuis le 20/08 la Vue du
+  // jour et la Recherche en ont une elles aussi, et une page pourrait en
+  // porter plusieurs — n'en refermer qu'une laisserait un écran de travers.
+  document.querySelectorAll('.inbox-layout').forEach((layout) => {
     layout.classList.remove('with-reader');
     layout.style.gridTemplateColumns = ''; // la largeur choisie revit à la prochaine ouverture
-  }
+  });
   document.querySelector('.result-row.selected')?.classList.remove('selected');
 }
 
