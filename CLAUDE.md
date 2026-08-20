@@ -210,8 +210,11 @@ affiché **confirmé par le domaine**, nom ENTIER exigé pour une personne (sino
 relues une par une. Les homonymes légitimement séparés portent « via <domaine> ».
 **IMAGES** : bouton « Toujours les afficher » + réglage réversible. Un seuil de
 poids est IMPOSSIBLE (le poids n'est connu qu'après téléchargement, et le pixel
-espion fait &lt; 1 Ko : il passerait toujours). 17 de ses 18 mails HTML testés
-n'ont que des images DISTANTES, aucune embarquée.
+espion fait &lt; 1 Ko : il passerait toujours). En revanche les **MOUCHARDS** se
+repèrent sans les charger (1×1, masqués, URL parlante) et sont retirés dans tous
+les cas : 37 sur 286 images, 249 gardées. Critère « hébergeur de mailing »
+ESSAYÉ PUIS JETÉ (attrapait les icônes réseaux servies par iterable). Limite
+dite à l'écran : ~1 image sur 6 porte un identifiant unique.
 
 **À faire** :
 - **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :

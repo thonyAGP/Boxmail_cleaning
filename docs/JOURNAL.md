@@ -84,6 +84,39 @@ premier contact, 2 images neutralisées et **aucune requête ne sort** ; au clic
 « Afficher les images », **2 requêtes partent dont le pixel espion**. La
 démonstration du risque est faite, pas supposée.
 
+### « On peut bloquer le pixel espion, non ? juste celui-là ? »
+
+Sa relance, et elle vaut bien mieux que le seuil. **Oui** : un mouchard se
+DÉCLARE — il est en 1×1, ou masqué (`display:none`), ou son adresse dit ce
+qu'elle fait (`/open`, `blank.gif`, `/s/eo/` chez les routeurs, « eo » pour
+*email open*). On le repère donc **sans le télécharger**, ce qui est tout
+l'enjeu : le poids, lui, n'était connaissable qu'après.
+
+Désormais, **même quand il choisit de voir les images, les mouchards restent
+dehors**. Mesuré sur 286 images distantes de 25 de ses mails : **37 retirées
+(13 %), 249 gardées**, liste des 37 relue une par une — aucune vraie image
+dedans.
+
+**Un critère jeté en cours de route, et c'est le plus instructif** :
+« hébergé chez un routeur d'emailing » (sendgrid, iterable, mailchimp…)
+attrapait **120 images** — dont les icônes Facebook, Instagram et TikTok
+servies par `library.iterable.com`. Un CDN d'emailing héberge aussi les vraies
+images : **l'hébergeur ne dit rien de l'intention**. Les motifs retenus sont
+donc étroits — on ne devine pas, on ne retient que l'aveu.
+
+Éprouvé sur un mail portant 4 vraies images et 4 mouchards (un par mode de
+détection), requêtes sortantes surveillées : **4/4 vraies images demandées,
+0/4 mouchard**, icône du routeur bien conservée.
+
+**Ce que ça ne fait PAS**, et c'est écrit dans les Réglages : **47 images
+normales sur 286 portent un identifiant unique** dans leur adresse. Charger le
+logo suffit alors à signaler la lecture. Retirer le mouchard enlève le
+mouchard, pas tout le pistage — mieux vaut le dire que le laisser croire.
+
+Défaut vu à la capture, pas par le test : un mouchard déclarant 30×30 laissait
+une image cassée au milieu du mail. Il est maintenant sorti du flux, pas
+seulement privé de son adresse.
+
 ## 19/08 (47) — Lire un mail en grand, sans en faire un troisième lecteur
 
 **Sa demande**, capture d'une confirmation Volotea à l'appui (mail HTML très
