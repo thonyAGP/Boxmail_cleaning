@@ -5,6 +5,85 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 19-20/08 (48) — Rendre la hauteur au mail, réunir les Volotea, et le seuil qui ne protégeait de rien
+
+Trois retours d'affilée, tous réglés en mesurant avant de coder.
+
+### « En agrandissant on ne voit rien de plus si le mail est dans la hauteur »
+
+Il avait raison, et c'était embarrassant : le bouton livré le matin élargissait
+sans rien rendre. Son idée était la bonne — « profiter de cet espace en largeur
+pour réduire les bandeaux haut et bas ». Ce qui était EMPILÉ passe donc côte à
+côte : les métadonnées tiennent sur une ligne au lieu de trois, « Classé » et
+« Expéditeur » se placent l'un à côté de l'autre. **Rien n'est masqué.**
+
+Mesuré sur une copie de sa base (fenêtre 1500×950) : bandeaux **349 → 199 px**,
+hauteur de mail **601 → 751 px, soit +25 %**.
+
+**Détail qui a coûté une capture** : les bandeaux étaient d'abord bridés à une
+colonne de 1 100 px — par souci d'alignement, hérité de la passe précédente.
+Ils retombaient donc sur trois lignes et le gain n'était que de 19 %. En leur
+rendant toute la largeur (ce qu'il demandait, mot pour mot), on passe à 25 %.
+La cohérence de colonne ne valait pas la hauteur qu'elle mangeait.
+
+### « Très bizarre d'avoir 2 expéditeurs alors que les 2 viennent du domaine volotea »
+
+Une société parle par plusieurs portes : Volotea écrit depuis `volotea.com` ET
+depuis `voloteahelp.zendesk.com` (son guichet de support). Le domaine racine ne
+suffisait pas.
+
+**Trois simulations sur les 1 819 interlocuteurs réels avant d'écrire une
+ligne** — et les deux premières étaient à jeter :
+
+1. **Fusionner sur le nom affiché** : 107 collisions, dont « Équipe des comptes
+   Microsoft » qui aurait réuni `microsoft.com` avec `daum.net` (usurpation),
+   « Comptastar » trois sociétés différentes, « Mail Delivery System » trois
+   serveurs, « fr » un fournisseur de propreté avec Bosch. **Écarté.**
+2. **Nom entier + garde « le nom se lit dans le domaine »** : 48 réunions,
+   toutes correctes — mais « Air France pour ANTHONY LE BERRE » et « Airbnb
+   Photo Team » restaient à part, alors que leurs domaines
+   (`service-airfrance.com`, `photography.airbnb.com`) disent qui écrit.
+3. **Plus long DÉBUT du nom confirmé par le domaine** : 73 réunions… dont
+   **4 fausses sur des personnes** — « Philippe Cottet » réuni à « philippe
+   jacquot », « Mélanie Baltazar » à « Melanie Duran », parce que l'adresse
+   inverse prénom et nom et que seul le prénom survivait.
+
+**Règle finale** = 3 + une seconde garde : pour une personne physique, le nom
+**entier** est exigé. Résultat : **64 réunions, 90 clés absorbées, relues une
+par une, zéro faux positif.** Volotea passe de 2 cartes à 1, Air France de 4 à
+1 (111 mails), IKEA de 3 à 1, Leroy Merlin 615. Bonus : Daniel HELAOUET
+retrouve ses trois adresses (free, orange, yahoo) dans une seule carte.
+
+Ce qui reste séparé l'est **à raison** : « Airbnb » depuis `express.medallia`
+(le prestataire de questionnaires, qui écrit aussi pour d'autres marques),
+« Air France Info Vol » depuis `connect-passengers`. Ces cartes portent
+désormais **« via &lt;domaine&gt; »** — on n'invente pas un rapprochement faux, on
+dit pourquoi il y en a deux.
+
+### « Charger les images aussi si moins de 300 k, c'est rapide »
+
+**Le seuil ne peut pas fonctionner**, et ce n'est pas une opinion : on ne
+connaît le poids d'une image qu'APRÈS l'avoir téléchargée, et ce
+téléchargement est exactement ce qui signale la lecture. Pire, le pixel espion
+pèse moins d'un kilo-octet : « charger sous 300 Ko » chargerait **tous** les
+traceurs et n'écarterait que les grandes photos — l'inverse de son intention.
+
+Lu 18 de ses vrais mails HTML pour en avoir le cœur net : **17 portent des
+images distantes** (jusqu'à 56 dans un seul), **0 porte une image embarquée
+(cid)**. Il n'y avait donc même pas de catégorie « sans risque » à débloquer
+d'office, comme je l'espérais d'abord.
+
+Le besoin derrière la demande, c'est « arrête de me faire cliquer » — et c'est
+un choix qui lui appartient. La barre de blocage reçoit un second bouton
+**« Toujours les afficher »**, réversible depuis Réglages › Compréhension des
+mails. Un clic, une fois, comme dans Outlook.
+
+Vérifié en **interceptant la réponse de lecture** (le corps ne se charge pas en
+dev, faute de compte IMAP local), avec surveillance des requêtes sortantes : au
+premier contact, 2 images neutralisées et **aucune requête ne sort** ; au clic
+« Afficher les images », **2 requêtes partent dont le pixel espion**. La
+démonstration du risque est faite, pas supposée.
+
 ## 19/08 (47) — Lire un mail en grand, sans en faire un troisième lecteur
 
 **Sa demande**, capture d'une confirmation Volotea à l'appui (mail HTML très

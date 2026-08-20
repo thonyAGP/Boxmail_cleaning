@@ -129,6 +129,11 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
 - Un **pictogramme se vérifie au rendu** (⛶ U+26F6 = carré vide à taille de
   bouton sous Windows) ; un **gestionnaire global d'Échap existe déjà** — en
   rajouter un dans un composant fait doublon, s'accumule, et perd toujours.
+- **Le corps d'un mail ne se charge pas en dev** (accounts.json local sans ses
+  boîtes) : pour éprouver le rendu HTML, INTERCEPTER la réponse de lecture avec
+  `page.route` — tout le code réel s'exécute alors, contrairement à une
+  injection dans le DOM. Surveiller les requêtes SORTANTES quand la vie privée
+  est en jeu : c'est la seule preuve qui vaut.
 
 ## Contenu des boîtes (à ne plus redécouvrir)
 
@@ -192,11 +197,21 @@ Désormais phase A exhaustive compacte → tri GLOBAL → phase B d'hydratation.
 Tri à 5 ordres côté serveur (défaut « les plus récents »). Les 5 976 mails
 ENVOYÉS se groupent sur leur DESTINATAIRE : les 2 sens dans une même carte.
 
-**LIVRÉ le 19/08 (2)** (détail § 47) — **« ↗️ Agrandir »** dans l'en-tête du
+**LIVRÉ le 19-20/08** (détail § 47-48) — **« ↗️ Agrandir »** dans l'en-tête du
 lecteur : bascule CSS, PAS `requestFullscreen()` (confisquerait Échap, bloquerait
 les modales Répondre/Tâche/Rentila). Texte borné à 82 caractères et centré, HTML
 en pleine largeur. Rien ne disparaît. Échap réduit d'abord, ferme ensuite. État
-de séance, jamais sur disque (la largeur de la poignée, elle, est durable).
+de séance, jamais sur disque. En grand, les bandeaux se resserrent (ce qui était
+empilé passe côte à côte) : **349 → 199 px, +25 % de hauteur de mail**.
+**Interlocuteurs RÉUNIS** : une société parle par plusieurs portes (Volotea
+écrit aussi depuis `voloteahelp.zendesk.com`). Règle = plus long DÉBUT du nom
+affiché **confirmé par le domaine**, nom ENTIER exigé pour une personne (sinon
+« Philippe Cottet » et « philippe jacquot » se rejoignaient). 64 réunions
+relues une par une. Les homonymes légitimement séparés portent « via <domaine> ».
+**IMAGES** : bouton « Toujours les afficher » + réglage réversible. Un seuil de
+poids est IMPOSSIBLE (le poids n'est connu qu'après téléchargement, et le pixel
+espion fait &lt; 1 Ko : il passerait toujours). 17 de ses 18 mails HTML testés
+n'ont que des images DISTANTES, aucune embarquée.
 
 **À faire** :
 - **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :
