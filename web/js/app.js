@@ -7209,7 +7209,55 @@ function renderHelp() {
       cochées d'office, les mails auxquels tu as répondu (ou conversations engagées) sont
       décochés. Tu peux ajuster mail par mail avant de valider.`)}`)}
 
+  ${section('🔎 Retrouver un mail', `
+    ${qa('Comment je cherche ?',
+      `Écran <a href="#/search">🔎 Recherche</a>, un mot suffit. Je cherche dans <strong>toutes tes
+      boîtes à la fois</strong> : le sujet, l'expéditeur, le texte du mail, le résumé, le nom des
+      pièces jointes et jusqu'au <strong>contenu</strong> des PDF (y compris les scans lus par
+      l'OCR). Tu n'as jamais rien à ranger pour retrouver.`)}
+    ${qa('Pourquoi les résultats sont groupés par personne ?',
+      `Parce qu'une liste de 500 lignes ne se lit pas. Chaque carte est un
+      <strong>interlocuteur</strong>, avec ses mails dessous — clique « voir les autres » pour
+      déplier. Sous chaque ligne, je dis <strong>pourquoi</strong> le mail ressort (« trouvé dans
+      le nom de la pièce jointe », « dans ce dont parle le mail »…).`)}
+    ${qa('Changer l\'ordre des résultats',
+      `Le menu <strong>« Trier par »</strong>, à droite des filtres : les plus récents (par
+      défaut), les plus anciens, interlocuteur de A à Z ou de Z à A, ou les plus pertinents.
+      Le tri porte sur <strong>tous</strong> les mails trouvés, pas seulement sur ceux affichés —
+      « les plus anciens » te donne donc vraiment les plus anciens.`)}
+    ${qa('↗ et ↘ devant les mails ?',
+      `↘ tu l'as reçu, ↗ tu l'as écrit. Les deux sens d'un échange sont réunis dans la même carte :
+      quand tu cherches quelqu'un, tu vois la conversation entière.`)}
+    ${qa('Pourquoi deux cartes portent parfois le même nom ?',
+      `Parce que ce sont vraiment deux expéditeurs différents. Exemple : « Airbnb » depuis
+      <em>airbnb.com</em>, et « Airbnb » depuis le prestataire qui envoie leurs questionnaires —
+      lequel écrit aussi pour d'autres marques. Je les réunis quand c'est sûr (Volotea depuis son
+      site et depuis son support, c'est la même carte), et sinon j'affiche
+      <strong>« via … »</strong> pour te dire d'où vient chacune.`)}`)}
+
   ${section('📖 Lecture, envoi, pièces jointes', `
+    ${qa('Lire un mail en grand',
+      `Bouton <strong>↗️ Agrandir</strong>, en haut à droite du mail. Il prend tout l'écran et les
+      bandeaux se resserrent pour rendre la place au contenu. Rien ne disparaît : tes boutons,
+      l'analyse et les pièces jointes restent au même endroit. Pour revenir : <strong>↙️ Réduire</strong>,
+      ou <strong>Échap</strong> (le premier Échap réduit, le second ferme le mail).`)}
+    ${qa('Élargir le panneau sans passer en grand',
+      `<strong>Attrape le bord gauche du panneau et glisse</strong> : tu gardes ta liste à gauche et
+      tu donnes plus de place au mail. La largeur choisie est retenue pour les fois suivantes.
+      C'est utile quand tu veux comparer la liste et le mail ; « Agrandir », lui, sert quand tu veux
+      te consacrer à un seul mail.`)}
+    ${qa('Pourquoi les images ne s\'affichent pas ?',
+      `Je les bloque par défaut : les charger prévient l'expéditeur que tu as ouvert son mail —
+      c'est comme ça que les publicitaires savent qui lit. Clique <strong>« Afficher les images »</strong>
+      pour ce mail-là, ou <strong>« Toujours les afficher »</strong> une bonne fois (réversible dans
+      <a href="#/settings">⚙️ Paramètres</a> → Compréhension des mails).`)}
+    ${qa('C\'est quoi « 🛡️ mouchards retirés » ?',
+      `Certains mails contiennent une image d'un seul pixel, invisible, qui ne sert qu'à signaler
+      ton ouverture. Je la retire <strong>toujours</strong>, même quand tu as choisi d'afficher les
+      images : le mail s'affiche entier, sans le mouchard.
+      <br>À savoir quand même : environ <strong>une image sur six</strong> porte un identifiant qui
+      t'identifie dans son adresse. Afficher les images reste donc un signal, en partie — retirer
+      le mouchard enlève le mouchard, pas tout le pistage.`)}
     ${qa('D\'où vient le contenu quand j\'ouvre un mail ?',
       `Il est téléchargé en direct depuis ta boîte au moment du clic (rien n'est stocké). Si la
       boîte est injoignable, un message l'explique — réessaie ou ouvre le mail dans Outlook.`)}
@@ -7225,7 +7273,9 @@ function renderHelp() {
   ${section('⌨️ Raccourcis & astuces', `
     <ul class="help-list">
       <li><strong>Échap</strong> ferme le panneau de lecture et les fenêtres (une confirmation
-        protège les brouillons en cours).</li>
+        protège les brouillons en cours). Sur un mail agrandi, le premier Échap
+        <strong>réduit</strong> — il faut un second pour fermer, histoire de ne pas perdre le mail
+        d'un seul geste.</li>
       <li>Dans la boîte de réception, clique les en-têtes <strong>Date / Expéditeur / Sujet</strong>
         pour trier ; re-clique pour inverser l'ordre.</li>
       <li>« 🌐 Toutes les boîtes » mélange toutes tes INBOX par date — chaque boîte a sa couleur
