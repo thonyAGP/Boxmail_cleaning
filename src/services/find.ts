@@ -1,5 +1,6 @@
 import {
   candidatsRecherche,
+  existenceDesMots,
   hydraterMessages,
   libellesDuMasque,
   MATCH_CONTENU_PIECE,
@@ -13,6 +14,7 @@ import {
   type CandidatRecherche,
   type SearchResultItem,
 } from './search.js';
+import { decouperTermes } from './termes.js';
 
 /**
  * « Retrouver sans classer » (11/08).
@@ -176,16 +178,37 @@ function motifsDe(terme: string): { exact: RegExp; debut: RegExp } {
   return m;
 }
 
-/** Score d'un mail candidat : où le terme a été vu, et à quel point c'est un vrai mot. */
-function scoreCandidat(c: CandidatRecherche, terme: string): number {
+/** Score d'un mail candidat : où les mots ont été vus, et à quel point ce sont de vrais mots. */
+function scoreCandidat(c: CandidatRecherche, mots: string[]): number {
   let s = 0;
   for (const [bit, poids] of POIDS) if (c.mask & bit) s += poids;
   // À pertinence égale, un document vaut mieux qu'une notification.
   if (c.hasAttachments) s += 1;
+
   // Un vrai mot vaut bien plus qu'un fragment : sinon « RIB » fait remonter
   // « Cabinet Ribéroux » (48 mails) avant le mail qui porte vraiment un RIB.
-  const q = qualiteMot(terme, c.subject, c.fromName, c.attachmentNames);
-  return s + (q === 2 ? 6 : q === 1 ? 1 : 0);
+  // Sur plusieurs mots, on prend la MOYENNE : la somme avantagerait
+  // mécaniquement les recherches longues, ce qui n'a aucun sens puisqu'on
+  // compare des mails entre eux, à requête constante.
+  if (mots.length) {
+    let q = 0;
+    for (const m of mots) {
+      const n = qualiteMot(m, c.subject, c.fromName, c.attachmentNames);
+      q += n === 2 ? 6 : n === 1 ? 1 : 0;
+    }
+    s += q / mots.length;
+  }
+
+  // Les mots RÉUNIS au même endroit (23/08). Trois mots éparpillés dans trois
+  // champs sans rapport ne valent pas trois mots dans la même phrase — sans
+  // cela, le multi-mots ferait remonter des coïncidences en tête.
+  s += Math.max(0, c.concentration - 1) * 3;
+
+  // En mode repli, tous les mails n'ont pas tous les mots : ceux qui les ont
+  // tous passent devant, sinon le repli enterrerait ses meilleurs résultats.
+  s -= Math.max(0, mots.length - c.motsTrouves) * 4;
+
+  return s;
 }
 
 /**
@@ -372,6 +395,26 @@ export interface FindResult {
   examined: number;
   /** Ordre appliqué (celui demandé, ou « recent » par défaut). */
   sort: TriRecherche;
+  /**
+   * Ce que la recherche a COMPRIS de la phrase tapée (23/08), pour que l'écran
+   * puisse le montrer. Reproche constant d'Anthony : le produit « n'explique
+   * pas ». Une recherche qui découpe en silence est pire qu'une recherche
+   * bête — il ne peut pas voir qu'un mot a été mal coupé ou écarté.
+   */
+  recherche: {
+    /** Les mots effectivement exigés. */
+    mots: string[];
+    /** Les mots creux ou trop courts qui ont été retirés. */
+    ecartes: string[];
+    /** true si la phrase a été cherchée d'un bloc (guillemets). */
+    litteral: boolean;
+    /** Mots qui n'apparaissent dans AUCUN mail — la vraie cause d'un vide. */
+    motsAbsents: string[];
+    /** Combien de mots un mail devait porter pour être retenu. */
+    minMots: number;
+    /** Ce qu'il a fallu relâcher, s'il a fallu relâcher quelque chose. */
+    repli: 'aucun' | 'mots-absents' | 'moins-de-mots' | 'rien-de-trouvable';
+  };
   groups: FindGroup[];
   /** Facettes, pour affiner sans taper une syntaxe. */
   facets: {
@@ -415,17 +458,56 @@ export async function find(opts: FindOptions): Promise<FindResult> {
     : 'recent';
 
   // --- Phase A : tout le vivier, en lignes maigres --------------------------
-  const candidats = await candidatsRecherche({
-    q,
+  // La phrase devient des MOTS (23/08). Avant, « facture électricité miron »
+  // était cherché comme une chaîne de 25 caractères : aucun mail réel ne
+  // s'appelle comme ça, d'où l'écran vide.
+  const termes = decouperTermes(q);
+  const filtres = {
     account: opts.account,
     withAttachments: opts.withAttachments,
     since: opts.since,
-  });
+  };
+
+  let mots = termes.mots;
+  let minMots = mots.length;
+  let motsAbsents: string[] = [];
+  let repli: FindResult['recherche']['repli'] = 'aucun';
+  let candidats = await candidatsRecherche({ mots, ...filtres });
+
+  // --- Le repli, plutôt que l'écran vide ------------------------------------
+  // Exiger TOUS les mots est le bon défaut, mais c'est aussi le bon moyen de
+  // ne rien rendre parce qu'un seul mot périphérique manque. On aurait alors
+  // remplacé « 0 résultat à tort » par « 0 résultat pour une autre raison » —
+  // du point de vue d'Anthony, exactement le même écran.
+  if (!candidats.length && mots.length > 1) {
+    const existent = await existenceDesMots(mots, filtres);
+    const presents = mots.filter((_, i) => existent[i]);
+    motsAbsents = mots.filter((_, i) => !existent[i]);
+
+    if (!presents.length) {
+      // Aucun mot ne mène nulle part : inutile d'insister, mais on saura DIRE
+      // lesquels plutôt que de hausser les épaules.
+      repli = 'rien-de-trouvable';
+    } else if (motsAbsents.length) {
+      // Il y a un intrus. On cherche sans lui, en le nommant à l'écran.
+      mots = presents;
+      minMots = mots.length;
+      repli = 'mots-absents';
+      candidats = await candidatsRecherche({ mots, ...filtres });
+    } else {
+      // Tous les mots existent, mais jamais ensemble : on en exige un de
+      // moins. Le score pénalise les mails incomplets, donc les plus proches
+      // de la demande restent en tête.
+      minMots = mots.length - 1;
+      repli = 'moins-de-mots';
+      candidats = await candidatsRecherche({ mots, minMots, ...filtres });
+    }
+  }
 
   // --- Groupement par INTERLOCUTEUR (et non par expéditeur) -----------------
   const parGroupe = new Map<string, GroupeInterne>();
   for (const c of candidats) {
-    const score = scoreCandidat(c, q);
+    const score = scoreCandidat(c, mots);
     for (const adresse of interlocuteursDe(c)) {
       const key = entiteExpediteur(adresse);
       let g = parGroupe.get(key);
@@ -475,7 +557,7 @@ export async function find(opts: FindOptions): Promise<FindResult> {
   // --- Phase B : on n'hydrate que les mails réellement montrés --------------
   const aMontrer = new Map<string, CandidatRecherche[]>();
   for (const g of retenus) {
-    const ordonnes = [...g.candidats].sort(comparateurMails(sort, q));
+    const ordonnes = [...g.candidats].sort(comparateurMails(sort, mots));
     aMontrer.set(g.key, ordonnes.slice(0, perGroup));
   }
   const hydrates = await hydraterMessages(
@@ -542,6 +624,14 @@ export async function find(opts: FindOptions): Promise<FindResult> {
     truncated: reunis.length > groupes.length,
     examined: candidats.length,
     sort,
+    recherche: {
+      mots,
+      ecartes: termes.ecartes,
+      litteral: termes.litteral,
+      motsAbsents,
+      minMots,
+      repli,
+    },
     groups: groupes,
     facets: {
       accounts: [...parCompte]
@@ -624,11 +714,14 @@ function comparateurGroupes(sort: TriRecherche) {
 }
 
 /** L'ordre des mails DANS une carte — le même réglage décide des deux. */
-function comparateurMails(sort: TriRecherche, q: string) {
+function comparateurMails(sort: TriRecherche, mots: string[]) {
   return (a: CandidatRecherche, b: CandidatRecherche): number => {
     if (sort === 'ancien') return (a.date ?? '').localeCompare(b.date ?? '');
     if (sort === 'pertinence') {
-      return scoreCandidat(b, q) - scoreCandidat(a, q) || (b.date ?? '').localeCompare(a.date ?? '');
+      return (
+        scoreCandidat(b, mots) - scoreCandidat(a, mots) ||
+        (b.date ?? '').localeCompare(a.date ?? '')
+      );
     }
     // Récents, A→Z et Z→A : dans la carte, le plus récent d'abord.
     return (b.date ?? '').localeCompare(a.date ?? '');

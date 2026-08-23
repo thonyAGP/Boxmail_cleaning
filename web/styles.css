@@ -605,6 +605,15 @@ a.tab { text-decoration: none; }
 }
 .find-filters label { display: flex; gap: 6px; align-items: center; }
 .find-lead { font-size: 14px; margin: 0 2px 12px; }
+/* Ce que la recherche a compris de la phrase tapée (23/08). */
+.find-compris {
+  font-size: 13px;
+  margin: -6px 2px 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.09);
+  border-left: 3px solid rgba(127, 127, 127, 0.35);
+}
 .find-group { margin-bottom: 12px; }
 .find-group-head {
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;

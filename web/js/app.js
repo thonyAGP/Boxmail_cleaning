@@ -9322,13 +9322,50 @@ async function runSearch() {
   renderSearchResults();
 }
 
+/**
+ * Ce que la recherche a COMPRIS de la phrase tapée (23/08).
+ *
+ * La recherche découpe maintenant en mots — « facture électricité miron » fait
+ * trois exigences, et non plus une chaîne de 25 caractères cherchée telle
+ * quelle, qui ne rendait rien. Mais découper en SILENCE serait pire que de ne
+ * pas découper : il ne pourrait pas voir qu'un mot a été écarté, ni pourquoi
+ * un résultat inattendu remonte. On montre donc les mots retenus, et surtout
+ * ce qu'il a fallu relâcher quand la demande exacte ne donnait rien.
+ */
+function ligneCompris(r) {
+  if (!r || r.litteral || !r.mots?.length) return '';
+  const puces = r.mots.map((m) => `<strong>${esc(m)}</strong>`).join(' · ');
+  let note = '';
+  if (r.repli === 'mots-absents' && r.motsAbsents?.length) {
+    note = ` — aucun mail ne contient ${r.motsAbsents
+      .map((m) => `« ${esc(m)} »`)
+      .join(' ni ')}, j'ai cherché sans.`;
+  } else if (r.repli === 'moins-de-mots') {
+    note = ` — tes mots ne se trouvent jamais tous ensemble : voici les mails qui en portent au moins ${r.minMots}.`;
+  } else if (r.ecartes?.length) {
+    note = ` <span class="muted">(mots trop courants ignorés : ${r.ecartes.map(esc).join(', ')})</span>`;
+  }
+  // Un seul mot et rien à signaler : le dire serait du bruit.
+  if (r.mots.length < 2 && !note) return '';
+  return `<div class="find-compris">🔍 Je cherche : ${puces}${note}</div>`;
+}
+
 function renderSearchResults() {
   const el = $('#search-results');
   const d = searchState.data;
   if (!el || !d) return;
   if (!d.groups.length) {
-    el.innerHTML = `<div class="empty">Je n'ai rien trouvé pour « ${esc(d.query)} ».
-      <br><span class="muted">Essaie un mot plus court, ou le nom de la personne ou de l'entreprise.</span></div>`;
+    // Un écran vide doit DIRE pourquoi. Quand un mot n'existe dans aucun mail,
+    // c'est presque toujours lui le coupable — le nommer vaut mieux que
+    // « essaie un mot plus court », qu'Anthony ne peut pas appliquer sans
+    // deviner lequel.
+    const absents = d.recherche?.motsAbsents ?? [];
+    const cause = absents.length
+      ? `<br><span class="muted">Aucun mail ne contient ${absents
+          .map((m) => `« <strong>${esc(m)}</strong> »`)
+          .join(' ni ')}. Essaie sans ${absents.length > 1 ? 'ces mots' : 'ce mot'}.</span>`
+      : `<br><span class="muted">Essaie un mot plus court, ou le nom de la personne ou de l'entreprise.</span>`;
+    el.innerHTML = `<div class="empty">Je n'ai rien trouvé pour « ${esc(d.query)} ».${cause}</div>`;
     return;
   }
 
@@ -9345,6 +9382,7 @@ function renderSearchResults() {
   el.innerHTML = `
     <div class="find-lead">${entete}
       ${nbDocs ? ` <span class="muted">· ${fmtNum(nbDocs)} portent un document.</span>` : ''}</div>
+    ${ligneCompris(d.recherche)}
     ${(() => {
       // Deux cartes peuvent porter le même nom sans être le même expéditeur
       // (« Airbnb » depuis airbnb.com, et « Airbnb » depuis le prestataire qui

@@ -172,7 +172,20 @@ export interface CandidatRecherche {
   subject: string;
   attachmentNames: string;
   hasAttachments: boolean;
+  /** Union des endroits où AU MOINS un mot cherché a été vu. */
   mask: number;
+  /** Combien des mots cherchés ce mail contient (23/08). */
+  motsTrouves: number;
+  /**
+   * Le plus grand nombre de mots réunis dans UN MÊME champ (23/08).
+   *
+   * Sans ce chiffre, le classement ment dès qu'on cherche plusieurs mots : un
+   * mail où « facture » est dans le sujet, « électricité » dans une pièce
+   * jointe et « miron » dans un résumé porte trois correspondances sans le
+   * moindre rapport entre elles, et son masque le fait passer pour un
+   * excellent résultat. Trois mots dans la MÊME phrase, c'est autre chose.
+   */
+  concentration: number;
 }
 
 /**
@@ -183,48 +196,138 @@ function motifLike(terme: string): string {
   return `%${terme.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
-const SQL_CANDIDATS = `
-WITH mh AS (SELECT DISTINCT messageId FROM EntityMention WHERE nameRaw LIKE ?1 ESCAPE '\\'),
-     ch AS (SELECT DISTINCT messageId FROM VerdictContext WHERE label LIKE ?1 ESCAPE '\\')
+/**
+ * Les champs fouillés, groupés par bit de masque (23/08).
+ *
+ * L'ORDRE COMPTE : SQLite évalue les `OR` de gauche à droite et s'arrête au
+ * premier vrai. `subject` et `fromName` sont courts, `attachmentText` porte
+ * l'OCR de pièces entières — le mettre en tête ferait payer le pire cas à
+ * chaque ligne, alors qu'il est presque toujours inutile de descendre
+ * jusque-là.
+ *
+ * `analysisInput` REJOINT la recherche ici (23/08) : ~2 200 caractères de
+ * corps, structure conservée, déjà en base pour l'analyse — mais jamais
+ * interrogés jusqu'ici. La recherche se contentait de `snippet`, 500
+ * caractères aplatis, absent sur les 6 246 mails envoyés. C'est le plus gros
+ * gain de couverture du lot, et il ne coûte pas une ligne de rattrapage.
+ */
+const CHAMPS_CHERCHES: { colonnes: string[]; bit: number }[] = [
+  { colonnes: ['m.subject'], bit: MATCH_SUJET },
+  { colonnes: ['m.fromName', 'm.fromEmail'], bit: MATCH_EXPEDITEUR },
+  { colonnes: ['m.attachmentNames'], bit: MATCH_NOM_PIECE },
+  { colonnes: ['m.aiSummary'], bit: MATCH_RESUME },
+  { colonnes: ['m.snippet', 'm.analysisInput'], bit: MATCH_TEXTE },
+  { colonnes: ['m.attachmentText'], bit: MATCH_CONTENU_PIECE },
+];
+
+/** `col LIKE ?n OR col2 LIKE ?n` pour un champ et un mot donnés. */
+const testChamp = (colonnes: string[], n: number): string =>
+  colonnes.map((c) => `${c} LIKE ?${n} ESCAPE '\\'`).join(' OR ');
+
+/** Le mot n° n est-il présent quelque part dans ce mail ? */
+const presence = (n: number): string =>
+  `(${CHAMPS_CHERCHES.map((f) => testChamp(f.colonnes, n)).join(' OR ')}` +
+  ` OR m.id IN (SELECT messageId FROM mh${n}) OR m.id IN (SELECT messageId FROM ch${n}))`;
+
+/**
+ * La requête du vivier, construite pour N mots (23/08).
+ *
+ * Elle était figée sur UN motif ; elle est maintenant générée, parce que le
+ * nombre de mots change à chaque recherche. Trois invariants tenus par
+ * construction :
+ *
+ *  - **aucune sous-requête corrélée.** Les CTE parcourent `EntityMention` et
+ *    `VerdictContext` une fois par mot, jamais une fois par mail — c'est ce
+ *    qui avait coûté 132 secondes le 19/08 ;
+ *  - **le compte de paramètres reste dérisoire** : N mots (8 au plus) + 3
+ *    filtres, très loin des 999 au-delà desquels le moteur panique ;
+ *  - **le filtre reste en `AND` court-circuité** dans le cas courant : dès
+ *    qu'un mot manque, la ligne est abandonnée sans évaluer les suivants. Le
+ *    mode « au moins K mots » (le repli) coûte plus cher, mais il ne se
+ *    déclenche que sur une recherche restée vide.
+ */
+function sqlCandidats(nbMots: number, minMots: number): string {
+  const mots = Array.from({ length: nbMots }, (_, i) => i + 1);
+  const pAccount = nbMots + 1;
+  const pPieces = nbMots + 2;
+  const pDepuis = nbMots + 3;
+
+  const cte = mots
+    .flatMap((n) => [
+      `mh${n} AS (SELECT DISTINCT messageId FROM EntityMention WHERE nameRaw LIKE ?${n} ESCAPE '\\')`,
+      `ch${n} AS (SELECT DISTINCT messageId FROM VerdictContext WHERE label LIKE ?${n} ESCAPE '\\')`,
+    ])
+    .join(',\n     ');
+
+  // Le masque : l'union des endroits où CHACUN des mots a été vu.
+  const masque = CHAMPS_CHERCHES.map(
+    (f) =>
+      `(CASE WHEN ${mots.map((n) => testChamp(f.colonnes, n)).join(' OR ')}` +
+      ` THEN ${f.bit} ELSE 0 END)`,
+  )
+    .concat(
+      `(CASE WHEN ${mots.map((n) => `m.id IN (SELECT messageId FROM mh${n})`).join(' OR ')}` +
+        ` THEN ${MATCH_ENTITE} ELSE 0 END)`,
+      `(CASE WHEN ${mots.map((n) => `m.id IN (SELECT messageId FROM ch${n})`).join(' OR ')}` +
+        ` THEN ${MATCH_CONTEXTE} ELSE 0 END)`,
+    )
+    .join('\n      + ');
+
+  // Combien de mots au même endroit — voir `concentration`.
+  const parChamp = CHAMPS_CHERCHES.map(
+    (f) => mots.map((n) => `(CASE WHEN ${testChamp(f.colonnes, n)} THEN 1 ELSE 0 END)`).join(' + '),
+  );
+  const concentration = nbMots > 1 ? `max(${parChamp.join(',\n            ')})` : '1';
+
+  const comptage = mots.map((n) => `(CASE WHEN ${presence(n)} THEN 1 ELSE 0 END)`).join(' + ');
+  // Tous les mots exigés : des AND que SQLite abandonne au premier manquant.
+  // Repli : la somme, qui doit être calculée en entier — plus lente, et c'est
+  // assumé puisqu'on n'y vient qu'après une recherche restée vide.
+  const filtre =
+    minMots >= nbMots
+      ? mots.map((n) => presence(n)).join('\n   AND ')
+      : `(${comptage}) >= ${minMots}`;
+
+  return `
+WITH ${cte}
 SELECT m.id, m.accountSlug, m.date, m.fromEmail, m.fromName, m.toEmails, m.isOutbound,
        m.subject, m.attachmentNames, m.hasAttachments,
-        (CASE WHEN m.subject         LIKE ?1 ESCAPE '\\' THEN ${MATCH_SUJET} ELSE 0 END)
-      + (CASE WHEN m.fromEmail       LIKE ?1 ESCAPE '\\'
-                OR m.fromName        LIKE ?1 ESCAPE '\\' THEN ${MATCH_EXPEDITEUR} ELSE 0 END)
-      + (CASE WHEN m.snippet         LIKE ?1 ESCAPE '\\' THEN ${MATCH_TEXTE} ELSE 0 END)
-      + (CASE WHEN m.attachmentText  LIKE ?1 ESCAPE '\\' THEN ${MATCH_CONTENU_PIECE} ELSE 0 END)
-      + (CASE WHEN m.attachmentNames LIKE ?1 ESCAPE '\\' THEN ${MATCH_NOM_PIECE} ELSE 0 END)
-      + (CASE WHEN m.aiSummary       LIKE ?1 ESCAPE '\\' THEN ${MATCH_RESUME} ELSE 0 END)
-      + (CASE WHEN m.id IN (SELECT messageId FROM mh)    THEN ${MATCH_ENTITE} ELSE 0 END)
-      + (CASE WHEN m.id IN (SELECT messageId FROM ch)    THEN ${MATCH_CONTEXTE} ELSE 0 END) AS mask
+        ${masque} AS mask,
+       ${comptage} AS motsTrouves,
+       ${concentration} AS concentration
 FROM Message m
 JOIN Folder f ON f.id = m.folderId
 WHERE m.isDeleted = 0
   AND f.role NOT IN ('trash', 'drafts')
-  AND (?2 IS NULL OR m.accountSlug = ?2)
-  AND (?3 = 0 OR m.hasAttachments = 1)
-  AND (?4 IS NULL OR m.date >= ?4)
-  AND (   m.subject         LIKE ?1 ESCAPE '\\'
-       OR m.fromEmail       LIKE ?1 ESCAPE '\\'
-       OR m.fromName        LIKE ?1 ESCAPE '\\'
-       OR m.snippet         LIKE ?1 ESCAPE '\\'
-       OR m.attachmentText  LIKE ?1 ESCAPE '\\'
-       OR m.attachmentNames LIKE ?1 ESCAPE '\\'
-       OR m.aiSummary       LIKE ?1 ESCAPE '\\'
-       OR m.id IN (SELECT messageId FROM mh)
-       OR m.id IN (SELECT messageId FROM ch))`;
+  AND (?${pAccount} IS NULL OR m.accountSlug = ?${pAccount})
+  AND (?${pPieces} = 0 OR m.hasAttachments = 1)
+  AND (?${pDepuis} IS NULL OR m.date >= ?${pDepuis})
+  AND ${filtre}`;
+}
 
-/** Le vivier complet des mails correspondants (corbeille et brouillons exclus). */
+/**
+ * Le vivier complet des mails correspondants (corbeille et brouillons exclus).
+ *
+ * `mots` remplace l'ancien `q` : la phrase est découpée en amont
+ * (`termes.ts`), parce que le découpage est une décision produit — quels mots
+ * comptent, lesquels sont du bruit — et pas un détail d'accès aux données.
+ *
+ * `minMots` sert au repli : à défaut, tous les mots sont exigés.
+ */
 export async function candidatsRecherche(opts: {
-  q: string;
+  mots: string[];
+  minMots?: number;
   account?: string;
   withAttachments?: boolean;
   since?: Date;
 }): Promise<CandidatRecherche[]> {
   await ensureDbReady();
+  const mots = opts.mots.filter((m) => m.trim().length > 0);
+  if (!mots.length) return [];
+  const minMots = Math.min(Math.max(opts.minMots ?? mots.length, 1), mots.length);
   const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(
-    SQL_CANDIDATS,
-    motifLike(opts.q),
+    sqlCandidats(mots.length, minMots),
+    ...mots.map(motifLike),
     opts.account ?? null,
     opts.withAttachments ? 1 : 0,
     opts.since ? opts.since.toISOString() : null,
@@ -243,7 +346,40 @@ export async function candidatsRecherche(opts: {
     attachmentNames: String(r.attachmentNames ?? ''),
     hasAttachments: !!Number(r.hasAttachments ?? 0),
     mask: Number(r.mask ?? 0),
+    motsTrouves: Number(r.motsTrouves ?? 0),
+    concentration: Number(r.concentration ?? 0),
   }));
+}
+
+/**
+ * Chacun de ces mots existe-t-il, SEUL, quelque part (23/08) ?
+ *
+ * Sert au repli : quand une recherche à plusieurs mots ne rend rien, la
+ * première chose à savoir est s'il y a un intrus. « facture électricité
+ * miron » sans résultat, c'est très différent selon que « miron » n'apparaisse
+ * dans aucun mail (il faut le dire, et chercher sans lui) ou que les trois
+ * mots existent mais ne se croisent jamais.
+ *
+ * `LIMIT 1` par mot : on ne veut pas le vivier, juste savoir s'il est vide.
+ */
+export async function existenceDesMots(
+  mots: string[],
+  opts: { account?: string; withAttachments?: boolean; since?: Date } = {},
+): Promise<boolean[]> {
+  await ensureDbReady();
+  const out: boolean[] = [];
+  for (const mot of mots) {
+    const sql = `${sqlCandidats(1, 1)}\nLIMIT 1`;
+    const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(
+      sql,
+      motifLike(mot),
+      opts.account ?? null,
+      opts.withAttachments ? 1 : 0,
+      opts.since ? opts.since.toISOString() : null,
+    );
+    out.push(rows.length > 0);
+  }
+  return out;
 }
 
 /** Les libellés de `matchedIn`, reconstitués depuis le masque calculé en SQL. */
