@@ -21,6 +21,7 @@
     "sync": "tsx src/cli/sync.ts",
     "audit": "tsx src/cli/audit.ts",
     "banc": "tsx src/cli/banc.ts",
+    "banc:search": "tsx src/cli/banc-search.ts",
     "verdict:check": "tsx src/cli/verdict-check.ts",
     "ocr:banc": "tsx src/cli/ocr-banc.ts",
     "db:setup": "node scripts/db-setup.mjs",
