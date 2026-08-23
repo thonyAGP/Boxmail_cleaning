@@ -1,4 +1,5 @@
 import { db, ensureDbReady } from '../db/client.js';
+import { deplie } from './accents.js';
 import {
   resolveMailSemanticState,
   type EtatSemantique,
@@ -224,9 +225,18 @@ const CHAMPS_CHERCHES: { colonnes: string[]; bit: number }[] = [
 const testChamp = (colonnes: string[], n: number): string =>
   colonnes.map((c) => `${c} LIKE ?${n} ESCAPE '\\'`).join(' OR ');
 
-/** Le mot n° n est-il présent quelque part dans ce mail ? */
-const presence = (n: number): string =>
+/**
+ * Le mot n° n est-il présent quelque part dans ce mail ?
+ *
+ * `nbMots` sert à retrouver le motif DÉPLIÉ du même mot : les paramètres 1..N
+ * portent les motifs tels qu'il les a tapés, N+1..2N les mêmes sans accents.
+ * Les colonnes `searchShort` / `searchLong` sont déjà dépliées à l'écriture
+ * (accents.ts), d'où le rapprochement — c'est ce qui fait que « republique »
+ * trouve enfin « République », et « Électricité » se laisse trouver.
+ */
+const presence = (n: number, nbMots: number): string =>
   `(${CHAMPS_CHERCHES.map((f) => testChamp(f.colonnes, n)).join(' OR ')}` +
+  ` OR m.searchShort LIKE ?${n + nbMots} ESCAPE '\\'` +
   ` OR m.id IN (SELECT messageId FROM mh${n}) OR m.id IN (SELECT messageId FROM ch${n}))`;
 
 /**
@@ -248,14 +258,21 @@ const presence = (n: number): string =>
  */
 function sqlCandidats(nbMots: number, minMots: number): string {
   const mots = Array.from({ length: nbMots }, (_, i) => i + 1);
-  const pAccount = nbMots + 1;
-  const pPieces = nbMots + 2;
-  const pDepuis = nbMots + 3;
+  // 1..N : les mots tapés. N+1..2N : les mêmes, dépliés (voir `presence`).
+  const pAccount = 2 * nbMots + 1;
+  const pPieces = 2 * nbMots + 2;
+  const pDepuis = 2 * nbMots + 3;
 
+  // Les entités et dossiers lus par l'analyse, cherchés SOUS LES DEUX FORMES :
+  // tel qu'il l'a tapé, et déplié (paramètre n + nbMots). C'est ce qui fait que
+  // « republique » retrouve « 46 rue de la République » — le cas qui a motivé
+  // toute la passe.
   const cte = mots
     .flatMap((n) => [
-      `mh${n} AS (SELECT DISTINCT messageId FROM EntityMention WHERE nameRaw LIKE ?${n} ESCAPE '\\')`,
-      `ch${n} AS (SELECT DISTINCT messageId FROM VerdictContext WHERE label LIKE ?${n} ESCAPE '\\')`,
+      `mh${n} AS (SELECT DISTINCT messageId FROM EntityMention` +
+        ` WHERE nameRaw LIKE ?${n} ESCAPE '\\' OR nameDeplie LIKE ?${n + nbMots} ESCAPE '\\')`,
+      `ch${n} AS (SELECT DISTINCT messageId FROM VerdictContext` +
+        ` WHERE label LIKE ?${n} ESCAPE '\\' OR labelDeplie LIKE ?${n + nbMots} ESCAPE '\\')`,
     ])
     .join(',\n     ');
 
@@ -279,13 +296,15 @@ function sqlCandidats(nbMots: number, minMots: number): string {
   );
   const concentration = nbMots > 1 ? `max(${parChamp.join(',\n            ')})` : '1';
 
-  const comptage = mots.map((n) => `(CASE WHEN ${presence(n)} THEN 1 ELSE 0 END)`).join(' + ');
+  const comptage = mots
+    .map((n) => `(CASE WHEN ${presence(n, nbMots)} THEN 1 ELSE 0 END)`)
+    .join(' + ');
   // Tous les mots exigés : des AND que SQLite abandonne au premier manquant.
   // Repli : la somme, qui doit être calculée en entier — plus lente, et c'est
   // assumé puisqu'on n'y vient qu'après une recherche restée vide.
   const filtre =
     minMots >= nbMots
-      ? mots.map((n) => presence(n)).join('\n   AND ')
+      ? mots.map((n) => presence(n, nbMots)).join('\n   AND ')
       : `(${comptage}) >= ${minMots}`;
 
   return `
@@ -328,6 +347,7 @@ export async function candidatsRecherche(opts: {
   const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(
     sqlCandidats(mots.length, minMots),
     ...mots.map(motifLike),
+    ...mots.map((m) => motifLike(deplie(m))),
     opts.account ?? null,
     opts.withAttachments ? 1 : 0,
     opts.since ? opts.since.toISOString() : null,
@@ -373,6 +393,7 @@ export async function existenceDesMots(
     const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(
       sql,
       motifLike(mot),
+      motifLike(deplie(mot)),
       opts.account ?? null,
       opts.withAttachments ? 1 : 0,
       opts.since ? opts.since.toISOString() : null,
@@ -384,6 +405,11 @@ export async function existenceDesMots(
 
 /** Les libellés de `matchedIn`, reconstitués depuis le masque calculé en SQL. */
 export function libellesDuMasque(mask: number): string[] {
+  // Masque vide alors que le mail a bien été retenu : la correspondance vient
+  // des colonnes dépliées (23/08), donc d'un mot qui ne diffère que par ses
+  // accents. On le DIT — un résultat sans raison affichée est exactement le
+  // reproche qu'Anthony fait au produit depuis le début.
+  if (mask === 0) return ['accents ignorés'];
   const out: string[] = [];
   if (mask & MATCH_NOM_PIECE) out.push('pièce jointe');
   if (mask & MATCH_SUJET) out.push('sujet');

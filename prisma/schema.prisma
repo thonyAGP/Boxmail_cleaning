@@ -175,6 +175,15 @@ model Message {
   ocrAt              DateTime?
   ocrVersion         Int?
   aiSummary          String?
+  // Recherche sans accents (23/08). Copie dépliée (sans accents, en minuscules)
+  // du sujet, de l'expéditeur, des noms de pièces et du résumé — tenue par des
+  // DÉCLENCHEURS SQLite, voir services/accents.ts. Ne JAMAIS l'écrire depuis
+  // TypeScript : plus de dix fichiers touchent aux textes d'origine, un oubli
+  // ferait mentir la colonne en silence.
+  // Le corps du mail en est volontairement absent : le recopier coûtait +71 %
+  // de base et doublait le temps de recherche, pour des accents qui comptent
+  // surtout dans les NOMS (sujets, entités) — mesures dans accents.ts.
+  searchShort        String?
   aiAction           String?   // reply | pay | read | archive | none
   aiVerdictAt        DateTime?
   aiModel            String?
@@ -845,6 +854,10 @@ model EntityMention {
   /// person | company | property | vehicle | contract | service | account | other
   kind      String
   nameRaw   String
+  /// `nameRaw` sans accents ni casse (23/08) — tenu par déclencheur SQLite,
+  /// voir services/accents.ts. C'est ce qui fait que « republique » retrouve
+  /// « 46 rue de la République » lu par l'analyse.
+  nameDeplie String?
   /// sent_by | issued_by | concerns | billed_to | pays | represents |
   /// mentioned | other
   role      String @default("mentioned")
@@ -869,6 +882,8 @@ model VerdictContext {
   /// property | company | affair | vehicle | reference | other
   kind      String
   label     String
+  /// `label` sans accents ni casse (23/08) — tenu par déclencheur SQLite.
+  labelDeplie String?
   certainty String @default("unknown")
   evidence  String?
 
