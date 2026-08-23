@@ -237,11 +237,26 @@ le 29 août » + 2 boutons au plus ; les 9 anciennes commandes passent sous
 lecteur (série figée à l'ouverture) ; repli des métadonnées derrière « Détails »
 et des menus de correction dans « Pourquoi Boxmail me montre ça ? ».
 
+**LIVRÉ le 23/08** (détail § 50) — **la recherche cherchait la PHRASE ENTIÈRE**
+comme un seul motif `LIKE` : « facture électricité miron » = une chaîne de 25
+caractères, donc écran vide. Valait pour TOUTE recherche de plus d'un mot.
+Passe 1 : découpage en mots (`termes.ts`, mots creux écartés mais `RH`/`TV`/
+`RIB`/`T2` protégés), **`analysisInput` enfin cherché** (2 200 car. de corps au
+lieu des 500 de `snippet`, déjà en base), **repli qui NOMME le mot introuvable**
+plutôt qu'un écran vide, et la **concentration** (mots réunis dans un même
+champ) au score — sans elle le multi-mots fait remonter des coïncidences.
+L'écran affiche ce qu'il a compris. Passe 2 : **accents**, décidés sur mesure
+(41 000 mails synthétiques) — déplier à la volée = 25× plus lent ; recopier le
+corps = +71 % de base ET recherche doublée ; retenu = champs courts + ENTITÉS,
+soit +6 % de base et +15 % de temps. Colonnes tenues par des **déclencheurs
+SQLite** (dix fichiers écrivent ces textes, un branchement TS en oublierait),
+SQL **engendré** depuis la liste d'accents. **Limite assumée : le corps n'est
+pas déplié** — `npm run banc:search` mesure l'écart résiduel, à trancher avec lui.
+
 **À faire** :
-- **Les ACCENTS de la recherche** (mesuré, non traité, à trancher AVEC lui) :
-  « republique » → 64 mails, « République » → 294. Défaut silencieux. FTS5
-  (`remove_diacritics 2`) réglerait le fond mais change la sémantique de
-  matching (« RIB » ≠ « Ribéroux ») et exige un backfill complet.
+- **Passe 3 de la recherche, non faite** : la couche « phrase » — dates
+  (« l'an dernier »), pièce jointe, types de documents devenant des filtres
+  visibles et retirables. Périmètre étroit, aucune « compréhension » simulée.
 - **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection
   automatique des affaires ET pour savoir ce qu'il a déjà demandé.
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans

@@ -5,6 +5,109 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 23/08 (50) — « Pourquoi une recherche aussi simple ne me retourne rien ? »
+
+Capture à l'appui : `facture électricité miron` → « Je n'ai rien trouvé ».
+
+### 1. La cause : la phrase était cherchée d'un bloc
+
+`search.ts:182` transformait tout ce qu'il tapait en **un seul motif** :
+`LIKE '%facture électricité miron%'`. Pas trois mots — une chaîne de 25
+caractères, espaces compris, cherchée telle quelle. Aucun mail réel ne
+s'intitule ainsi. Le défaut valait pour **toute** recherche de plus d'un mot,
+depuis toujours.
+
+Prouvé sur une base SQLite jetable rejouant la requête du serveur. Trois
+défauts distincts sont sortis du même test :
+
+| Test | Résultat |
+|---|---|
+| `%facture électricité miron%` | seul un mail intitulé littéralement ainsi |
+| `%électricité%` vs `%electricite%` | ensembles **disjoints** |
+| `%électricité%` sur « **É**lectricité » | **rien** — `LIKE` ne replie que l'ASCII |
+
+Le troisième n'était pas connu : la casse des lettres accentuées.
+
+### 2. Conception challengée avec Codex (OpenAI), à sa demande
+
+Le pilote ChatGPT de l'autre poste n'existe pas sur ce PC (comme la clé
+`ssh boxmail` : ce n'est pas la machine du CLAUDE.md). Passé par le MCP Codex.
+
+Convergence sur l'essentiel, et trois apports que je n'avais pas :
+- **le repli** quand rien ne sort, sinon on remplace « 0 résultat à tort » par
+  « 0 résultat parce qu'un mot périphérique manquait » ;
+- **les mots courts qui comptent** : une règle « ignorer ≤ 2 lettres » tuerait
+  `RH`, `TV`, `RIB`, `T2`, `M2` — liste blanche obligatoire ;
+- **le score peut mentir** : trois mots dans trois champs sans rapport ont l'air
+  d'un excellent résultat. Défaut *créé* par le multi-mots, à corriger avec lui.
+
+Il a aussi écarté ma piste du dépliage d'accents à la volée. La mesure lui a
+donné raison (§ 4). FTS5 écarté des deux côtés : changerait la sémantique
+(« RIB » ne trouverait plus « Ribéroux ») et exigerait un index reconstruit.
+
+### 3. PASSE 1 — la recherche cherche des mots
+
+Cinq changements indissociables : découpage en mots (`termes.ts`) ; mots creux
+écartés mais mots courts protégés ; **`analysisInput` ouvert à la recherche**
+(2 200 caractères de corps au lieu des 500 de `snippet`, déjà en base, absent
+sur les 6 246 envoyés — le plus gros gain du lot pour zéro rattrapage) ; repli
+qui NOMME le mot introuvable ; concentration (mots réunis dans un même champ)
+dans le score.
+
+L'écran dit ce qu'il a compris — « Je cherche : facture · électricité · miron »
+— et ce qu'il a relâché. Découper en silence serait pire que ne pas découper.
+
+SQL engendré pour N mots, sans sous-requête corrélée, 11 paramètres au plus.
+
+### 4. PASSE 2 — les accents, décidés SUR MESURE
+
+Trois conceptions mesurées sur 41 000 mails synthétiques aux dimensions réelles
+(corps de 2 200 caractères, OCR sur 20 %, base de 248 Mo) :
+
+| Conception | Base | Recherche |
+|---|---|---|
+| déplier à chaque requête | — | 543 ms → **13 511 ms** (25×) |
+| recopier le corps déplié | +71 % | **doublée** |
+| **champs courts + entités** | **+6 %** | **+15 %** |
+
+La deuxième était mon intention de départ. La borne à 3 000 caractères que
+j'avais ajoutée pour la sauver n'a presque rien rendu : dans un corpus réel la
+plupart des mails tiennent déjà sous cette taille — **le coût venait de la
+duplication du corps**, pas des documents scannés.
+
+Retenu : sujet, expéditeur, noms de pièces, résumé, **entités et dossiers lus
+par l'analyse**. C'est là que vivent les noms accentués qui servent à retrouver
+(« République », « Nîmes »). Le corps reste cherché en entier, mais à l'accent
+près — limite assumée, écrite dans `accents.ts`, et **mesurée par le banc**.
+
+Colonnes tenues par des **déclencheurs SQLite**, pas par du TypeScript : plus
+de dix fichiers écrivent ces textes, un oubli ferait mentir la colonne en
+silence. Vérifié à l'insertion et à la mise à jour. Le SQL des déclencheurs est
+**engendré** depuis la liste d'accents (`scripts/gen-migration-accents.mjs`) :
+écrit à la main il aurait divergé de celle qui déplie la requête, et une
+divergence là ne casse rien bruyamment — elle fait manquer des mails.
+
+Remplissage de l'existant : **5,2 s** au premier démarrage.
+
+### 5. `npm run banc:search`
+
+Rejoue des recherches et rapproche les paires accentuées : deux orthographes du
+même mot doivent rendre le même nombre de mails. Il signale déjà l'écart
+résiduel du corps (« electricite » 3 / « électricité » 4). À lancer **sur le
+serveur** — en local, six mails de test et tout paraît parfait.
+
+### 6. Ce qui reste ouvert
+
+- **La boîte `location-miron` n'est pas enrôlée** (8 boîtes vérifiées via le
+  MCP ; « miron » absent des INBOX `Location_Brest` et `Brimmo`). Aucun
+  correctif de recherche ne fera apparaître des mails absents de la base.
+- **L'écart accentué dans le corps** : à trancher avec lui une fois le banc
+  passé sur le serveur, avec le coût chiffré ci-dessus.
+- **Passe 3 non faite** (il a demandé les passes 1 et 2) : la couche
+  « phrase » — dates, présence de pièce jointe, types de documents devenant des
+  filtres visibles et retirables.
+
+
 ## 20/08 (49) — « L'affichage complet des emails est à reprendre »
 
 Son message, en trois griefs : le mail s'ouvre **par-dessus** la liste (« je ne
