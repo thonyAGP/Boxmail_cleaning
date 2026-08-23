@@ -168,95 +168,34 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08) — ses boîtes sont des archives non
-structurées, pas des boîtes sales ; `docs/PLAN-ARCHIVE.md` est CLASSÉ. Refonte
-de la couche d'analyse LIVRÉE (12-13/08, lots 0 à 5) : verdict sémantique
-immuable + projections. Cadre : `docs/PLAN-ASSISTANT.md`.
+structurées, pas des boîtes sales ; `docs/PLAN-ARCHIVE.md` est CLASSÉ. Cadre :
+`docs/PLAN-ASSISTANT.md`. Refonte de l'analyse livrée 12-13/08 (§ 36-38).
 
-**Le rattrapage tourne TOUT SEUL, ×4 depuis le 14/08** : tâche planifiée
-claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), orchestrateur + 4 sous-agents
-séquentiels ; ne PAS lui donner d'autre connecteur que Boxmail. Repère 18/08 :
-14 221 verdicts, 5 393 restants (1 185/24 h) ⇒ fin ~22-23/08. Compter le vivier
-via `candidateWhere` d'analysis.ts, PAS un count naïf. Tourne en
-**claude-sonnet-5** (forfait en limite), qualité inchangée ⇒ le laisser ainsi.
-**LIMITE STRUCTURELLE** : une conversation n'analyse pas plus de ~60 mails
-(elle CUMULE les lots et meurt) — contexte NEUF par lot, aucun réglage n'y fait.
+**Le rattrapage d'analyse tourne SEUL** depuis le 14/08 : tâche planifiée
+claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), orchestrateur + 4 sous-agents ;
+ne PAS lui donner d'autre connecteur que Boxmail. Vivier à compter via
+`candidateWhere` d'analysis.ts, PAS un count naïf. Tourne en claude-sonnet-5,
+qualité inchangée. **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus
+de ~60 mails (elle CUMULE les lots et meurt) — contexte NEUF par lot.
 
-**CLOS** : OCR le 13/08 (§ 39-40, 811/976 scans lisibles) ; comptes IMAP par
-mot de passe (§ 41-42, `authType:'password'`, lb2i validé le 17/08, 5 254
-mails). Socket timeouts IMAP ~500/j = bruit ANTÉRIEUR au 06/08.
+**Livré récemment** (détail au journal, § indiqué) : Vue du jour repriorisée,
+🧭 Affaires en cours, Contexte d'un mail (§ 43-45) · recherche 132 s → ~300 ms,
+tri global à 5 ordres (§ 46) · « ↗️ Agrandir » le lecteur, interlocuteurs
+réunis, mouchards retirés (§ 47-48) · lecture ancrée + barre d'actions dictée
+par le verdict (§ 49) · **recherche par MOTS et accents ignorés (§ 50)**.
 
-**LIVRÉ le 18/08** (détail § 43-45) : Vue du jour repriorisée (`rangCandidat()`,
-classes NON additionnables) ; **🧭 Affaires en cours** (`Engagement` +
-`reviewAt` ≠ `dueAt` + brouillons — l'ouverture exige une PREUVE POSITIVE, rien
-ne s'envoie seul ; 3 affaires `propose` à confirmer par lui) ; **Contexte d'un
-mail** (`contexteDuMail()`, 3 focales, défaut `Lié à ce mail` = même
-correspondant ET (même fil OU sujet OU dossier) ; médiane 41 → 1 mail).
-
-**Ses 2 affaires bloquées, élucidées** : le dossier LEGALFREE (parts/holding,
-1 131,26 € réglés) a été **ANNULÉ le 19/01/2026** faute de réponse de sa part ;
-CAPTAIN CONTRAT (direction LB2i) est bloqué sur la **signature de Ludovic**,
-avec un **prélèvement de 294,67 € rejeté le 13/12/2025**.
-
-**LIVRÉ le 19/08** (détail § 46) — **recherche : 132 s → ~300 ms en prod**.
-Coupable unique : `verdict.mentions.some`, que Prisma traduisait en sous-requête
-CORRÉLÉE (41 607 mails × 29 039 mentions). Passée en SQL à la main (CTE non
-corrélées, `matchMask` calculé en SQL). Le `take 400` bornait l'UNIVERS et pas
-l'affichage : on classait « les plus pertinents parmi les 400 plus récents ».
-Désormais phase A exhaustive compacte → tri GLOBAL → phase B d'hydratation.
-Tri à 5 ordres côté serveur (défaut « les plus récents »). Les 5 976 mails
-ENVOYÉS se groupent sur leur DESTINATAIRE : les 2 sens dans une même carte.
-
-**LIVRÉ le 19-20/08** (détail § 47-48) — **« ↗️ Agrandir »** dans l'en-tête du
-lecteur : bascule CSS, PAS `requestFullscreen()` (confisquerait Échap, bloquerait
-les modales Répondre/Tâche/Rentila). Texte borné à 82 caractères et centré, HTML
-en pleine largeur. Rien ne disparaît. Échap réduit d'abord, ferme ensuite. État
-de séance, jamais sur disque. En grand, les bandeaux se resserrent (ce qui était
-empilé passe côte à côte) : **349 → 199 px, +25 % de hauteur de mail**.
-**Interlocuteurs RÉUNIS** : une société parle par plusieurs portes (Volotea
-écrit aussi depuis `voloteahelp.zendesk.com`). Règle = plus long DÉBUT du nom
-affiché **confirmé par le domaine**, nom ENTIER exigé pour une personne (sinon
-« Philippe Cottet » et « philippe jacquot » se rejoignaient). 64 réunions
-relues une par une. Les homonymes légitimement séparés portent « via <domaine> ».
-**IMAGES** : bouton « Toujours les afficher » + réglage réversible. Un seuil de
-poids est IMPOSSIBLE (le poids n'est connu qu'après téléchargement, et le pixel
-espion fait &lt; 1 Ko : il passerait toujours). En revanche les **MOUCHARDS** se
-repèrent sans les charger (1×1, masqués, URL parlante) et sont retirés dans tous
-les cas : 37 sur 286 images, 249 gardées. Critère « hébergeur de mailing »
-ESSAYÉ PUIS JETÉ (attrapait les icônes réseaux servies par iterable). Limite
-dite à l'écran : ~1 image sur 6 porte un identifiant unique.
-
-**LIVRÉ le 20/08 (2)** (détail § 49) — **lecture ancrée** branchée sur la Vue du
-jour et la Recherche (elle existait déjà ailleurs) : il enchaîne les mails sans
-fermer. **Barre d'actions DYNAMIQUE** : le verdict (96 % de l'INBOX) sait ce qui
-est attendu et DE QUI (`actor='user'`) — le lecteur affiche « Payer 418 € avant
-le 29 août » + 2 boutons au plus ; les 9 anciennes commandes passent sous
-« Toutes les actions », à un endroit qui ne bouge jamais. Confiance faible →
-« À vérifier », jamais de bouton inventé sur les 4 % sans verdict.
-
-**Reste de la contre-revue du 20/08, NON livré** : Précédent/Suivant dans le
-lecteur (série figée à l'ouverture) ; repli des métadonnées derrière « Détails »
-et des menus de correction dans « Pourquoi Boxmail me montre ça ? ».
-
-**LIVRÉ le 23/08** (détail § 50) — **la recherche cherchait la PHRASE ENTIÈRE**
-comme un seul motif `LIKE` : « facture électricité miron » = une chaîne de 25
-caractères, donc écran vide. Valait pour TOUTE recherche de plus d'un mot.
-Passe 1 : découpage en mots (`termes.ts`, mots creux écartés mais `RH`/`TV`/
-`RIB`/`T2` protégés), **`analysisInput` enfin cherché** (2 200 car. de corps au
-lieu des 500 de `snippet`, déjà en base), **repli qui NOMME le mot introuvable**
-plutôt qu'un écran vide, et la **concentration** (mots réunis dans un même
-champ) au score — sans elle le multi-mots fait remonter des coïncidences.
-L'écran affiche ce qu'il a compris. Passe 2 : **accents**, décidés sur mesure
-(41 000 mails synthétiques) — déplier à la volée = 25× plus lent ; recopier le
-corps = +71 % de base ET recherche doublée ; retenu = champs courts + ENTITÉS,
-soit +6 % de base et +15 % de temps. Colonnes tenues par des **déclencheurs
-SQLite** (dix fichiers écrivent ces textes, un branchement TS en oublierait),
-SQL **engendré** depuis la liste d'accents. **Limite assumée : le corps n'est
-pas déplié** — `npm run banc:search` mesure l'écart résiduel, à trancher avec lui.
+**Ses 2 affaires bloquées, élucidées** : LEGALFREE (parts/holding, 1 131,26 €
+réglés) **ANNULÉ le 19/01/2026** faute de réponse de sa part ; CAPTAIN CONTRAT
+(direction LB2i) bloqué sur la **signature de Ludovic**, prélèvement de
+294,67 € **rejeté le 13/12/2025**.
 
 **À faire** :
-- **Passe 3 de la recherche, non faite** : la couche « phrase » — dates
-  (« l'an dernier »), pièce jointe, types de documents devenant des filtres
-  visibles et retirables. Périmètre étroit, aucune « compréhension » simulée.
+- **Passe 3 de la recherche** : la couche « phrase » — dates (« l'an dernier »),
+  pièce jointe, types de documents devenant des filtres visibles et retirables.
+  Périmètre étroit, aucune « compréhension » simulée.
+- **Écart accentué résiduel** : le corps des mails n'est pas déplié (mesuré :
+  l'étendre coûterait +71 % de base et doublerait la recherche). `npm run
+  banc:search` SUR LE SERVEUR chiffre l'écart réel — à trancher avec lui.
 - **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection
   automatique des affaires ET pour savoir ce qu'il a déjà demandé.
 - Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans
@@ -266,3 +205,5 @@ pas déplié** — `npm run banc:search` mesure l'écart résiduel, à trancher 
 - Fiscal-Manager : confirmer le premier pull réel ; puis frais Jump,
   CasaSync/livret.
 - Stratégies de rétention : à n'activer QU'AVEC lui.
+- **Boîtes à enrôler** : jojo56, techni-soft ×2, location-miron (cette dernière
+  cherchée le 23/08 : « miron » absent des INBOX Location_Brest et Brimmo).
