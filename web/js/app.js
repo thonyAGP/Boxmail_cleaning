@@ -9163,6 +9163,21 @@ const searchState = {
   attachments: false,
   /** Ordre demandé — voir TRIS_LABELS. Défaut : les échanges les plus récents. */
   sort: 'recent',
+  /**
+   * A-t-il CHOISI cet ordre lui-même ? (24/08)
+   *
+   * Tant que non, l'ordre s'adapte à ce qu'il tape : un seul mot, c'est
+   * « montre-moi tout » et les plus récents en haut ; plusieurs mots, c'est
+   * « trouve-moi précisément ça » et les plus pertinents en haut. Sans cela,
+   * chercher « facture électricité miron » rangeait 54 résultats par date et
+   * les procès-verbaux d'AG arrivaient devant — retour du 24/08.
+   *
+   * Le sélecteur AFFICHE toujours l'ordre réellement appliqué : basculer en
+   * douce en laissant « les plus récents » à l'écran serait un mensonge, et il
+   * n'aurait aucun moyen de comprendre son classement. Dès qu'il touche au
+   * sélecteur, son choix prime et ne bouge plus.
+   */
+  sortChoisi: false,
   data: null,
   searched: false,
   /** Groupes dépliés (clé d'entité) — l'utilisateur en ouvre un à la fois. */
@@ -9271,12 +9286,28 @@ async function renderSearch() {
   const lireFiltres = () => {
     searchState.account = $('#s-account').value;
     searchState.attachments = $('#s-attachments').checked;
+    // Un ordre différent de celui appliqué = il l'a changé lui-même.
+    if ($('#s-sort').value !== searchState.sort) searchState.sortChoisi = true;
     searchState.sort = $('#s-sort').value;
+  };
+
+  /**
+   * L'ordre qui convient à ce qu'il vient de taper (24/08) — voir
+   * `searchState.sortChoisi`. Le sélecteur est remis à jour pour montrer
+   * l'ordre RÉELLEMENT appliqué.
+   */
+  const ordreAdapte = () => {
+    if (searchState.sortChoisi) return;
+    const plusieursMots = searchState.q.replace(/["«»]/g, '').trim().split(/\s+/).length > 1;
+    searchState.sort = plusieursMots ? 'pertinence' : 'recent';
+    const sel = $('#s-sort');
+    if (sel) sel.value = searchState.sort;
   };
   $('#find-form').addEventListener('submit', (e) => {
     e.preventDefault();
     searchState.q = $('#s-q').value.trim();
     lireFiltres();
+    ordreAdapte();
     runSearch();
   });
   main.querySelectorAll('.find-chip').forEach((b) => {
@@ -9284,6 +9315,7 @@ async function renderSearch() {
       searchState.q = b.dataset.q;
       $('#s-q').value = searchState.q;
       lireFiltres();
+      ordreAdapte();
       runSearch();
     });
   });
