@@ -212,13 +212,13 @@ function motifLike(terme: string): string {
  * caractères aplatis, absent sur les 6 246 mails envoyés. C'est le plus gros
  * gain de couverture du lot, et il ne coûte pas une ligne de rattrapage.
  */
-const CHAMPS_CHERCHES: { colonnes: string[]; bit: number }[] = [
-  { colonnes: ['m.subject'], bit: MATCH_SUJET },
-  { colonnes: ['m.fromName', 'm.fromEmail'], bit: MATCH_EXPEDITEUR },
-  { colonnes: ['m.attachmentNames'], bit: MATCH_NOM_PIECE },
-  { colonnes: ['m.aiSummary'], bit: MATCH_RESUME },
-  { colonnes: ['m.snippet', 'm.analysisInput'], bit: MATCH_TEXTE },
-  { colonnes: ['m.attachmentText'], bit: MATCH_CONTENU_PIECE },
+const CHAMPS_CHERCHES: { colonnes: string[]; bit: number; court: boolean }[] = [
+  { colonnes: ['m.subject'], bit: MATCH_SUJET, court: true },
+  { colonnes: ['m.fromName', 'm.fromEmail'], bit: MATCH_EXPEDITEUR, court: true },
+  { colonnes: ['m.attachmentNames'], bit: MATCH_NOM_PIECE, court: true },
+  { colonnes: ['m.aiSummary'], bit: MATCH_RESUME, court: true },
+  { colonnes: ['m.snippet', 'm.analysisInput'], bit: MATCH_TEXTE, court: false },
+  { colonnes: ['m.attachmentText'], bit: MATCH_CONTENU_PIECE, court: false },
 ];
 
 /** `col LIKE ?n OR col2 LIKE ?n` pour un champ et un mot donnés. */
@@ -291,7 +291,15 @@ function sqlCandidats(nbMots: number, minMots: number): string {
     .join('\n      + ');
 
   // Combien de mots au même endroit — voir `concentration`.
-  const parChamp = CHAMPS_CHERCHES.map(
+  //
+  // 24/08 : SUR LES CHAMPS COURTS UNIQUEMENT. Compter les mots réunis dans le
+  // contenu d'une pièce jointe récompensait le hasard : un procès-verbal d'AG
+  // de cinquante pages contient « facture », « électricité » et le nom de
+  // l'immeuble sans que le mail parle de rien de tout cela. Le bonus les
+  // propulsait en tête de « facture électricité miron » — retour du 24/08 :
+  // « complètement hors sujet ». Trois mots dans un SUJET de soixante
+  // caractères, en revanche, ne se croisent jamais par accident.
+  const parChamp = CHAMPS_CHERCHES.filter((f) => f.court).map(
     (f) => mots.map((n) => `(CASE WHEN ${testChamp(f.colonnes, n)} THEN 1 ELSE 0 END)`).join(' + '),
   );
   const concentration = nbMots > 1 ? `max(${parChamp.join(',\n            ')})` : '1';

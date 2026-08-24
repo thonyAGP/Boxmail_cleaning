@@ -120,9 +120,16 @@ const POIDS: [number, number][] = [
   [MATCH_ENTITE, 4],
   [MATCH_CONTEXTE, 4],
   [MATCH_SUJET, 3],
-  [MATCH_CONTENU_PIECE, 3],
   [MATCH_EXPEDITEUR, 2],
   [MATCH_RESUME, 2],
+  // 24/08 — RAMENÉ DE 3 À 1. Le contenu d'une pièce jointe pesait autant qu'un
+  // sujet de mail, ce qui n'a aucun sens à la réflexion : un procès-verbal d'AG
+  // de copropriété fait cinquante pages et contient « facture », « électricité »
+  // et le nom de l'immeuble quelque part, forcément. Chercher
+  // « facture électricité miron » remontait ainsi des PV, des DPGF et des
+  // décomptes de charges — « complètement hors sujet », et il a raison.
+  // Un mot trouvé dans un document entier reste un signal, mais le plus faible.
+  [MATCH_CONTENU_PIECE, 1],
   [MATCH_TEXTE, 1],
 ];
 
