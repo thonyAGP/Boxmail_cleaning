@@ -5,6 +5,80 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 24/08 (51) — Le bruit du multi-mots, et la facture qui retrouve son logement
+
+### 1. « Complètement hors sujet »
+
+`facture électricité miron` rendait 54 mails : des PV d'AG, des DPGF, des
+décomptes de charges. Régression **introduite par la passe 1** : le contenu
+d'une pièce jointe pesait `3` au classement, autant qu'un sujet — or un PV de
+copropriété de cinquante pages contient forcément les trois mots quelque part.
+Pire, la CONCENTRATION ajoutée la veille pour éviter les mots éparpillés se
+retournait contre elle-même : trois mots croisés dans un OCR, c'est le hasard.
+
+Corrigé : `MATCH_CONTENU_PIECE` 3 → 1, et concentration calculée sur les seuls
+champs COURTS. Le filtre ne change pas — ces mails restent trouvables par le
+contenu de leurs documents, ils cessent de passer devant.
+
+**Et surtout** : le tri par défaut restait « les plus récents », donc le
+classement ne jouait pas. Un mot = « montre-moi tout » ; plusieurs mots =
+« trouve-moi ça », donc pertinence. Le sélecteur AFFICHE l'ordre appliqué —
+basculer en douce aurait été un mensonge.
+
+### 2. Le trou : la facture ne dit pas de quel bien elle parle
+
+Sa remarque : « tu ne pouvais pas le voir car la pièce jointe est à télécharger
+à part ». Vérifié sur le mail bellenergie : `attachments: []`, « miron » absent
+des 127 000 caractères, et à la place un **PDL 07140955100609**.
+
+Mesure sur trois fournisseurs de SES boîtes :
+
+| | adresse du bien | PDF direct | identifiant |
+|---|---|---|---|
+| EDF | **oui, dans le mail** | non | n° client 6029414501 |
+| la bellenergie | non | **oui**, signé jusqu'en 2031 | PDL 07140955100609 |
+| Free Mobile | non | non (espace abonné) | identifiant 56129155 |
+
+Le point commun n'est pas le PDF : c'est l'**identifiant**. Et chez EDF
+l'adresse est à 712 caractères du début, donc **déjà dans `analysisInput`**.
+Son idée de télécharger une fois par identifiant inconnu reste juste, mais elle
+n'est pas la première marche — beaucoup de fournisseurs disent déjà tout.
+
+### 3. ÉTAPE 1 livrée — `liaisons.ts`
+
+Deux temps, zéro requête sortante : un mail qui donne adresse **et** identifiant
+apprend le lien ; tout mail suivant portant cet identifiant rejoint le logement
+sans nommer d'adresse. `resoudre()` faisait déjà ce travail, on ne fait que le
+nourrir — sur tous les mails, analysés ou non.
+
+**Exiger un libellé** (« Adresse du logement : ») n'est pas une précaution
+excessive : le pied de page de Free porte « Siège social : 16, rue de la Ville
+l'Evêque ». Sans cette règle, chaque expéditeur deviendrait un « bien ». Idem
+pour les identifiants : jamais un nombre isolé, et un identifiant seul ne crée
+jamais de dossier — il ne fait qu'en rejoindre un.
+
+**Automatique pour les mails entrants**, sa demande expresse : branché dans le
+job des extraits, par où passe tout mail dont le texte devient disponible. Une
+capacité « Quoi de neuf » rattrape l'existant au premier démarrage.
+
+**Dernier chaînon** : la recherche ne regardait pas les dossiers rattachés,
+seulement les contextes de l'IA — le rattachement existait en base et ne servait
+à rien. `Dossier` et `DossierAlias` rejoignent la CTE « dossier cité ».
+
+Mesuré sur 41 000 mails : la recherche est **plus rapide** qu'avant (pire cas
+955 → 422 ms). Bancs : 13 cas recherche, 5 cas liaisons sur les vrais textes
+(dont les deux pièges), 1 épreuve de bout en bout.
+
+### 4. Ce qui reste
+
+- **Étape 2** : rattachement par expéditeur quand aucun identifiant n'accroche.
+- **Étape 3** : télécharger le PDF (cas bellenergie) — lien signé direct
+  vérifié, garde-fous définis (`.pdf` uniquement, pas de cookie, type vérifié,
+  journalisé), à ne faire que si les étapes 1-2 laissent un trou réel.
+- **Mesure de couverture** : trois fournisseurs ne font pas une statistique. Un
+  recensement sur les 858 factures dirait la proportion réelle.
+
+
 ## 23/08 (50) — « Pourquoi une recherche aussi simple ne me retourne rien ? »
 
 Capture à l'appui : `facture électricité miron` → « Je n'ai rien trouvé ».

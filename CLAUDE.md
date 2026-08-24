@@ -189,7 +189,27 @@ réglés) **ANNULÉ le 19/01/2026** faute de réponse de sa part ; CAPTAIN CONTR
 (direction LB2i) bloqué sur la **signature de Ludovic**, prélèvement de
 294,67 € **rejeté le 13/12/2025**.
 
+**LIVRÉ le 24/08** (détail § 51) — **bruit du multi-mots corrigé** : le contenu
+d'une pièce jointe pesait autant qu'un sujet, d'où des PV d'AG en tête de
+« facture électricité miron » (un PV de 50 pages contient forcément les 3 mots).
+Poids 3→1, concentration sur les champs COURTS seulement. Le tri par défaut
+bascule sur **pertinence dès 2 mots** — sinon le classement ne jouait pas ; le
+sélecteur AFFICHE l'ordre appliqué. **`liaisons.ts` : une facture rejoint son
+logement toute seule.** Mesuré sur 3 fournisseurs : le point commun n'est PAS le
+PDF téléchargeable mais l'IDENTIFIANT, et EDF écrit l'adresse dans le corps (déjà
+en base). Un mail qui donne adresse + identifiant APPREND le lien ; les suivants
+rejoignent par le seul identifiant. Libellé EXIGÉ (« Adresse du logement : »)
+sinon le siège social de chaque expéditeur deviendrait un bien. Branché dans le
+job des extraits ⇒ **automatique pour les mails entrants**. La recherche lit
+enfin les dossiers rattachés (sans quoi tout cela restait invisible). Plus RAPIDE
+qu'avant : pire cas 955 → 422 ms.
+
 **À faire** :
+- **Étape 2 des liaisons** : rattachement par EXPÉDITEUR quand aucun identifiant
+  n'accroche. **Étape 3** : télécharger le PDF (cas bellenergie, lien signé
+  direct vérifié) — garde-fous définis, seulement si 1-2 laissent un trou réel.
+- **Couverture des liaisons non mesurée** : 3 fournisseurs ne font pas une
+  statistique. Un recensement sur les 858 factures dirait la proportion réelle.
 - **Passe 3 de la recherche** : la couche « phrase » — dates (« l'an dernier »),
   pièce jointe, types de documents devenant des filtres visibles et retirables.
   Périmètre étroit, aucune « compréhension » simulée.
