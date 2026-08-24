@@ -271,8 +271,22 @@ function sqlCandidats(nbMots: number, minMots: number): string {
     .flatMap((n) => [
       `mh${n} AS (SELECT DISTINCT messageId FROM EntityMention` +
         ` WHERE nameRaw LIKE ?${n} ESCAPE '\\' OR nameDeplie LIKE ?${n + nbMots} ESCAPE '\\')`,
+      // Le « dossier cité » a DEUX sources, et elles ne se recouvrent pas :
+      // les contextes lus par l'IA, et les DOSSIERS rattachés — dont ceux que
+      // liaisons.ts déduit du texte (24/08). Sans la seconde, une facture
+      // rattachée au 46 rue de la République par son seul numéro de client
+      // restait introuvable en cherchant « republique » : le rattachement
+      // existait en base et ne servait à rien.
+      // `key` est la forme normalisée du libellé (sans accents ni mots vides),
+      // d'où le motif déplié.
       `ch${n} AS (SELECT DISTINCT messageId FROM VerdictContext` +
-        ` WHERE label LIKE ?${n} ESCAPE '\\' OR labelDeplie LIKE ?${n + nbMots} ESCAPE '\\')`,
+        ` WHERE label LIKE ?${n} ESCAPE '\\' OR labelDeplie LIKE ?${n + nbMots} ESCAPE '\\'` +
+        ` UNION SELECT DISTINCT dm.messageId FROM DossierMessage dm` +
+        ` JOIN Dossier d ON d.id = dm.dossierId` +
+        ` WHERE d.label LIKE ?${n} ESCAPE '\\' OR d.key LIKE ?${n + nbMots} ESCAPE '\\'` +
+        ` UNION SELECT DISTINCT dm2.messageId FROM DossierMessage dm2` +
+        ` JOIN DossierAlias da ON da.dossierId = dm2.dossierId` +
+        ` WHERE da.label LIKE ?${n} ESCAPE '\\' OR da.key LIKE ?${n + nbMots} ESCAPE '\\')`,
     ])
     .join(',\n     ');
 

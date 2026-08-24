@@ -6,6 +6,7 @@ import { imapService } from './imap.js';
 import type { AccountRecord } from './accounts.js';
 import { stripQuotedText } from './attention.js';
 import { detectIntent } from './categorize.js';
+import { rattacherTexteConnu } from './liaisons.js';
 import { reparerMojibake } from './mojibake.js';
 import { recordOperation } from './oplog.js';
 
@@ -393,6 +394,8 @@ export interface BackfillResult {
   intentsImproved: number;
   /** Mails d'un dossier en panne, remis à plus tard (pas perdus). */
   deferred: number;
+  /** Rattachements à un bien déduits du texte au passage (24/08, liaisons.ts). */
+  relies: number;
   /** Reste-t-il des mails sans extrait dans la fenêtre ? (pour reprendre) */
   remaining: number;
 }
@@ -472,6 +475,7 @@ export async function backfillSnippets(
     empty: 0,
     intentsImproved: 0,
     deferred: 0,
+    relies: 0,
     remaining: 0,
   };
   if (pending.length === 0) {
@@ -605,6 +609,28 @@ export async function backfillSnippets(
       }
     }
   }
+  // RELIER AU BIEN, dans la foulée (24/08). C'est ICI que passe tout mail dont
+  // le texte devient disponible — nouveaux comme rattrapés : brancher la
+  // liaison ailleurs l'aurait laissée valable pour le passé seulement, et il
+  // aurait fallu y revenir à chaque nouvelle facture.
+  //
+  // Le coût est nul quand il n'y a rien à trouver : deux expressions
+  // régulières en mémoire, et la base n'est touchée que si elles accrochent.
+  // Un échec ne doit JAMAIS faire tomber le rattrapage des extraits, qui est
+  // le vrai travail de ce job — d'où le try par mail.
+  for (const u of updates) {
+    if (!u.analysisInput) continue;
+    try {
+      const lien = await rattacherTexteConnu(u.id, u.analysisInput);
+      result.relies += lien.parAdresse + lien.parIdentifiant;
+    } catch (err) {
+      logger.warn('liaison au bien impossible pour ce mail', {
+        id: u.id,
+        error: (err as Error).message,
+      });
+    }
+  }
+
   // Dossiers en panne : on date la tentative sans poser d'extrait.
   for (let i = 0; i < failed.length; i += 200) {
     await db.message.updateMany({

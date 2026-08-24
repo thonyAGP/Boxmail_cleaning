@@ -106,6 +106,64 @@ const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'lier-au-bien-v1',
+    label: 'Je relie tes factures au bon logement',
+    link: '#/search',
+    run: async () => {
+      // 24/08. Sa facture d'électricité la bellenergie ne contient nulle part
+      // le mot « Miron », alors qu'elle concerne le 33 rue François Miron :
+      // « facture électricité miron » ne pouvait rien donner de juste.
+      //
+      // Or EDF, lui, ÉCRIT l'adresse du logement dans le corps du mail — et
+      // elle dort dans la base depuis toujours, à 712 caractères du début.
+      // Cette passe la lit enfin, et retient au passage le numéro de client
+      // qui l'accompagne : les factures suivantes du même contrat rejoindront
+      // le logement toutes seules, même quand elles ne nomment plus l'adresse.
+      //
+      // Rien n'est téléchargé, rien ne sort de la machine : on relit du texte
+      // déjà stocké. Les nouveaux mails, eux, passent par le job des extraits
+      // qui fait la même chose au fil de l'eau (snippets.ts).
+      const { rattacherTexteConnu } = await import('./liaisons.js');
+      const { db } = await import('../db/client.js');
+      let relies = 0;
+      let vus = 0;
+      const orphelins = new Set<string>();
+      // Les mails porteurs d'un texte, du plus récent au plus ancien : ce sont
+      // les factures d'aujourd'hui qu'il cherche, pas celles de 2008.
+      const lots = 12;
+      for (let tour = 0; tour < lots; tour++) {
+        // Le TEXTE vient avec le lot : relire chaque mail un par un ferait
+        // 6 000 requêtes au démarrage, pour un travail qui n'accroche que sur
+        // une minorité d'entre eux.
+        const mails = await db.message.findMany({
+          where: { isDeleted: false, analysisInput: { not: null } },
+          select: { id: true, subject: true, analysisInput: true },
+          orderBy: { date: 'desc' },
+          take: 500,
+          skip: tour * 500,
+        });
+        if (!mails.length) break;
+        for (const m of mails) {
+          vus++;
+          try {
+            const r = await rattacherTexteConnu(
+              m.id,
+              [m.subject, m.analysisInput].filter(Boolean).join('\n'),
+            );
+            relies += r.parAdresse + r.parIdentifiant;
+            for (const o of r.identifiantsOrphelins) orphelins.add(o);
+          } catch (err) {
+            logger.warn('liaison au bien impossible', { id: m.id, error: (err as Error).message });
+          }
+        }
+      }
+      return (
+        `${vus} mails relus, ${relies} rattachement(s) à un logement déduits de leur texte` +
+        `${orphelins.size ? ` — ${orphelins.size} référence(s) client vues sans logement connu, elles se rattacheront dès qu'un mail donnera l'adresse.` : '.'}`
+      );
+    },
+  },
+  {
     id: 'find-by-filename-v1',
     label: 'Je retrouve tes documents par le nom du fichier',
     link: '#/search',
