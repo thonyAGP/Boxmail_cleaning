@@ -204,6 +204,17 @@ job des extraits ⇒ **automatique pour les mails entrants**. La recherche lit
 enfin les dossiers rattachés (sans quoi tout cela restait invisible). Plus RAPIDE
 qu'avant : pire cas 955 → 422 ms.
 
+**LIVRÉ le 25/08** (détail § 52) — **Précédent/Suivant** dans le lecteur : la
+série est celle d'où l'on vient (cartes du jour, résultats), **FIGÉE à
+l'ouverture** — une action ne renumérote pas le « 2 / 3 » ; suspendue dans une
+branche de contexte. **Date et heure sur les cartes** de la Vue du jour
+(fraîcheur devant : « il y a 2 h »). **En-tête du lecteur sur une ligne**
+(42 px au lieu de 59) : adresse, destinataires et dossier derrière « Détails » ;
+les 2 menus de correction passent sous « Pourquoi ? » (section « Me corriger »).
+
+⚠️ **Mesuré le 25/08, hors chantier** : la recherche « facture » met **3,6 s**
+depuis la réécriture multi-mots (§ 50-51) — c'était ~300 ms au § 46.
+
 **À faire** :
 - **Étape 2 des liaisons** : rattachement par EXPÉDITEUR quand aucun identifiant
   n'accroche. **Étape 3** : télécharger le PDF (cas bellenergie, lien signé

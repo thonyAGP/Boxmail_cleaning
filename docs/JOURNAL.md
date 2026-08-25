@@ -5,6 +5,62 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 25/08 (52) — Précédent/Suivant, la date dans les cartes, un en-tête qui se tait
+
+Trois demandes, dans la continuité du § 49 — les deux dernières venaient de la
+contre-revue, qu'il a lue et validée.
+
+### Précédent / Suivant
+
+Deux règles font tout le travail :
+
+1. **« Suivant » n'est jamais le mail chronologiquement suivant de la base.**
+   C'est le voisin dans la SÉRIE d'où l'on a ouvert le lecteur — les cartes de
+   la Vue du jour, les résultats de la Recherche, dans l'ordre où ils sont à
+   l'écran. Vérifié depuis les deux : « 1 / 3 » sur la Vue du jour, « 1 / 23 »
+   sur une recherche.
+2. **La série est FIGÉE à l'ouverture.** Marquer un mail réglé ne le fait pas
+   disparaître sous les doigts ni renuméroter le « 2 / 3 » — mesuré identique
+   avant et après une action. Rien ne bouge sous ses yeux.
+
+Elle se **suspend** dans une branche de contexte (mail ouvert depuis
+« Contexte ») : il y a déjà un « ← retour » là-bas, et deux notions
+concurrentes de « précédent » seraient illisibles.
+
+### La date dans les cartes
+
+« Au moins sans cliquer dessus je pourrais savoir s'il est récent ou pas. »
+Chaque carte porte sa date et son heure. Pour les mails frais, la fraîcheur
+passe devant (« il y a 2 h », « hier », « il y a 3 jours »), parce qu'« il y a
+3 jours » ne dit pas si c'était un vendredi soir ou un lundi matin — les deux
+sont donnés, la date exacte restant en infobulle.
+
+### L'en-tête se tait
+
+Il tient sur **une ligne** : qui écrit, quand, quelle boîte. L'adresse
+complète, les destinataires et le dossier partent derrière **« Détails »** —
+le dossier d'un mail n'a aucune raison de prendre de la hauteur à chaque
+lecture. Mesuré : **42 px au lieu de 59**.
+
+Et les deux menus de correction quittent le flux pour **« Pourquoi ? »**, dans
+une section « Me corriger ». L'argument de la contre-revue était juste : ce sont
+des outils de **réglage**, pas du contenu de mail — il ne les touche qu'en cas
+d'erreur, et ils mangeaient deux lignes à chaque lecture. Vérifié : **0** menu
+visible dans le flux, **3** atteignables en un clic.
+
+### Un rebase qui a failli passer inaperçu
+
+Le `git push` a été **rejeté** : dix commits d'autres sessions étaient arrivés
+entre-temps (accents, recherche multi-mots, pondération des pièces jointes,
+OpenSpec). Le rebase est passé sans conflit — mais **tout a été re-testé**, car
+un test passé avant le rebase ne prouve rien sur le code d'après. La recherche
+réécrite fonctionne toujours (« facture » → 2 382 mails chez 405
+interlocuteurs), et la série y marche.
+
+**À signaler, hors de cette passe** : « facture » met désormais **3,6 s** depuis
+la réécriture multi-mots. C'était ~300 ms au § 46. Le chantier appartient à une
+autre session ; le chiffre est ici pour qu'il ne se perde pas.
+
 ## 24/08 (51) — Le bruit du multi-mots, et la facture qui retrouve son logement
 
 ### 1. « Complètement hors sujet »
