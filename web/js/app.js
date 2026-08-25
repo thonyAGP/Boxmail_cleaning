@@ -1431,6 +1431,33 @@ async function todayFillActivity() {
 
 /** Phrase qui explique POURQUOI ce mail est devant lui. Aucune IA appelée : on
  *  réutilise ce qui est déjà en base (résumé, montant, échéance, ancienneté). */
+/**
+ * Quand ce mail est-il arrivé ? (25/08) — « la date du mail et son heure dans
+ * "Aujourd'hui" serait bien aussi, car au moins sans cliquer dessus je pourrais
+ * savoir s'il est récent ou pas ».
+ *
+ * On donne les deux : la fraîcheur d'un coup d'œil (« il y a 2 h ») et la date
+ * exacte à côté, parce qu'« il y a 3 jours » ne dit pas si c'était un vendredi
+ * soir ou un lundi matin. Une affaire n'a pas de mail : elle n'a pas de date
+ * d'arrivée à montrer.
+ */
+function dateDeLaCarte(c) {
+  if (c.kind === 'engagement') return '';
+  const iso = c.x.msgDate ?? c.x.date ?? null;
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const h = (Date.now() - t) / 3600000;
+  const frais =
+    h < 1 ? "à l'instant"
+    : h < 24 ? `il y a ${Math.round(h)} h`
+    : h < 48 ? 'hier'
+    : h < 24 * 7 ? `il y a ${Math.round(h / 24)} jours`
+    : null;
+  return `<span class="brief-when" title="${esc(fmtDateTime(iso))}">${
+    frais ? `<strong>${esc(frais)}</strong> · ` : ''}${esc(fmtDateTime(iso))}</span>`;
+}
+
 function briefWhy({ kind, x }) {
   if (kind === 'engagement') {
     const paye = x.amountPaid != null ? `, ${fmtNum(x.amountPaid)} € déjà réglés` : '';
@@ -1601,6 +1628,9 @@ function renderBriefing(t, el) {
   // TROIS décisions visibles, pas dix-sept. Le reste existe, mais plus tard.
   const MAX = 3;
   const cartes = queue.slice(0, MAX);
+  // Gardées pour la navigation Précédent/Suivant du lecteur : la série est
+  // celle des cartes AFFICHÉES, dans leur ordre à l'écran.
+  _cartesDuJour = cartes;
   const reste = queue.length - cartes.length;
   const heure = new Date().getHours();
   const salut = heure < 18 ? 'Bonjour' : 'Bonsoir';
@@ -1614,6 +1644,7 @@ function renderBriefing(t, el) {
     return `<div class="brief-card" data-card="${i}">
       <div class="brief-head">
         <div class="brief-title">${briefTitle(c)}</div>
+        ${dateDeLaCarte(c)}
         ${accountChip(c.x.account ?? c.x.accountSlug)}
       </div>
       <div class="brief-why">${briefWhy(c)}</div>
@@ -1718,17 +1749,29 @@ function peutOuvrirLeMail(c) {
   return !!(x.account && x.folder && x.uid);
 }
 
-function openBriefReader(c) {
+/** La référence lisible derrière une carte (le mail, pas la décision). */
+function refDeLaCarte(c) {
   const x = c.x;
-  if (!peutOuvrirLeMail(c)) return;
-  const ref = c.kind === 'deadline'
+  if (!peutOuvrirLeMail(c)) return null;
+  return c.kind === 'deadline'
     ? { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject ?? x.title, fromName: x.fromName, fromEmail: x.fromEmail, date: x.msgDate, isSeen: true }
     : { account: x.account, folder: x.folder, uid: x.uid, subject: x.subject, fromName: x.fromName ?? null, fromEmail: x.fromEmail ?? '', date: x.date, isSeen: x.isSeen ?? true };
+}
+
+/** Les cartes ACTUELLEMENT à l'écran qui ont un mail — la série de la Vue du jour. */
+let _cartesDuJour = [];
+
+function openBriefReader(c) {
+  const ref = refDeLaCarte(c);
+  if (!ref) return;
   // Ancré à droite quand l'écran le permet : les cartes restent visibles et
   // cliquables, il enchaîne d'un mail à l'autre sans fermer.
   const dock = $('#today-dock');
+  const refs = _cartesDuJour.map(refDeLaCarte).filter(Boolean);
+  const i = refs.findIndex((r) => r.account === ref.account && r.folder === ref.folder && r.uid === ref.uid);
   openReaderFor(ref, {
     dock: dock && dock.isConnected && window.innerWidth > 1100 ? dock : null,
+    serie: { refs, index: Math.max(0, i) },
     onRemoved: () => renderToday(),
     onReplied: () => renderToday(),
   });
@@ -9443,8 +9486,16 @@ function renderSearchResults() {
       const item = g?.items[Number(row.dataset.idx)];
       const dock = $('#search-dock');
       if (item) {
+        // La série = les résultats DANS L'ORDRE OÙ ILS SONT AFFICHÉS, groupes
+        // compris. C'est ce qu'il voit, donc ce que « suivant » doit suivre.
+        const refs = [];
+        for (const g of searchState.data.groups) {
+          const ouvert = searchState.open.has(g.key);
+          for (const it of (ouvert ? g.items : g.items.slice(0, 3))) refs.push(it);
+        }
         openReader(item, row, {
           dock: dock && dock.isConnected && window.innerWidth > 1100 ? dock : null,
+          serie: { refs, index: Math.max(0, refs.indexOf(item)) },
         });
       }
     });
@@ -9841,6 +9892,34 @@ let _pileLecture = [];
  */
 let _lectureAgrandie = false;
 
+/**
+ * PRÉCÉDENT / SUIVANT (25/08) — « ajoute précédent/suivant dans la liste ».
+ *
+ * Deux règles qui font toute la différence :
+ *
+ *  1. « Suivant » n'est JAMAIS le mail chronologiquement suivant de la base :
+ *     c'est le voisin dans la série d'où l'on a ouvert le lecteur — les cartes
+ *     de la Vue du jour, les résultats de la Recherche, les lignes d'un
+ *     dossier. La série est FIGÉE à l'ouverture et ne se recalcule jamais :
+ *     marquer un mail réglé ne doit pas le faire disparaître sous les doigts
+ *     ni renuméroter le « 2 / 3 ».
+ *
+ *  2. Elle est suspendue dans une branche de contexte (quand on a ouvert un
+ *     mail lié depuis « Contexte ») : il y a alors déjà un « ← retour », et
+ *     deux notions concurrentes de « précédent » seraient illisibles.
+ */
+function barreSerie(serie, dansUneBranche) {
+  if (dansUneBranche || !serie || !Array.isArray(serie.refs) || serie.refs.length < 2) return '';
+  const i = serie.index ?? 0;
+  return `<div class="reader-serie">
+    <button class="btn btn-sm" id="reader-prev" ${i <= 0 ? 'disabled' : ''}
+      title="Mail précédent de la liste d'où tu viens">‹ Précédent</button>
+    <span class="muted">${fmtNum(i + 1)} / ${fmtNum(serie.refs.length)}</span>
+    <button class="btn btn-sm" id="reader-next" ${i >= serie.refs.length - 1 ? 'disabled' : ''}
+      title="Mail suivant de la liste d'où tu viens">Suivant ›</button>
+  </div>`;
+}
+
 /** Passe le lecteur en grand (ou l'en fait revenir) sans RIEN reconstruire. */
 function basculerAgrandissement(panel, force) {
   const grand = force ?? !panel.classList.contains('is-expanded');
@@ -9916,18 +9995,31 @@ async function openReader(item, row, opts = {}) {
         title="Revenir au mail que tu étais en train de traiter">←&nbsp;${esc(
           (_pileLecture[_pileLecture.length - 1].label || 'mail précédent').slice(0, 34))}</button>` : ''}
       <h2>${esc(item.subject)}</h2>
+      ${barreSerie(opts.serie, _pileLecture.length > 0)}
       <div class="reader-head-actions">
         <button class="btn btn-sm" id="reader-expand"
           title="Agrandir la lecture" aria-label="Agrandir la lecture">↗️ Agrandir</button>
         <button class="modal-close" title="Fermer">✕</button>
       </div>
     </div>
+    <!-- L'EN-TÊTE TIENT SUR UNE LIGNE (25/08) : qui écrit, quand, dans quelle
+         boîte. Le reste — l'adresse complète, le dossier, les destinataires —
+         part derrière « Détails ». Le dossier d'un mail n'a aucune raison de
+         prendre de la hauteur à chaque lecture. -->
     <div class="reader-meta">
-      <div><strong>${esc(item.fromName || item.fromEmail)}</strong>
-        <span class="muted">${esc(item.fromEmail)}</span></div>
-      <div class="muted">${fmtDateTime(item.date)} · ${esc(item.account)} · dossier ${esc(item.folder)}
-        ${item.isSeen ? '' : ' · <span class="badge orange">non lu</span>'}</div>
-      <div class="muted" id="reader-to"></div>
+      <div class="reader-meta-line">
+        <strong>${esc(item.fromName || item.fromEmail)}</strong>
+        <span class="muted">${fmtDateTime(item.date)} · ${esc(item.account)}</span>
+        ${item.isSeen ? '' : '<span class="badge orange">non lu</span>'}
+        <button class="btn btn-sm reader-details-btn" id="reader-details-btn"
+          aria-expanded="false" title="Adresse complète, destinataires, dossier">Détails</button>
+      </div>
+      <div class="reader-details hidden" id="reader-details">
+        <div><span class="muted">De :</span> ${esc(item.fromEmail)}</div>
+        <div id="reader-to"></div>
+        <div><span class="muted">Boîte :</span> ${esc(item.account)} · <span class="muted">dossier</span> ${esc(item.folder)}</div>
+        <div><span class="muted">Reçu le</span> ${fmtDateTime(item.date)}</div>
+      </div>
     </div>
     <div class="reader-body" id="reader-body"><div class="empty"><span class="spinner"></span>
       Téléchargement du mail depuis la boîte…</div></div>
@@ -9978,6 +10070,21 @@ async function openReader(item, row, opts = {}) {
   // « Toutes les actions » : tout ce qui existait reste là, à un endroit STABLE.
   // La barre du dessus change avec le mail, ce menu jamais — c'est lui qui fait
   // qu'on ne perd pas une commande parce que l'analyse ne l'a pas proposée.
+  // Naviguer dans la série : on rouvre le voisin en gardant la MÊME série,
+  // seul l'index bouge. La position dans la liste ne se recalcule jamais.
+  const allerA = (n) => {
+    const s = opts.serie;
+    if (!s?.refs?.[n]) return;
+    openReader(s.refs[n], null, { ...opts, serie: { refs: s.refs, index: n } });
+  };
+  panel.querySelector('#reader-prev')?.addEventListener('click', () => allerA((opts.serie?.index ?? 0) - 1));
+  panel.querySelector('#reader-next')?.addEventListener('click', () => allerA((opts.serie?.index ?? 0) + 1));
+
+  panel.querySelector('#reader-details-btn')?.addEventListener('click', (e) => {
+    const d = panel.querySelector('#reader-details');
+    const ferme = d.classList.toggle('hidden');
+    e.currentTarget.setAttribute('aria-expanded', String(!ferme));
+  });
   panel.querySelector('#reader-all-actions')?.addEventListener('click', (e) => {
     const m = panel.querySelector('#reader-menu');
     const ouvert = m.classList.toggle('hidden');
@@ -10082,7 +10189,7 @@ async function openReader(item, row, opts = {}) {
     }
     if (body.to) {
       const to = $('#reader-to');
-      if (to) to.textContent = `À : ${body.to}`;
+      if (to) to.innerHTML = `<span class="muted">À :</span> ${esc(body.to)}`;
     }
     if (body.attachments?.length) {
       const az = $('#reader-attachments');
@@ -10698,29 +10805,36 @@ function renderReaderAnalysis(a, item, opts = {}) {
   const mainReason = (a.reply.kind === 'awaiting'
     ? a.reply.label
     : (a.importance?.reasons?.[0] ?? a.reply.label)).replace(/^[+-]\d+\s*/, '');
+  // LE RÉGLAGE N'EST PAS DU CONTENU (25/08) — « déplacer les deux menus de
+  // correction dans "Pourquoi Boxmail me montre ça ?" : ce sont des outils de
+  // réglage, pas du contenu de mail ». Les deux sélecteurs (classement du mail,
+  // catégorie et priorité de l'expéditeur) mangeaient deux lignes à CHAQUE
+  // lecture, alors qu'il ne les touche qu'en cas d'erreur. Ils partent donc
+  // derrière le repli, avec le reste de l'explication.
   el.innerHTML = `
     <div class="ra-line">
       <span><strong>${esc(levelWord)}</strong>${a.confidence ? ` · confiance ${esc(a.confidence.label)}` : ''}
         <span class="muted" style="font-size:11.5px">— ${esc(mainReason)}</span></span>
-      <button class="btn btn-sm" id="ra-toggle" style="margin-left:auto">Voir le détail</button>
+      <button class="btn btn-sm" id="ra-toggle" style="margin-left:auto"
+        title="Ce que j'ai compris de ce mail, et de quoi me corriger si je me trompe">Pourquoi ? ▾</button>
     </div>
+    ${existing || detected
+      ? `<div class="ra-line"><span>Dates :</span> ${existing} ${detected}</div>`
+      : ''}
     <div id="ra-detail" class="hidden">
       ${impLine}
       <div class="ra-line"><span class="badge ${replyBadge}">↩️</span> <span>${esc(a.reply.label)}</span></div>
       ${requestLine}
       ${confidenceLine}
+      ${vetoedLine}
       <div class="ra-line muted" style="font-size:11px">Règles locales — rien n'est envoyé à un service externe.</div>
-    </div>
-    ${classLine}
-    ${existing || detected
-      ? `<div class="ra-line"><span>Dates :</span> ${existing} ${detected}</div>`
-      : ''}
-    ${vetoedLine}`;
+      ${classLine ? `<div class="ra-corriger"><div class="ra-corriger-titre">Me corriger</div>${classLine}</div>` : ''}
+    </div>`;
   $('#ra-toggle')?.addEventListener('click', () => {
     const d = $('#ra-detail');
     if (!d) return;
     d.classList.toggle('hidden');
-    $('#ra-toggle').textContent = d.classList.contains('hidden') ? 'Voir le détail' : 'Masquer le détail';
+    $('#ra-toggle').textContent = d.classList.contains('hidden') ? 'Pourquoi ? ▾' : 'Pourquoi ? ▴';
   });
 
   const note = (msg) => {
@@ -10982,7 +11096,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
 // Ouvre le panneau de lecture depuis un élément « intelligence » (importants,
 // réponses, relances, échéances, brief) : construit l'item minimal et branche
 // les callbacks de rafraîchissement de l'écran appelant.
-function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified } = {}) {
+function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified, serie } = {}) {
   if (!src || !src.folder || !src.uid) {
     alert('Ce mail n\'est plus dans l\'index (supprimé ou déplacé) — resynchronise la boîte.');
     return;
@@ -10999,7 +11113,7 @@ function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified
       isSeen: src.isSeen ?? true,
     },
     null,
-    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock, onReplied, onReclassified },
+    { onSeen: onSeen ?? (() => {}), onRemoved: onRemoved ?? (() => route()), dock, onReplied, onReclassified, serie },
   );
 }
 

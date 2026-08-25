@@ -722,6 +722,9 @@ a.tab { text-decoration: none; }
 /* La poignée n'a plus de sens quand le lecteur occupe déjà tout l'écran. */
 .reader.is-expanded .reader-resize { display: none; }
 .reader-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* Précédent / Suivant dans la série d'où l'on vient (25/08). */
+.reader-serie { display: flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 12px; }
+.reader-serie .muted { white-space: nowrap; }
 @media (max-width: 1100px) {
   .inbox-layout.with-reader { grid-template-columns: 1fr; }
   .inbox-dock { position: static; }
@@ -739,8 +742,18 @@ a.tab { text-decoration: none; }
   padding: 15px 20px; border-bottom: 1px solid var(--border);
 }
 .reader-head h2 { font-size: 16px; line-height: 1.35; word-break: break-word; font-weight: 650; }
-.reader-meta { padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.reader-meta { padding: 9px 20px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .reader-meta div { margin: 2px 0; word-break: break-word; }
+/* Une seule ligne au repos : qui, quand, quelle boîte (25/08). */
+.reader-meta-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0 !important; }
+.reader-details-btn { margin-left: auto; flex-shrink: 0; }
+.reader-details { padding-top: 6px; border-top: 1px dashed var(--border); margin-top: 6px !important; }
+/* Les réglages de l'analyse : derrière « Pourquoi ? », jamais dans le flux. */
+.ra-corriger { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.ra-corriger-titre {
+  font-size: 11px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: .03em; color: var(--text-secondary); margin-bottom: 4px;
+}
 /* Le bloc d'analyse vit SOUS le contenu du mail (le contenu d'abord). */
 .reader-analysis {
   padding: 10px 20px; border-top: 1px solid var(--border);
@@ -1016,8 +1029,11 @@ th.sortable:hover { color: var(--primary); }
   transition: opacity .18s ease, box-shadow .18s ease;
 }
 .brief-card:hover { box-shadow: 0 2px 10px rgba(18, 32, 44, .07); }
-.brief-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.brief-head { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
 .brief-title { font-size: 16.5px; font-weight: 600; line-height: 1.3; }
+/* Quand le mail est arrivé — pour le savoir SANS cliquer (25/08). Poussée à
+   droite pour ne pas s'intercaler entre le titre et la boîte. */
+.brief-when { margin-left: auto; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
 /* La justification : du texte, pas des étiquettes. C'est elle qui répond à
    « pourquoi tu me montres ça ? » sans qu'il ait à cliquer nulle part. */
 .brief-why { font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 14px; }
