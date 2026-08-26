@@ -74,6 +74,7 @@ import {
 import { find, TRIS, type TriRecherche } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance, contexteDuMail } from '../services/correspondance.js';
+import { tiersConnus, suivreTiers } from '../services/argent.js';
 import {
   listerDossiers,
   propager,
@@ -2120,6 +2121,24 @@ export function buildAdminRouter(): Router {
       } catch (e) {
         res.status(404).json({ error: e instanceof Error ? e.message : 'Brouillon impossible.' });
       }
+    }),
+  );
+
+  // ARGENT (26/08) : « qu'ai-je versé à X ? ». Volontairement PAR TIERS et
+  // pièce par pièce — un total de portefeuille additionnerait des annonces
+  // immobilières, des budgets de copropriété et des pesos chiliens.
+  router.get(
+    '/argent/tiers',
+    guard(async (req, res) => {
+      const limit = Number.parseInt(String(req.query.limit ?? '60'), 10) || 60;
+      res.json({ tiers: await tiersConnus(Math.min(Math.max(limit, 1), 200)) });
+    }),
+  );
+
+  router.get(
+    '/argent/suivi',
+    guard(async (req, res) => {
+      res.json(await suivreTiers(String(req.query.q ?? '')));
     }),
   );
 
