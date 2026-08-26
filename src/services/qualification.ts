@@ -135,6 +135,45 @@ function seRecoupent(a: string, b: string, minimum = 1): boolean {
   return false;
 }
 
+/** Une attente, réduite à ce qui sert à reconnaître un doublon. */
+interface Signature {
+  qui: string;
+  quoi: string;
+  dueAt: Date | string | null;
+}
+
+/**
+ * Parmi des attentes du MÊME compte et du MÊME côté, celle qui raconte déjà
+ * cette histoire — ou rien.
+ *
+ * Le correspondant doit se recouper (un mot distinctif suffit), PUIS l'un des
+ * deux signaux suivants doit confirmer :
+ *
+ *  · DEUX mots communs sur l'objet. Un seul ne suffit pas : les deux attentes
+ *    Comptastar (« Le bilan 2025 de la SARL ECONOM » et « Le juriste annoncé
+ *    pour l'AG et le dépôt des comptes 2024 d'ECONOM ») partagent « econom »
+ *    et doivent rester séparées. La convention Zanitti en partage deux
+ *    (« convention », « honoraires »), le sinistre MECHACHE aussi.
+ *
+ *  · ou LA MÊME ÉCHÉANCE, au jour près. Ajouté sur un doublon mesuré que le
+ *    seul critère de mots ratait : « Régler 418 € à l'URSSAF avant le 29 août »
+ *    et « Régler la mise en demeure URSSAF LB2I : 1089€ (mars-mai) + 418€
+ *    (juin), avant le 29/08/2026 » n'ont que « urssaf » en commun — mais la
+ *    même date, et c'étaient les DEUX seules urgences critiques de l'écran.
+ *    Deux cartes rouges pour une seule dette : le plus sûr moyen de lui faire
+ *    perdre confiance.
+ */
+export function jumelleDe<T extends Signature>(candidates: T[], a: Signature): T | undefined {
+  const jour = (d: Date | string | null) =>
+    d ? new Date(d).toISOString().slice(0, 10) : null;
+  const sien = jour(a.dueAt);
+  return candidates.find(
+    (o) =>
+      seRecoupent(o.qui, a.qui) &&
+      (seRecoupent(o.quoi, a.quoi, 2) || (!!sien && jour(o.dueAt) === sien)),
+  );
+}
+
 function raccourcir(t: string | null): string | null {
   if (!t) return null;
   const p = t.replace(/\s+/g, ' ').trim();
@@ -323,16 +362,11 @@ export async function enregistrerQualifications(
           etat: { in: ['ouverte', 'probable'] },
         },
       });
-      // DEUX mots communs exigés sur l'objet, un seul sur le correspondant.
-      // Mesuré sur le cas qui aurait cassé la règle : les deux attentes
-      // Comptastar (« Le bilan 2025 de la SARL ECONOM » et « Le juriste
-      // annoncé pour l'AG et le dépôt des comptes 2024 d'ECONOM ») ne
-      // partagent qu'un mot — « econom » — et doivent rester séparées ; la
-      // convention Zanitti en partage deux (« convention », « honoraires »),
-      // le sinistre MECHACHE aussi (« sinistre », « mechache »).
-      const jumelle = orphelines.find(
-        (o) => seRecoupent(o.qui, a.qui) && seRecoupent(o.quoi, a.quoi, 2),
-      );
+      const jumelle = jumelleDe(orphelines, {
+        qui: a.qui,
+        quoi: a.quoi,
+        dueAt: a.dueAt ?? null,
+      });
       if (jumelle) {
         // On la rattache au fil — elle devient dédoublonnable pour de bon, et
         // le lecteur pourra ouvrir la conversation depuis la carte — mais on
