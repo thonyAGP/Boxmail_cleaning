@@ -552,6 +552,12 @@ export async function syncAccount(rec: AccountRecord, opts: SyncOptions = {}): P
     const snip = await backfillSnippets(rec, {
       limit: 150,
       order: 'newest',
+      // 26/08 : les ENVOYÉS aussi. Sans cette ligne le trou se recreuse à
+      // chaque mail écrit — c'est ainsi qu'on s'est retrouvé avec 8 248
+      // envoyés sans un mot de contenu. L'analyse IA n'en profite pas
+      // (candidateWhere reste sur les entrants), mais la RECHERCHE si :
+      // retrouver ce qu'on a soi-même demandé ou promis en dépend.
+      outbound: 'include',
       recomputeConfidence: false,
     });
     if (snip.filled > 0) progress(`Extraits : ${snip.filled} mail(s) lus.`);
