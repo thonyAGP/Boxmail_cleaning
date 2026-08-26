@@ -6145,8 +6145,14 @@ function formulaireAffaire(a = null) {
  * montant réglé, dernier message reçu) et se copie en un clic. Il n'est JAMAIS
  * envoyé d'ici : c'est lui qui envoie, depuis sa messagerie.
  */
-function modaleBrouillon(br, a) {
-  ouvrirModale('✉️ Brouillon de relance', `
+/**
+ * @param {object} br      le brouillon rendu par le serveur
+ * @param {object|null} a  l'affaire, quand le brouillon en vient (report auto)
+ * @param {object} opts    { titre, apresEnvoi } — pour les attentes (26/08),
+ *                         qui ne sont pas des affaires et n'ont pas de report.
+ */
+function modaleBrouillon(br, a, opts = {}) {
+  ouvrirModale(opts.titre || '✉️ Brouillon de relance', `
     <div class="form-vert">
       <p class="muted">Rien ne part tant que tu n'as pas envoyé toi-même. Relis, corrige, copie.</p>
       <label>À<input id="br-to" type="text" value="${esc(br.to)}"></label>
@@ -6190,6 +6196,7 @@ function modaleBrouillon(br, a) {
         try { await api.engagementReporter(a.id, 15); } catch { /* pas bloquant */ }
         await loadAffaires();
       }
+      if (opts.apresEnvoi) await opts.apresEnvoi();
     } catch (err) {
       bouton.disabled = false;
       etat.textContent = '';
@@ -6289,6 +6296,9 @@ async function renderSuivi() {
   await chargerSuivi();
 }
 
+/** Les attentes actuellement à l'écran — les actions ont besoin du détail. */
+let _attentes = [];
+
 async function chargerSuivi() {
   const body = $('#att-body');
   if (!body) return;
@@ -6300,6 +6310,7 @@ async function chargerSuivi() {
     return;
   }
   if (!body.isConnected) return;
+  _attentes = [...d.urgences, ...d.aToi, ...d.tuAttends, ...d.retrouve];
 
   if (!d.compteurs.total) {
     body.innerHTML = `<div class="empty">Rien en attente. 🎉 Les attentes apparaissent quand
@@ -6350,12 +6361,38 @@ async function gesteAttente(id, code, carte) {
     }
     return;
   }
-  // Les autres gestes ouvrent l'histoire ; la rédaction du brouillon et
-  // l'ouverture du document arrivent à l'étape suivante.
-  alert(
-    "Cette action arrive à la prochaine étape : elle ouvrira l'histoire complète du sujet, " +
-      "avec le brouillon déjà rédigé quand il s'agit de relancer.",
-  );
+  // « Voir l'histoire » : la recherche sur le correspondant, qui rassemble ce
+  // qui le concerne toutes boîtes confondues. Un dossier traverse en moyenne
+  // 3 à 4 boîtes chez lui — chercher dans une seule n'aurait aucun sens.
+  if (code === 'voir') {
+    const a = _attentes?.find((x) => x.id === id);
+    if (!a) return;
+    location.hash = `#/search?q=${encodeURIComponent(a.quiEmail || a.qui)}`;
+    return;
+  }
+
+  // Toutes les autres actions rédigent un brouillon. Le serveur choisit la
+  // forme selon le côté : une relance quand ils doivent, une prise de contact
+  // quand c'est à moi de bouger.
+  const btn = carte.querySelector(`[data-act="${code}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'préparation…'; }
+  try {
+    const br = await api.brouillonAttente(id);
+    const a = _attentes?.find((x) => x.id === id);
+    modaleBrouillon(br, null, {
+      titre: a?.cote === 'eux' ? '✉️ Brouillon de relance' : '✉️ Brouillon de réponse',
+      apresEnvoi: chargerSuivi,
+    });
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      const a = _attentes?.find((x) => x.id === id);
+      const act = a?.actions.find((x) => x.code === code);
+      btn.textContent = act?.libelle ?? 'Préparer';
+    }
+  }
 }
 
 /* ==========================================================================

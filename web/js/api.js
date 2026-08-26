@@ -71,14 +71,16 @@ export const api = {
   rentilaCommandCancel: (id) => request('POST', '/rentila/commands/' + id + '/cancel'),
   reviewLearning: () => request('GET', '/review/learning'),
   reviewLearningDismiss: (key) => request('POST', '/review/learning/dismiss', { key }),
-  // Dossiers : les sujets de vie qui traversent les interlocuteurs.
   // Attentes (26/08) : ce qui est attendu, de moi ou d'eux. Le geste de
-  // l'utilisateur est une preuve facultative, jamais un entretien exigé.
+  // l'utilisateur est une preuve facultative, jamais un entretien exigé ; le
+  // brouillon RÉDIGE seulement, l'envoi reste un clic explicite.
   attentes: () => request('GET', '/attentes'),
   attenteGeste: (id, geste) => request('POST', `/attentes/${id}`, { geste }),
+  brouillonAttente: (id) => request('GET', `/attentes/${id}/brouillon`),
   // Argent (26/08) : par TIERS, jamais un total de portefeuille — cf. argent.ts.
   argentTiers: (limit = 60) => request('GET', `/argent/tiers?limit=${limit}`),
   argentSuivi: (q) => request('GET', `/argent/suivi?q=${encodeURIComponent(q)}`),
+  // Dossiers : les sujets de vie qui traversent les interlocuteurs.
   dossiers: (limit = 60) => request('GET', `/dossiers?limit=${limit}`),
   dossierRenommer: (id, label) => request('PATCH', `/dossiers/${id}`, { label }),
   dossierMasquer: (id, hidden) => request('PATCH', `/dossiers/${id}`, { hidden }),

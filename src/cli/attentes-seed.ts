@@ -48,7 +48,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'eux',
-    quoi: 'Réponse à ta réclamation sur le sinistre MECHACHE',
+    quoi: 'Réponse à ma réclamation sur le sinistre MECHACHE',
     qui: 'Insured — service juridique',
     quiEmail: 'servicejuridique@insured.fr',
     accountSlug: 'Altoen',
@@ -61,7 +61,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'moi',
-    quoi: 'Signer la convention d’honoraires de Me Zanitti',
+    quoi: 'Signature de la convention d’honoraires',
     qui: 'Me Zanitti — avocate',
     accountSlug: 'Brimmo',
     importance: 'haute',
@@ -140,7 +140,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'moi',
-    quoi: 'Te positionner sur la proposition d’honoraires du 31/33 rue François Miron',
+    quoi: 'Proposition d’honoraires pour le 31/33 rue François Miron',
     qui: 'Atelier d’Architecture Jérôme Leroy',
     accountSlug: 'thony56_gtr',
     importance: 'moyenne',
@@ -150,7 +150,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'moi',
-    quoi: 'Émettre la facture de la mission — Jump t’a confirmé que tu peux facturer',
+    quoi: 'Facture de la mission à émettre',
     qui: 'Jump — portage LB2I',
     accountSlug: 'lb2i',
     importance: 'haute',
@@ -171,7 +171,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'moi',
-    quoi: 'Régler ou contester la facture BIONAT F202601-4836',
+    quoi: 'Facture BIONAT F202601-4836 — à régler ou contester',
     qui: 'Lydia — BIONAT ENERGIES',
     accountSlug: 'Au-marais',
     importance: 'moyenne',
@@ -182,7 +182,7 @@ const GRAINES: Graine[] = [
   },
   {
     cote: 'moi',
-    quoi: 'Vérifier le paiement des deux factures de plomberie Jaffrès 2026',
+    quoi: 'Paiement des deux factures de plomberie Jaffrès 2026',
     qui: 'Jaffrès plomberie — chantier 46 rue de la République',
     accountSlug: 'Brimmo',
     importance: 'moyenne',

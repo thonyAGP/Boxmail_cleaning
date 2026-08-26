@@ -216,3 +216,101 @@ export async function brouillonReponse(messageId: number): Promise<Brouillon> {
     appuis,
   };
 }
+
+/**
+ * Brouillon depuis une ATTENTE (26/08). C'est le bouton que la contre-revue a
+ * jugé le plus important de l'écran : « sans passage immédiat de la détection
+ * à l'action, tu risques de fabriquer un très bon tableau de culpabilité »
+ * — l'utilisateur apprend qu'il a oublié ceci, et cela, puis il referme
+ * l'application. Le brouillon transforme « je t'informe d'un problème » en
+ * « je t'ai préparé la prochaine étape ».
+ *
+ * Deux formes selon le côté, et c'est tout le sens de l'objet Attente :
+ *  · EUX doivent quelque chose  → une relance (« où en est-on ? ») ;
+ *  · MOI dois quelque chose     → une prise de contact (« voici où j'en suis »).
+ *
+ * Comme partout ici : ce service RÉDIGE, il n'envoie rien.
+ */
+export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
+  await ensureDbReady();
+  const a = await db.attente.findUnique({ where: { id: attenteId } });
+  if (!a) throw new Error('Attente introuvable.');
+
+  const SANS_REPONSE =
+    /(no-?reply|donotreply|ne[-._]?pas[-._]?repondre|nepasrepondre|no[-._]?responder|notification[s]?@|mailer-daemon|postmaster)/i;
+  const repliable = (x: string | null | undefined): boolean => !!x && !SANS_REPONSE.test(x);
+
+  // DESTINATAIRE : l'adresse portée par l'attente si on peut y écrire, sinon
+  // le dernier correspondant RÉPONDABLE du fil. Une attente peut naître d'une
+  // notification automatique ; proposer d'y répondre serait un faux service.
+  let to = repliable(a.quiEmail) ? (a.quiEmail as string) : '';
+  let toName: string | null = a.qui;
+  if (!to && a.threadId) {
+    const entrants = await db.message.findMany({
+      where: { threadId: a.threadId, isOutbound: false, isDeleted: false },
+      orderBy: { date: 'desc' },
+      take: 12,
+      select: { fromEmail: true, fromName: true },
+    });
+    const bon = entrants.find((m) => repliable(m.fromEmail));
+    if (bon) {
+      to = bon.fromEmail ?? '';
+      toName = bon.fromName ?? a.qui;
+    }
+  }
+
+  const appuis: string[] = [];
+  const lignes: string[] = ['Bonjour,', ''];
+
+  /**
+   * ⚠️ NE JAMAIS RECOPIER `pourquoi` DANS LE CORPS (mesuré à l'écran le
+   * 26/08). Ce champ est une explication ADRESSÉE À L'UTILISATEUR, écrite à
+   * la deuxième personne : « Tu as contesté le solde de tout compte le 25
+   * avril 2024. Ils se sont engagés PAR ÉCRIT… ». Recopié tel quel, il
+   * produisait un mail tutoyant l'assureur et parlant de lui à la troisième
+   * personne. Le corps ne contient donc que des FAITS DATÉS, neutres ; le
+   * constat, lui, part dans `appuis` — que l'utilisateur lit, et qui n'est
+   * jamais envoyé.
+   */
+  appuis.push(`constat : ${a.pourquoi.slice(0, 140)}`);
+
+  if (a.cote === 'eux') {
+    lignes.push(`Je reviens vers vous au sujet de : ${a.quoi}.`, '');
+    if (a.dueAt) {
+      lignes.push(
+        `Sauf erreur de ma part, le délai annoncé était le ${dateFr(a.dueAt)} et je n'ai pas eu de retour depuis.`,
+        '',
+      );
+      appuis.push(`échéance annoncée : ${dateFr(a.dueAt)}`);
+    } else {
+      lignes.push("Sauf erreur de ma part, je n'ai pas eu de retour sur ce point.", '');
+    }
+    if (a.montant != null) {
+      lignes.push(`Montant concerné : ${euros(a.montant)}.`, '');
+      appuis.push(`montant : ${euros(a.montant)}`);
+    }
+    lignes.push('[à compléter : rappelle ici le contexte si nécessaire]', '');
+    lignes.push(
+      'Pourriez-vous me dire où en est ce point, ce qui reste éventuellement à fournir de mon côté, et sous quel délai il peut aboutir ?',
+    );
+  } else {
+    lignes.push(`Je fais suite à : ${a.quoi}.`, '');
+    if (a.dueAt) appuis.push(`échéance : ${dateFr(a.dueAt)}`);
+    if (a.montant != null) {
+      lignes.push(`Montant concerné : ${euros(a.montant)}.`, '');
+      appuis.push(`montant : ${euros(a.montant)}`);
+    }
+    lignes.push('[à compléter : ta réponse]', '');
+  }
+
+  lignes.push('', 'Je vous remercie par avance.', '', 'Cordialement,');
+
+  return {
+    to,
+    toName,
+    subject: a.cote === 'eux' ? `Relance — ${a.quoi}` : a.quoi,
+    body: lignes.join('\n'),
+    accountSlug: a.accountSlug,
+    appuis,
+  };
+}

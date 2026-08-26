@@ -93,7 +93,7 @@ import {
   supprimerEngagement,
   lierMessages,
 } from '../services/engagements.js';
-import { brouillonRelance, brouillonReponse } from '../services/brouillons.js';
+import { brouillonRelance, brouillonReponse, brouillonAttente } from '../services/brouillons.js';
 import { sendMessageToAccounting } from '../services/accounting.js';
 import { generateBrief, latestBrief } from '../services/brief.js';
 import {
@@ -2132,6 +2132,20 @@ export function buildAdminRouter(): Router {
     '/attentes',
     guard(async (_req, res) => {
       res.json(await suivi());
+    }),
+  );
+
+  // Le brouillon d'une attente : « je t'ai préparé la prochaine étape » plutôt
+  // que « je t'informe d'un problème ». RÉDIGE seulement — l'envoi reste un
+  // clic explicite, sur la route d'envoi existante.
+  router.get(
+    '/attentes/:id/brouillon',
+    guard(async (req, res) => {
+      try {
+        res.json(await brouillonAttente(Number.parseInt(String(req.params.id), 10)));
+      } catch (e) {
+        res.status(404).json({ error: e instanceof Error ? e.message : 'Brouillon impossible.' });
+      }
     }),
   );
 
