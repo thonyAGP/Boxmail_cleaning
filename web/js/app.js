@@ -3217,6 +3217,10 @@ function bindOpenables(root, items, mapFn) {
       e.preventDefault();
       const raw = items[Number(el.dataset.open)];
       if (!raw) return;
+      // On marque la LIGNE d'où part la lecture : c'est le seul moyen fiable
+      // de retirer ensuite son badge « non lu ». Chaque écran a sa propre
+      // structure (.reply-row, .mail-row, un <tr>…), donc pas de sélecteur
+      // universel — mais tous passent par ici.
       openReaderFor(mapFn ? mapFn(raw) : raw, { onRemoved: () => route() });
     });
   });
@@ -10327,6 +10331,74 @@ function basculerAgrandissement(panel, force) {
   document.querySelector('.reader-overlay')?.classList.toggle('hidden', grand);
 }
 
+/**
+ * OUVRIR UN MAIL LE MARQUE COMME LU — immédiatement, sans attendre une sync.
+ *
+ * Son retour du 26/08, capture à l'appui : un mail qu'il venait de lire
+ * portait encore « non lu ». L'index ne l'apprenait qu'à la synchronisation
+ * suivante. Sa réponse : « le statut des mails est super important, je ne peux
+ * pas attendre une synchro pour avoir une info qui est fausse ».
+ *
+ * ⚠️ CE N'EST PAS DANS `readMessageCached` À DESSEIN. Cette fonction sert
+ * aussi au PRÉCHARGEMENT du message suivant (Précédent/Suivant) : y mettre le
+ * marquage ferait passer « lu » des mails qu'il n'a jamais ouverts. Le
+ * marquage vit donc aux points d'ouverture RÉELLE, et nulle part ailleurs.
+ *
+ * Rien n'est marqué localement tant que le serveur n'a pas confirmé : un échec
+ * IMAP silencieux qui laisserait l'écran dire « lu » serait exactement le
+ * mensonge qu'on corrige ici.
+ */
+/**
+ * QUELLE LIGNE VIENT D'ÊTRE OUVERTE — repéré en un seul point, pour tous les
+ * écrans. Chacun câble ses ouvertures à sa façon (`bindOpenables`, un
+ * gestionnaire local, `data-clean-open`…), et pister la ligne dans chacun
+ * d'eux serait à refaire à chaque nouvel écran. Un écouteur en CAPTURE sur le
+ * document voit tous les clics avant eux, sans rien intercepter.
+ */
+document.addEventListener(
+  'click',
+  (e) => {
+    const cible = e.target instanceof Element
+      ? e.target.closest('.openable, [data-open], [data-clean-open]')
+      : null;
+    if (!cible) return;
+    document.querySelectorAll('.vient-d-ouvrir').forEach((x) => x.classList.remove('vient-d-ouvrir'));
+    (cible.closest('.reply-row, .mail-row, .todo-row, .find-msg, tr, li') || cible.parentElement)
+      ?.classList.add('vient-d-ouvrir');
+  },
+  true,
+);
+
+const _marquageEnCours = new Set();
+async function marquerLu(account, folder, uid, item) {
+  if (!account || !folder || !uid) return;
+  if (item && item.isSeen) return;
+  const cle = `${account}|${folder}|${uid}`;
+  if (_marquageEnCours.has(cle)) return;
+  _marquageEnCours.add(cle);
+  try {
+    await api.messageAction(account, { folder, uid, action: 'seen' });
+    // L'objet en mémoire suit : sans ça, le prochain rendu de la liste
+    // réafficherait « non lu » à partir des données déjà chargées.
+    if (item) item.isSeen = true;
+    // ⚠️ PAS DE SÉLECTEUR PAR data-uid : chaque écran a sa convention
+    // (`data-open` sur les réponses attendues, `data-clean-open` ailleurs,
+    // une case à cocher dans la modale de nettoyage). Un sélecteur unique
+    // visait un attribut qui n'existe nulle part et ne retirait aucun badge.
+    // On nettoie donc ce qu'on sait situer : le lecteur ouvert, et la ligne
+    // marquée courante par la liste elle-même.
+    document
+      .querySelectorAll('.reader .badge, .inbox-dock .badge, .vient-d-ouvrir .badge')
+      .forEach((b) => {
+        if (b.textContent.trim() === 'non lu') b.remove();
+      });
+  } catch {
+    // Silencieux : l'écran garde « non lu », ce qui reste vrai côté serveur.
+  } finally {
+    _marquageEnCours.delete(cle);
+  }
+}
+
 async function readMessageCached(account, folder, uid) {
   const key = `${account}|${folder}|${uid}`;
   const hit = readBodyCache.get(key);
@@ -10526,6 +10598,8 @@ async function openReader(item, row, opts = {}) {
   // Corps du mail : lecture IMAP live. En cas d'échec (boîte injoignable),
   // on l'explique proprement — les actions restent disponibles.
   let loadedText = ''; // corps téléchargé, pour la citation dans une réponse
+  // Il l'ouvre : il l'a lu. Sans attendre la sync (cf. marquerLu).
+  marquerLu(item.account, item.folder, item.uid, item);
   readMessageCached(item.account, item.folder, item.uid).then((body) => {
     const el = $('#reader-body');
     if (!el) return;
@@ -11376,6 +11450,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
       try {
         const m = await readMessageCached(h.dataset.account, h.dataset.folder, Number(h.dataset.uid));
         corps.dataset.charge = '1';
+        marquerLu(h.dataset.account, h.dataset.folder, Number(h.dataset.uid), null);
         const pj = (h.dataset.pj || '').split('|').filter(Boolean);
         const texte = m.text || m.plain || m.body || '';
         corps.innerHTML =

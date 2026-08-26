@@ -2392,6 +2392,29 @@ export function buildAdminRouter(): Router {
           const r = await imapService.markEmails(rec, folder, uids.slice(i, i + 200), add, remove);
           affected += r.affected;
         }
+        // L'INDEX SUIT IMMÉDIATEMENT (26/08). Le marquage IMAP partait, mais
+        // `Message.isSeen` restait faux jusqu'à la sync suivante : les
+        // compteurs, la Vue du jour et le score d'importance (« non lu récent
+        // +15 ») continuaient de compter comme non lu un mail qu'il venait
+        // d'ouvrir. Son mot : « je ne peux pas attendre une synchro pour avoir
+        // une info qui est fausse ».
+        //
+        // Écrit APRÈS l'IMAP, et seulement s'il a répondu : l'index ne doit
+        // jamais affirmer ce que le serveur de mail ignore.
+        if (affected > 0) {
+          // Lots de 500 : au-delà de 999 valeurs, un `in` fait PANIQUER le
+          // moteur Prisma/SQLite (pas une erreur rattrapable).
+          for (let i = 0; i < uids.length; i += 500) {
+            await db.message.updateMany({
+              where: {
+                accountSlug: rec.account,
+                uid: { in: uids.slice(i, i + 500) },
+                folder: { path: folder },
+              },
+              data: { isSeen: action === 'seen' },
+            });
+          }
+        }
         result = { affected, flag: action };
       } else {
         let moved = 0;
