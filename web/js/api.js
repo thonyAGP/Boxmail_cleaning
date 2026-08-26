@@ -72,6 +72,9 @@ export const api = {
   reviewLearning: () => request('GET', '/review/learning'),
   reviewLearningDismiss: (key) => request('POST', '/review/learning/dismiss', { key }),
   // Dossiers : les sujets de vie qui traversent les interlocuteurs.
+  // Argent (26/08) : par TIERS, jamais un total de portefeuille — cf. argent.ts.
+  argentTiers: (limit = 60) => request('GET', `/argent/tiers?limit=${limit}`),
+  argentSuivi: (q) => request('GET', `/argent/suivi?q=${encodeURIComponent(q)}`),
   dossiers: (limit = 60) => request('GET', `/dossiers?limit=${limit}`),
   dossierRenommer: (id, label) => request('PATCH', `/dossiers/${id}`, { label }),
   dossierMasquer: (id, hidden) => request('PATCH', `/dossiers/${id}`, { hidden }),

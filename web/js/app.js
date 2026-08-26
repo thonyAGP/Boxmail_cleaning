@@ -690,6 +690,8 @@ function route() {
     renderRules();
   } else if (hash.startsWith('#/affaires')) {
     renderAffaires();
+  } else if (hash.startsWith('#/argent')) {
+    renderArgent();
   } else if (hash.startsWith('#/dossiers')) {
     renderDossiers();
   } else if (hash.startsWith('#/suggestions')) {
@@ -6202,6 +6204,159 @@ function modaleBrouillon(br, a) {
       $('#br-copy').textContent = 'Sélectionné — Ctrl+C';
     }
   });
+}
+
+/* ==========================================================================
+   💶 ARGENT — « qu'ai-je versé à X ? »
+   Volontairement PAR TIERS et pièce par pièce. Un total de portefeuille
+   mélangerait des annonces immobilières (un château à 2 680 000 €), des
+   budgets de copropriété et des pesos chiliens : mesuré le 26/08 sur les
+   vraies données. Restreint à un tiers, le même matériau est exact — il rend
+   les 1 131,26 € du dossier Legalfree au centime près.
+   ========================================================================== */
+
+const LIB_PIECE = {
+  receipt: { t: '✅ Reçu', c: 'ok' },
+  invoice: { t: '🧾 Facture', c: 'warn' },
+  quote: { t: '📄 Devis', c: '' },
+  tax_notice: { t: '🏛️ Avis', c: 'warn' },
+  statement: { t: '📊 Relevé', c: '' },
+  contract: { t: '📜 Contrat', c: '' },
+  legal_notice: { t: '⚖️ Acte', c: '' },
+};
+
+const fmtEur = (n, d) =>
+  `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${d === 'EUR' ? '€' : esc(d)}`;
+
+async function renderArgent() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>💶 Où est passé mon argent</h1>
+      <div class="sub">Cherche un fournisseur, un prestataire, une société : tu vois ce que tu lui as
+      <strong>versé</strong>, ce qu'il t'a <strong>facturé</strong> et ce qu'il t'a <strong>proposé</strong>,
+      pièce par pièce. Volontairement pas de total général : additionner une annonce immobilière,
+      un budget de copropriété et un reçu n'aurait aucun sens.</div></div></div>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="arg-row">
+          <input type="search" id="arg-q" class="input" placeholder="Legalfree, EDF, Leroy Merlin…"
+                 autocomplete="off" style="flex:1;min-width:220px">
+          <button class="btn btn-primary" id="arg-go">🔎 Chercher</button>
+        </div>
+        <div id="arg-tiers" class="arg-tiers"></div>
+      </div>
+    </div>
+    <div id="arg-body"></div>`;
+
+  const lancer = () => chercherArgent($('#arg-q').value.trim());
+  $('#arg-go').addEventListener('click', lancer);
+  $('#arg-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') lancer();
+  });
+
+  try {
+    const d = await api.argentTiers(28);
+    const z = $('#arg-tiers');
+    if (!z || !z.isConnected) return;
+    z.innerHTML =
+      `<div class="arg-hint">Les tiers les plus présents dans tes pièces :</div>` +
+      (d.tiers ?? [])
+        .map(
+          (t) =>
+            `<button class="arg-chip" data-tiers="${esc(t.libelle)}">${esc(t.libelle)}
+             <span class="arg-chip-n">${fmtNum(t.nbPieces)}</span></button>`,
+        )
+        .join('');
+    z.querySelectorAll('[data-tiers]').forEach((b) =>
+      b.addEventListener('click', () => {
+        $('#arg-q').value = b.dataset.tiers;
+        chercherArgent(b.dataset.tiers);
+      }),
+    );
+  } catch (err) {
+    const z = $('#arg-tiers');
+    if (z) z.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+  }
+}
+
+async function chercherArgent(q) {
+  const body = $('#arg-body');
+  if (!body) return;
+  if (!q || q.length < 2) {
+    body.innerHTML = `<div class="empty">Saisis au moins deux caractères.</div>`;
+    return;
+  }
+  body.innerHTML = `<div class="empty"><span class="spinner"></span>Lecture des pièces…</div>`;
+  let d;
+  try {
+    d = await api.argentSuivi(q);
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+
+  if (!d.pieces?.length) {
+    body.innerHTML = `<div class="empty">Aucune pièce chiffrée pour « ${esc(q)} ».
+      ${(d.avertissements ?? []).map((a) => `<div class="notice warn" style="margin-top:12px">⚠️ ${esc(a)}</div>`).join('')}</div>`;
+    return;
+  }
+
+  const totaux = d.totaux
+    .map(
+      (t) => `<div class="arg-total">
+        <div class="arg-total-head">${esc(t.devise)} · ${fmtNum(t.nbPieces)} pièce(s)</div>
+        <div class="arg-total-ligne"><span>✅ Versé</span><strong>${fmtEur(t.verse, t.devise)}</strong></div>
+        <div class="arg-total-ligne"><span>🧾 Facturé</span><strong>${fmtEur(t.facture, t.devise)}</strong></div>
+        <div class="arg-total-ligne"><span>📄 Proposé</span><strong>${fmtEur(t.propose, t.devise)}</strong></div>
+        ${t.autre ? `<div class="arg-total-ligne"><span>Autres pièces</span><strong>${fmtEur(t.autre, t.devise)}</strong></div>` : ''}
+      </div>`,
+    )
+    .join('');
+
+  body.innerHTML = `
+    ${(d.avertissements ?? []).map((a) => `<div class="notice warn">⚠️ ${esc(a)}</div>`).join('')}
+    <div class="arg-totaux">${totaux}</div>
+    <div class="panel">
+      <div class="panel-head"><h2>Les pièces</h2><span class="badge">${fmtNum(d.pieces.length)}</span></div>
+      <div class="panel-body">
+        <div class="arg-hint">Dans l'ordre chronologique. Clique une ligne pour ouvrir le mail d'origine.</div>
+        <div class="arg-liste">
+          ${d.pieces
+            .map((p, i) => {
+              const lib = LIB_PIECE[p.kind] ?? { t: `📎 ${esc(p.kind)}`, c: '' };
+              const j = new Date(p.date);
+              return `<button class="arg-piece" data-i="${i}">
+                <span class="arg-date">${j.toLocaleDateString('fr-FR')}</span>
+                <span class="arg-montant">${fmtEur(p.amount, p.currency)}</span>
+                <span class="arg-kind ${lib.c}">${lib.t}</span>
+                <span class="arg-sujet">${esc(p.subject ?? '(sans sujet)')}
+                  ${p.reference ? `<span class="arg-ref">réf. ${esc(p.reference)}</span>` : ''}</span>
+                <span class="arg-boite">${esc(p.accountSlug)}</span>
+              </button>`;
+            })
+            .join('')}
+        </div>
+      </div>
+    </div>`;
+
+  body.querySelectorAll('.arg-piece').forEach((b) =>
+    b.addEventListener('click', () => {
+      const p = d.pieces[Number(b.dataset.i)];
+      openReaderFor(
+        {
+          account: p.accountSlug,
+          folder: p.folder,
+          uid: p.uid,
+          subject: p.subject,
+          fromName: p.fromName,
+          fromEmail: p.fromEmail,
+          date: p.date,
+        },
+        { dock: true },
+      );
+    }),
+  );
 }
 
 async function renderDossiers() {

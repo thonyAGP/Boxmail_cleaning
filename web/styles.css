@@ -1260,3 +1260,52 @@ th.sortable:hover { color: var(--primary); }
 
 /* Retour NOMMÉ vers le mail d'origine — jamais un simple « ← Retour ». */
 .reader-back { margin-right: 10px; white-space: nowrap; flex-shrink: 0; }
+
+/* ==========================================================================
+   💶 Où est passé mon argent (26/08) — vue PAR TIERS, pièce par pièce.
+   Tout est préfixé `arg-` : aucun sélecteur global, aucune collision.
+   ========================================================================== */
+.arg-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.arg-hint { color: var(--muted, #8a94a6); font-size: 13px; margin: 10px 0 8px; }
+.arg-tiers { margin-top: 4px; }
+.arg-chip {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 6px 6px 0;
+  padding: 5px 11px; border: 1px solid var(--line, #2a3242); border-radius: 999px;
+  background: transparent; color: inherit; font-size: 13px; cursor: pointer;
+}
+.arg-chip:hover { border-color: var(--accent, #4c8dff); color: var(--accent, #4c8dff); }
+.arg-chip-n { opacity: .55; font-size: 11px; }
+
+.arg-totaux { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; }
+.arg-total {
+  flex: 1; min-width: 220px; padding: 14px 16px;
+  border: 1px solid var(--line, #2a3242); border-radius: 12px;
+}
+.arg-total-head { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+  opacity: .6; margin-bottom: 10px; }
+.arg-total-ligne { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.arg-total-ligne strong { font-variant-numeric: tabular-nums; }
+
+.arg-liste { display: flex; flex-direction: column; }
+.arg-piece {
+  display: grid; grid-template-columns: 92px 130px 108px 1fr auto;
+  gap: 12px; align-items: center; width: 100%; text-align: left;
+  padding: 9px 6px; background: transparent; border: 0;
+  border-bottom: 1px solid var(--line, #2a3242); color: inherit; cursor: pointer;
+}
+.arg-piece:hover { background: rgba(255, 255, 255, .04); }
+.arg-date { opacity: .65; font-size: 13px; font-variant-numeric: tabular-nums; }
+.arg-montant { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.arg-kind { font-size: 12px; opacity: .85; }
+.arg-kind.ok { color: #4ec9a5; }
+.arg-kind.warn { color: #e5b567; }
+.arg-sujet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arg-ref { opacity: .5; font-size: 12px; margin-left: 8px; }
+.arg-boite { opacity: .5; font-size: 12px; white-space: nowrap; }
+
+/* Étroit : la grille tombe en deux lignes plutôt que de déborder. */
+@media (max-width: 860px) {
+  .arg-piece { grid-template-columns: 92px 1fr; grid-auto-rows: min-content; }
+  .arg-kind, .arg-boite { grid-column: 2; }
+  .arg-montant { text-align: left; }
+}
