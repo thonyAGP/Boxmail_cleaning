@@ -20,6 +20,7 @@
     "stats": "tsx src/cli/stats.ts",
     "sync": "tsx src/cli/sync.ts",
     "snippets": "tsx src/cli/snippets.ts",
+    "anomalies": "tsx src/cli/anomalies.ts",
     "audit": "tsx src/cli/audit.ts",
     "banc": "tsx src/cli/banc.ts",
     "banc:search": "tsx src/cli/banc-search.ts",
