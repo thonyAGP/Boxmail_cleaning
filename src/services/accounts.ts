@@ -116,6 +116,28 @@ export async function upsertAccount(name: string, enrolled: EnrolledAccount): Pr
   };
   await save(store);
   logger.info('compte enrôlé/mis à jour', { account: name, username: enrolled.username });
+  if (!existing) rattraperHistoriqueSiNouvelleBoite(name);
+}
+
+/**
+ * Une boîte qui arrive doit être lue EN ENTIER, pas seulement sur ses 90
+ * derniers jours (26/08 — voir demarrerRattrapageHistorique). Uniquement à la
+ * première arrivée : un ré-enrôlement (token expiré) ne relance rien.
+ *
+ * Import dynamique : accounts.ts est importé par presque tout le monde, un
+ * import statique de snippets.ts créerait un cycle.
+ */
+function rattraperHistoriqueSiNouvelleBoite(name: string): void {
+  void import('./snippets.js')
+    .then(({ demarrerRattrapageHistorique }) =>
+      demarrerRattrapageHistorique(`nouvelle boîte ${name}`),
+    )
+    .catch((err) =>
+      logger.warn('rattrapage historique non démarré', {
+        account: name,
+        error: (err as Error).message,
+      }),
+    );
 }
 
 /**
@@ -161,6 +183,7 @@ export async function upsertImapAccount(name: string, enr: ImapEnrollment): Prom
     imap: `${enr.imapHost}:${enr.imapPort}`,
     smtp: `${enr.smtpHost}:${enr.smtpPort}`,
   });
+  if (!existing) rattraperHistoriqueSiNouvelleBoite(name);
 }
 
 /** Mot de passe IMAP déchiffré à la demande (jamais persisté en clair). */

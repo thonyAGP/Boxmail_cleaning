@@ -816,6 +816,45 @@ export function requestBackfill(scope: BackfillScope): void {
   }
 }
 
+/**
+ * Rattrapage de l'HISTORIQUE COMPLET d'une boîte fraîchement enrôlée (26/08).
+ *
+ * POURQUOI (mesuré ce jour-là) : le rattrapage qui suit chaque sync ne regarde
+ * que les 90 derniers jours, 150 mails à la fois. Une boîte ajoutée restait
+ * donc lisible sur ses seules semaines récentes, et muette sur tout le reste —
+ * SANS QUE RIEN NE LE SIGNALE. Quatre boîtes enrôlées la veille : jojo56
+ * n'exposait que 1 167 de ses 46 543 mails (2,5 %), techni-soft 26 sur 4 750.
+ * Conséquence concrète : un reçu de 1 347,42 € introuvable, et un moteur
+ * d'analyse qui tournait à vide en croyant avoir tout traité.
+ *
+ * Le marqueur disque suffit à garantir la reprise (redémarrage, mise à jour
+ * nocturne) ; on tente en plus un démarrage immédiat quand un serveur tourne.
+ */
+export function demarrerRattrapageHistorique(raison: string): void {
+  requestBackfill('all');
+  void (async () => {
+    try {
+      const { startJob, hasRunningJob } = await import('./jobs.js');
+      // Un rattrapage déjà en cours finira le travail : le marqueur reste posé
+      // et sera repris tant qu'il subsiste des mails à lire.
+      if (hasRunningJob('snippets')) return;
+      startJob('snippets', async (progress, setMeta) => {
+        setMeta({ scope: 'all', raison });
+        progress(`Lecture de l'historique — ${raison}`);
+        return runBackfillAllAccounts('all', progress);
+      });
+      logger.info('rattrapage historique démarré', { raison });
+    } catch (err) {
+      // Hors serveur (CLI d'enrôlement) : le marqueur fera repartir le travail
+      // au prochain démarrage. Rien n'est perdu.
+      logger.info('rattrapage historique différé au prochain démarrage', {
+        raison,
+        detail: (err as Error).message,
+      });
+    }
+  })();
+}
+
 export function pendingBackfill(): PendingBackfill | null {
   try {
     const path = MARKER();
@@ -865,7 +904,13 @@ export async function runBackfillAllAccounts(
       let remaining = 0;
       for (let round = 0; round < MAX_ROUNDS; round++) {
         progress(`[${name}] lecture des mails — lot ${round + 1}…`);
-        const r = await backfillSnippets(rec, { sinceDays, onProgress: progress });
+        const r = await backfillSnippets(rec, {
+          sinceDays,
+          // 26/08 : les envoyés comptent autant que les reçus pour retrouver
+          // un dossier — c'est la moitié de chaque conversation.
+          outbound: 'include',
+          onProgress: progress,
+        });
         filled += r.filled;
         empty += r.empty;
         intents += r.intentsImproved;
