@@ -1038,6 +1038,41 @@ model EngagementMessage {
 /// crier au loup. Le plafond d'attention (3 à 7 nouveautés par jour) porte sur
 /// l'importance — JAMAIS sur l'urgence : « le plafond protège l'attention,
 /// jamais l'utilisateur contre une information critique ».
+/// CE QU'IL DÉCLARE AVOIR FAIT — et que rien dans les mails ne dira jamais.
+///
+/// Le bouton « ✓ C'est réglé » d'une facture exécutait `messageAction('seen')` :
+/// il marquait le mail LU en laissant croire qu'un paiement était enregistré.
+/// Ce n'est pas un mauvais libellé, c'est une confusion entre un geste
+/// d'interface et un état du monde. Un paiement fait par téléphone, un document
+/// remis en main propre, une signature sur place : rien de tout cela n'arrive
+/// par mail, et rien ne peut le déduire.
+///
+/// D'où cette table. Elle porte un FAIT DÉCLARÉ, horodaté, jamais inféré : la
+/// règle du projet veut que le silence puisse valider un état de FONCTIONNEMENT
+/// de l'assistant (« je surveille », « je ne montre plus »), mais jamais
+/// fabriquer un état du MONDE.
+///
+/// RÉVERSIBLE PAR CONSTRUCTION, comme `Attente.assertionAt` : si un mail
+/// ultérieur contredit la déclaration (« nous n'avons toujours pas reçu votre
+/// règlement »), le fil reprend le dessus et le sujet se rouvre. On ne croit
+/// pas l'utilisateur sur parole contre une preuve.
+model Declaration {
+  id         Int      @id @default(autoincrement())
+  /// Référence SOUPLE (pas de clé étrangère) : l'index des mails est un cache
+  /// reconstructible, la déclaration doit lui survivre — même choix que
+  /// Deadline et Attente.
+  messageId  Int
+  /// pay | provide_document | sign | reply | … — aligné sur VerdictAction.kind,
+  /// pour fermer l'action correspondante et elle seule.
+  kind       String
+  /// Le « pourquoi » facultatif : « payé par virement le 12 », « signé sur
+  /// place ». Jamais exigé — le geste ne doit pas devenir un formulaire.
+  note       String?
+  declaredAt DateTime @default(now())
+
+  @@index([messageId])
+}
+
 /// Trace de ce qui a DÉJÀ été qualifié, pour ne pas resservir sans fin le même
 /// fil à l'IA. On mémorise jusqu'à quel message on a lu : si le correspondant
 /// écrit à nouveau, le fil redevient candidat — c'est ce qui permet de dire

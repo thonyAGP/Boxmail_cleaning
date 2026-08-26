@@ -2166,6 +2166,70 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  /**
+   * « JE L'AI PAYÉE » — un fait déclaré, pas un mail marqué lu.
+   *
+   * Le bouton « ✓ C'est réglé » exécutait `messageAction('seen')` : il marquait
+   * le mail LU en laissant croire qu'un paiement était enregistré. Confusion
+   * entre un geste d'interface et un état du monde. Cette route écrit le fait
+   * lui-même, horodaté, avec son « pourquoi » facultatif.
+   *
+   * DELETE annule : c'est ce qui permet au bandeau « Annuler » de tenir sa
+   * promesse. Rien n'est irréversible.
+   */
+  router.post(
+    '/declarations',
+    guard(async (req, res) => {
+      const messageId = Number.parseInt(String(req.body?.messageId ?? ''), 10);
+      const kind = String(req.body?.kind ?? '').trim();
+      if (!messageId || !kind) {
+        res.status(400).json({ error: 'messageId et kind requis.' });
+        return;
+      }
+      const note = String(req.body?.note ?? '').trim().slice(0, 400) || null;
+      const d = await db.declaration.create({ data: { messageId, kind, note } });
+      const m = await db.message.findUnique({
+        where: { id: messageId },
+        select: { accountSlug: true, subject: true },
+      });
+      await recordOperation({
+        account: m?.accountSlug ?? '?',
+        tool: 'ui_declaration',
+        params: { messageId, kind, note: note ?? undefined, sujet: m?.subject?.slice(0, 120) },
+        result: 'declaree',
+      });
+      res.json({ ok: true, id: d.id });
+    }),
+  );
+
+  router.delete(
+    '/declarations/:id',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      if (!id) {
+        res.status(400).json({ error: 'Identifiant requis.' });
+        return;
+      }
+      const d = await db.declaration.findUnique({ where: { id } });
+      if (!d) {
+        res.json({ ok: true });
+        return;
+      }
+      await db.declaration.delete({ where: { id } });
+      const m = await db.message.findUnique({
+        where: { id: d.messageId },
+        select: { accountSlug: true },
+      });
+      await recordOperation({
+        account: m?.accountSlug ?? '?',
+        tool: 'ui_declaration_undo',
+        params: { messageId: d.messageId, kind: d.kind },
+        result: 'annulee',
+      });
+      res.json({ ok: true });
+    }),
+  );
+
   // ARGENT (26/08) : « qu'ai-je versé à X ? ». Volontairement PAR TIERS et
   // pièce par pièce — un total de portefeuille additionnerait des annonces
   // immobilières, des budgets de copropriété et des pesos chiliens.

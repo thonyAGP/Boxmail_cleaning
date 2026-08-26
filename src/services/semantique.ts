@@ -244,6 +244,7 @@ export interface LignesBrutes {
   sortants: LigneSortant[];
   expediteurs: LigneExpediteur[];
   taches: LigneTache[];
+  declarations: LigneDeclaration[];
   echeances: LigneEcheance[];
   etatsFil: LigneEtatFil[];
 }
@@ -378,6 +379,13 @@ export interface ProtectionNettoyage {
 
 /** Faits observés par le SERVEUR (flags IMAP, fil, tâches) — ni IA ni
  *  heuristique : des constats. Exposés pour les moteurs et la protection. */
+/** Une déclaration de l'utilisateur : « je l'ai payée », « je l'ai signé ». */
+interface LigneDeclaration {
+  messageId: number;
+  kind: string;
+  declaredAt: Date;
+}
+
 export interface SignauxServeur {
   etoile: boolean;
   repondu: boolean;
@@ -387,6 +395,14 @@ export interface SignauxServeur {
   dernierSortantDuFil: Date | null;
   tacheAFaire: boolean;
   tacheFaite: boolean;
+  /**
+   * Ce qu'il a DÉCLARÉ avoir fait sur ce mail, par `kind` d'action. Un
+   * paiement par téléphone, un document remis en main propre : aucun mail ne
+   * le dira jamais, et aucune heuristique ne peut le déduire. Sa parole est
+   * donc la seule source — mais elle reste réversible : un mail ultérieur qui
+   * la contredit reprend le dessus (cf. modèle Declaration).
+   */
+  declare: Set<string>;
   prioriteExpediteur: string | null;
   kindExpediteur: string | null;
 }
@@ -508,6 +524,7 @@ export function resoudre(
     lignes.expediteurs.map((e) => [`${e.accountSlug}\u0000${e.email}`, e]),
   );
   const taches = grouperPar(lignes.taches, (r) => r.messageId);
+  const declarations = grouperPar(lignes.declarations, (r) => r.messageId);
   const echeances = grouperPar(lignes.echeances, (r) => r.messageId);
   const etatsFil = grouperPar(lignes.etatsFil, (r) => r.threadId);
 
@@ -522,6 +539,7 @@ export function resoudre(
     const contextesV = contextes.get(m.id) ?? [];
     const incertitudesV = incertitudes.get(m.id) ?? [];
     const tachesM = taches.get(m.id) ?? [];
+    const declarationsM = declarations.get(m.id) ?? [];
     const echeancesM = echeances.get(m.id) ?? [];
     const fil = m.threadId !== null ? (fils.get(m.threadId) ?? null) : null;
     const dernierSortant = m.threadId !== null ? (sortants.get(m.threadId) ?? null) : null;
@@ -541,6 +559,7 @@ export function resoudre(
       dernierSortantDuFil: dernierSortant,
       tacheAFaire: tachesM.some((x) => x.status === 'todo'),
       tacheFaite: tachesM.some((x) => x.status === 'done'),
+      declare: new Set(declarationsM.map((d) => d.kind)),
       prioriteExpediteur: expediteur?.priority ?? null,
       kindExpediteur: expediteur?.kind ?? null,
     };
@@ -699,6 +718,25 @@ export function resoudre(
 
     const etatsActions: EtatAction[] = faits.actionsDemandees.map((fait) => {
       // 1. MANUEL — l'utilisateur a tranché ou agi. Sa vérité prime.
+      //
+      // 1a. IL L'A DÉCLARÉ FAIT. La seule voie pour ce qui ne laisse aucune
+      // trace dans les mails : un paiement par téléphone, un document remis en
+      // main propre, une signature sur place. Aucune heuristique ne peut le
+      // deviner — et jusqu'ici le bouton « C'est réglé » se contentait de
+      // marquer le mail LU, en laissant croire qu'un paiement était enregistré.
+      //
+      // Fermée sur le `kind` EXACT : déclarer un paiement ne solde pas une
+      // demande de signature portée par le même mail.
+      if (signaux.declare.has(fait.kind)) {
+        return {
+          fait,
+          resteAFaire: false,
+          enRetard: false,
+          horsDelai: false,
+          source: 'manuel',
+          pourquoi: 'tu as déclaré t’en être occupé',
+        };
+      }
       if (signaux.tacheFaite && !signaux.tacheAFaire) {
         return {
           fait,
@@ -1097,9 +1135,16 @@ export async function resolveMailSemanticState(
 
   // --- 12..14) traces utilisateur : tâches, échéances, reports/écartements
   const taches: LigneTache[] = [];
+  const declarations: LigneDeclaration[] = [];
   const echeances: LigneEcheance[] = [];
   const etatsFil: LigneEtatFil[] = [];
   for (const lot of parLots(ids, TAILLE_LOT_SQL)) {
+    declarations.push(
+      ...(await db.declaration.findMany({
+        where: { messageId: { in: lot } },
+        select: { messageId: true, kind: true, declaredAt: true },
+      })),
+    );
     taches.push(
       ...(await db.task.findMany({
         where: { messageId: { in: lot } },
@@ -1150,6 +1195,7 @@ export async function resolveMailSemanticState(
       sortants,
       expediteurs,
       taches,
+      declarations,
       echeances,
       etatsFil,
     },

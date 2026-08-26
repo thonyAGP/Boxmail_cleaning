@@ -369,6 +369,7 @@ const actionDe = (messageId: number, sur: Partial<LigneAction> = {}): LigneActio
 
 const lignes = (sur: Partial<LignesBrutes> = {}): LignesBrutes => ({
   messages: [],
+  declarations: [],
   verdicts: [],
   actions: [],
   evenements: [],
