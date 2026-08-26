@@ -189,52 +189,45 @@ réglés) **ANNULÉ le 19/01/2026** faute de réponse de sa part ; CAPTAIN CONTR
 (direction LB2i) bloqué sur la **signature de Ludovic**, prélèvement de
 294,67 € **rejeté le 13/12/2025**.
 
-**LIVRÉ le 24/08** (détail § 51) — **bruit du multi-mots corrigé** : le contenu
-d'une pièce jointe pesait autant qu'un sujet, d'où des PV d'AG en tête de
-« facture électricité miron » (un PV de 50 pages contient forcément les 3 mots).
-Poids 3→1, concentration sur les champs COURTS seulement. Le tri par défaut
-bascule sur **pertinence dès 2 mots** — sinon le classement ne jouait pas ; le
-sélecteur AFFICHE l'ordre appliqué. **`liaisons.ts` : une facture rejoint son
-logement toute seule.** Mesuré sur 3 fournisseurs : le point commun n'est PAS le
-PDF téléchargeable mais l'IDENTIFIANT, et EDF écrit l'adresse dans le corps (déjà
-en base). Un mail qui donne adresse + identifiant APPREND le lien ; les suivants
-rejoignent par le seul identifiant. Libellé EXIGÉ (« Adresse du logement : »)
-sinon le siège social de chaque expéditeur deviendrait un bien. Branché dans le
-job des extraits ⇒ **automatique pour les mails entrants**. La recherche lit
-enfin les dossiers rattachés (sans quoi tout cela restait invisible). Plus RAPIDE
-qu'avant : pire cas 955 → 422 ms.
+**LIVRÉ le 26/08** (détail § 53) — **la moitié muette réparée**.
+`backfillSnippets` portait `isOutbound: false` EN DUR ⇒ les **8 248 mails
+envoyés n'avaient AUCUN extrait**. Pire : `SNIPPET_WINDOW_DAYS = 90` ⇒ une boîte
+fraîchement enrôlée reste muette sur tout son passé **sans que rien ne le
+signale** (jojo56 : 1 167 lus sur 46 543) — d'où un reçu de **1 347,42 €**
+invisible dans un dossier en cours. Livré : option `outbound`, CLI
+`npm run snippets -- --sent|--tout`, post-sync qui lit les envoyés, **rattrapage
+d'historique déclenché à l'enrôlement**. 18 471 extraits, ~200 mails/min,
+**11 boîtes sur 12 à 100 %** ; jojo56 (49 044) en cours.
 
-**LIVRÉ le 25/08** (détail § 52) — **Précédent/Suivant** dans le lecteur : la
-série est celle d'où l'on vient (cartes du jour, résultats), **FIGÉE à
-l'ouverture** — une action ne renumérote pas le « 2 / 3 » ; suspendue dans une
-branche de contexte. **Date et heure sur les cartes** de la Vue du jour
-(fraîcheur devant : « il y a 2 h »). **En-tête du lecteur sur une ligne**
-(42 px au lieu de 59) : adresse, destinataires et dossier derrière « Détails » ;
-les 2 menus de correction passent sous « Pourquoi ? » (section « Me corriger »).
+**LE PIÈGE À RETENIR** : un mail sans extrait n'est pas « en attente d'analyse »,
+il est **INVISIBLE** (`candidateWhere` exige `snippet != null`). Le cowork affiche
+donc « tout est jugé » en n'ayant vu que 29 % des mails — toujours vérifier la
+COUVERTURE, jamais conclure d'un vivier vide.
 
-⚠️ **Mesuré le 25/08, hors chantier** : la recherche « facture » met **3,6 s**
-depuis la réécriture multi-mots (§ 50-51) — c'était ~300 ms au § 46.
+**Cowork** (`trig_01SLhekXbwP85yQTnP32Aaof`) : plafond de 4 sous-agents remplacé
+par une boucle bornée au TEMPS (`date +%s`, coupure à 3 000 s pour ne pas
+chevaucher H+17).
+
+**Écran « 💶 Où est passé mon argent »** (`argent.ts`, `#/argent`) : par TIERS,
+pièce par pièce, par devise. **JAMAIS de total de portefeuille** — le haut du
+classement mêle annonces immobilières (château à 2,68 M€), budgets de copropriété
+et **pesos chiliens**. Complétude affichée sous chaque total. Les montants
+existaient DÉJÀ (`VerdictDocument` : 2 593 chiffrés) ; il manquait l'affichage.
+Son retour : « bonne ébauche ».
 
 **À faire** :
-- **Étape 2 des liaisons** : rattachement par EXPÉDITEUR quand aucun identifiant
-  n'accroche. **Étape 3** : télécharger le PDF (cas bellenergie, lien signé
-  direct vérifié) — garde-fous définis, seulement si 1-2 laissent un trou réel.
-- **Couverture des liaisons non mesurée** : 3 fournisseurs ne font pas une
-  statistique. Un recensement sur les 858 factures dirait la proportion réelle.
-- **Passe 3 de la recherche** : la couche « phrase » — dates (« l'an dernier »),
-  pièce jointe, types de documents devenant des filtres visibles et retirables.
-  Périmètre étroit, aucune « compréhension » simulée.
-- **Écart accentué résiduel** : le corps des mails n'est pas déplié (mesuré :
-  l'étendre coûterait +71 % de base et doublerait la recherche). `npm run
-  banc:search` SUR LE SERVEUR chiffre l'écart réel — à trancher avec lui.
-- **Extraits des mails ENVOYÉS** (6 246, aucun) — verrou pour la détection
-  automatique des affaires ET pour savoir ce qu'il a déjà demandé.
-- Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats) sans
-  créer de dossier ; écran des doublons de pièces. Matière DÉJÀ extraite au
-  17/08 : 858 factures, 546 reçus, 481 devis, 348 relevés, 282 contrats.
-- Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
-- Fiscal-Manager : confirmer le premier pull réel ; puis frais Jump,
-  CasaSync/livret.
-- Stratégies de rétention : à n'activer QU'AVEC lui.
-- **Boîtes à enrôler** : jojo56, techni-soft ×2, location-miron (cette dernière
-  cherchée le 23/08 : « miron » absent des INBOX Location_Brest et Brimmo).
+- **Suite de l'écran argent** (son retour attendu) : ne montre que les pièces
+  CHIFFRÉES (5 lignes sur 61 mails Legalfree) ; les SILENCES ne sont pas
+  signalés ; un tiers n'est pas un dossier (ECONOM/BRIMMO/ALTOEN = 3 sociétés).
+- **Détecteurs, cœur de la valeur** (§ 53) : *payé sans livrable* · *promesse non
+  tenue* · *ma question restée sans réponse*.
+- Fin du rattrapage jojo56 ⇒ ~45 000 mails deviendront analysables (~2 semaines
+  de cowork).
+- Vue documentaire ; doublons de pièces ; étape 2 des liaisons (par EXPÉDITEUR) ;
+  passe 3 de la recherche ; lot 6 ; Fiscal-Manager ; rétention (QU'AVEC lui).
+
+**Dossier LEGALFREE** (synthèse du 26/08, mail envoyé) : apport BRIMMO + ALTOEN à
+ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au greffe**. Dossier
+annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le 26/02. Deux
+devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 € (démission de
+gérance de son frère François Jean).

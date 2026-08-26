@@ -5,6 +5,83 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 26/08 (53) — La moitié muette : 8 248 mails envoyés sans un mot de contenu
+
+Parti d'une demande de synthèse (le dossier Legalfree, 14 mois, 2 478,68 € versés),
+la session a mis au jour un trou structurel et l'a comblé.
+
+**Le déclencheur.** Reconstituer le dossier a exigé d'ouvrir les mails un par un
+en IMAP. Motif : `backfillSnippets` portait `isOutbound: false` EN DUR — les
+8 248 mails envoyés n'avaient donc aucun extrait, soit 100 %. Or la moitié d'une
+conversation est ce que l'utilisateur a lui-même demandé, promis ou contesté :
+ses trois questions du 5 novembre (capital à 100 000 €, comptes courants,
+groupement des formalités) étaient introuvables, comme sa relance du 18 novembre
+(« C'est fou quand même de ne jamais avoir de retour à mes nombreux mails »).
+
+**Le second trou, plus grave.** `SNIPPET_WINDOW_DAYS = 90` : le rattrapage qui
+suit chaque sync ne lit que les 90 derniers jours, 150 mails à la fois. Une boîte
+fraîchement enrôlée restait donc muette sur tout son passé, SANS QUE RIEN NE LE
+SIGNALE. Mesuré sur les 4 boîtes ajoutées le 25/08 : jojo56 exposait 1 167 de ses
+46 543 mails (2,5 %), techni-soft 26 sur 4 750. Conséquence concrète : un reçu de
+**1 347,42 €** invisible dans un dossier en cours — le total « payé » qu'on
+croyait exact (1 131,26 €) était faux de plus de moitié.
+
+**Et le moteur d'analyse tournait à vide en le croyant fini** : 20 468 mails jugés
+sur 20 469 « analysables »… mais 71 298 reçus au total. `candidateWhere` exige
+`snippet != null` : un mail sans texte n'est pas en attente, il est INVISIBLE.
+Le cowork ne dure que 4 minutes parce qu'il n'a rien à juger, pas parce qu'il
+échoue. Ses 6 tools ne peuvent pas fabriquer d'extraits — le maillon manquait
+côté serveur, pas côté prompt.
+
+**Livré** : option `outbound` sur `backfillSnippets` ('exclude' par défaut, donc
+rien ne change ailleurs ; le vivier d'analyse reste sur les entrants) · CLI
+reprenable `npm run snippets -- --sent|--tout [-a Boîte]` · le post-sync capture
+désormais les envoyés (sinon le trou se recreuse à chaque mail écrit) ·
+`demarrerRattrapageHistorique` déclenché à la PREMIÈRE arrivée d'un compte
+(un ré-enrôlement ne relance rien ; le refresh de token ne passe pas par là).
+
+**Résultat mesuré** : 18 471 extraits capturés en trois passes (1 425 mails en
+14,6 min, 6 789 en 80,4 min, 10 886 en 55,3 min — ~200 mails/min). **11 boîtes
+sur 12 à 100 %**, dont thony56_gtr (15 866) et techni-soft (0,5 % → 100 %).
+jojo56 et ses 49 044 mails tournent encore.
+
+**Cowork** : plafond de 4 sous-agents remplacé par une boucle bornée au TEMPS —
+relevé `date +%s`, enchaînement sans limite de nombre tant que « etat=ok »,
+coupure impérative à 3 000 s pour ne pas chevaucher le passage de H+17.
+
+**Écran « 💶 Où est passé mon argent »** — et deux erreurs de conception rattrapées
+par la mesure, comme le veut la règle maison :
+
+1. *« Les montants ne sont pas une donnée »* : FAUX. `VerdictDocument` en
+   contenait déjà 4 923, dont 2 593 chiffrés. Le manque était l'affichage.
+2. *Un tableau de bord financier global* : impossible. Vérifié pièce par pièce,
+   le haut du classement contient des annonces immobilières (château à
+   2 680 000 €), des budgets de copropriété (756 605,61 € Foncia), des pesos
+   chiliens (928 054 CLP — la devise EST renseignée, c'était l'agrégat qui
+   fautait) et une erreur de lecture (1 654 320 extrait « 654 320 »). D'où le
+   parti pris : PAR TIERS, pièce par pièce, groupé par devise, jamais de total
+   de portefeuille.
+3. *La complétude* : première version muette là où il fallait parler — elle ne
+   regardait que les boîtes ayant rendu une pièce, donc pas jojo56 lue à 6 %,
+   précisément parce qu'une boîte aveugle ne rend rien. C'était le piège
+   Legalfree reproduit. Corrigée : elle porte sur toutes les boîtes et affiche
+   « lecture INCOMPLÈTE : 44 176 mails ne sont pas encore lus ».
+
+**Deux pièges de test à retenir.** (a) Ma sonde de session cherchait
+`input[type="password"]` : or `#login-view` reste dans le DOM une fois connecté,
+seulement masqué — le test a donc affirmé « pas connecté » pendant 18 minutes
+alors qu'Anthony l'était. Tester la VISIBILITÉ de `#app-view`, pas la présence
+d'un nœud. (b) L'erreur console `blocked://files.stripe.com` n'est pas un défaut :
+c'est le bloqueur de mouchards qui fonctionne. Isolée par un test dédié —
+0 erreur au chargement, 0 après recherche, 1 seule après ouverture du lecteur.
+
+**Son retour** : « c'est une bonne ébauche ». Limites identifiées (à confirmer
+avec lui) : l'écran ne montre que les pièces CHIFFRÉES — 5 lignes sur les 61
+mails du dossier Legalfree, donc sans les mails qui font le récit ; la
+chronologie ne signale pas les silences (6 mois entre février et août) ; et un
+tiers n'est pas un dossier — l'opération ECONOM/BRIMMO/ALTOEN traverse trois
+sociétés et trois boîtes.
+
 ## 25/08 (52) — Précédent/Suivant, la date dans les cartes, un en-tête qui se tait
 
 Trois demandes, dans la continuité du § 49 — les deux dernières venaient de la
