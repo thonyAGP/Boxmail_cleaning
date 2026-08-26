@@ -142,7 +142,20 @@ export async function suivi(): Promise<Suivi> {
   const toutes = brut.map((a) => vue(a as unknown as Record<string, unknown>));
 
   // 1. L'urgent, hors quota et sans distinction de côté.
-  const urgences = toutes.filter((a) => a.urgence === 'critique' || !!a.risque).sort(trier);
+  //
+  // ⚠️ UN RISQUE NOMMÉ NE FAIT PAS UNE URGENCE À LUI SEUL (corrigé le 26/08).
+  // La règle était `urgence === 'critique' || !!risque`. Elle tenait tant que
+  // les attentes étaient écrites à la main et que `risque` restait réservé au
+  // vrai danger. Dès que la boucle de qualification en a produit en série, la
+  // rubrique a débordé : 11 « urgences » sur 19 attentes, dont une classée
+  // « faible/faible » — le cabinet Marcelin, un contrat de travail de 2022.
+  //
+  // Or cette rubrique est la seule qui échappe au budget d'attention : la
+  // noyer, c'est supprimer la notion même d'urgence. Un risque n'élève donc
+  // que ce qui était déjà jugé au moins « haute ».
+  const urgences = toutes
+    .filter((a) => a.urgence === 'critique' || (!!a.risque && a.urgence === 'haute'))
+    .sort(trier);
   const reste = toutes.filter((a) => !urgences.includes(a));
 
   // 2. Le reste, séparé par côté puis borné par le budget d'attention.

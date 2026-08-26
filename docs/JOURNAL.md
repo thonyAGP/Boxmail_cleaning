@@ -103,10 +103,44 @@ locked » rencontré pendant la migration venait d'un CLI **séparé** (le
 rattrapage des extraits de jojo56), coupé puis relancé — il reprend où il en
 était.
 
+### Ce que la première vague a révélé
+
+**Sept doublons sur 26 attentes.** L'idempotence portait sur `threadId`, or les
+14 attentes de l'audit n'en ont pas : la boucle les a recréées. Le rapprochement
+exige désormais trois signaux concordants — même compte, même côté, un mot
+distinctif commun sur le correspondant ET deux sur l'objet, *ou* la même
+échéance. Ce dernier critère a été ajouté sur le doublon qu'il ne fallait pas
+manquer : les **deux seules urgences critiques de l'écran étaient la même dette
+URSSAF**, et elles ne partagent que le mot « urssaf ». Garde-fou vérifié sur
+données réelles : les deux attentes Comptastar (le bilan 2025, le juriste pour
+l'AG) partagent « comptastar » et « econom » et restent bien séparées.
+`npm run attentes:dedoublonner` rejoue la règle sur l'existant.
+
+En rapprochant, l'urgence, l'importance et le risque prennent **le maximum des
+deux** : mesuré dans les deux sens — l'audit voyait Zanitti « haute » quand la
+relecture disait « faible », et l'inverse sur Comptastar.
+
+**La rubrique « urgences » débordait.** Sa règle était `urgence === 'critique'
+|| !!risque` — tenable tant que `risque` restait rare et écrit à la main.
+Produit en série, il a fait remonter **11 urgences sur 19**, dont une
+« faible/faible » (un contrat de travail de 2022). Or c'est la seule rubrique
+qui échappe au budget d'attention : la noyer supprime la notion même d'urgence.
+Un risque n'élève désormais que ce qui était déjà jugé « haute ». Résultat
+mesuré : 6 urgences, toutes légitimes ; l'écran affiche 12 cartes, 4 en réserve.
+
+**La tâche s'arrêtait trop tôt.** Première exécution : arrêt après deux
+sous-agents — 48 dossiers, exactement 2 × 24, le plafond d'un sous-agent —
+alors qu'il restait 257 dossiers et 35 minutes. Six jours de rattrapage au lieu
+d'un et demi. Il manquait la phrase que le cowork d'analyse martèle :
+« N'ARRÊTE JAMAIS LA BOUCLE AVANT LA LIMITE DE TEMPS tant que les sous-agents
+rapportent etat=ok ».
+
 ### Reste à faire
 
-- **Mesurer ce que la boucle produit** sur le stock de 303 : proportion
-  d'attentes réelles, et surtout la qualité des `pourquoi` affichés.
+- **Vérifier l'écran au navigateur** : les corrections de classement ont été
+  mesurées par le service qui l'alimente, pas par un clic.
+- **Mesurer la boucle sur la suite du stock** (258 dossiers restants) :
+  proportion d'attentes réelles, et surtout la qualité des `pourquoi` affichés.
 - L'écran `#/suivi` n'a pas été retouché : il affiche les attentes quelle que
   soit leur source. À revoir quand le volume aura augmenté (le budget
   d'attention est à 7 ordinaires par jour).
