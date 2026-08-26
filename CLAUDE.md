@@ -96,6 +96,11 @@ garantie « 0 mail personnel » dans toutes les stratégies de nettoyage.
   sur une seule boîte est une coïncidence.
 - **On ne migre JAMAIS la base pendant que l'app sert** (database is locked) —
   update.ts/autoupdate.ts font `db:generate` seulement ; migrations au boot.
+  Et **le NOM du dossier de migration EST son identité** dans l'historique
+  Prisma : l'appliquer sous un nom provisoire puis committer sous un autre fait
+  échouer le boot (`duplicate column`) et coupe le serveur — constaté le 26/08.
+  Réparation : `DATABASE_URL="file:../data/boxmail.db" npx prisma migrate
+  resolve --applied <nom_du_depot>`.
 - **Chronométrer avant d'optimiser** ; vérifier qu'un constat d'audit atteint
   réellement l'écran avant de le juger grave.
 - Sur le serveur : `npm run audit -- --out logs` (écrire dans `docs/` ferait
