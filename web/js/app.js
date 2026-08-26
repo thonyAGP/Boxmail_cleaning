@@ -690,6 +690,8 @@ function route() {
     renderRules();
   } else if (hash.startsWith('#/affaires')) {
     renderAffaires();
+  } else if (hash.startsWith('#/suivi')) {
+    renderSuivi();
   } else if (hash.startsWith('#/argent')) {
     renderArgent();
   } else if (hash.startsWith('#/dossiers')) {
@@ -6204,6 +6206,156 @@ function modaleBrouillon(br, a) {
       $('#br-copy').textContent = 'Sélectionné — Ctrl+C';
     }
   });
+}
+
+/* ==========================================================================
+   🔭 SUIVI — ce qui est attendu, de moi ou d'eux.
+
+   Ni une boîte de réception, ni une todo-list. « Une todo-list dit : 37 tâches
+   restantes. Ce produit doit dire : voici ce qui mérite ton attention
+   maintenant. »
+
+   Deux règles portent tout l'écran :
+   · l'URGENT n'est jamais plafonné — un plafond protège l'attention, jamais
+     l'utilisateur contre une information critique ;
+   · chaque carte propose une ACTION, pas seulement un constat. Sans passage
+     immédiat de la détection à l'action, on fabrique un très bon tableau de
+     culpabilité que l'utilisateur referme.
+   ========================================================================== */
+
+const ATT_URGENCE = {
+  critique: { pastille: '🔴', mot: 'Urgent' },
+  haute: { pastille: '🟠', mot: 'Bientôt' },
+  moyenne: { pastille: '🟡', mot: '' },
+  faible: { pastille: '', mot: '' },
+};
+
+function attDelai(a) {
+  if (a.dansJours === null) return '';
+  if (a.dansJours < -400) return `il y a ${Math.round(-a.dansJours / 365)} an(s)`;
+  if (a.dansJours < -60) return `il y a ${Math.round(-a.dansJours / 30)} mois`;
+  if (a.dansJours < 0) return `il y a ${-a.dansJours} jour${a.dansJours < -1 ? 's' : ''}`;
+  if (a.dansJours === 0) return "aujourd'hui";
+  if (a.dansJours <= 31) return `dans ${a.dansJours} jour${a.dansJours > 1 ? 's' : ''}`;
+  return `dans ${Math.round(a.dansJours / 30)} mois`;
+}
+
+function carteAttente(a) {
+  const u = ATT_URGENCE[a.urgence] ?? ATT_URGENCE.faible;
+  const delai = attDelai(a);
+  const montant = a.montant
+    ? `<span class="att-montant">${a.montant.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${esc(a.devise === 'EUR' ? '€' : a.devise || '')}</span>`
+    : '';
+  const principale = a.actions.find((x) => x.principale);
+  const autres = a.actions.filter((x) => !x.principale && x.code === 'voir');
+  const discrets = a.actions.filter((x) => x.code === 'regle' || x.code === 'ecarter');
+
+  return `<article class="att-carte ${a.urgence === 'critique' ? 'att-critique' : ''}" data-att="${a.id}">
+    <header class="att-tete">
+      <div class="att-qui">${u.pastille} ${esc(a.qui)}</div>
+      ${delai ? `<div class="att-delai">${esc(delai)}</div>` : ''}
+    </header>
+    <div class="att-quoi">${esc(a.quoi)} ${montant}</div>
+    ${a.risque ? `<div class="att-risque">⚖️ ${esc(a.risque)}</div>` : ''}
+    <p class="att-pourquoi">${esc(a.pourquoi)}</p>
+    <footer class="att-actions">
+      ${principale ? `<button class="btn btn-primary btn-sm" data-act="${principale.code}">${esc(principale.libelle)}</button>` : ''}
+      ${autres.map((x) => `<button class="btn btn-sm" data-act="${x.code}">${esc(x.libelle)}</button>`).join('')}
+      <span class="att-discret">${discrets
+        .map((x) => `<button class="att-lien" data-act="${x.code}">${esc(x.libelle)}</button>`)
+        .join('')}</span>
+    </footer>
+  </article>`;
+}
+
+function sectionAttentes(titre, sous, liste, vide) {
+  if (!liste.length) return vide ? `<div class="att-section"><h2>${titre}</h2><div class="empty">${vide}</div></div>` : '';
+  return `<div class="att-section">
+    <h2>${titre} <span class="badge">${liste.length}</span></h2>
+    ${sous ? `<div class="att-sous">${sous}</div>` : ''}
+    <div class="att-grille">${liste.map(carteAttente).join('')}</div>
+  </div>`;
+}
+
+async function renderSuivi() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🔭 Ce qui est attendu</h1>
+      <div class="sub">Ce que tu dois à quelqu'un, et ce que quelqu'un te doit. Rien n'est rangé,
+      rien n'est supprimé : c'est un suivi, pas une boîte de réception.</div></div>
+    <div class="head-actions"><button class="btn" id="att-refresh">↻ Actualiser</button></div></div>
+    <div id="att-body"><div class="empty"><span class="spinner"></span>Lecture du suivi…</div></div>`;
+  $('#att-refresh').addEventListener('click', chargerSuivi);
+  await chargerSuivi();
+}
+
+async function chargerSuivi() {
+  const body = $('#att-body');
+  if (!body) return;
+  let d;
+  try {
+    d = await api.attentes();
+  } catch (err) {
+    body.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!body.isConnected) return;
+
+  if (!d.compteurs.total) {
+    body.innerHTML = `<div class="empty">Rien en attente. 🎉 Les attentes apparaissent quand
+      l'assistant repère qu'une transition prévue n'a pas eu lieu — une réponse promise, un
+      document annoncé, une signature qui manque.</div>`;
+    return;
+  }
+
+  const urg = d.urgences.length;
+  const bandeau = urg
+    ? `<div class="notice warn att-bandeau">⚖️ <strong>${urg} sujet${urg > 1 ? 's' : ''}</strong>
+       ${urg > 1 ? 'présentent' : 'présente'} un risque juridique ou réglementaire identifié.
+       ${d.urgences.filter((a) => (a.dansJours ?? 99) <= 30 && (a.dansJours ?? 99) >= -5).length
+         ? "Dont au moins un avec une échéance proche."
+         : ''}</div>`
+    : '';
+
+  body.innerHTML = `
+    ${bandeau}
+    ${sectionAttentes('À surveiller', 'Ces sujets ne sont pas plafonnés : attendre peut coûter un droit ou une pénalité.', d.urgences)}
+    ${sectionAttentes('Ce qui attend ton action', '', d.aToi)}
+    ${sectionAttentes('Les réponses que tu attends', '', d.tuAttends)}
+    ${d.retrouve.length
+      ? `<details class="att-stock"><summary>J'ai aussi retrouvé ${d.retrouve.length} sujet(s) plus anciens qui semblent restés en plan</summary>
+         <div class="att-grille">${d.retrouve.map(carteAttente).join('')}</div></details>`
+      : ''}
+    ${d.enReserve
+      ? `<div class="att-reserve">${d.enReserve} autre(s) sujet(s) attendent leur tour — ils remonteront
+         au fil des jours plutôt que de tout afficher d'un coup.</div>`
+      : ''}`;
+
+  body.querySelectorAll('[data-att]').forEach((carte) => {
+    const id = Number(carte.dataset.att);
+    carte.querySelectorAll('[data-act]').forEach((b) =>
+      b.addEventListener('click', () => gesteAttente(id, b.dataset.act, carte)),
+    );
+  });
+}
+
+async function gesteAttente(id, code, carte) {
+  if (code === 'regle' || code === 'ecarter') {
+    try {
+      await api.attenteGeste(id, code);
+      carte.classList.add('att-partie');
+      setTimeout(chargerSuivi, 400);
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+  // Les autres gestes ouvrent l'histoire ; la rédaction du brouillon et
+  // l'ouverture du document arrivent à l'étape suivante.
+  alert(
+    "Cette action arrive à la prochaine étape : elle ouvrira l'histoire complète du sujet, " +
+      "avec le brouillon déjà rédigé quand il s'agit de relancer.",
+  );
 }
 
 /* ==========================================================================

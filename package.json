@@ -22,6 +22,7 @@
     "snippets": "tsx src/cli/snippets.ts",
     "anomalies": "tsx src/cli/anomalies.ts",
     "audit:export": "tsx src/cli/audit-export.ts",
+    "attentes:seed": "tsx src/cli/attentes-seed.ts",
     "audit": "tsx src/cli/audit.ts",
     "banc": "tsx src/cli/banc.ts",
     "banc:search": "tsx src/cli/banc-search.ts",

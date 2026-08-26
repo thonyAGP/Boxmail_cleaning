@@ -1309,3 +1309,51 @@ th.sortable:hover { color: var(--primary); }
   .arg-kind, .arg-boite { grid-column: 2; }
   .arg-montant { text-align: left; }
 }
+
+/* ==========================================================================
+   🔭 Ce qui est attendu (26/08). Tout préfixé `att-` : aucun sélecteur global.
+   La carte doit tenir en quatre informations — qui, quoi, pourquoi, quand —
+   et proposer une action, jamais seulement un constat.
+   ========================================================================== */
+.att-bandeau { margin-bottom: 18px; }
+.att-section { margin: 26px 0; }
+.att-section h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+.att-sous { color: var(--muted, #8a94a6); font-size: 13px; margin-bottom: 12px; }
+.att-grille { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+
+.att-carte {
+  border: 1px solid var(--line, #2a3242); border-radius: 12px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  transition: opacity .3s ease, transform .3s ease;
+}
+.att-carte.att-critique { border-color: #b8484f; box-shadow: inset 3px 0 0 #b8484f; }
+.att-partie { opacity: 0; transform: translateX(20px); }
+
+.att-tete { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.att-qui { font-weight: 600; font-size: 14px; }
+.att-delai { font-size: 12px; opacity: .6; white-space: nowrap; }
+.att-quoi { font-size: 15px; line-height: 1.35; }
+.att-montant { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.att-risque { font-size: 12.5px; color: #e5b567; }
+.att-pourquoi { margin: 0; font-size: 13px; line-height: 1.5; opacity: .8; }
+
+.att-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+/* Les gestes d'effacement restent en retrait : ils sont FACULTATIFS, le
+   système doit tourner si l'utilisateur n'y touche jamais. */
+.att-discret { margin-left: auto; display: flex; gap: 12px; }
+.att-lien {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--muted, #8a94a6); font-size: 12px; text-decoration: underline dotted;
+}
+.att-lien:hover { color: inherit; }
+
+.att-stock { margin-top: 28px; }
+.att-stock summary { cursor: pointer; color: var(--muted, #8a94a6); font-size: 14px; padding: 8px 0; }
+.att-stock summary:hover { color: inherit; }
+.att-stock .att-grille { margin-top: 12px; }
+.att-reserve { margin-top: 18px; font-size: 12.5px; opacity: .55; }
+
+@media (max-width: 700px) {
+  .att-grille { grid-template-columns: 1fr; }
+  .att-discret { margin-left: 0; width: 100%; }
+}

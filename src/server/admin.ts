@@ -75,6 +75,7 @@ import { find, TRIS, type TriRecherche } from '../services/find.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance, contexteDuMail } from '../services/correspondance.js';
 import { tiersConnus, suivreTiers } from '../services/argent.js';
+import { suivi, marquer, type Geste } from '../services/attentes.js';
 import {
   listerDossiers,
   propager,
@@ -2121,6 +2122,33 @@ export function buildAdminRouter(): Router {
       } catch (e) {
         res.status(404).json({ error: e instanceof Error ? e.message : 'Brouillon impossible.' });
       }
+    }),
+  );
+
+  // ATTENTES (26/08) : ce qui est attendu, de lui ou d'eux. L'objet central du
+  // suivi — « les cas les plus précieux ne sont pas des mails importants, ce
+  // sont des transitions attendues qui n'ont jamais eu lieu ».
+  router.get(
+    '/attentes',
+    guard(async (_req, res) => {
+      res.json(await suivi());
+    }),
+  );
+
+  // Le geste de l'utilisateur est une PREUVE facultative, jamais un entretien
+  // exigé : il apporte ce que le système ne pouvait pas observer (un paiement
+  // par téléphone). Réversible.
+  router.post(
+    '/attentes/:id',
+    guard(async (req, res) => {
+      const id = Number.parseInt(String(req.params.id), 10);
+      const geste = String(req.body?.geste ?? '');
+      if (!id || !['regle', 'ecarter', 'rouvrir'].includes(geste)) {
+        res.status(400).json({ error: 'Geste inconnu.' });
+        return;
+      }
+      await marquer(id, geste as Geste);
+      res.json({ ok: true });
     }),
   );
 

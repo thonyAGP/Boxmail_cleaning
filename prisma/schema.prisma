@@ -15,12 +15,12 @@ datasource db {
 
 // Miroir métier d'un compte enrôlé (les tokens restent dans accounts.json).
 model Account {
-  slug         String    @id
-  emailAddress String
-  displayName  String?
+  slug            String    @id
+  emailAddress    String
+  displayName     String?
   // Couleur d'affichage choisie par l'utilisateur (hex #rrggbb — L5.8) ;
   // null = couleur automatique de la palette côté interface.
-  color        String?
+  color           String?
   // Quota IMAP de la boîte (RFC 2087, rafraîchi à chaque sync — L5.18) ;
   // null si le serveur ne l'expose pas.
   quotaUsedBytes  BigInt?
@@ -29,14 +29,14 @@ model Account {
   // en français quand la capacité reste inconnue (capacité QUOTA absente,
   // commande en échec…). Sans cela, « quota inconnu » était indiagnosticable
   // depuis l'interface (retour utilisateur 01/08).
-  quotaCheckedAt DateTime?
-  quotaNote      String?
+  quotaCheckedAt  DateTime?
+  quotaNote       String?
   // Ordre d'affichage choisi par l'utilisateur (0 = premier). Les listes de
   // comptes (barre latérale, tableaux, sélecteurs) suivent cet ordre.
-  sortOrder    Int       @default(0)
-  lastSyncAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  sortOrder       Int       @default(0)
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   folders         Folder[]
   messages        Message[]
@@ -48,17 +48,17 @@ model Account {
 }
 
 model Folder {
-  id          Int       @id @default(autoincrement())
-  accountSlug String
-  path        String
-  name        String
-  delimiter   String?
+  id           Int       @id @default(autoincrement())
+  accountSlug  String
+  path         String
+  name         String
+  delimiter    String?
   // inbox | sent | trash | archive | spam | drafts | custom
-  role        String    @default("custom")
-  uidValidity BigInt?
-  lastUidSeen Int       @default(0)
-  messageCount Int      @default(0)
-  unseenCount  Int      @default(0)
+  role         String    @default("custom")
+  uidValidity  BigInt?
+  lastUidSeen  Int       @default(0)
+  messageCount Int       @default(0)
+  unseenCount  Int       @default(0)
   lastSyncedAt DateTime?
 
   account  Account   @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
@@ -68,40 +68,40 @@ model Folder {
 }
 
 model Message {
-  id                 Int       @id @default(autoincrement())
-  accountSlug        String
-  folderId           Int
-  uid                Int
-  internetMessageId  String?
-  inReplyTo          String?
-  threadId           Int?
-  subject            String?
-  normalizedSubject  String?
-  fromName           String?
-  fromEmail          String? // minuscules
-  toEmails           String? // JSON string (SQLite n'a pas de type Json natif)
-  date               DateTime?
-  isSeen             Boolean   @default(false)
-  isAnswered         Boolean   @default(false)
-  isFlagged          Boolean   @default(false)
+  id                       Int                 @id @default(autoincrement())
+  accountSlug              String
+  folderId                 Int
+  uid                      Int
+  internetMessageId        String?
+  inReplyTo                String?
+  threadId                 Int?
+  subject                  String?
+  normalizedSubject        String?
+  fromName                 String?
+  fromEmail                String? // minuscules
+  toEmails                 String? // JSON string (SQLite n'a pas de type Json natif)
+  date                     DateTime?
+  isSeen                   Boolean             @default(false)
+  isAnswered               Boolean             @default(false)
+  isFlagged                Boolean             @default(false)
   // Réponse AUTOMATIQUE (répondeur, absence du bureau) — détectée sur le sujet.
   // Bug réel 02/08 : un répondeur arrivé 1 min après la réponse de l'utilisateur
   // remettait le fil dans « À répondre » ET le masquait dans « À relancer ».
   // Ces mails ne comptent ni comme « attend ta réponse » ni comme « réponse reçue ».
-  isAutoReply        Boolean   @default(false)
+  isAutoReply              Boolean             @default(false)
   // Dépouillement (cycle « décision prise », indépendant de lu/non-lu) :
   // null = aucune décision ; sinon date + décision (range/keep/read/action/later…).
-  reviewedAt         DateTime?
-  reviewDecision     String?
+  reviewedAt               DateTime?
+  reviewDecision           String?
   // true si envoyé par le compte lui-même (fromEmail == adresse du compte)
-  isOutbound         Boolean   @default(false)
-  sizeBytes          Int       @default(0)
-  hasListUnsubscribe Boolean   @default(false)
+  isOutbound               Boolean             @default(false)
+  sizeBytes                Int                 @default(0)
+  hasListUnsubscribe       Boolean             @default(false)
   // Pièces jointes (L5.9) — rempli à la sync via bodyStructure. Les mails
   // indexés AVANT cette version restent à false tant qu'ils ne sont pas
   // resynchronisés à neuf (l'info n'est pas rejouée sur l'existant).
-  hasAttachments     Boolean   @default(false)
-  attachmentCount    Int       @default(0)
+  hasAttachments           Boolean             @default(false)
+  attachmentCount          Int                 @default(0)
   // NOMS des pièces jointes, séparés par des retours à la ligne (11/08).
   // La sync lit déjà le bodyStructure pour compter les pièces : le nom était
   // là et on le jetait. C'est la clé de « retrouver sans classer » — on
@@ -109,7 +109,7 @@ model Message {
   // fichier, même quand le sujet du mail ne dit rien.
   // null = jamais capturé (mails indexés avant cette version) ; le job
   // « noms des pièces » les rattrape sans télécharger aucune pièce.
-  attachmentNames    String?
+  attachmentNames          String?
   // Fiche des pièces : JSON [{ n: nom, s: taille en octets }] (11/08).
   // La taille exacte vient de la même lecture de structure que les noms — elle
   // ne coûte rien de plus. Elle sert à repérer les DOUBLONS sans se tromper :
@@ -117,17 +117,17 @@ model Message {
   // nom AVEC la même taille au octet près, c'est le même fichier.
   // Séparée de `attachmentNames` pour que la recherche continue de porter sur
   // des noms propres, sans tomber sur des chiffres de taille.
-  attachmentMeta     String?
-  dossiers           DossierMessage[]
-  engagements        EngagementMessage[]
+  attachmentMeta           String?
+  dossiers                 DossierMessage[]
+  engagements              EngagementMessage[]
   // Extrait du texte du mail (C1) : ~500 caractères, texte cité retiré.
   // Rempli par le job « extraits » (services/snippets.ts) — une descente IMAP
   // qui ne télécharge QUE la partie texte, jamais les pièces jointes. C'est le
   // pré-requis de toute analyse de CONTENU : sans lui, ni les heuristiques ni
   // l'IA ne voient autre chose que le sujet.
   // null = jamais capturé (mails indexés avant cette version).
-  snippet            String?
-  snippetAt          DateTime?
+  snippet                  String?
+  snippetAt                DateTime?
   // Texte préparé POUR L'ANALYSE (11/08) : ~2 200 caractères SÉLECTIONNÉS,
   // structure en paragraphes conservée, passages sautés signalés par « […] ».
   //
@@ -141,10 +141,10 @@ model Message {
   // nous retourner le document signé avant le 30 »), et un mail d'agence
   // commence par trois paragraphes de politesse. À 500 caractères aplatis, on
   // gardait le préambule et on jetait la demande.
-  analysisInput      String?
+  analysisInput            String?
   // Version de ce qu'on a ENVOYÉ. Distincte du schéma du verdict et des
   // consignes : c'est ce triplet qui permet de choisir quoi relire.
-  analysisInputVersion String?
+  analysisInputVersion     String?
   // Verdict de l'analyse IA (C2). CHOIX STRUCTURANT : l'IA n'écrit pas dans un
   // monde parallèle — elle renseigne AUSSI les champs existants (intent,
   // analysisConfidence, et la catégorie de l'expéditeur), pour que « Aujourd'hui »,
@@ -158,13 +158,13 @@ model Message {
   // aucun téléchargement conservé.
   // attachmentKind : text (lu) | scan (image/PDF scanné → à lire par l'IA) |
   // other (format non géré) ; null = jamais tenté.
-  attachmentText     String?
-  attachmentKind     String?
-  attachmentTextAt   DateTime?
+  attachmentText           String?
+  attachmentKind           String?
+  attachmentTextAt         DateTime?
   // Provenance du texte des pièces (13/08) : 'ocr' = lu par tesseract sur un
   // scan, null = couche texte native du document. Un montant OCRisé n'a PAS la
   // fiabilité d'une couche texte — l'aval doit pouvoir le dire.
-  attachmentTextSource String?
+  attachmentTextSource     String?
   // Idempotence du job OCR (13/08). Posés après CHAQUE tentative ABOUTIE
   // (texte lisible OU charabia — dans ce cas kind reste 'scan'), JAMAIS sur
   // erreur technique (timeout, IMAP) pour que le mail soit repris plus tard.
@@ -172,9 +172,9 @@ model Message {
   // les langues ou les seuils = incrémenter la constante, et les scans déjà
   // tentés redeviennent éligibles d'eux-mêmes. Distincts d'attachmentTextAt
   // (première extraction, posée aussi sur les scans).
-  ocrAt              DateTime?
-  ocrVersion         Int?
-  aiSummary          String?
+  ocrAt                    DateTime?
+  ocrVersion               Int?
+  aiSummary                String?
   // Recherche sans accents (23/08). Copie dépliée (sans accents, en minuscules)
   // du sujet, de l'expéditeur, des noms de pièces et du résumé — tenue par des
   // DÉCLENCHEURS SQLite, voir services/accents.ts. Ne JAMAIS l'écrire depuis
@@ -183,10 +183,10 @@ model Message {
   // Le corps du mail en est volontairement absent : le recopier coûtait +71 %
   // de base et doublait le temps de recherche, pour des accents qui comptent
   // surtout dans les NOMS (sujets, entités) — mesures dans accents.ts.
-  searchShort        String?
-  aiAction           String?   // reply | pay | read | archive | none
-  aiVerdictAt        DateTime?
-  aiModel            String?
+  searchShort              String?
+  aiAction                 String? // reply | pay | read | archive | none
+  aiVerdictAt              DateTime?
+  aiModel                  String?
   // RÉSERVATION D'UN LOT D'ANALYSE (13/08). `next_analysis_batch` n'avait
   // aucun mécanisme de réservation : deux agents lancés sur la même boîte
   // recevaient les MÊMES mails (le tri est déterministe), d'où la règle « un
@@ -196,13 +196,13 @@ model Message {
   // session qui meurt en plein lot — ça vient d'arriver le 13/08 avec l'erreur
   // 400 du proxy — ne doit pas retirer ses mails du vivier pour toujours. Un
   // verrou sans expiration transformerait chaque plantage en perte sèche.
-  claimedAt          DateTime?
-  claimedBy          String?
-  intentSource       String    @default("auto")
+  claimedAt                DateTime?
+  claimedBy                String?
+  intentSource             String              @default("auto")
   // Intention détectée (A1 — pourquoi ce mail ? otp/invoice/shipping/…),
   // calculée à la sync sur les entrants, backfill via le job « categorize ».
-  intent             String?
-  intentReason       String?
+  intent                   String?
+  intentReason             String?
   // Confiance de l'analyse (B4) : high | medium | low. Posée après chaque
   // sync (mails sans confiance) et par le backfill 🏷️. FAIBLE ⇒ le mail est
   // protégé de toute suppression automatique (PROTECTION_CLAUSES). Les
@@ -210,13 +210,13 @@ model Message {
   analysisConfidence       String?
   analysisConfidenceReason String?
   // true si le mail a disparu du serveur (supprimé/déplacé) depuis la sync
-  isDeleted          Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  isDeleted                Boolean             @default(false)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
-  account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
-  folder  Folder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  thread  Thread? @relation(fields: [threadId], references: [id])
+  account Account      @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
+  folder  Folder       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  thread  Thread?      @relation(fields: [threadId], references: [id])
   verdict MailVerdict?
 
   @@unique([folderId, uid])
@@ -299,7 +299,9 @@ model Deadline {
   // été écartée, voici pourquoi »), et pouvoir la RÉTABLIR si l'arbitrage
   // s'est trompé. Ces lignes ne comptent jamais comme des échéances.
   status      String   @default("proposed")
-  /** Motif technique de l'écartement (ai_no_action…), null si non écartée. */
+  /**
+   * Motif technique de l'écartement (ai_no_action…), null si non écartée.
+   */
   vetoReason  String?
   confidence  Float    @default(0.6)
   // Justification en français (affichée telle quelle)
@@ -362,8 +364,8 @@ model RentilaCommand {
 // est déjà protégé de toute suppression automatique par la protection
 // centrale (hasAttachments + intent invoice/document) — voir retention.ts.
 model AccountingCandidate {
-  seq               Int      @id @default(autoincrement())
-  candidateId       String   @unique
+  seq               Int       @id @default(autoincrement())
+  candidateId       String    @unique
   accountSlug       String
   // Message.id — référence souple, relinkée par relinkMessageReferences.
   messageId         Int
@@ -371,10 +373,10 @@ model AccountingCandidate {
   // Société proposée (jamais « certaine » — l'utilisateur corrige côté
   // Fiscal-Manager). companyBasis : MAILBOX_DEFAULT | NONE.
   companyCandidate  String?
-  companyBasis      String   @default("NONE")
+  companyBasis      String    @default("NONE")
   // ACTIVE | SOURCE_MISSING (mail disparu du serveur avant l'import)
-  status            String   @default("ACTIVE")
-  detectedAt        DateTime @default(now())
+  status            String    @default("ACTIVE")
+  detectedAt        DateTime  @default(now())
   // Contexte dénormalisé (survit aux resync, sert la liste sans jointure)
   receivedAt        DateTime?
   fromName          String?
@@ -383,8 +385,8 @@ model AccountingCandidate {
   // JSON [{ attachmentId, index, filename, contentType, sizeBytes }] —
   // index = position dans listAttachmentParts (ordre downloadAttachment).
   attachmentsJson   String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@unique([accountSlug, messageId])
   // Recherché par messageId seul lors du relink des mails déplacés.
@@ -423,23 +425,23 @@ model Task {
 // GARDE-FOU : jamais appliquée sans validation — autoApply n'est possible
 // que sur une règle activée explicitement par l'utilisateur.
 model MailRule {
-  id           Int       @id @default(autoincrement())
-  accountSlug  String
+  id            Int       @id @default(autoincrement())
+  accountSlug   String
   // sender (adresse exacte) | domain (…@domaine) | subject (le sujet contient)
-  matchType    String
-  matchValue   String
+  matchType     String
+  matchValue    String
   // Chemin du dossier cible (créé au besoin à l'application)
-  targetFolder String
+  targetFolder  String
   // suggested | active | paused
-  status       String    @default("suggested")
+  status        String    @default("suggested")
   // true = appliquée automatiquement aux nouveaux mails à chaque sync
-  autoApply    Boolean   @default(false)
+  autoApply     Boolean   @default(false)
   // Justification en français (affichée telle quelle)
-  reason       String
+  reason        String
   appliedCount  Int       @default(0)
   lastAppliedAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
 
@@ -543,24 +545,24 @@ model BriefRun {
 // Agrégat par expéditeur, recalculé à chaque sync. kind/category/notes seront
 // enrichis en Phase 4 (profils de correspondants).
 model Sender {
-  id               Int       @id @default(autoincrement())
-  accountSlug      String
-  email            String // minuscules
-  displayName      String?
-  domain           String?
-  messageCount     Int       @default(0)
-  unseenCount      Int       @default(0)
-  unsubscribeCount Int       @default(0)
-  totalSizeBytes   BigInt    @default(0)
-  firstMessageAt   DateTime?
-  lastMessageAt    DateTime?
+  id                  Int       @id @default(autoincrement())
+  accountSlug         String
+  email               String // minuscules
+  displayName         String?
+  domain              String?
+  messageCount        Int       @default(0)
+  unseenCount         Int       @default(0)
+  unsubscribeCount    Int       @default(0)
+  totalSizeBytes      BigInt    @default(0)
+  firstMessageAt      DateTime?
+  lastMessageAt       DateTime?
   // person | company | newsletter | notification | platform | unknown (Phase 4)
-  kind             String    @default("unknown")
+  kind                String    @default("unknown")
   // Catégorie fine (A1 — qui écrit ? bank/admin/marketplace/…). null = jamais
   // calculée. categorySource=manual ⇒ la sync ne l'écrase JAMAIS.
-  category         String?
-  categorySource   String    @default("auto")
-  categoryReason   String?
+  category            String?
+  categorySource      String    @default("auto")
+  categoryReason      String?
   // Date du dernier signe d'ENGAGEMENT avec cet expéditeur (P2.1) : un mail
   // sortant dans un de ses fils, un de ses mails étoilé ou répondu, une tâche.
   // Recalculé par rebuildSenders. PRÉ-CALCULÉ ICI POUR UNE RAISON DE PERF :
@@ -568,23 +570,23 @@ model Sender {
   // simulation (elle rejouait un auto-join de Message par LIGNE, soit 364²
   // opérations pour un expéditeur à 364 mails). Ici c'est une comparaison de
   // colonne. null = jamais d'engagement.
-  engagedAt        DateTime?
+  engagedAt           DateTime?
   // Priorité par relation (A5) : normal | always_important | never_urgent.
   // Choix de l'utilisateur, jamais recalculée.
-  priority         String    @default("normal")
+  priority            String    @default("normal")
   // Désinscription (P2.2) — extrait de l'en-tête List-Unsubscribe du dernier
   // mail de cet expéditeur. Stocké ici (et pas sur chaque mail) parce qu'on se
   // désinscrit d'un EXPÉDITEUR, pas d'un message.
-  unsubscribeHttp    String?
-  unsubscribeMailto  String?
+  unsubscribeHttp     String?
+  unsubscribeMailto   String?
   // RFC 8058 : l'expéditeur accepte une désinscription en un appel, sans
   // ouvrir de page ni confirmer — c'est la voie la plus sûre et la plus nette.
-  unsubscribeOneClick Boolean  @default(false)
+  unsubscribeOneClick Boolean   @default(false)
   // Trace de notre action : quand, et ce qui s'est passé.
-  unsubscribedAt     DateTime?
-  unsubscribeNote    String?
-  notes            String?
-  updatedAt        DateTime  @updatedAt
+  unsubscribedAt      DateTime?
+  unsubscribeNote     String?
+  notes               String?
+  updatedAt           DateTime  @updatedAt
 
   account Account @relation(fields: [accountSlug], references: [slug], onDelete: Cascade)
 
@@ -608,40 +610,40 @@ model Sender {
 /// qui arrive demain et qui cite l'adresse rejoint le dossier tout seul, à la
 /// synchronisation — sans qu'on ait à rejouer une recherche.
 model Dossier {
-  id          Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   /// Clé normalisée (accents retirés, liaisons supprimées) — l'identité stable.
-  key         String   @unique
+  key          String    @unique
   /// bien | societe | vehicule | personne | affaire | reference | autre
-  kind        String   @default("bien")
+  kind         String    @default("bien")
   /// Nom affiché, renommable par l'utilisateur sans casser la clé.
-  label       String
+  label        String
   /// Variantes d'écriture rencontrées, en JSON — HISTORIQUE. Remplacé par la
   /// table DossierAlias (indexée, et repointable lors d'une fusion) ; conservé
   /// le temps que la reprise des données soit passée partout.
-  aliases     String?
+  aliases      String?
   /// auto = libellé posé par l'analyse ; manual = renommé par l'utilisateur.
   /// Une réanalyse ne réécrit JAMAIS un libellé manuel — sinon sa correction
   /// serait effacée au tour suivant et il ne recommencerait pas deux fois.
-  labelSource String   @default("auto")
+  labelSource  String    @default("auto")
   /// auto = proposé ; confirmed = validé ; hidden = écarté ; merged = absorbé.
-  status      String   @default("auto")
+  status       String    @default("auto")
   /// Dossier absorbant, quand celui-ci a été fusionné. La résolution suit ce
   /// renvoi : un mail qui arrive demain avec l'ANCIENNE orthographe atterrit
   /// dans le dossier cible. C'est ce qui fait qu'une fusion manuelle survit à
   /// une réanalyse au lieu d'être défaite à chaque nouveau mail.
   mergedIntoId Int?
-  messageCount Int     @default(0)
-  firstAt     DateTime?
-  lastAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  messageCount Int       @default(0)
+  firstAt      DateTime?
+  lastAt       DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   messages    DossierMessage[]
   engagements Engagement[]
   aliasRows   DossierAlias[]
   identifiers DossierIdentifier[]
-  mergedInto  Dossier?  @relation("Fusion", fields: [mergedIntoId], references: [id])
-  absorbes    Dossier[] @relation("Fusion")
+  mergedInto  Dossier?            @relation("Fusion", fields: [mergedIntoId], references: [id])
+  absorbes    Dossier[]           @relation("Fusion")
 
   @@index([status])
   @@index([mergedIntoId])
@@ -706,37 +708,37 @@ model DossierIdentifier {
 /// Les colonnes dépliées ici obéissent à une règle : elles n'existent que si
 /// un moteur filtre ou trie dessus. Le reste vit dans `raw`.
 model MailVerdict {
-  id             Int      @id @default(autoincrement())
-  messageId      Int      @unique
+  id                 Int       @id @default(autoincrement())
+  messageId          Int       @unique
   /// Le JSON rendu par l'IA, tel quel. Ne se réécrit jamais.
-  raw            String
+  raw                String
   /// Forme du verdict. Sert à sélectionner quoi relire, sans tout relire.
-  schemaVersion  Int      @default(1)
+  schemaVersion      Int       @default(1)
   /// Version des consignes données à l'IA.
-  promptVersion  String   @default("1")
+  promptVersion      String    @default("1")
   /// Version de ce qu'on lui a ENVOYÉ (500 car. ? 2 500 ? pièces ? fil ?).
-  inputVersion   String   @default("1")
-  model          String?
+  inputVersion       String    @default("1")
+  model              String?
   /// complete | partial | failed
-  analysisStatus String   @default("complete")
+  analysisStatus     String    @default("complete")
   /// Ce que l'IA a réellement pu voir — l'aveu de ce qui lui manquait.
-  inputCoverage  String?
+  inputCoverage      String?
   /// Fonction du message (liste fermée courte et stable).
-  purpose        String?
+  purpose            String?
   /// Sous-type LIBRE : flight_check_in_reminder, temporary_service_outage…
   /// C'est lui qui absorbe les cas nouveaux sans migration ni réanalyse.
-  subtype        String?
-  summary        String?
+  subtype            String?
+  summary            String?
   /// Fenêtre d'attention — c'est ici que se règle la péremption, sans veto.
   /// persistent | until_time | while_action_open | while_event_future |
   /// until_superseded | none | unknown
-  attentionMode  String?
-  attentionUntil DateTime?
+  attentionMode      String?
+  attentionUntil     DateTime?
   /// Précision de la date ci-dessus : « mai » n'est pas « le 12 mai à 14 h ».
   attentionPrecision String?
-  attentionBasis String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  attentionBasis     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   message       Message              @relation(fields: [messageId], references: [id], onDelete: Cascade)
   actions       VerdictAction[]
@@ -759,31 +761,31 @@ model MailVerdict {
 /// un paiement dû le 15 juin reste à faire le 16 ; un enregistrement pour un
 /// vol du 16 juin n'a plus aucun sens le 17.
 model VerdictAction {
-  id        Int      @id @default(autoincrement())
-  verdictId Int
+  id               Int       @id @default(autoincrement())
+  verdictId        Int
   /// Dénormalisé : tous les moteurs partent du mail, pas du verdict.
-  messageId Int
+  messageId        Int
   /// pay | reply | sign | provide_document | book | call | attend | renew |
   /// declare | confirm | review | other
-  kind      String
-  label     String?
+  kind             String
+  label            String?
   /// user | sender | third_party | unknown — QUI doit agir. Sans ce champ,
   /// « maman transmet une facture Sosh » devenait « payer maman ».
-  actor     String   @default("unknown")
+  actor            String    @default("unknown")
   /// required | requested | optional | informational
-  strength  String   @default("requested")
-  dueAt          DateTime?
-  duePrecision   String?
-  expiresAt      DateTime?
+  strength         String    @default("requested")
+  dueAt            DateTime?
+  duePrecision     String?
+  expiresAt        DateTime?
   expiresPrecision String?
-  amount    Float?
-  currency  String?
-  reference String?
+  amount           Float?
+  currency         String?
+  reference        String?
   /// explicit | strong_inference | weak_inference | unknown
-  certainty String   @default("unknown")
+  certainty        String    @default("unknown")
   /// Citation du texte : la règle anti-invention.
-  evidence       String?
-  evidenceSource String?
+  evidence         String?
+  evidenceSource   String?
 
   verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
 
@@ -797,19 +799,19 @@ model VerdictAction {
 /// est » de « on l'informe que ça a lieu » — c'est ce qui évitait de
 /// transformer « paiements indisponibles le 12 mai » en échéance.
 model VerdictEvent {
-  id        Int      @id @default(autoincrement())
-  verdictId Int
-  messageId Int
+  id              Int       @id @default(autoincrement())
+  verdictId       Int
+  messageId       Int
   /// appointment | travel | service_window | delivery | meeting | other
-  kind      String
-  label     String?
-  startsAt  DateTime?
+  kind            String
+  label           String?
+  startsAt        DateTime?
   startsPrecision String?
-  endsAt    DateTime?
+  endsAt          DateTime?
   /// participant | informational | unknown
-  participation String @default("unknown")
-  certainty String   @default("unknown")
-  evidence  String?
+  participation   String    @default("unknown")
+  certainty       String    @default("unknown")
+  evidence        String?
 
   verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
 
@@ -820,7 +822,7 @@ model VerdictEvent {
 /// Facture, devis, contrat, avis d'imposition… `issuer` est QUI ÉMET, jamais
 /// qui envoie le mail.
 model VerdictDocument {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   verdictId Int
   messageId Int
   /// invoice | quote | contract | receipt | tax_notice | statement |
@@ -833,7 +835,7 @@ model VerdictDocument {
   amount    Float?
   currency  String?
   reference String?
-  certainty String   @default("unknown")
+  certainty String    @default("unknown")
   evidence  String?
 
   verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
@@ -848,23 +850,23 @@ model VerdictDocument {
 /// République », puis « Immeuble République » : le serveur tiendra l'identité
 /// (lot 3), à partir de ces mentions et des identifiants.
 model EntityMention {
-  id        Int    @id @default(autoincrement())
-  verdictId Int
-  messageId Int
+  id         Int     @id @default(autoincrement())
+  verdictId  Int
+  messageId  Int
   /// person | company | property | vehicle | contract | service | account | other
-  kind      String
-  nameRaw   String
+  kind       String
+  nameRaw    String
   /// `nameRaw` sans accents ni casse (23/08) — tenu par déclencheur SQLite,
   /// voir services/accents.ts. C'est ce qui fait que « republique » retrouve
   /// « 46 rue de la République » lu par l'analyse.
   nameDeplie String?
   /// sent_by | issued_by | concerns | billed_to | pays | represents |
   /// mentioned | other
-  role      String @default("mentioned")
+  role       String  @default("mentioned")
   /// SIRET, n° de contrat, plaque… ce qui permet de recoller sans orthographe.
   identifier String?
-  certainty String @default("unknown")
-  evidence  String?
+  certainty  String  @default("unknown")
+  evidence   String?
 
   verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
 
@@ -876,16 +878,16 @@ model EntityMention {
 /// Le dossier, en MENTION. Résolu localement vers un identifiant stable au
 /// lot 3 — le regroupement se fera sur l'identifiant, jamais sur la chaîne.
 model VerdictContext {
-  id        Int    @id @default(autoincrement())
-  verdictId Int
-  messageId Int
+  id          Int     @id @default(autoincrement())
+  verdictId   Int
+  messageId   Int
   /// property | company | affair | vehicle | reference | other
-  kind      String
-  label     String
+  kind        String
+  label       String
   /// `label` sans accents ni casse (23/08) — tenu par déclencheur SQLite.
   labelDeplie String?
-  certainty String @default("unknown")
-  evidence  String?
+  certainty   String  @default("unknown")
+  evidence    String?
 
   verdict MailVerdict @relation(fields: [verdictId], references: [id], onDelete: Cascade)
 
@@ -896,14 +898,14 @@ model VerdictContext {
 /// Le doute, exploitable : il dit COMMENT le lever. C'est ce qui permet la
 /// seconde passe ciblée (2 à 5 % des mails) au lieu de tout relire.
 model VerdictUncertainty {
-  id        Int     @id @default(autoincrement())
-  verdictId Int
-  messageId Int
-  fieldPath String?
+  id             Int     @id @default(autoincrement())
+  verdictId      Int
+  messageId      Int
+  fieldPath      String?
   /// not_present | ambiguous | truncated_input | missing_attachment |
   /// missing_thread_context | conflicting_evidence
-  reason    String
-  description String?
+  reason         String
+  description    String?
   /// full_body | attachment_text | thread_context | manual_review | none
   resolvableWith String?
 
@@ -952,43 +954,43 @@ model DossierMessage {
 /// engagement déjà établi n'a pas de clôture connue. Sans cette règle on
 /// retomberait dans la qualification par preuve négative corrigée le 18/08.
 model Engagement {
-  id          Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   /// Intitulé affiché. Renommable sans rien casser.
-  label       String
+  label        String
   /// Ce qu'on attend concrètement (« les parts inscrites au greffe »).
-  expected    String?
+  expected     String?
   /// Qui doit agir : user | tiers | inconnu.
-  actor       String   @default("tiers")
+  actor        String    @default("tiers")
   /// propose = déduit des mails, à confirmer ; ouvert = confirmé et actif ;
   /// clos = abouti ; abandonne = renoncé. Un `clos` ne se rouvre JAMAIS seul.
-  status      String   @default("propose")
+  status       String    @default("propose")
   /// manual = saisi par l'utilisateur, JAMAIS réécrit par une analyse ;
   /// auto = proposé par le moteur. Même règle que Dossier.labelSource.
-  source      String   @default("auto")
+  source       String    @default("auto")
   /// Depuis quand l'affaire est engagée.
-  openedAt    DateTime
+  openedAt     DateTime
   /// Date de VÉRIFICATION (voir en-tête). Null = jamais de relance proposée.
-  reviewAt    DateTime?
+  reviewAt     DateTime?
   /// Échéance contractuelle, si elle existe. Distincte de reviewAt.
-  dueAt       DateTime?
+  dueAt        DateTime?
   /// Montant déjà engagé/payé — un argument de relance, pas une dette.
-  amountPaid  Float?
+  amountPaid   Float?
   /// Interlocuteur à relancer.
   contactEmail String?
   contactName  String?
   /// Compte mail d'où partirait la relance.
-  accountSlug String?
+  accountSlug  String?
   /// Rattachement optionnel au regroupement thématique.
-  dossierId   Int?
+  dossierId    Int?
   /// Pourquoi le moteur l'a proposée — affiché tel quel, jamais inventé.
-  reason      String?
+  reason       String?
   /// Notes libres de l'utilisateur.
-  notes       String?
+  notes        String?
   /// Report manuel : masquée jusqu'à cette date.
   snoozedUntil DateTime?
-  closedAt    DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  closedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   dossier  Dossier?            @relation(fields: [dossierId], references: [id], onDelete: SetNull)
   messages EngagementMessage[]
@@ -1012,4 +1014,80 @@ model EngagementMessage {
 
   @@id([engagementId, messageId])
   @@index([messageId])
+}
+
+/// L'ATTENTE (26/08) — l'objet central du suivi, et volontairement pas
+/// « obligation » : le mot est juridiquement chargé et trop fort pour la
+/// plupart des cas réels (contre-revue du 26/08).
+///
+/// Une attente dit une seule chose : QUELQUE CHOSE EST ATTENDU, de moi ou
+/// d'eux, éventuellement avant une date. C'est tout. Ni un dossier, ni une
+/// tâche, ni un mail.
+///
+/// POURQUOI CET OBJET EXISTE. Mesuré le 26/08 sur 50 histoires auditées :
+/// les cas les plus précieux ne sont pas « des mails importants », ce sont des
+/// TRANSITIONS ATTENDUES QUI N'ONT JAMAIS EU LIEU. Un notaire à qui l'acte de
+/// vente est demandé et qui ne répond jamais ; un assureur qui s'engage par
+/// écrit à répondre sous deux mois et se tait 28 mois ; une convention
+/// d'honoraires jamais signée, donc une action en justice jamais engagée.
+/// Aucun moteur du projet ne voyait cela : ils regardaient tous des mails.
+///
+/// DEUX AXES SÉPARÉS, JAMAIS UN SCORE UNIQUE. Un acte notarié jamais reçu
+/// depuis 2023 est important mais pas urgent ; une mise en demeure URSSAF à
+/// J-3 est les deux. Confondre les deux, c'est soit noyer l'urgent, soit
+/// crier au loup. Le plafond d'attention (3 à 7 nouveautés par jour) porte sur
+/// l'importance — JAMAIS sur l'urgence : « le plafond protège l'attention,
+/// jamais l'utilisateur contre une information critique ».
+model Attente {
+  id          Int     @id @default(autoincrement())
+  /// moi = j'ai quelque chose à faire · eux = j'attends quelque chose d'eux.
+  cote        String
+  /// Ce qui est attendu, en une phrase lisible telle quelle.
+  quoi        String
+  /// Le correspondant concerné, tel qu'il s'affiche.
+  qui         String
+  quiEmail    String?
+  accountSlug String
+  /// Références SOUPLES (pas de clé étrangère) : l'index des mails est un
+  /// cache reconstructible, l'attente doit lui survivre — même choix que
+  /// Deadline.
+  threadId    Int?
+  messageId   Int?
+
+  /// haute | moyenne | faible — ce que ça coûte de ne rien faire.
+  importance String @default("moyenne")
+  /// critique | haute | moyenne | faible — à quelle vitesse ça coûte.
+  urgence    String @default("moyenne")
+  /// ouverte | probable | satisfaite | ecartee
+  etat       String @default("ouverte")
+
+  /// La phrase qui JUSTIFIE l'affichage, vérifiable par l'utilisateur.
+  /// « La possibilité d'expliquer pourquoi est presque aussi importante que
+  /// la détection. »
+  pourquoi String
+  /// Ce qui rend l'attente urgente quand elle l'est (prescription, dépôt
+  /// légal, mise en demeure…). Vide sinon.
+  risque   String?
+
+  dueAt   DateTime?
+  montant Float?
+  devise  String?
+
+  /// audit | mecanique | manuel — d'où vient cette attente.
+  source String @default("audit")
+
+  /// « C'est réglé » : une PREUVE FACULTATIVE apportée par l'utilisateur
+  /// (il a payé par téléphone, signé sur place), jamais un entretien exigé.
+  /// Réversible par construction : si un mail contradictoire arrive ensuite,
+  /// le suivi rouvre l'attente au lieu de la croire sur parole.
+  assertionAt DateTime?
+  /// Dernière fois que l'attente a été montrée — pour ne pas répéter.
+  vueAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([etat, urgence])
+  @@index([cote, etat])
+  @@index([threadId])
 }
