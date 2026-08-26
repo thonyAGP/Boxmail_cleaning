@@ -377,6 +377,18 @@ export interface BackfillOptions {
   /** 'oldest' = rattrapage (défaut) ; 'newest' = flux courant (post-sync). */
   order?: 'oldest' | 'newest';
   /**
+   * Quoi faire des mails ENVOYÉS (26/08). Historiquement le rattrapage ne
+   * lisait que les mails reçus : on se retrouvait donc avec 6 246 mails
+   * envoyés sans un mot de contenu, soit la moitié muette de chaque
+   * conversation — impossible de retrouver ce que l'utilisateur avait
+   * lui-même demandé, promis ou contesté.
+   *
+   * 'exclude' (défaut) = comportement d'origine, 'only' = rattrapage ciblé
+   * des envoyés, 'include' = les deux. Le vivier d'ANALYSE ne bouge pas pour
+   * autant : `candidateWhere` (analysis.ts) reste sur les entrants.
+   */
+  outbound?: 'exclude' | 'include' | 'only';
+  /**
    * false = ne pas recalculer la confiance ici (l'appelant s'en charge juste
    * après — c'est le cas de la sync, qui enchaîne sa propre passe).
    */
@@ -414,11 +426,13 @@ export async function backfillSnippets(
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
   const sinceDays = opts.sinceDays === undefined ? SNIPPET_WINDOW_DAYS : opts.sinceDays;
   const order = opts.order ?? 'oldest';
+  const outbound = opts.outbound ?? 'exclude';
 
   const where = {
     accountSlug: rec.account,
     isDeleted: false,
-    isOutbound: false,
+    // 'include' ne pose aucune clause : les deux sens passent.
+    ...(outbound === 'include' ? {} : { isOutbound: outbound === 'only' }),
     // Deux raisons de descendre le texte d'un mail (11/08) : il n'a aucun
     // extrait, OU son texte d'analyse date d'une version antérieure.
     //
