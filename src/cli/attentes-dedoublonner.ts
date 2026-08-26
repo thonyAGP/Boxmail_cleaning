@@ -34,6 +34,19 @@ import {
 
 async function run() {
   const appliquer = process.argv.includes('--oui');
+  // Ne traiter QUE certaines paires, désignées par l'id de l'attente à
+  // retirer. Ajouté le 26/08 : sur 5 propositions, 2 seulement étaient
+  // certaines — appliquer le lot entier aurait supprimé des tâches réelles.
+  const iIds = process.argv.indexOf('--ids');
+  const choisis =
+    iIds >= 0 && process.argv[iIds + 1]
+      ? new Set(
+          process.argv[iIds + 1]
+            .split(',')
+            .map((x) => Number(x.trim()))
+            .filter(Boolean),
+        )
+      : null;
 
   const toutes = await db.attente.findMany({
     where: { etat: { in: ['ouverte', 'probable'] } },
@@ -82,13 +95,20 @@ async function run() {
     console.log();
   }
 
+  const aTraiter = choisis ? paires.filter((x) => choisis.has(x.retirer.id)) : paires;
+  if (choisis) {
+    console.log(
+      `Selection : ${aTraiter.length} paire(s) sur ${paires.length} — ids ${[...choisis].join(', ')}.\n`,
+    );
+  }
+
   if (!appliquer) {
     console.log('Aperçu seulement. Relancer avec --oui pour appliquer.\n');
     await db.$disconnect();
     return;
   }
 
-  for (const { garder, retirer } of paires) {
+  for (const { garder, retirer } of aTraiter) {
     await db.attente.update({
       where: { id: garder.id },
       data: {
@@ -104,7 +124,7 @@ async function run() {
     await db.attente.delete({ where: { id: retirer.id } });
   }
   const reste = await db.attente.count({ where: { etat: { in: ['ouverte', 'probable'] } } });
-  console.log(`${paires.length} doublon(s) retiré(s) — ${reste} attente(s) ouverte(s).\n`);
+  console.log(`${aTraiter.length} doublon(s) retiré(s) — ${reste} attente(s) ouverte(s).\n`);
   await db.$disconnect();
 }
 
