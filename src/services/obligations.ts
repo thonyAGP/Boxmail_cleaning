@@ -242,13 +242,30 @@ export async function listerObligations(opts: OptionsObligations = {}): Promise<
       }
     }
 
-    // Le silence, interprété selon le côté (cf. commentaire ci-dessus).
+    // Le silence, interprété selon le côté (cf. commentaire ci-dessus) — ET
+    // selon la NATURE de ce qui est attendu.
+    //
+    // ⚠️ SPÉCIALISATION MESURÉE LE 26/08 (défaut n° 2 relevé par l'audit).
+    // « Le créancier qui se tait a été payé » n'est vrai que d'une DEMANDE DE
+    // PAIEMENT. Appliquée à une signature, un document ou une réponse
+    // attendue, la règle produit un faux négatif dangereux : la convention
+    // d'honoraires de son avocate dormait depuis 19 mois, personne ne l'avait
+    // relancée, et ma règle en concluait que c'était fait — alors que son
+    // action contre le maître d'œuvre n'avait tout simplement jamais démarré.
+    //
+    // Le demandeur d'une signature n'insiste pas comme un créancier : il
+    // classe le dossier et attend. Son silence ne prouve donc rien.
     if (etat === 'ouverte') {
-      if (cote === 'moi' && silenceDepuisDernierMouvement > 180) {
+      if (cote === 'moi' && PAYABLE.has(l.kind) && silenceDepuisDernierMouvement > 180) {
         etat = 'probable';
         motif =
           `personne ne relance depuis ${Math.round(silenceDepuisDernierMouvement / 30)} mois` +
           ' — un créancier qui se tait aussi longtemps a généralement été payé';
+      } else if (cote === 'moi' && silenceDepuisDernierMouvement > 180) {
+        // Non monétaire : on NE conclut PAS. On le dit, c'est tout.
+        motif =
+          `sans mouvement depuis ${Math.round(silenceDepuisDernierMouvement / 30)} mois` +
+          " — et rien ne prouve que ce soit fait : un document attendu ne se réclame pas comme une facture";
       } else if (cote === 'eux' && silenceDepuisDernierMouvement > 60) {
         // On ne change pas l'état — on le CONFIRME. Le silence d'un tiers qui
         // s'était engagé est précisément le signal recherché.

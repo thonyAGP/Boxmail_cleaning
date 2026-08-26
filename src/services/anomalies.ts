@@ -1,4 +1,5 @@
 import { db, ensureDbReady } from '../db/client.js';
+import { deplie } from './accents.js';
 
 /**
  * LE DÉTECTEUR DE FUMÉE (26/08) — moteur A.
@@ -51,6 +52,10 @@ export interface Anomalie {
   nature: Nature;
   /** Le fil porte-t-il au moins une obligation extraite ? (contrôle qualité) */
   aObligation: boolean;
+  /** Sens de l'argent : ce que je dois, ce qu'on me doit, ou indéterminé. */
+  direction: Direction;
+  /** Correspondants distincts — au-delà de 3, le « fil » n'est pas une histoire. */
+  correspondants: number;
 }
 
 /**
@@ -120,14 +125,84 @@ export function adresseSansReponse(email: string): boolean {
   return RE_SANS_REPONSE.test(email || '');
 }
 
+/**
+ * L'ESCALADE EST ORIENTÉE (26/08, défaut n° 4 relevé par l'audit).
+ *
+ * « relance » n'est pas `escalation = true`. Il faut savoir QUI relance QUI :
+ * l'assureur protection juridique écrit « INFO RELANCE TIERS » pour dire qu'il
+ * a relancé LA PARTIE ADVERSE. C'est une bonne nouvelle — la preuve qu'il agit
+ * sur le dossier — et mon détecteur la comptait comme une menace.
+ *
+ * Ces motifs disent que le mot « relance » vise quelqu'un d'AUTRE que
+ * l'utilisateur : dans ce cas, l'escalade retombe à zéro.
+ */
+const RE_RELANCE_TIERS =
+  /(relance tiers|info relance|nous avons relanc|avons relanc[eé] (?:le |la |les |votre |l.)?(?:tiers|adverse|partie|compagnie|assureur|d[eé]biteur)|relance de notre part aupr[eè]s|relanc[eé] pour vous)/i;
+
 /** Niveau d'escalade lexicale, 0 (rien) à 5 (mise en demeure). */
 export function niveauEscalade(texte: string): number {
   const t = (texte || '').toLowerCase();
+  // Le veto d'orientation passe AVANT tout : un mot fort dans une phrase qui
+  // désigne un tiers ne dit rien sur l'utilisateur.
+  if (RE_RELANCE_TIERS.test(t)) return 0;
   if (/mise en demeure|contentieux|huissier|injonction/.test(t)) return 5;
   if (/derni[eè]re relance|dernier rappel|dernier avertissement|impay/.test(t)) return 4;
   if (/relance|rappel|toujours pas|sans r[eé]ponse|reste dans l.attente/.test(t)) return 3;
   if (/urgent|au plus vite|imp[eé]ratif|avant le/.test(t)) return 2;
   return 0;
+}
+
+/**
+ * LES ENTITÉS DE L'UTILISATEUR — pour donner un SENS aux montants (défaut n° 1).
+ *
+ * « Jamais amount = 13200, mais amount + payeur + bénéficiaire + nature, puis
+ * direction = receivable ou payable. »
+ *
+ * Mesuré : les fils Cogidata faisaient remonter 10 890 €, 13 200 € et 14 520 €
+ * comme des dettes à payer — ce sont ses RECETTES de conseil, facturées par
+ * LB2I. Même défaut que Club Med sur l'écran argent (222 950 € affichés à
+ * l'envers). Un montant dont le sens est incertain ne doit PAS peser comme une
+ * dette.
+ *
+ * La liste se dérive des comptes enrôlés : ce sont ses sociétés.
+ */
+let _mesEntites: string[] | null = null;
+
+export async function mesEntites(): Promise<string[]> {
+  if (_mesEntites) return _mesEntites;
+  await ensureDbReady();
+  const comptes = await db.account.findMany({ select: { slug: true, emailAddress: true } });
+  const mots = new Set<string>();
+  for (const c of comptes) {
+    // ⚠️ Le slug reste ENTIER. Le découper donnait « au » (Au-marais),
+    // « location » (Location_Brest), « techni » (techni-soft) — des fragments
+    // qui reconnaissent « Renault » ou « location saisonnière » comme étant
+    // ses propres sociétés, et retournent donc le sens de toutes ses dettes.
+    const s = c.slug.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (s.length >= 5) mots.add(s);
+    const dom = (c.emailAddress ?? '').split('@')[1]?.split('.')[0]?.toLowerCase();
+    // On écarte les domaines grand public : « hotmail » n'est pas une société.
+    if (dom && dom.length >= 4 && !/hotmail|gmail|outlook|yahoo|free|orange|wanadoo|laposte/.test(dom)) {
+      mots.add(dom);
+    }
+  }
+  _mesEntites = [...mots];
+  return _mesEntites;
+}
+
+export type Direction = 'du-par-moi' | 'du-a-moi' | 'incertain';
+
+/**
+ * Qui doit l'argent ? On ne le devine pas : on lit l'ÉMETTEUR du document.
+ * Une facture émise par une de ses sociétés est une créance en sa faveur.
+ */
+export function directionDuMontant(emetteur: string | null, siennes: string[]): Direction {
+  if (!emetteur) return 'incertain';
+  // Séparateurs normalisés des deux côtés : « LOCATION-BREST » doit
+  // rencontrer le slug « location brest ».
+  const e = deplie(emetteur).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (siennes.some((m) => e.includes(m))) return 'du-a-moi';
+  return 'du-par-moi';
 }
 
 const MOT_ESCALADE: Record<number, string> = {
@@ -158,6 +233,8 @@ interface Brut {
   repondus: number;
   totalFils: number;
   aVerdict: number;
+  correspondants: number;
+  emetteur: string | null;
 }
 
 /**
@@ -187,10 +264,22 @@ entrant AS (
          MAX(m.hasListUnsubscribe) news,
          GROUP_CONCAT(SUBSTR(COALESCE(m.subject, ''), 1, 90), ' ~ ') sujets,
          MAX(COALESCE(m.subject, '')) sujet,
-         MAX(CASE WHEN v.id IS NOT NULL THEN 1 ELSE 0 END) aVerdict
+         MAX(CASE WHEN v.id IS NOT NULL THEN 1 ELSE 0 END) aVerdict,
+         -- Combien de correspondants DISTINCTS écrivent dans ce « fil » ?
+         -- C'est ce qui démasque les fils fabriqués par le repli sur le sujet
+         -- (cf. defaut n° 3) : un vrai échange en a un ou deux.
+         COUNT(DISTINCT LOWER(m.fromEmail)) correspondants
     FROM Message m
     LEFT JOIN MailVerdict v ON v.messageId = m.id
    WHERE m.isOutbound = 0 AND m.threadId IN (SELECT threadId FROM fil)
+   GROUP BY m.threadId
+),
+-- L'ÉMETTEUR du document chiffré : c'est lui qui dit dans quel sens va
+-- l'argent. Jamais l'expéditeur du mail (une facture peut être transférée).
+doc AS (
+  SELECT m.threadId, MIN(d.issuer) emetteur
+    FROM VerdictDocument d JOIN Message m ON m.id = d.messageId
+   WHERE m.threadId IS NOT NULL AND d.amount IS NOT NULL AND d.issuer IS NOT NULL
    GROUP BY m.threadId
 ),
 acte AS (
@@ -215,14 +304,16 @@ histo AS (
    GROUP BY s.email
 )
 SELECT f.threadId, f.accountSlug, e.email, e.nom, e.sujet, e.sujets,
+       e.correspondants,
        f.n, f.mesMsg, f.premier, f.dernier, f.dernierEntrant, f.derniereSortie,
-       e.news, e.aVerdict,
+       e.news, e.aVerdict, d.emetteur,
        COALESCE(a.actMoi, 0) actMoi, COALESCE(a.actEux, 0) actEux,
        COALESCE(a.montant, '0') montant, a.echeance,
        COALESCE(h.repondus, 0) repondus, COALESCE(h.totalFils, 0) totalFils
   FROM fil f
   JOIN entrant e ON e.threadId = f.threadId
   LEFT JOIN acte a ON a.threadId = f.threadId
+  LEFT JOIN doc d ON d.threadId = f.threadId
   LEFT JOIN histo h ON h.email = e.email`;
 
 export interface OptionsDetection {
@@ -237,6 +328,7 @@ export async function detecterAnomalies(opts: OptionsDetection = {}): Promise<An
   await ensureDbReady();
   const seuil = opts.seuil ?? 50;
   const maintenant = Date.now();
+  const siennes = await mesEntites();
 
   const brut = await db.$queryRawUnsafe<(Brut & { sujets: string })[]>(SQL, maintenant);
   const out: Anomalie[] = [];
@@ -282,7 +374,30 @@ export async function detecterAnomalies(opts: OptionsDetection = {}): Promise<An
       const j = Math.round((maintenant - Number(r.echeance)) / 86_400_000);
       add('echeance', 30, `échéance dépassée depuis ${j} jour${j > 1 ? 's' : ''}`);
     }
-    if (montant > 0) add('montant', 20, `${montant.toFixed(2)} € en jeu`);
+
+    // LE MONTANT NE PÈSE QUE S'IL VA DANS LE BON SENS (défaut n° 1). Une
+    // facture émise par une de ses sociétés est une recette, pas une dette :
+    // la compter comme « je dois agir » a fait remonter 13 200 € de revenus
+    // de conseil en tête des anomalies.
+    const direction = directionDuMontant(r.emetteur, siennes);
+    if (montant > 0) {
+      if (direction === 'du-par-moi') add('montant', 20, `${montant.toFixed(2)} € en jeu`);
+      else if (direction === 'du-a-moi') {
+        add('montant-recette', 5, `${montant.toFixed(2)} € — facture que TU as émise`);
+      } else add('montant-incertain', 8, `${montant.toFixed(2)} € (sens incertain)`);
+    }
+
+    // LE FIL EST-IL UNE VRAIE HISTOIRE ? (défaut n° 3) Le threading se rabat
+    // sur le sujet normalisé quand l'en-tête RFC manque : un « fil » nommé
+    // « facture » a ainsi rassemblé 4 artisans sur 11 ans. Les obligations y
+    // sont réelles, mais l'histoire est fausse — et une relance écrite sur
+    // cette base viserait le mauvais interlocuteur.
+    const correspondants = Number(r.correspondants ?? 1);
+    if (correspondants >= 4) {
+      add('fil-douteux', -35, `${correspondants} correspondants différents — ce n'est pas une seule histoire`);
+    } else if (correspondants === 3) {
+      add('fil-douteux', -12, '3 correspondants différents dans ce fil');
+    }
     if (escalade >= 3) add('escalade', 25, `le ton monte : ${MOT_ESCALADE[escalade]}`);
     else if (escalade === 2) add('escalade', 10, MOT_ESCALADE[2]);
 
@@ -317,7 +432,13 @@ export async function detecterAnomalies(opts: OptionsDetection = {}): Promise<An
      * ou que le ton monte. Quand c'est MOI qui dois et que plus personne ne
      * relance depuis des mois, le silence disculpe au lieu d'accuser.
      */
-    const eventuelleDette = actMoi > 0 && actEux === 0 && escalade < 3;
+    // ⚠️ SPÉCIALISATION (défaut n° 2) : le silence ne disculpe que sur une
+    // DEMANDE D'ARGENT. Un créancier impayé relance ; le demandeur d'une
+    // signature classe et attend. Sans cette restriction, la convention
+    // d'honoraires jamais signée depuis 19 mois passait pour réglée.
+    const detteMonetaire =
+      nature === 'dette' && (montant > 0 || !!r.echeance) && direction !== 'du-a-moi';
+    const eventuelleDette = actMoi > 0 && actEux === 0 && escalade < 3 && detteMonetaire;
     const silenceDisculpe = eventuelleDette && jours > 180;
     const mult = silenceDisculpe
       ? Math.max(0.25, 1 - jours / 1095)
@@ -351,6 +472,8 @@ export async function detecterAnomalies(opts: OptionsDetection = {}): Promise<An
       echeanceDepassee: r.echeance ? new Date(Number(r.echeance)) : null,
       nature,
       aObligation: actMoi + actEux > 0,
+      direction,
+      correspondants,
     });
     void joursDepuisPremier;
   }
