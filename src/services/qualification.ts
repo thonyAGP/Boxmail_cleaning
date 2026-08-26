@@ -183,11 +183,51 @@ export function jumelleDe<T extends Signature>(candidates: T[], a: Signature): T
   const jour = (d: Date | string | null) =>
     d ? new Date(d).toISOString().slice(0, 10) : null;
   const sien = jour(a.dueAt);
-  return candidates.find(
-    (o) =>
-      seRecoupent(o.qui, a.qui) &&
-      (seRecoupent(o.quoi, a.quoi, 2) || (!!sien && jour(o.dueAt) === sien)),
-  );
+
+  /**
+   * ⚠️ LE NOM DU CORRESPONDANT NE PROUVE RIEN — il est déjà exigé par le
+   * premier test, et il se répète presque toujours DANS le libellé
+   * (« Reprendre contact avec Julie Le Priol (Cerfrance) pour… »). Le compter
+   * une seconde fois faisait atteindre le seuil de deux mots à des attentes
+   * sans rapport : chez le même comptable, « caler un rendez-vous de
+   * restitution » et « transmettre les pièces du bilan 2025 ».
+   */
+  //
+  // L'ADRESSE NON PLUS ne prouve rien — chez lui, presque tout Brimmo tourne
+  // autour du 46 rue de la République. « Envoyer la preuve du virement de la
+  // facture F202509 (climatisation, 33 rue François Miron) » et « décider
+  // d'installer le module de pilotage (33 rue François Miron) » n'ont en
+  // commun que le fournisseur et le lieu : deux sujets, pas un doublon.
+  const sansAdresse = (t: string): string =>
+    (t || '').replace(
+      /(rue|avenue|av|boulevard|bd|place|chemin|impasse|all[ée]e|quai|route)[^,;.()]{0,40}/gi,
+      ' ',
+    );
+  const objetSansLeNom = (quoi: string, qui: string): string => {
+    const nom = motsDistinctifs(qui);
+    return [...motsDistinctifs(sansAdresse(quoi))].filter((m) => !nom.has(m)).join(' ');
+  };
+
+  /**
+   * DEUX EXERCICES NE SONT PAS LA MÊME AFFAIRE. « Clôturer la compta BRIMMO
+   * 2024 » et « les pièces du bilan 2025 » partagent le cabinet, le mot
+   * « pièces » et le nom de la société — et sont deux dossiers distincts, l'un
+   * à solder, l'autre à monter. Une année citée de part et d'autre, mais
+   * différente, interdit le rapprochement.
+   */
+  const annees = (t: string): string[] => (t || '').match(/\b20\d{2}\b/g) ?? [];
+  const anneesIncompatibles = (x: string, y: string): boolean => {
+    const ax = annees(x);
+    const ay = annees(y);
+    return ax.length > 0 && ay.length > 0 && !ax.some((v) => ay.includes(v));
+  };
+
+  return candidates.find((o) => {
+    if (!seRecoupent(o.qui, a.qui)) return false;
+    if (anneesIncompatibles(o.quoi, a.quoi)) return false;
+    if (!!sien && jour(o.dueAt) === sien) return true;
+    return seRecoupent(objetSansLeNom(o.quoi, o.qui), objetSansLeNom(a.quoi, a.qui), 2);
+  });
 }
 
 function raccourcir(t: string | null): string | null {
@@ -370,6 +410,17 @@ export async function enregistrerQualifications(
     // attentes bien distinctes (le bilan 2025, le juriste pour l'AG), qu'un
     // rapprochement sur le seul nom aurait fusionnées à tort.
     if (!existante) {
+      // ⚠️ SEULEMENT LES ATTENTES SANS FIL — celles de l'audit. J'ai essayé
+      // d'étendre le rapprochement à TOUTES les attentes du compte, puisqu'une
+      // affaire se raconte souvent dans plusieurs fils. Relecture des 9 paires
+      // proposées sur les données réelles : la plupart étaient FAUSSES.
+      // « Caler un rendez-vous de restitution » et « transmettre les pièces du
+      // bilan 2025 » chez le même comptable sont deux choses distinctes ;
+      // « clôturer la compta BRIMMO 2024 » et « le bilan 2025 » sont deux
+      // exercices ; « envoyer la preuve du virement » et « décider d'installer
+      // le module de climatisation » n'ont en commun que le fournisseur et
+      // l'adresse. Fusionner aurait SUPPRIMÉ des tâches réelles — bien pire
+      // que deux cartes voisines. On s'en tient donc au cas sûr.
       const orphelines = await db.attente.findMany({
         where: {
           threadId: null,
