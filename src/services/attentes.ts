@@ -203,20 +203,37 @@ export type Geste = 'regle' | 'ecarter' | 'rouvrir';
  * `assertionAt` conservé — c'est lui qui permettra de dire plus tard « tu
  * avais indiqué que c'était réglé, mais ils viennent de relancer ».
  */
-export async function marquer(id: number, geste: Geste): Promise<void> {
+/**
+ * `note` : CE QU'IL A DIT en refermant, quand il a pris la peine de l'écrire.
+ *
+ * Sa demande du 26/08 : « lorsque l'on dit "c'est réglé", il faudrait pouvoir
+ * saisir le pourquoi au besoin ». C'est le seul endroit où entre une
+ * information qu'aucun mail ne porte — « payé par téléphone », « signé sur
+ * place », « sans objet, le chantier est annulé ».
+ *
+ * FACULTATIF, et ça ne se négocie pas : le geste ne doit jamais devenir un
+ * formulaire. Le corollaire de conception du projet tient toujours — rien ne
+ * doit dépendre d'un entretien manuel régulier.
+ */
+export async function marquer(id: number, geste: Geste, note?: string): Promise<void> {
   await ensureDbReady();
   const etat = geste === 'regle' ? 'satisfaite' : geste === 'ecarter' ? 'ecartee' : 'ouverte';
+  const propre = (note ?? '').trim().slice(0, 400);
   const a = await db.attente.update({
     where: { id },
     data: {
       etat,
       assertionAt: geste === 'rouvrir' ? null : new Date(),
+      // Rouvrir efface la note : elle justifiait une fermeture qui n'a plus
+      // lieu. Refermer sans rien écrire CONSERVE la note précédente plutôt
+      // que de l'effacer — on ne perd pas une explication par un clic.
+      ...(geste === 'rouvrir' ? { assertionNote: null } : propre ? { assertionNote: propre } : {}),
     },
   });
   await recordOperation({
     tool: `attente.${geste}`,
     account: a.accountSlug,
-    params: { id: a.id, quoi: a.quoi.slice(0, 120), qui: a.qui, etat },
+    params: { id: a.id, quoi: a.quoi.slice(0, 120), qui: a.qui, etat, note: propre || undefined },
     result: etat,
   });
 }

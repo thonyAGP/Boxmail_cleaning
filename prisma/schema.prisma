@@ -1109,6 +1109,13 @@ model Attente {
   /// Réversible par construction : si un mail contradictoire arrive ensuite,
   /// le suivi rouvre l'attente au lieu de la croire sur parole.
   assertionAt DateTime?
+  /// CE QU'IL A DIT en refermant, quand il a pris la peine de l'écrire :
+  /// « payé par téléphone le 12 », « signé sur place », « finalement sans
+  /// objet, le chantier est annulé ». FACULTATIF par construction — le geste
+  /// ne doit jamais devenir un formulaire. Mais quand la note existe, elle
+  /// vaut de l'or : c'est la seule trace de ce que les mails ne diront jamais,
+  /// et elle explique le classement si l'attente refait surface.
+  assertionNote String?
   /// Dernière fois que l'attente a été montrée — pour ne pas répéter.
   vueAt       DateTime?
 

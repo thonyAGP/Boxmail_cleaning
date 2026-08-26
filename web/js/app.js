@@ -6381,10 +6381,56 @@ async function chargerSuivi() {
   });
 }
 
+/**
+ * « C'est réglé » — avec la possibilité de dire POURQUOI.
+ *
+ * Sa demande du 26/08 : « lorsque l'on dit "c'est réglé", il faudrait pouvoir
+ * saisir le pourquoi au besoin ». C'est la seule information qu'aucun mail ne
+ * portera jamais : payé par téléphone, signé sur place, sans objet parce que
+ * le chantier est annulé.
+ *
+ * ⚠️ FACULTATIF, ET ÇA SE VOIT. « Sans détail » est proposé au même rang que
+ * « Enregistrer », et Entrée valide directement : le geste ne doit pas devenir
+ * un formulaire. Le corollaire de conception tient — rien ne doit dépendre
+ * d'un entretien manuel régulier.
+ */
+function demanderPourquoi(code, quoi) {
+  return new Promise((resolve) => {
+    const regle = code === 'regle';
+    ouvrirModale(
+      regle ? '✓ C’est réglé' : '✕ Sans suite',
+      `<div class="form-vert">
+        <p class="muted">${esc(quoi.slice(0, 140))}</p>
+        <label>${regle ? 'Comment ça s’est réglé ?' : 'Pourquoi sans suite ?'}
+          <input id="att-note" type="text" maxlength="400" autocomplete="off"
+            placeholder="${regle ? 'ex. payé par téléphone le 12, reçu classé' : 'ex. chantier annulé'}">
+        </label>
+        <p class="muted">Facultatif — c’est pour toi, dans six mois, quand tu ne t’en
+        souviendras plus. Rien n’est envoyé à personne.</p>
+      </div>`,
+      `<button class="btn" id="att-annule">Annuler</button>
+       <button class="btn" id="att-sans">Sans détail</button>
+       <button class="btn btn-primary" id="att-ok">Enregistrer</button>`,
+    );
+    const champ = $('#att-note');
+    champ?.focus();
+    const finir = (v) => { closeModal(); resolve(v); };
+    $('#att-annule').addEventListener('click', () => finir(null));
+    $('#att-sans').addEventListener('click', () => finir(''));
+    $('#att-ok').addEventListener('click', () => finir(champ.value.trim()));
+    champ?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finir(champ.value.trim()); }
+    });
+  });
+}
+
 async function gesteAttente(id, code, carte) {
   if (code === 'regle' || code === 'ecarter') {
+    const a = _attentes?.find((x) => x.id === id);
+    const note = await demanderPourquoi(code, a?.quoi ?? '');
+    if (note === null) return; // annulé : on ne referme rien
     try {
-      await api.attenteGeste(id, code);
+      await api.attenteGeste(id, code, note);
       carte.classList.add('att-partie');
       setTimeout(chargerSuivi, 400);
     } catch (err) {

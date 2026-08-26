@@ -75,7 +75,7 @@ export const api = {
   // l'utilisateur est une preuve facultative, jamais un entretien exigé ; le
   // brouillon RÉDIGE seulement, l'envoi reste un clic explicite.
   attentes: () => request('GET', '/attentes'),
-  attenteGeste: (id, geste) => request('POST', `/attentes/${id}`, { geste }),
+  attenteGeste: (id, geste, note) => request('POST', `/attentes/${id}`, { geste, note }),
   brouillonAttente: (id) => request('GET', `/attentes/${id}/brouillon`),
   // Argent (26/08) : par TIERS, jamais un total de portefeuille — cf. argent.ts.
   argentTiers: (limit = 60) => request('GET', `/argent/tiers?limit=${limit}`),

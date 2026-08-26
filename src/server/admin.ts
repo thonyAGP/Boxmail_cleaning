@@ -2161,7 +2161,7 @@ export function buildAdminRouter(): Router {
         res.status(400).json({ error: 'Geste inconnu.' });
         return;
       }
-      await marquer(id, geste as Geste);
+      await marquer(id, geste as Geste, String(req.body?.note ?? ''));
       res.json({ ok: true });
     }),
   );
