@@ -169,79 +169,52 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08) — ses boîtes sont des archives non
 structurées, pas des boîtes sales ; `docs/PLAN-ARCHIVE.md` est CLASSÉ. Cadre :
-`docs/PLAN-ASSISTANT.md`. Refonte de l'analyse livrée 12-13/08 (§ 36-38).
+`docs/PLAN-ASSISTANT.md`.
 
-**Le rattrapage d'analyse tourne SEUL** depuis le 14/08 : tâche planifiée
-claude.ai `trig_01SLhekXbwP85yQTnP32Aaof` (:17), orchestrateur + 4 sous-agents ;
-ne PAS lui donner d'autre connecteur que Boxmail. Vivier à compter via
-`candidateWhere` d'analysis.ts, PAS un count naïf. Tourne en claude-sonnet-5,
-qualité inchangée. **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus
-de ~60 mails (elle CUMULE les lots et meurt) — contexte NEUF par lot.
+**DEUX TÂCHES PLANIFIÉES claude.ai tournent seules** — ne leur donner AUCUN
+connecteur hors Boxmail. Toutes deux se heurtent à la même limite : *une
+conversation CUMULE ses lots et meurt* (~60 mails, ~30 dossiers) — d'où des
+sous-agents à contexte NEUF et une coupure au TEMPS.
+1. **Analyse des mails**, `trig_01SLhekXbwP85yQTnP32Aaof`, :17 chaque heure
+   (§ 36-38). Vivier à compter via `candidateWhere` d'analysis.ts, PAS un
+   count naïf.
+2. **Suivi des affaires**, `trig_01SnQhTSebN3VnzLBx7dw9NS`, 06:43 UTC chaque
+   jour (§ 54). Chaîne : détecteur `anomalies.ts` (SQL, ~305 fils, gratuit) →
+   lecture (`next_dossiers_batch` / `submit_dossiers_batch`) → `Attente` sur
+   `#/suivi`. **Le score du détecteur n'est PAS un verdict : mesuré, il se
+   trompe une fois sur deux.** `npm run dossiers` pour voir sans consommer ;
+   `npm run attentes:dedoublonner` après toute vague antérieure à un déploiement.
 
-**LE SUIVI DES AFFAIRES TOURNE SEUL** depuis le 26/08 (§ 54) — 2ᵉ tâche
-planifiée `trig_01SnQhTSebN3VnzLBx7dw9NS`, **06:43 UTC chaque jour**, jumelle du
-cowork. Chaîne : détecteur mécanique (`anomalies.ts`, SQL, 305 fils, gratuit) →
-lecture par sous-agents (`next_dossiers_batch` / `submit_dossiers_batch`) →
-`Attente` affichée sur `#/suivi`. **Le score du détecteur n'est PAS un verdict :
-mesuré, il se trompe une fois sur deux** (un fil à 213 avait déjà été répondu ;
-un à 209 était un prélèvement PayPal automatique de 14 €) — d'où l'étage de
-lecture. Un dossier compact pèse 3,2 Ko ; la table `Qualification` note jusqu'à
-quel message on a lu, un fil ne revient que s'il bouge. `npm run dossiers` pour
-voir sans rien consommer.
+**TROIS PIÈGES MESURÉS, à ne pas réapprendre** :
+- Un mail **sans extrait est INVISIBLE**, pas « en attente » (`candidateWhere`
+  exige `snippet != null`) : le cowork annonçait « tout est jugé » en n'ayant vu
+  que 29 % des mails. Toujours vérifier la COUVERTURE (§ 53).
+- Écran argent : **JAMAIS de total de portefeuille** — le haut du classement mêle
+  un château à 2,68 M€, des budgets de copropriété et des pesos chiliens.
+- Le **silence ne prouve rien hors d'une demande d'argent** : un créancier
+  relance, celui qui attend une signature classe et attend (§ 54).
 
-**Livré récemment** (détail au journal, § indiqué) : Vue du jour repriorisée,
-🧭 Affaires en cours, Contexte d'un mail (§ 43-45) · recherche 132 s → ~300 ms,
-tri global à 5 ordres (§ 46) · « ↗️ Agrandir » le lecteur, interlocuteurs
-réunis, mouchards retirés (§ 47-48) · lecture ancrée + barre d'actions dictée
-par le verdict (§ 49) · **recherche par MOTS et accents ignorés (§ 50)** ·
-extraits des mails ENVOYÉS réparés — `isOutbound: false` était en dur (§ 53).
-
-**Ses 2 affaires bloquées, élucidées** : LEGALFREE (parts/holding, 1 131,26 €
-réglés) **ANNULÉ le 19/01/2026** faute de réponse de sa part ; CAPTAIN CONTRAT
-(direction LB2i) bloqué sur la **signature de Ludovic**, prélèvement de
-294,67 € **rejeté le 13/12/2025**.
-
-**LIVRÉ le 26/08** (détail § 53) — **la moitié muette réparée**.
-`backfillSnippets` portait `isOutbound: false` EN DUR ⇒ les **8 248 mails
-envoyés n'avaient AUCUN extrait**. Pire : `SNIPPET_WINDOW_DAYS = 90` ⇒ une boîte
-fraîchement enrôlée reste muette sur tout son passé **sans que rien ne le
-signale** (jojo56 : 1 167 lus sur 46 543) — d'où un reçu de **1 347,42 €**
-invisible dans un dossier en cours. Livré : option `outbound`, CLI
-`npm run snippets -- --sent|--tout`, post-sync qui lit les envoyés, **rattrapage
-d'historique déclenché à l'enrôlement**. 18 471 extraits, ~200 mails/min,
-**11 boîtes sur 12 à 100 %** ; jojo56 (49 044) en cours.
-
-**LE PIÈGE À RETENIR** : un mail sans extrait n'est pas « en attente d'analyse »,
-il est **INVISIBLE** (`candidateWhere` exige `snippet != null`). Le cowork affiche
-donc « tout est jugé » en n'ayant vu que 29 % des mails — toujours vérifier la
-COUVERTURE, jamais conclure d'un vivier vide.
-
-**Cowork** (`trig_01SLhekXbwP85yQTnP32Aaof`) : plafond de 4 sous-agents remplacé
-par une boucle bornée au TEMPS (`date +%s`, coupure à 3 000 s pour ne pas
-chevaucher H+17).
-
-**Écran « 💶 Où est passé mon argent »** (`argent.ts`, `#/argent`) : par TIERS,
-pièce par pièce, par devise. **JAMAIS de total de portefeuille** — le haut du
-classement mêle annonces immobilières (château à 2,68 M€), budgets de copropriété
-et **pesos chiliens**. Complétude affichée sous chaque total. Les montants
-existaient DÉJÀ (`VerdictDocument` : 2 593 chiffrés) ; il manquait l'affichage.
-Son retour : « bonne ébauche ».
+**Livré** (détail au journal) : § 43-45 Vue du jour, Affaires en cours, Contexte ·
+§ 46 recherche 132 s → ~300 ms · § 47-49 lecteur · § 50-51 recherche par mots,
+liaisons · § 52 Précédent/Suivant · § 53 extraits des ENVOYÉS (`isOutbound: false`
+était en dur) + écran 💶 argent · § 54 boucle de suivi.
 
 **À faire** :
+- **Mesurer ce que la boucle de suivi produit** sur le stock (~280 dossiers) :
+  proportion d'attentes réelles, qualité des « pourquoi » affichés. L'écran
+  `#/suivi` n'a pas été retouché (budget d'attention : 7 ordinaires/jour).
+- **Étape 5 du MVP** : la mémoire condensée de l'affaire (dernier point du plan).
 - **Suite de l'écran argent** (son retour attendu) : ne montre que les pièces
   CHIFFRÉES (5 lignes sur 61 mails Legalfree) ; les SILENCES ne sont pas
   signalés ; un tiers n'est pas un dossier (ECONOM/BRIMMO/ALTOEN = 3 sociétés).
-- **Mesurer ce que la boucle de suivi produit** sur le stock de 303 dossiers :
-  proportion d'attentes réelles, et surtout qualité des « pourquoi » affichés.
-  L'écran `#/suivi` n'a pas été retouché (budget d'attention : 7 ordinaires/jour).
-- **Étape 5 du MVP** : la mémoire condensée de l'affaire (dernier point du plan).
-- Fin du rattrapage jojo56 ⇒ ~45 000 mails deviendront analysables (~2 semaines
-  de cowork).
+- Fin du rattrapage jojo56 ⇒ ~45 000 mails analysables (~2 semaines de cowork).
 - Vue documentaire ; doublons de pièces ; étape 2 des liaisons (par EXPÉDITEUR) ;
   passe 3 de la recherche ; lot 6 ; Fiscal-Manager ; rétention (QU'AVEC lui).
 
-**Dossier LEGALFREE** (synthèse du 26/08, mail envoyé) : apport BRIMMO + ALTOEN à
-ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au greffe**. Dossier
-annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le 26/02. Deux
-devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 € (démission de
-gérance de son frère François Jean).
+**Dossier LEGALFREE** (synthèse du 26/08, mail envoyé, réponse attendue) : apport
+BRIMMO + ALTOEN à ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au
+greffe**. Annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le
+26/02. Deux devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 €
+(démission de gérance de son frère François Jean). Autre affaire bloquée :
+CAPTAIN CONTRAT, en attente de la **signature de Ludovic**, prélèvement de
+294,67 € rejeté le 13/12/2025.

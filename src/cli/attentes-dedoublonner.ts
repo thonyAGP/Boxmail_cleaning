@@ -1,5 +1,10 @@
 import { db } from '../db/client.js';
-import { jumelleDe } from '../services/qualification.js';
+import {
+  RANG_IMPORTANCE,
+  RANG_URGENCE,
+  jumelleDe,
+  plusSevere,
+} from '../services/qualification.js';
 
 /**
  * Rapproche les attentes qui racontent la même histoire.
@@ -14,10 +19,14 @@ import { jumelleDe } from '../services/qualification.js';
  * ce qui existe déjà, et servira encore chaque fois qu'une vague aura tourné
  * avant un déploiement.
  *
- * L'ANCIENNE GAGNE, TOUJOURS. On rattache l'ancienne au fil et on supprime la
- * nouvelle : une attente écrite en relisant le dossier entier est mieux jugée
- * qu'une lecture d'extraits. Mesuré — la boucle classait la convention Zanitti
- * « faible/faible » là où l'audit voyait « haute/haute », à raison.
+ * L'ANCIENNE SURVIT, MAIS AU JUGEMENT LE PLUS SÉVÈRE. On garde le libellé et
+ * l'explication de l'ancienne — écrite en relisant le dossier entier, elle est
+ * mieux tournée qu'une lecture d'extraits — et on lui rattache le fil de la
+ * nouvelle, ce qui rend enfin la carte ouvrable. Mais l'urgence, l'importance
+ * et le risque prennent le MAXIMUM des deux : rapprocher ne doit jamais faire
+ * disparaître une alarme. Mesuré dans les deux sens — la relecture classait la
+ * convention Zanitti « faible » là où l'audit voyait « haute », et à l'inverse
+ * elle jugeait le dossier Comptastar plus grave que l'audit.
  *
  *   npm run attentes:dedoublonner            # aperçu, ne touche à rien
  *   npm run attentes:dedoublonner -- --oui   # applique
@@ -80,12 +89,18 @@ async function run() {
   }
 
   for (const { garder, retirer } of paires) {
-    if (!garder.threadId && retirer.threadId) {
-      await db.attente.update({
-        where: { id: garder.id },
-        data: { threadId: retirer.threadId, messageId: retirer.messageId },
-      });
-    }
+    await db.attente.update({
+      where: { id: garder.id },
+      data: {
+        threadId: garder.threadId ?? retirer.threadId,
+        messageId: garder.messageId ?? retirer.messageId,
+        // Le jugement le plus sévère des deux : rapprocher ne doit jamais
+        // faire disparaître une alarme.
+        urgence: plusSevere(garder.urgence, retirer.urgence, RANG_URGENCE),
+        importance: plusSevere(garder.importance, retirer.importance, RANG_IMPORTANCE),
+        risque: garder.risque ?? retirer.risque,
+      },
+    });
     await db.attente.delete({ where: { id: retirer.id } });
   }
   const reste = await db.attente.count({ where: { etat: { in: ['ouverte', 'probable'] } } });

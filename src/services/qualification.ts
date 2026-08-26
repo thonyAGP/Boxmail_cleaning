@@ -135,6 +135,22 @@ function seRecoupent(a: string, b: string, minimum = 1): boolean {
   return false;
 }
 
+export const RANG_URGENCE = ['faible', 'moyenne', 'haute', 'critique'];
+export const RANG_IMPORTANCE = ['faible', 'moyenne', 'haute'];
+
+/**
+ * De deux jugements sur la même attente, on garde LE PLUS SÉVÈRE.
+ *
+ * Rapprocher deux cartes ne doit jamais faire disparaître une alarme. Mesuré :
+ * l'audit voyait le dossier Comptastar « moyenne », la relecture automatique
+ * « haute » — et inversement sur la convention Zanitti, « haute » à l'audit et
+ * « faible » à la relecture. Prendre le maximum est le seul choix qui ne perde
+ * rien dans les deux sens.
+ */
+export function plusSevere(a: string, b: string, echelle: string[]): string {
+  return echelle.indexOf(b) > echelle.indexOf(a) ? b : a;
+}
+
 /** Une attente, réduite à ce qui sert à reconnaître un doublon. */
 interface Signature {
   qui: string;
@@ -377,7 +393,18 @@ export async function enregistrerQualifications(
         // contre le maître d'œuvre n'a jamais démarré.
         await db.attente.update({
           where: { id: jumelle.id },
-          data: { threadId: q.threadId, messageId: dernier.id },
+          data: {
+            threadId: q.threadId,
+            messageId: dernier.id,
+            urgence: plusSevere(jumelle.urgence, a.urgence ?? 'moyenne', RANG_URGENCE),
+            importance: plusSevere(
+              jumelle.importance,
+              a.importance ?? 'moyenne',
+              RANG_IMPORTANCE,
+            ),
+            // Un risque nommé par l'une des deux lectures ne se perd pas.
+            risque: jumelle.risque ?? a.risque ?? null,
+          },
         });
         attentes++;
         continue;
