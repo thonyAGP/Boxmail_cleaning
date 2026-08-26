@@ -5,6 +5,113 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 26/08 (54) — Le suivi des affaires se met à jour tout seul
+
+Suite directe du § 53. Les 14 attentes affichées sur `#/suivi` avaient été
+établies À LA MAIN : un modèle avait relu 50 histoires hors du serveur, sur des
+dossiers compacts préparés pour l'occasion. C'était juste — et complètement
+figé. Cette session a corrigé les erreurs de raisonnement que cette relecture
+avait révélées, puis a automatisé le geste lui-même.
+
+### Les quatre défauts, tirés de la relecture des 50 histoires
+
+1. **Le sens de l'argent.** Un montant valait 20 points sans qu'on regarde QUI
+   facture — ses propres factures émises remontaient donc comme des dettes
+   (Club Med, 222 950 €). `mesEntites()` reconnaît désormais ses sociétés ; un
+   montant qu'il a émis vaut 5 points au lieu de 20.
+2. **Le silence ne prouve rien hors d'une demande d'argent.** « Le créancier
+   qui se tait a été payé » est vrai d'une facture, faux d'une signature : le
+   demandeur classe et attend. La convention d'honoraires de son avocate
+   dormait depuis 19 mois et la règle la déclarait réglée — alors que son
+   action contre le maître d'œuvre n'avait jamais démarré. Règle restreinte
+   aux demandes de paiement, dans `anomalies.ts` ET `obligations.ts`.
+3. **Quatre correspondants ne font pas une histoire.** Le fil se replie sur le
+   sujet normalisé quand l'en-tête RFC manque, agrégeant des inconnus sous un
+   même « Re: ». Au-delà de 3 correspondants distincts : −35 points.
+4. **Une relance a une direction.** « INFO RELANCE TIERS » de son assurance
+   protection juridique dit qu'ELLE a relancé la partie adverse. Veto placé
+   avant tout autre test d'escalade.
+
+Mesuré : **183 → 305 fils**. La hausse est le point 2, qui cesse d'enterrer ce
+qu'il enterrait à tort. Aucun Airbnb ni Trustpilot dans le haut du classement.
+
+**Piège évité de justesse** : le slug de compte était découpé, et « Au-marais »
+devenait « au », « Location_Brest » devenait « location ». Tout émetteur
+contenant ces syllabes — Renault, une location saisonnière — passait pour l'une
+de ses sociétés, **inversant le sens de ses dettes**. Le slug reste entier.
+
+**Relevé** : seuls 650 messages portent un montant, la direction ne joue donc
+que sur ceux-là. `EntityMention.role='issued_by'` en couvrirait 20 % de plus
+(5 847 contre 4 846) — à brancher si le besoin s'en fait sentir.
+
+### La boucle : détecteur → lecture → attentes
+
+Le détecteur signale 305 fils en SQL, sans IA et sans rien coûter. Mais il ne
+sait pas lire, et sur les deux premiers dossiers relus il se trompait **une
+fois sur deux** :
+
+- fil 4136, score **213** — « échéance dépassée depuis 982 jours ». En réalité
+  il a répondu le 2 janvier 2024, réglé 2 000 € et conditionné le solde à
+  l'achèvement du lot (cloisons non démolies, portes non terminées). Vrai
+  sujet, mais pas celui que le score annonçait.
+- fil 16550, score **209** — « 5 messages reçus, aucune réponse ». Factures de
+  recharge électrique de 2 à 14 €, **prélevées automatiquement sur PayPal**.
+  Rien à faire.
+
+D'où deux étages, sur le patron éprouvé du rattrapage d'analyse : un vivier
+servi par lots, un agent qui LIT sur le forfait de l'utilisateur, des verdicts
+renvoyés. Aucune clé API côté serveur.
+
+| Élément | Rôle |
+|---|---|
+| `services/qualification.ts` | compose le dossier compact, enregistre les verdicts |
+| `mcp/tools/qualification.ts` | `next_dossiers_batch` · `submit_dossiers_batch` · `qualification_progress` |
+| `cli/dossiers.ts` (`npm run dossiers`) | voir ce qui serait servi, sans rien consommer |
+| table `Qualification` | trace de lecture (additive) |
+
+**Le dossier compact** porte le début et la fin de l'histoire (3 + 4 messages),
+les extraits, les obligations déjà extraites et la raison mécanique du
+signalement. Mesuré : **3,2 Ko par dossier**, ~26 Ko pour un lot de 8 — le même
+ordre que le lot d'analyse. Un fil de 40 messages n'est jamais envoyé en entier.
+
+**La table mémorise jusqu'à quel message on a lu.** Un fil qualifié ne revient
+que si un message y arrive ensuite : c'est ce qui vide le vivier, et ce qui
+permettra de dire « c'est le 3e rappel » plutôt que de rejuger à zéro.
+
+**Garde-fous** : une attente déjà traitée n'est jamais écrasée (son geste prime
+sur une relecture automatique) ; idempotent par `threadId` ; aucune suppression,
+aucun envoi ; les attentes produites portent `source='mecanique'`, distinctes
+des 14 de l'audit.
+
+Éprouvé sur la production : 2 dossiers qualifiés, 1 attente créée, 0 rejet,
+vivier passé de 305 à 303, les fils lus ne reviennent plus.
+
+### La tâche planifiée
+
+`trig_01SnQhTSebN3VnzLBx7dw9NS` — **tous les jours à 06:43 UTC**, jumelle du
+cowork d'analyse (`trig_01SLhekXbwP85yQTnP32Aaof`, :17 chaque heure) : même
+architecture à sous-agents (un dossier pèse 3 Ko, une conversation meurt vers
+30), liste blanche stricte de 4 tools, coupure à 40 minutes.
+
+Son prompt porte les quatre règles ci-dessus comme consignes de lecture, et
+s'ouvre sur l'avertissement qui compte : *le score du détecteur n'est pas un
+verdict, il se trompe une fois sur deux — lis avant de conclure.*
+
+Pas de conflit avec le cowork malgré leur chevauchement : les deux passent par
+le même processus serveur, donc la même connexion SQLite. Le « database is
+locked » rencontré pendant la migration venait d'un CLI **séparé** (le
+rattrapage des extraits de jojo56), coupé puis relancé — il reprend où il en
+était.
+
+### Reste à faire
+
+- **Mesurer ce que la boucle produit** sur le stock de 303 : proportion
+  d'attentes réelles, et surtout la qualité des `pourquoi` affichés.
+- L'écran `#/suivi` n'a pas été retouché : il affiche les attentes quelle que
+  soit leur source. À revoir quand le volume aura augmenté (le budget
+  d'attention est à 7 ordinaires par jour).
+- Étape 5 du MVP — la mémoire condensée de l'affaire — reste à faire.
+
 ## 26/08 (53) — La moitié muette : 8 248 mails envoyés sans un mot de contenu
 
 Parti d'une demande de synthèse (le dossier Legalfree, 14 mois, 2 478,68 € versés),

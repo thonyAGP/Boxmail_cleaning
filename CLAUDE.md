@@ -178,11 +178,23 @@ ne PAS lui donner d'autre connecteur que Boxmail. Vivier à compter via
 qualité inchangée. **LIMITE STRUCTURELLE** : une conversation n'analyse pas plus
 de ~60 mails (elle CUMULE les lots et meurt) — contexte NEUF par lot.
 
+**LE SUIVI DES AFFAIRES TOURNE SEUL** depuis le 26/08 (§ 54) — 2ᵉ tâche
+planifiée `trig_01SnQhTSebN3VnzLBx7dw9NS`, **06:43 UTC chaque jour**, jumelle du
+cowork. Chaîne : détecteur mécanique (`anomalies.ts`, SQL, 305 fils, gratuit) →
+lecture par sous-agents (`next_dossiers_batch` / `submit_dossiers_batch`) →
+`Attente` affichée sur `#/suivi`. **Le score du détecteur n'est PAS un verdict :
+mesuré, il se trompe une fois sur deux** (un fil à 213 avait déjà été répondu ;
+un à 209 était un prélèvement PayPal automatique de 14 €) — d'où l'étage de
+lecture. Un dossier compact pèse 3,2 Ko ; la table `Qualification` note jusqu'à
+quel message on a lu, un fil ne revient que s'il bouge. `npm run dossiers` pour
+voir sans rien consommer.
+
 **Livré récemment** (détail au journal, § indiqué) : Vue du jour repriorisée,
 🧭 Affaires en cours, Contexte d'un mail (§ 43-45) · recherche 132 s → ~300 ms,
 tri global à 5 ordres (§ 46) · « ↗️ Agrandir » le lecteur, interlocuteurs
 réunis, mouchards retirés (§ 47-48) · lecture ancrée + barre d'actions dictée
-par le verdict (§ 49) · **recherche par MOTS et accents ignorés (§ 50)**.
+par le verdict (§ 49) · **recherche par MOTS et accents ignorés (§ 50)** ·
+extraits des mails ENVOYÉS réparés — `isOutbound: false` était en dur (§ 53).
 
 **Ses 2 affaires bloquées, élucidées** : LEGALFREE (parts/holding, 1 131,26 €
 réglés) **ANNULÉ le 19/01/2026** faute de réponse de sa part ; CAPTAIN CONTRAT
@@ -219,8 +231,10 @@ Son retour : « bonne ébauche ».
 - **Suite de l'écran argent** (son retour attendu) : ne montre que les pièces
   CHIFFRÉES (5 lignes sur 61 mails Legalfree) ; les SILENCES ne sont pas
   signalés ; un tiers n'est pas un dossier (ECONOM/BRIMMO/ALTOEN = 3 sociétés).
-- **Détecteurs, cœur de la valeur** (§ 53) : *payé sans livrable* · *promesse non
-  tenue* · *ma question restée sans réponse*.
+- **Mesurer ce que la boucle de suivi produit** sur le stock de 303 dossiers :
+  proportion d'attentes réelles, et surtout qualité des « pourquoi » affichés.
+  L'écran `#/suivi` n'a pas été retouché (budget d'attention : 7 ordinaires/jour).
+- **Étape 5 du MVP** : la mémoire condensée de l'affaire (dernier point du plan).
 - Fin du rattrapage jojo56 ⇒ ~45 000 mails deviendront analysables (~2 semaines
   de cowork).
 - Vue documentaire ; doublons de pièces ; étape 2 des liaisons (par EXPÉDITEUR) ;

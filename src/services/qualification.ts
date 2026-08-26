@@ -93,6 +93,48 @@ function moisEntre(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
 }
 
+/** Mots distinctifs d'un libellé : sans accents, ≥ 5 lettres, hors mots creux. */
+const CREUX = new Set([
+  'avant',
+  'aupres',
+  'apres',
+  'cette',
+  'leurs',
+  'notre',
+  'votre',
+  'pour',
+  'dossier',
+  'demande',
+  'facture',
+  'reponse',
+  'obtenir',
+  'savoir',
+  'regler',
+  'payer',
+  'service',
+  'societe',
+  'monsieur',
+  'madame',
+]);
+
+function motsDistinctifs(t: string): Set<string> {
+  return new Set(
+    (t || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((m) => m.length >= 5 && !CREUX.has(m)),
+  );
+}
+
+function seRecoupent(a: string, b: string, minimum = 1): boolean {
+  const x = motsDistinctifs(a);
+  let n = 0;
+  for (const m of motsDistinctifs(b)) if (x.has(m) && ++n >= minimum) return true;
+  return false;
+}
+
 function raccourcir(t: string | null): string | null {
   if (!t) return null;
   const p = t.replace(/\s+/g, ' ').trim();
@@ -260,7 +302,53 @@ export async function enregistrerQualifications(
 
     // ⚠️ NE JAMAIS ÉCRASER une attente que l'utilisateur a déjà traitée : son
     // geste prime sur une relecture automatique.
-    const existante = await db.attente.findFirst({ where: { threadId: q.threadId } });
+    let existante = await db.attente.findFirst({ where: { threadId: q.threadId } });
+
+    // DOUBLON AVEC L'AUDIT (mesuré à la première exécution, 26/08). Les 14
+    // attentes établies à la main n'ont PAS de threadId : la boucle a donc
+    // recréé la convention Zanitti et le sinistre MECHACHE une seconde fois.
+    // Deux cartes pour une même affaire, et il cesse de faire confiance.
+    //
+    // On ne rapproche qu'avec TROIS signaux concordants — même compte, même
+    // côté, ET un mot distinctif commun dans le correspondant ET dans l'objet.
+    // Les deux derniers sont indispensables : Comptastar porte à lui seul deux
+    // attentes bien distinctes (le bilan 2025, le juriste pour l'AG), qu'un
+    // rapprochement sur le seul nom aurait fusionnées à tort.
+    if (!existante) {
+      const orphelines = await db.attente.findMany({
+        where: {
+          threadId: null,
+          accountSlug: dernier.accountSlug,
+          cote: a.cote === 'eux' ? 'eux' : 'moi',
+          etat: { in: ['ouverte', 'probable'] },
+        },
+      });
+      // DEUX mots communs exigés sur l'objet, un seul sur le correspondant.
+      // Mesuré sur le cas qui aurait cassé la règle : les deux attentes
+      // Comptastar (« Le bilan 2025 de la SARL ECONOM » et « Le juriste
+      // annoncé pour l'AG et le dépôt des comptes 2024 d'ECONOM ») ne
+      // partagent qu'un mot — « econom » — et doivent rester séparées ; la
+      // convention Zanitti en partage deux (« convention », « honoraires »),
+      // le sinistre MECHACHE aussi (« sinistre », « mechache »).
+      const jumelle = orphelines.find(
+        (o) => seRecoupent(o.qui, a.qui) && seRecoupent(o.quoi, a.quoi, 2),
+      );
+      if (jumelle) {
+        // On la rattache au fil — elle devient dédoublonnable pour de bon, et
+        // le lecteur pourra ouvrir la conversation depuis la carte — mais on
+        // ne TOUCHE À RIEN D'AUTRE : l'attente d'origine a été écrite en
+        // relisant le dossier entier, elle est mieux jugée. Mesuré : la boucle
+        // classait la convention Zanitti « faible/faible » quand l'audit la
+        // voyait « haute/haute », à raison — sans cette signature, son action
+        // contre le maître d'œuvre n'a jamais démarré.
+        await db.attente.update({
+          where: { id: jumelle.id },
+          data: { threadId: q.threadId, messageId: dernier.id },
+        });
+        attentes++;
+        continue;
+      }
+    }
     if (existante) {
       if (existante.etat === 'ouverte' || existante.etat === 'probable') {
         await db.attente.update({
