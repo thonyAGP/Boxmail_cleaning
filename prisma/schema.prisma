@@ -1038,6 +1038,34 @@ model EngagementMessage {
 /// crier au loup. Le plafond d'attention (3 à 7 nouveautés par jour) porte sur
 /// l'importance — JAMAIS sur l'urgence : « le plafond protège l'attention,
 /// jamais l'utilisateur contre une information critique ».
+/// Trace de ce qui a DÉJÀ été qualifié, pour ne pas resservir sans fin le même
+/// fil à l'IA. On mémorise jusqu'à quel message on a lu : si le correspondant
+/// écrit à nouveau, le fil redevient candidat — c'est ce qui permet de dire
+/// « c'est le 3e rappel » plutôt que de rejuger l'histoire à zéro.
+///
+/// Un fil qualifié « rien à faire » ne produit aucune attente ; sans cette
+/// table, il reviendrait à chaque passage et le vivier ne se viderait jamais.
+model Qualification {
+  id       Int @id @default(autoincrement())
+  threadId Int @unique
+
+  /// Date du dernier message CONNU au moment de la qualification. Un message
+  /// postérieur rouvre le fil.
+  jusquAu DateTime
+  /// attente | rien | doute — ce que l'IA a conclu.
+  verdict String
+  /// Pourquoi rien, quand c'est rien : sans cette phrase on ne peut pas
+  /// distinguer « déjà réglé » de « pas compris ».
+  motif   String?
+  /// Score du détecteur au moment du passage — pour mesurer après coup si le
+  /// classement mécanique visait juste.
+  score   Int?
+
+  qualifieAt DateTime @default(now())
+
+  @@index([verdict])
+}
+
 model Attente {
   id          Int     @id @default(autoincrement())
   /// moi = j'ai quelque chose à faire · eux = j'attends quelque chose d'eux.

@@ -12,6 +12,7 @@ import { registerTaskTools } from './tools/tasks.js';
 import { registerRuleTools } from './tools/rules.js';
 import { registerAssistTools } from './tools/assist.js';
 import { registerRentilaTools } from './tools/rentila.js';
+import { registerQualificationTools } from './tools/qualification.js';
 
 /**
  * Construit une instance McpServer avec tous les tools enregistrés.
@@ -54,6 +55,7 @@ export function buildMcpServer(): McpServer {
   registerRuleTools(server);
   registerAssistTools(server);
   registerRentilaTools(server);
+  registerQualificationTools(server);
 
   return server;
 }
