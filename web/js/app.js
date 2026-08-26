@@ -665,7 +665,12 @@ function route() {
   } else if (hash.startsWith('#/inbox')) {
     renderInbox(decodeURIComponent(hash.split('/')[2] ?? ''));
   } else if (hash.startsWith('#/search')) {
-    renderSearch();
+    // ⚠️ Le `?q=` de l'URL était IGNORÉ (mesuré le 26/08) : tout lien profond
+    // vers la recherche — « Voir l'histoire » d'une attente, le « 🔍 Voir »
+    // d'un dossier — ouvrait un écran vide en invitant à retaper la question.
+    const q = new URLSearchParams(hash.split('?')[1] || '').get('q');
+    if (q !== null) searchState.q = q;
+    renderSearch(q !== null && q !== '');
   } else if (hash.startsWith('#/replies')) {
     renderReplies();
   } else if (hash.startsWith('#/followups')) {
@@ -6155,7 +6160,15 @@ function modaleBrouillon(br, a, opts = {}) {
   ouvrirModale(opts.titre || '✉️ Brouillon de relance', `
     <div class="form-vert">
       <p class="muted">Rien ne part tant que tu n'as pas envoyé toi-même. Relis, corrige, copie.</p>
-      <label>À<input id="br-to" type="text" value="${esc(br.to)}"></label>
+      <label>À<input id="br-to" type="text" value="${esc(br.to)}" placeholder="choisis ci-dessous ou saisis une adresse"></label>
+      ${(br.candidats ?? []).length ? `<div class="br-candidats">
+        <span class="muted">${br.to ? 'Autres destinataires possibles' : 'À qui écrire ?'} —</span>
+        ${br.candidats.map((c) => `<button type="button" class="find-chip br-cand" data-email="${esc(c.email)}"
+          title="${esc(c.email)}${c.messages ? ` · ${c.messages} message(s)` : ''}${c.dernier ? ` · dernier le ${esc(c.dernier)}` : ''}">
+          ${c.dejaEchange ? '↩︎ ' : ''}${esc(c.nom || c.email)}
+          <span class="muted">${c.origine === 'fil' ? 'dans ce fil' : (c.messages ? `${c.messages} msg` : '')}</span>
+        </button>`).join('')}
+      </div>` : ''}
       <label>Objet<input id="br-subject" type="text" value="${esc(br.subject)}"></label>
       <label>Message<textarea id="br-body" rows="14">${esc(br.body)}</textarea></label>
       ${(br.appuis ?? []).length ? `<details><summary>Sur quoi ce brouillon s'appuie</summary>
@@ -6166,6 +6179,20 @@ function modaleBrouillon(br, a, opts = {}) {
       <button class="btn" id="br-copy">📋 Copier</button>
       <button class="btn btn-primary" id="br-send">✉️ Envoyer</button>`);
   $('#br-close').addEventListener('click', closeModal);
+
+  // À QUI ÉCRIRE. Son retour du 26/08, écran en main : « à quoi bon sans avoir
+  // le destinataire ». Le champ arrivait vide dès que l'attente n'était
+  // rattachée à aucun fil. On ne devine pas une adresse — on présente les
+  // candidats, et c'est lui qui tranche en un clic.
+  document.querySelectorAll('.br-cand').forEach((b) => {
+    b.addEventListener('click', () => {
+      const champ = $('#br-to');
+      champ.value = b.dataset.email;
+      champ.focus();
+      document.querySelectorAll('.br-cand').forEach((x) => x.classList.remove('actif'));
+      b.classList.add('actif');
+    });
+  });
 
   // ENVOYER (18/08). L'invariant du chantier était « rien ne part sans son
   // clic » ; je l'avais appliqué en « rien ne part du tout », ce qui rendait
@@ -6367,7 +6394,15 @@ async function gesteAttente(id, code, carte) {
   if (code === 'voir') {
     const a = _attentes?.find((x) => x.id === id);
     if (!a) return;
-    location.hash = `#/search?q=${encodeURIComponent(a.quiEmail || a.qui)}`;
+    // Le libellé brut ne trouve rien : « Comptastar — Loïse Barbis » porte un
+    // tiret cadratin et deux mots rares qui, cherchés ensemble, excluent tout.
+    // On prend l'adresse quand on l'a, sinon le mot le plus distinctif du nom.
+    const mots = (a.qui || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .split(/[^A-Za-zÀ-ÿ0-9]+/)
+      .filter((m) => m.length >= 4 && !/^(maitre|madame|monsieur|cabinet|service|agence)$/i.test(m));
+    const terme = a.quiEmail || mots.sort((x, y) => y.length - x.length)[0] || a.qui;
+    location.hash = `#/search?q=${encodeURIComponent(terme)}`;
     return;
   }
 
@@ -9635,7 +9670,7 @@ function ficheFichier(nom) {
   return `<span class="find-file" title="${esc(nom)}">${attIcon(nom)} ${esc(nom)}</span>`;
 }
 
-async function renderSearch() {
+async function renderSearch(lancerToutDeSuite = false) {
   const main = $('#main');
   const accounts = (overviewCache?.enrolled ?? []).map((e) => e.account);
   main.innerHTML = `<div class="page-head">
@@ -9713,6 +9748,13 @@ async function renderSearch() {
   });
   $('#s-q').focus();
   if (searchState.data) renderSearchResults();
+  // Arrivée par un lien profond (« Voir l'histoire », « 🔍 Voir ») : la
+  // question est déjà posée, on n'attend pas qu'il reclique « Chercher ».
+  if (lancerToutDeSuite && searchState.q) {
+    lireFiltres();
+    ordreAdapte();
+    runSearch();
+  }
 }
 
 async function runSearch() {

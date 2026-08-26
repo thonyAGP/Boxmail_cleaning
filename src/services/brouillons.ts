@@ -33,6 +33,11 @@ export interface Brouillon {
   accountSlug: string | null;
   /** Ce sur quoi le brouillon s'appuie — affiché pour qu'il puisse vérifier. */
   appuis: string[];
+  /**
+   * À qui écrire, quand ce n'est pas évident. Proposé plutôt que deviné :
+   * une adresse choisie au hasard serait pire qu'un champ vide.
+   */
+  candidats?: Destinataire[];
 }
 
 const dateFr = (d: Date | string | null | undefined): string =>
@@ -231,6 +236,142 @@ export async function brouillonReponse(messageId: number): Promise<Brouillon> {
  *
  * Comme partout ici : ce service RÉDIGE, il n'envoie rien.
  */
+/** Un destinataire plausible, avec de quoi choisir en connaissance de cause. */
+export interface Destinataire {
+  email: string;
+  nom: string | null;
+  /** fil = il a écrit dans cette conversation · nom = il porte le nom du correspondant. */
+  origine: 'fil' | 'nom';
+  messages: number;
+  dernier: string | null;
+  /** A-t-il déjà eu un échange réel (un sortant, une réponse) ? */
+  dejaEchange: boolean;
+}
+
+/** Les mots qui identifient un correspondant : ≥ 4 lettres, sans civilité. */
+function motsDuNom(qui: string): string[] {
+  const CIVILITES = new Set(['maitre', 'madame', 'monsieur', 'cabinet', 'service', 'agence']);
+  return [
+    ...new Set(
+      (qui || '')
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((m) => m.length >= 4 && !CIVILITES.has(m)),
+    ),
+  ].slice(0, 4);
+}
+
+/**
+ * À QUI écrire — la question que le brouillon ne savait pas résoudre.
+ *
+ * Son retour, écran en main le 26/08 : « à quoi bon sans avoir le
+ * destinataire ». Le champ arrivait vide dès que l'attente n'était rattachée à
+ * aucun fil — le cas de toutes celles nées de l'audit. Deviner une adresse
+ * unique serait pire : on proposerait la mauvaise sans le dire. On PRÉSENTE
+ * donc les candidats, avec ce qui permet de trancher (combien d'échanges,
+ * quand, et si la conversation a déjà eu lieu dans les deux sens).
+ *
+ * Deux sources, dans cet ordre : les correspondants DU FIL quand il y en a un,
+ * puis ceux dont le nom recoupe celui du correspondant attendu — c'est ainsi
+ * qu'on retrouve le comptable d'une attente qui ne porte que « Comptastar ».
+ */
+export async function destinatairesPossibles(attenteId: number): Promise<Destinataire[]> {
+  await ensureDbReady();
+  const a = await db.attente.findUnique({ where: { id: attenteId } });
+  if (!a) return [];
+
+  const SANS_REPONSE =
+    /(no-?reply|donotreply|ne[-._]?pas[-._]?repondre|nepasrepondre|no[-._]?responder|notification[s]?@|mailer-daemon|postmaster)/i;
+  const vus = new Map<string, Destinataire>();
+  const ajouter = (d: Destinataire) => {
+    const cle = d.email.toLowerCase();
+    if (!cle || SANS_REPONSE.test(cle)) return;
+    const deja = vus.get(cle);
+    // Le fil prime sur le nom, et on garde le libellé le plus informatif.
+    if (deja && !(d.origine === 'fil' && deja.origine === 'nom')) return;
+    vus.set(cle, { ...d, nom: d.nom ?? deja?.nom ?? null });
+  };
+
+  // 1. Ceux qui ont écrit dans cette conversation.
+  if (a.threadId) {
+    for (const m of await db.message.findMany({
+      where: { threadId: a.threadId, isOutbound: false, isDeleted: false },
+      orderBy: { date: 'desc' },
+      take: 40,
+      select: { fromEmail: true, fromName: true, date: true },
+    })) {
+      if (!m.fromEmail) continue;
+      ajouter({
+        email: m.fromEmail,
+        nom: m.fromName,
+        origine: 'fil',
+        messages: 0,
+        dernier: m.date ? m.date.toISOString().slice(0, 10) : null,
+        dejaEchange: false,
+      });
+    }
+  }
+
+  // 2. Ceux dont le nom recoupe celui du correspondant attendu.
+  const mots = motsDuNom(a.qui);
+  if (mots.length) {
+    const senders = await db.sender.findMany({
+      where: {
+        accountSlug: a.accountSlug,
+        OR: mots.flatMap((m) => [
+          { displayName: { contains: m } },
+          { email: { contains: m } },
+        ]),
+      },
+      orderBy: { messageCount: 'desc' },
+      take: 25,
+      select: {
+        email: true,
+        displayName: true,
+        messageCount: true,
+        lastMessageAt: true,
+        engagedAt: true,
+      },
+    });
+    for (const s of senders) {
+      ajouter({
+        email: s.email,
+        nom: s.displayName,
+        origine: 'nom',
+        messages: s.messageCount,
+        dernier: s.lastMessageAt ? s.lastMessageAt.toISOString().slice(0, 10) : null,
+        dejaEchange: !!s.engagedAt,
+      });
+    }
+  }
+
+  // Complète le volume des adresses trouvées par le fil : sans ça, un
+  // correspondant de longue date apparaîtrait avec « 0 message ».
+  const sansVolume = [...vus.values()].filter((d) => d.messages === 0);
+  if (sansVolume.length) {
+    for (const s of await db.sender.findMany({
+      where: { accountSlug: a.accountSlug, email: { in: sansVolume.map((d) => d.email) } },
+      select: { email: true, messageCount: true, lastMessageAt: true, engagedAt: true },
+    })) {
+      const d = vus.get(s.email.toLowerCase());
+      if (!d) continue;
+      d.messages = s.messageCount;
+      d.dejaEchange = !!s.engagedAt;
+      d.dernier = d.dernier ?? (s.lastMessageAt ? s.lastMessageAt.toISOString().slice(0, 10) : null);
+    }
+  }
+
+  return [...vus.values()]
+    .sort((x, y) => {
+      if (x.origine !== y.origine) return x.origine === 'fil' ? -1 : 1;
+      if (x.dejaEchange !== y.dejaEchange) return x.dejaEchange ? -1 : 1;
+      return y.messages - x.messages;
+    })
+    .slice(0, 8);
+}
+
 export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
   await ensureDbReady();
   const a = await db.attente.findUnique({ where: { id: attenteId } });
@@ -259,23 +400,126 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
     }
   }
 
+  /**
+   * QUAND LE FIL N'EST QU'UN TRANSFERT. Mesuré le 26/08 : l'attente
+   * « Régler 418 € à l'URSSAF » proposait d'écrire à sa MÈRE — elle lui avait
+   * transféré la mise en demeure, elle était donc le dernier entrant du fil.
+   * Si un correspondant porte le nom du dossier (« urssaf »), il l'emporte
+   * sur celui du fil ; sinon on garde le comportement d'origine.
+   */
+  const candidats = await destinatairesPossibles(attenteId);
+  const clesDuNom = motsDuNom(a.qui);
+  const porteLeNom = (c: Destinataire): boolean =>
+    clesDuNom.some(
+      (m) => c.email.toLowerCase().includes(m) || (c.nom ?? '').toLowerCase().includes(m),
+    );
+  if (!to || !porteLeNom({ email: to, nom: toName } as Destinataire)) {
+    const mieux = candidats.find(porteLeNom);
+    if (mieux) {
+      to = mieux.email;
+      // Le nom SUIT l'adresse, sans repli sur l'ancien : garder « Mylène LE
+      // BERRE » en changeant pour dcl.bretagne@urssaf.fr produisait un mail
+      // qui saluait sa mère et partait à l'URSSAF.
+      toName = mieux.nom ?? null;
+    }
+  }
+
   const appuis: string[] = [];
-  const lignes: string[] = ['Bonjour,', ''];
 
   /**
-   * ⚠️ NE JAMAIS RECOPIER `pourquoi` DANS LE CORPS (mesuré à l'écran le
-   * 26/08). Ce champ est une explication ADRESSÉE À L'UTILISATEUR, écrite à
-   * la deuxième personne : « Tu as contesté le solde de tout compte le 25
-   * avril 2024. Ils se sont engagés PAR ÉCRIT… ». Recopié tel quel, il
-   * produisait un mail tutoyant l'assureur et parlant de lui à la troisième
-   * personne. Le corps ne contient donc que des FAITS DATÉS, neutres ; le
-   * constat, lui, part dans `appuis` — que l'utilisateur lit, et qui n'est
-   * jamais envoyé.
+   * ⚠️ NE JAMAIS RECOPIER `pourquoi` DANS LE CORPS. Ce champ est une
+   * explication ADRESSÉE À L'UTILISATEUR, écrite à la deuxième personne :
+   * « Tu as contesté le solde de tout compte le 25 avril 2024… ». Recopié
+   * tel quel, il produisait un mail tutoyant l'assureur.
+   *
+   * MAIS LE JETER ÉTAIT PIRE (mesuré à l'écran le 26/08). Son retour, devant
+   * un brouillon adressé à sa comptable : « manque clairement de contexte —
+   * qui me l'a envoyé, à quel sujet, à quelle date […] pas juste coucou, je
+   * reviens après ton dernier mail d'un an, on en est où ». Tout ce qui
+   * manquait au corps était sous ses yeux dans « Sur quoi ce brouillon
+   * s'appuie ». La bonne réponse n'est donc pas de recopier `pourquoi`,
+   * c'est d'aller chercher les MÊMES FAITS à la source — le dernier message
+   * du fil, daté et signé — et de les écrire à la troisième personne.
    */
   appuis.push(`constat : ${a.pourquoi.slice(0, 140)}`);
 
+  // LE DERNIER MOUVEMENT DU FIL : qui a parlé, quand, de quoi. C'est ce qui
+  // transforme « Je fais suite à » en « vous m'avez adressé le 16 octobre ».
+  let dernierEntrant: { date: Date | null; fromName: string | null; subject: string | null } | null =
+    null;
+  let dernierSortant: { date: Date | null } | null = null;
+  if (a.threadId) {
+    dernierEntrant = await db.message.findFirst({
+      where: { threadId: a.threadId, isOutbound: false, isDeleted: false },
+      orderBy: { date: 'desc' },
+      select: { date: true, fromName: true, subject: true },
+    });
+    dernierSortant = await db.message.findFirst({
+      where: { threadId: a.threadId, isOutbound: true, isDeleted: false },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+  }
+
+  const moisDepuis = (d: Date | null | undefined): number | null =>
+    d ? Math.floor((Date.now() - new Date(d).getTime()) / (1000 * 60 * 60 * 24 * 30.44)) : null;
+
+  /** « trois mois », « près d'un an »… — pour l'écrire comme on le dirait. */
+  const dureeEnClair = (mois: number): string => {
+    if (mois >= 22) return `près de ${Math.round(mois / 12)} ans`;
+    if (mois >= 11) return "près d'un an";
+    if (mois >= 2) return `${mois} mois`;
+    return 'plusieurs semaines';
+  };
+
+  const nettoyerObjet = (t: string | null): string =>
+    t ? ` (« ${t.replace(/^((re|tr|fwd?)\s*:\s*)+/i, '').slice(0, 70)} »)` : '';
+
+  /**
+   * SALUTATION NOMMÉE quand on parle à QUELQU'UN. « Bonjour, » à un
+   * interlocuteur connu depuis des années sonne comme un publipostage — mais
+   * « Bonjour Insured — service juridique, » ou « Bonjour Comptastar, » sonne
+   * pire encore (mesuré le 26/08). On ne nomme donc que ce qui ressemble à
+   * une personne : deux ou trois mots, sans tiret de libellé, sans forme
+   * juridique, sans mot de service.
+   */
+  const SOCIETE =
+    /\b(sarl|sasu?|sci|scp|eurl|selarl|sa|sas|service|agence|cabinet|assurances?|banque|groupe|societe|société|direction|support|contact|comptabilit)/i;
+  // PAS DE REPLI sur le nom du fil : `toName` suit déjà le destinataire
+  // retenu. Le repli faisait saluer « Mylène LE BERRE » un mail adressé à
+  // dcl.bretagne@urssaf.fr, parce qu'elle était le dernier entrant du fil.
+  const civil = (toName || '').trim();
+  const nu = civil.split(/[<(]/)[0].replace(/["']/g, '').trim();
+  const motsCivil = nu.split(/\s+/).filter(Boolean);
+  // DEUX MOTS AU MOINS — un prénom et un nom. Un mot seul est presque
+  // toujours une raison sociale : « Bonjour Comptastar, » est passé à travers
+  // le filtre des formes juridiques, parce qu'aucune liste ne contiendra
+  // jamais le nom de son cabinet comptable.
+  const personne =
+    !!nu &&
+    !nu.includes('@') &&
+    !/[—–|,/]/.test(nu) &&
+    motsCivil.length >= 2 &&
+    motsCivil.length <= 3 &&
+    !SOCIETE.test(nu);
+  const lignes: string[] = [personne ? `Bonjour ${nu},` : 'Bonjour,', ''];
+
   if (a.cote === 'eux') {
     lignes.push(`Je reviens vers vous au sujet de : ${a.quoi}.`, '');
+
+    // CE QUI S'EST PASSÉ, DATÉ. Un rappel vérifiable vaut mieux qu'un reproche.
+    if (dernierEntrant?.date) {
+      lignes.push(
+        `Votre dernier message sur ce point date du ${dateFr(dernierEntrant.date)}${nettoyerObjet(dernierEntrant.subject)}.`,
+      );
+      appuis.push(`dernier message reçu : ${dateFr(dernierEntrant.date)}`);
+    }
+    if (dernierSortant?.date) {
+      lignes.push(`Je vous avais écrit le ${dateFr(dernierSortant.date)}.`);
+      appuis.push(`mon dernier envoi : ${dateFr(dernierSortant.date)}`);
+    }
+    if (dernierEntrant?.date || dernierSortant?.date) lignes.push('');
+
     if (a.dueAt) {
       lignes.push(
         `Sauf erreur de ma part, le délai annoncé était le ${dateFr(a.dueAt)} et je n'ai pas eu de retour depuis.`,
@@ -283,18 +527,43 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
       );
       appuis.push(`échéance annoncée : ${dateFr(a.dueAt)}`);
     } else {
-      lignes.push("Sauf erreur de ma part, je n'ai pas eu de retour sur ce point.", '');
+      const m = moisDepuis(dernierEntrant?.date ?? dernierSortant?.date ?? null);
+      lignes.push(
+        m != null && m >= 2
+          ? `Sauf erreur de ma part, je n'ai pas eu de retour depuis, soit ${dureeEnClair(m)}.`
+          : "Sauf erreur de ma part, je n'ai pas eu de retour sur ce point.",
+        '',
+      );
     }
     if (a.montant != null) {
       lignes.push(`Montant concerné : ${euros(a.montant)}.`, '');
       appuis.push(`montant : ${euros(a.montant)}`);
     }
-    lignes.push('[à compléter : rappelle ici le contexte si nécessaire]', '');
     lignes.push(
       'Pourriez-vous me dire où en est ce point, ce qui reste éventuellement à fournir de mon côté, et sous quel délai il peut aboutir ?',
     );
   } else {
-    lignes.push(`Je fais suite à : ${a.quoi}.`, '');
+    // C'EST À LUI D'AGIR — donc c'est LUI qui est en retard. Le rappel du
+    // contexte se double d'une EXCUSE quand le délai la rend nécessaire.
+    if (dernierEntrant?.date) {
+      lignes.push(
+        `Je reviens vers vous au sujet de votre message du ${dateFr(dernierEntrant.date)}${nettoyerObjet(dernierEntrant.subject)} : ${a.quoi}`,
+        '',
+      );
+      appuis.push(`message reçu le ${dateFr(dernierEntrant.date)}`);
+    } else {
+      lignes.push(`Je reviens vers vous au sujet de : ${a.quoi}`, '');
+    }
+
+    const m = moisDepuis(dernierEntrant?.date ?? null);
+    if (m != null && m >= 3) {
+      lignes.push(
+        `Je vous prie de m'excuser pour ce délai de réponse — ${dureeEnClair(m)} se sont écoulés depuis votre message.`,
+        '',
+      );
+      appuis.push(`ton délai de réponse : ${dureeEnClair(m)}`);
+    }
+
     if (a.dueAt) appuis.push(`échéance : ${dateFr(a.dueAt)}`);
     if (a.montant != null) {
       lignes.push(`Montant concerné : ${euros(a.montant)}.`, '');
@@ -312,5 +581,11 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
     body: lignes.join('\n'),
     accountSlug: a.accountSlug,
     appuis,
+    // Toujours proposés, même quand une adresse a été trouvée : le fil peut
+    // compter plusieurs interlocuteurs, et c'est lui qui sait auquel écrire.
+    // Cas mesuré le 26/08 : l'attente URSSAF pointait vers sa MÈRE, qui lui
+    // avait transféré la mise en demeure — une adresse trouvée n'est pas une
+    // adresse juste.
+    candidats,
   };
 }

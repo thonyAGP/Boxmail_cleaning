@@ -599,6 +599,14 @@ a.tab { text-decoration: none; }
   border-radius: 999px; padding: 6px 13px; font-size: 12.5px; cursor: pointer;
 }
 .find-chip:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+
+/* À QUI ÉCRIRE (26/08) — les destinataires plausibles d'un brouillon, quand
+   l'attente n'est rattachée à aucun fil et que le champ arriverait vide. */
+.br-candidats { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin: -6px 0 4px; }
+.br-candidats .muted { font-size: 12px; }
+.br-cand { display: inline-flex; gap: 6px; align-items: baseline; max-width: 100%; }
+.br-cand > .muted { font-size: 11px; }
+.br-cand.actif { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .find-filters {
   display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
   margin-bottom: 14px; font-size: 12.5px; color: var(--text-secondary);
