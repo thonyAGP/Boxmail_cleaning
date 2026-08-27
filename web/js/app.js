@@ -11707,7 +11707,7 @@ async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
   const barre = `<div class="ctx-barre">
     ${onglet('sujet', 'Ce sujet', d.compteurs.sujet)}
     ${onglet('lie', 'Lié à ce mail', d.compteurs.lie)}
-    ${onglet('tout', `Tout avec ${esc((d.displayName || '').split(' ')[0] || 'lui')}`, d.compteurs.tout)}
+    ${onglet('tout', `Tout avec ${esc(d.organisation || (d.displayName || '').split(' ')[0] || 'lui')}`, d.compteurs.tout)}
   </div>`;
 
   if (d.focale === 'tout') {

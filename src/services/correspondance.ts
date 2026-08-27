@@ -96,8 +96,64 @@ export interface Correspondance {
   subjects: SujetEchange[];
 }
 
+/**
+ * LES DOMAINES QUI N'IDENTIFIENT PERSONNE. Chez un fournisseur, le domaine EST
+ * l'interlocuteur : `litiges@sider.biz` et `relationclient@sider.biz` sont la
+ * même maison. Chez un fournisseur de messagerie, le domaine ne désigne rien —
+ * regrouper par `hotmail.com` fusionnerait toute sa vie privée en un seul
+ * « correspondant ». C'est le garde-fou qui rend l'élargissement sûr.
+ */
+const DOMAINES_PUBLICS = new Set([
+  'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.fr', 'outlook.com',
+  'outlook.fr', 'live.com', 'live.fr', 'msn.com', 'yahoo.com', 'yahoo.fr',
+  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net', 'neuf.fr',
+  'bbox.fr', 'aol.com', 'icloud.com', 'me.com', 'mac.com', 'protonmail.com',
+  'proton.me', 'gmx.fr', 'gmx.com', 'yopmail.com', 'numericable.fr',
+]);
+
+/**
+ * Les autres adresses de la MÊME MAISON, quand la maison est identifiable.
+ *
+ * ⚠️ CE QUI A RENDU CETTE FONCTION NÉCESSAIRE (mesuré le 27/08 sur la base
+ * réelle). Le dossier « remboursement SIDER » vit sur **10 adresses**
+ * (`litiges@`, `relationclient@`, `encours@`, `contact@`, `devis@`,
+ * `nepasrepondre@`…) et **34 fils**. Le panneau « Voir l'histoire », calqué
+ * sur UNE adresse, en montrait 3. Anthony : « tu donnes l'impression d'avoir
+ * créé un truc solide mais c'est du vent ».
+ *
+ * Lu dans `Sender` — table petite — et non par un LIKE sur `Message`
+ * (139 863 lignes) : 9 ms contre un balayage complet. Le résultat sert ensuite
+ * un `fromEmail IN (...)`, qui utilise l'index (3 ms pour 28 mails).
+ * Plafonné à 300 : très en dessous des 999 valeurs qui font PANIQUER le moteur.
+ */
+export async function adressesDeLOrganisation(
+  email: string,
+): Promise<{ domaine: string; adresses: string[] } | null> {
+  const domaine = (email.split('@')[1] ?? '').toLowerCase();
+  if (!domaine || DOMAINES_PUBLICS.has(domaine)) return null;
+  // Un sous-domaine de service (`contact@service.sider.biz`) appartient à la
+  // même maison : on remonte au domaine enregistrable, deux étiquettes.
+  const parts = domaine.split('.');
+  const racine = parts.length > 2 ? parts.slice(-2).join('.') : domaine;
+  const adresses = (
+    await db.sender.findMany({
+      where: { email: { endsWith: `@${racine}` } },
+      select: { email: true },
+      take: 300,
+    })
+  ).map((s) => s.email.toLowerCase());
+  const uniques = [...new Set([...adresses, email.toLowerCase()])];
+  return uniques.length > 1 ? { domaine: racine, adresses: uniques } : null;
+}
+
 export async function correspondance(opts: {
   email: string;
+  /**
+   * Élargissement à la MAISON : toutes les adresses de l'organisation. Quand
+   * il est fourni, « tout ce qui s'est dit avec eux » couvre le fournisseur
+   * entier, pas seulement la boîte aux lettres qui a écrit ce jour-là.
+   */
+  emails?: string[];
   /** Restreindre à une boîte ; absent = toutes (il écrit parfois aux deux). */
   account?: string;
   /** Nombre de conversations renvoyées (défaut 12). */
@@ -105,13 +161,14 @@ export async function correspondance(opts: {
 }): Promise<Correspondance> {
   await ensureDbReady();
   const email = opts.email.trim().toLowerCase();
+  const cibles = [...new Set((opts.emails?.length ? opts.emails : [email]).map((e) => e.toLowerCase()))];
   const limit = Math.min(Math.max(opts.limit ?? 12, 1), 60);
 
   // Les mails REÇUS de cette personne…
   const recus = await db.message.findMany({
     where: {
       isDeleted: false,
-      fromEmail: email,
+      fromEmail: cibles.length > 1 ? { in: cibles } : email,
       folder: { role: { notIn: ['spam'] } },
       ...(opts.account ? { accountSlug: opts.account } : {}),
     },
@@ -130,7 +187,7 @@ export async function correspondance(opts: {
       ...(opts.account ? { accountSlug: opts.account } : {}),
       OR: [
         ...(fils.length ? [{ threadId: { in: fils } }] : []),
-        { toEmails: { contains: email } },
+        ...cibles.map((e) => ({ toEmails: { contains: e } })),
       ],
     },
     orderBy: { date: 'desc' },
@@ -438,6 +495,11 @@ export interface ContexteMail {
   /** Identifiant du mail courant — sert au repère « vous êtes ici ». */
   messageIdCourant: number;
   focale: Focale;
+  /**
+   * Le domaine de l'organisation quand l'interlocuteur en est une (`sider.biz`),
+   * null pour une adresse personnelle. C'est le libellé du troisième onglet.
+   */
+  organisation: string | null;
   /** Les trois compteurs, hors mail courant — ils remplissent les onglets. */
   compteurs: { sujet: number; lie: number; tout: number };
   /** Messages de la focale demandée (focales `sujet` et `lie`). */
@@ -499,12 +561,41 @@ export async function contexteDuMail(opts: {
   if (!email) throw new Error('Aucun interlocuteur identifiable sur ce mail.');
   const cible = email.toLowerCase();
 
-  // Tous les échanges avec cette personne (les deux sens).
+  /**
+   * L'UNIVERS DU PANNEAU — ce dans quoi les trois focales vont puiser.
+   *
+   * ⚠️ IL NE SE RÉDUIT PLUS À UNE ADRESSE (corrigé le 27/08, sur données
+   * RÉELLES). Il l'a été pendant neuf jours, et ça donnait ceci sur le dossier
+   * « remboursement SIDER » : « Ce sujet · 0 », alors que le fil comptait
+   * trois messages, et « Tout · 2 » pour une affaire de 34 mails.
+   *
+   * Deux causes, toutes deux ici :
+   *  1. LE FIL ÉTAIT AMPUTÉ. Une conversation appartient à ses participants,
+   *     pas à une boîte aux lettres : le mail d'ancrage venait de
+   *     `compta.client@qerys.com` (2 mails en tout), ses deux frères de fil de
+   *     `litiges@sider.biz` — donc invisibles. Un fil est désormais pris
+   *     ENTIER, quel que soit l'expéditeur.
+   *  2. L'INTERLOCUTEUR ÉTAIT UNE ADRESSE. SIDER écrit depuis dix boîtes
+   *     différentes selon le service. On élargit à la maison — sauf domaine
+   *     public, voir `adressesDeLOrganisation`.
+   *
+   * CHRONOMÉTRÉ AVANT D'ÊTRE ÉCRIT, sur les 139 863 mails de production :
+   * l'union coûte 160 ms et rend 37 mails, là où l'ancienne requête coûtait
+   * 158 ms pour en rendre 3. L'élargissement est gratuit — le `LIKE` sur
+   * `toEmails` était déjà payé.
+   */
+  const maison = await adressesDeLOrganisation(cible);
   const tous = await db.message.findMany({
     where: {
       isDeleted: false,
       folder: { role: { notIn: ['spam'] } },
-      OR: [{ fromEmail: cible }, { toEmails: { contains: cible } }],
+      OR: [
+        { fromEmail: cible },
+        { toEmails: { contains: cible } },
+        ...(courant.threadId !== null ? [{ threadId: courant.threadId }] : []),
+        ...(maison ? [{ fromEmail: { in: maison.adresses } }] : []),
+        ...(maison ? [{ toEmails: { contains: `@${maison.domaine}` } }] : []),
+      ],
     },
     orderBy: { date: 'desc' },
     take: 600,
@@ -567,6 +658,11 @@ export async function contexteDuMail(opts: {
   return {
     email: cible,
     displayName: nom,
+    // Le nom de la MAISON quand l'élargissement s'applique : c'est lui que
+    // l'onglet doit afficher. « Tout avec Comptabilité » désignait la boîte aux
+    // lettres qui avait écrit ce jour-là ; « Tout avec sider.biz » désigne
+    // l'interlocuteur réel.
+    organisation: maison?.domaine ?? null,
     accounts: [...new Set(tous.map((m) => m.accountSlug))],
     messageIdCourant: courant.id,
     focale,
@@ -574,9 +670,11 @@ export async function contexteDuMail(opts: {
     messages: focale === 'tout' ? [] : messages,
     tronque: Math.max(0, retenus.filter((m) => !m.estCourant).length - plafond),
     // La vue élargie garde le regroupement par conversation : c'est là qu'il
-    // explore vraiment, et 800 messages à plat seraient illisibles.
+    // explore vraiment, et 800 messages à plat seraient illisibles. Elle est
+    // élargie à la maison, sinon le troisième onglet resterait aveugle là où
+    // les deux premiers voient enfin.
     sujets: focale === 'tout'
-      ? (await correspondance({ email: cible, limit: 40 })).subjects
+      ? (await correspondance({ email: cible, emails: maison?.adresses, limit: 40 })).subjects
       : [],
   };
 }
