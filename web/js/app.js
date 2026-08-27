@@ -6539,12 +6539,51 @@ async function gesteAttente(id, code, carte) {
     }
     return;
   }
-  // « Voir l'histoire » : la recherche sur le correspondant, qui rassemble ce
-  // qui le concerne toutes boîtes confondues. Un dossier traverse en moyenne
-  // 3 à 4 boîtes chez lui — chercher dans une seule n'aurait aucun sens.
+  /**
+   * « VOIR L'HISTOIRE » — le fil du sujet, puis ce qui s'y rattache, puis
+   * l'interlocuteur entier. Dans cet ordre, et jamais tout d'un coup.
+   *
+   * ⚠️ CE QUE FAISAIT CE BOUTON JUSQU'AU 27/08 : une recherche par mot-clé sur
+   * le nom du correspondant. Sur « Comptabilité Client SIDER » — un
+   * remboursement de 1 000 € — elle rendait 153 mails chez 42 interlocuteurs,
+   * dont aucun ne concernait l'affaire. Sa demande, mot pour mot : « tu
+   * devrais avoir la liste définie des emails qui traitent ce dossier,
+   * potentiellement ceux qui traitent du dossier et en plus ceux de SIDER,
+   * mais tu vas me noyer sinon […] sans te limiter dans un 1er temps aux
+   * vrais emails qui sont l'historique du sujet ».
+   *
+   * Les trois niveaux qu'il décrit existaient déjà : ce sont les focales de
+   * `contexteDuMail`, servies par le panneau « 📚 Contexte » du lecteur. Le
+   * seul travail était de les rendre atteignables depuis une attente — le
+   * panneau vivait enfermé dans le lecteur (voir `chargerContexte`).
+   *
+   * On ouvre donc sur `sujet` : le FIL, l'histoire réelle. Les deux autres
+   * niveaux sont à un clic, avec leur compteur affiché — il choisit de
+   * s'élargir, on ne le noie pas d'office.
+   */
   if (code === 'voir') {
     const a = _attentes?.find((x) => x.id === id);
     if (!a) return;
+
+    if (a.messageId) {
+      const titre = `📚 ${esc((a.quoi || 'L\'histoire de ce dossier').slice(0, 70))}`;
+      ouvrirModale(
+        titre,
+        `<div class="ctx-modale-lead">Avec <strong>${esc(a.qui || 'ce correspondant')}</strong>.
+           Le fil du sujet d'abord ; élargis seulement si tu en as besoin.</div>
+         <div id="ctx-histoire"></div>`,
+      );
+      const zone = $('#ctx-histoire');
+      if (zone) {
+        await chargerContexte(zone, { messageId: a.messageId }, 'sujet', a.quoi || '', {
+          avantOuverture: closeModal,
+        });
+      }
+      return;
+    }
+
+    // SANS MAIL D'ANCRAGE, on ne peut pas reconstituer de fil : il ne reste
+    // que la recherche par nom. C'est le cas des attentes saisies à la main.
     /**
      * ⚠️ LE MOT LE PLUS LONG N'EST PAS LE PLUS DISTINCTIF (corrigé le 27/08).
      *
@@ -11533,130 +11572,8 @@ function renderReaderAnalysis(a, item, opts = {}) {
       zone.innerHTML = '<div class="empty">Ce mail n\'est pas encore indexé — synchronise la boîte.</div>';
       return;
     }
-    await chargerContexte(zone, ref, 'lie', bouton.dataset.sujet || '');
+    await chargerContexte(zone, ref, 'lie', bouton.dataset.sujet || '', { item, opts });
   });
-
-  /** Charge et rend une focale. Rappelable sans reconstruire le lecteur. */
-  async function chargerContexte(zone, ref, focale, sujetCourant) {
-    zone.innerHTML = '<div class="empty"><span class="spinner"></span>Je rassemble le contexte…</div>';
-    let d;
-    try {
-      d = await api.contexteMail(ref, focale);
-    } catch (err) {
-      zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
-      return;
-    }
-    if (!zone.isConnected) return;
-
-    // Les trois focales, du plus étroit au plus large. Les compteurs excluent
-    // le mail courant : « 0 autre » est une information, pas un échec.
-    const onglet = (cle, libelle, n) =>
-      `<button class="ctx-focale ${d.focale === cle ? 'actif' : ''}" data-focale="${cle}"
-        ${n === 0 && cle !== 'tout' ? 'data-vide="1"' : ''}>${libelle} · ${fmtNum(n)}</button>`;
-    const barre = `<div class="ctx-barre">
-      ${onglet('sujet', 'Ce sujet', d.compteurs.sujet)}
-      ${onglet('lie', 'Lié à ce mail', d.compteurs.lie)}
-      ${onglet('tout', `Tout avec ${esc((d.displayName || '').split(' ')[0] || 'lui')}`, d.compteurs.tout)}
-    </div>`;
-
-    if (d.focale === 'tout') {
-      zone.innerHTML = barre + (d.sujets.length
-        ? `<div class="ctx-lead">${fmtNum(d.compteurs.tout)} échanges, regroupés par conversation.</div>` +
-          d.sujets.map((sj, i) => `
-            <div class="ctx-conv">
-              <button class="ctx-conv-head" data-conv="${i}">
-                <span class="ctx-conv-titre">${esc(sj.subject)}</span>
-                <span class="muted">${fmtNum(sj.count)} message(s) · ${esc(fmtDate(sj.lastAt))}</span>
-              </button>
-              <div class="ctx-conv-body hidden" data-convbody="${i}">
-                ${sj.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}
-              </div>
-            </div>`).join('')
-        : '<div class="empty">Aucun autre échange retrouvé.</div>');
-      zone.querySelectorAll('[data-conv]').forEach((b) => b.addEventListener('click', () => {
-        zone.querySelector(`[data-convbody="${b.dataset.conv}"]`)?.classList.toggle('hidden');
-      }));
-    } else if (!d.messages.filter((m) => !m.estCourant).length) {
-      // CAS VIDE — fréquent (41 % des mails mesurés). On ne s'élargit JAMAIS
-      // en douce : le même bouton signifierait tantôt « voici les liens »,
-      // tantôt « je n'ai rien trouvé, voilà autre chose ».
-      zone.innerHTML = barre + `<div class="ctx-vide">
-        Aucun échange antérieur directement lié à ce mail.
-        ${d.compteurs.tout > 0
-          ? `<button class="btn btn-sm" data-focale="tout">Élargir aux ${fmtNum(d.compteurs.tout)} autres échanges →</button>`
-          : ''}</div>`;
-    } else {
-      zone.innerHTML = barre +
-        `<div class="ctx-fil">${d.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}</div>` +
-        (d.tronque > 0
-          ? `<div class="ctx-plus">${fmtNum(d.tronque)} autre(s) échange(s) lié(s) non affiché(s) —
-             <button class="btn btn-sm" data-focale="tout">tout voir →</button></div>`
-          : '');
-    }
-
-    // Changement de focale : on recharge la même zone, le mail reste intact.
-    zone.querySelectorAll('[data-focale]').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.focale === d.focale) return;
-      chargerContexte(zone, ref, b.dataset.focale, sujetCourant);
-    }));
-
-    // UN CLIC DÉPLIE SUR PLACE. Le mail courant n'est jamais remplacé.
-    zone.querySelectorAll('.ctx-msg-head').forEach((h) => h.addEventListener('click', async () => {
-      const corps = h.parentElement.querySelector('.ctx-msg-body');
-      if (!corps) return;
-      if (!corps.classList.contains('hidden')) { corps.classList.add('hidden'); return; }
-      // Un seul déplié à la fois : quinze corps ouverts seraient illisibles.
-      zone.querySelectorAll('.ctx-msg-body').forEach((c) => c.classList.add('hidden'));
-      corps.classList.remove('hidden');
-      if (corps.dataset.charge) return;
-      corps.innerHTML = '<div class="empty"><span class="spinner"></span>Lecture…</div>';
-      try {
-        const m = await readMessageCached(h.dataset.account, h.dataset.folder, Number(h.dataset.uid));
-        corps.dataset.charge = '1';
-        marquerLu(h.dataset.account, h.dataset.folder, Number(h.dataset.uid), null);
-        const pj = (h.dataset.pj || '').split('|').filter(Boolean);
-        const texte = m.text || m.plain || m.body || '';
-        corps.innerHTML =
-          `<div class="ctx-corps">${esc(texte.slice(0, 4000) || '(corps vide)').replace(/\n/g, '<br>')}</div>` +
-          (pj.length ? `<div class="ctx-pj">📎 ${pj.map((n) => esc(n)).join(' · ')}</div>` : '') +
-          `<div class="ctx-msg-actions">
-             <button class="btn btn-sm ctx-ouvrir" data-account="${h.dataset.account}"
-               data-folder="${h.dataset.folder}" data-uid="${h.dataset.uid}">Ouvrir ce mail ↗</button>
-           </div>`;
-        corps.querySelector('.ctx-ouvrir')?.addEventListener('click', () => {
-          // SEUL endroit qui change réellement de document — et il empile le
-          // mail courant pour que le retour soit possible et NOMMÉ.
-          _pileLecture.push({ item, opts, label: sujetCourant || item.subject });
-          openReaderFor(
-            { account: h.dataset.account, folder: h.dataset.folder, uid: Number(h.dataset.uid) },
-            opts,
-          );
-        });
-      } catch (err) {
-        corps.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
-      }
-    }));
-  }
-
-  /** Une ligne du contexte : repliée par défaut, avec la raison du lien. */
-  function ligneContexte(m, midCourant) {
-    if (m.messageId === midCourant || m.estCourant) {
-      return `<div class="ctx-ici">— vous êtes ici — ${esc(fmtDate(m.date))} · ${esc((m.subject || '').slice(0, 60))}</div>`;
-    }
-    const qui = m.isOutbound ? 'Toi' : 'Lui';
-    return `<div class="ctx-msg">
-      <button class="ctx-msg-head" data-account="${esc(m.account)}" data-folder="${esc(m.folder)}"
-        data-uid="${m.uid}" data-pj="${esc((m.attachmentNames || []).join('|'))}">
-        <span class="ctx-msg-date">${esc(fmtDate(m.date))}</span>
-        <span class="ctx-msg-qui">${qui}</span>
-        <span class="ctx-msg-sujet">${esc(m.subject || '(sans objet)')}</span>
-        ${m.hasAttachments ? '<span class="badge gray">📎</span>' : ''}
-        ${m.lienPar ? `<span class="ctx-lien" title="Pourquoi ce message est là">${esc(m.lienPar)}</span>` : ''}
-      </button>
-      <div class="ctx-msg-body hidden">${m.snippet ? `<div class="ctx-apercu">${esc(m.snippet)}</div>` : ''}</div>
-    </div>`;
-  }
-
 
   $('#ra-cat')?.addEventListener('change', async (e) => {
     try {
@@ -11748,6 +11665,154 @@ function renderReaderAnalysis(a, item, opts = {}) {
       }
     });
   });
+}
+
+/**
+ * L'HISTOIRE D'UN SUJET — les trois focales, du plus étroit au plus large.
+ *
+ * ⚠️ HISSÉE HORS DU LECTEUR LE 27/08. Ce panneau vivait à l'intérieur de
+ * `renderReaderAnalysis`, donc il n'existait QUE quand un mail était ouvert.
+ * Résultat : « Voir l'histoire », depuis une attente, ne pouvait pas s'en
+ * servir et retombait sur une recherche par mot-clé. Sur le dossier SIDER
+ * — un remboursement de 1 000 € — cela rendait 153 mails chez 42
+ * interlocuteurs. Son verdict : « tu vas me noyer sinon sur la liste des
+ * emails de SIDER sans te limiter dans un 1er temps aux vrais emails qui
+ * sont l'historique du sujet ».
+ *
+ * Les trois focales SONT cette gradation, et elles existaient déjà :
+ *   « Ce sujet »        → le fil, l'histoire réelle du dossier ;
+ *   « Lié à ce mail »   → ce qui s'y rattache ailleurs ;
+ *   « Tout avec X »     → tout l'interlocuteur, et seulement s'il le demande.
+ *
+ * `ctx` porte ce qui dépend de l'appelant :
+ *   - `item` / `opts`      : le lecteur, pour empiler le retour ;
+ *   - `avantOuverture`     : une modale, pour se refermer avant d'ouvrir un mail.
+ */
+async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
+  zone.innerHTML = '<div class="empty"><span class="spinner"></span>Je rassemble le contexte…</div>';
+  let d;
+  try {
+    d = await api.contexteMail(ref, focale);
+  } catch (err) {
+    zone.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  if (!zone.isConnected) return;
+
+  // Les trois focales, du plus étroit au plus large. Les compteurs excluent
+  // le mail courant : « 0 autre » est une information, pas un échec.
+  const onglet = (cle, libelle, n) =>
+    `<button class="ctx-focale ${d.focale === cle ? 'actif' : ''}" data-focale="${cle}"
+      ${n === 0 && cle !== 'tout' ? 'data-vide="1"' : ''}>${libelle} · ${fmtNum(n)}</button>`;
+  const barre = `<div class="ctx-barre">
+    ${onglet('sujet', 'Ce sujet', d.compteurs.sujet)}
+    ${onglet('lie', 'Lié à ce mail', d.compteurs.lie)}
+    ${onglet('tout', `Tout avec ${esc((d.displayName || '').split(' ')[0] || 'lui')}`, d.compteurs.tout)}
+  </div>`;
+
+  if (d.focale === 'tout') {
+    zone.innerHTML = barre + (d.sujets.length
+      ? `<div class="ctx-lead">${fmtNum(d.compteurs.tout)} échanges, regroupés par conversation.</div>` +
+        d.sujets.map((sj, i) => `
+          <div class="ctx-conv">
+            <button class="ctx-conv-head" data-conv="${i}">
+              <span class="ctx-conv-titre">${esc(sj.subject)}</span>
+              <span class="muted">${fmtNum(sj.count)} message(s) · ${esc(fmtDate(sj.lastAt))}</span>
+            </button>
+            <div class="ctx-conv-body hidden" data-convbody="${i}">
+              ${sj.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}
+            </div>
+          </div>`).join('')
+      : '<div class="empty">Aucun autre échange retrouvé.</div>');
+    zone.querySelectorAll('[data-conv]').forEach((b) => b.addEventListener('click', () => {
+      zone.querySelector(`[data-convbody="${b.dataset.conv}"]`)?.classList.toggle('hidden');
+    }));
+  } else if (!d.messages.filter((m) => !m.estCourant).length) {
+    // CAS VIDE — fréquent (41 % des mails mesurés). On ne s'élargit JAMAIS
+    // en douce : le même bouton signifierait tantôt « voici les liens »,
+    // tantôt « je n'ai rien trouvé, voilà autre chose ».
+    zone.innerHTML = barre + `<div class="ctx-vide">
+      Aucun échange antérieur directement lié à ce mail.
+      ${d.compteurs.tout > 0
+        ? `<button class="btn btn-sm" data-focale="tout">Élargir aux ${fmtNum(d.compteurs.tout)} autres échanges →</button>`
+        : ''}</div>`;
+  } else {
+    zone.innerHTML = barre +
+      `<div class="ctx-fil">${d.messages.map((m) => ligneContexte(m, d.messageIdCourant)).join('')}</div>` +
+      (d.tronque > 0
+        ? `<div class="ctx-plus">${fmtNum(d.tronque)} autre(s) échange(s) lié(s) non affiché(s) —
+           <button class="btn btn-sm" data-focale="tout">tout voir →</button></div>`
+        : '');
+  }
+
+  // Changement de focale : on recharge la même zone, le mail reste intact.
+  zone.querySelectorAll('[data-focale]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.focale === d.focale) return;
+    // `ctx` est reconduit : sans lui, changer d'onglet dans la modale
+    // d'historique lui ferait perdre de quoi se refermer avant d'ouvrir un mail.
+    chargerContexte(zone, ref, b.dataset.focale, sujetCourant, ctx);
+  }));
+
+  // UN CLIC DÉPLIE SUR PLACE. Le mail courant n'est jamais remplacé.
+  zone.querySelectorAll('.ctx-msg-head').forEach((h) => h.addEventListener('click', async () => {
+    const corps = h.parentElement.querySelector('.ctx-msg-body');
+    if (!corps) return;
+    if (!corps.classList.contains('hidden')) { corps.classList.add('hidden'); return; }
+    // Un seul déplié à la fois : quinze corps ouverts seraient illisibles.
+    zone.querySelectorAll('.ctx-msg-body').forEach((c) => c.classList.add('hidden'));
+    corps.classList.remove('hidden');
+    if (corps.dataset.charge) return;
+    corps.innerHTML = '<div class="empty"><span class="spinner"></span>Lecture…</div>';
+    try {
+      const m = await readMessageCached(h.dataset.account, h.dataset.folder, Number(h.dataset.uid));
+      corps.dataset.charge = '1';
+      marquerLu(h.dataset.account, h.dataset.folder, Number(h.dataset.uid), null);
+      const pj = (h.dataset.pj || '').split('|').filter(Boolean);
+      const texte = m.text || m.plain || m.body || '';
+      corps.innerHTML =
+        `<div class="ctx-corps">${esc(texte.slice(0, 4000) || '(corps vide)').replace(/\n/g, '<br>')}</div>` +
+        (pj.length ? `<div class="ctx-pj">📎 ${pj.map((n) => esc(n)).join(' · ')}</div>` : '') +
+        `<div class="ctx-msg-actions">
+           <button class="btn btn-sm ctx-ouvrir" data-account="${h.dataset.account}"
+             data-folder="${h.dataset.folder}" data-uid="${h.dataset.uid}">Ouvrir ce mail ↗</button>
+         </div>`;
+      corps.querySelector('.ctx-ouvrir')?.addEventListener('click', () => {
+        // SEUL endroit qui change réellement de document. Depuis le lecteur,
+        // il empile le mail courant pour que le retour soit possible et NOMMÉ.
+        // Depuis une modale d'historique, il n'y a rien à empiler : on ferme.
+        if (ctx.item) {
+          _pileLecture.push({ item: ctx.item, opts: ctx.opts, label: sujetCourant || ctx.item.subject });
+        } else {
+          ctx.avantOuverture?.();
+        }
+        openReaderFor(
+          { account: h.dataset.account, folder: h.dataset.folder, uid: Number(h.dataset.uid) },
+          ctx.opts,
+        );
+      });
+    } catch (err) {
+      corps.innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    }
+  }));
+}
+
+/** Une ligne du contexte : repliée par défaut, avec la raison du lien. */
+function ligneContexte(m, midCourant) {
+  if (m.messageId === midCourant || m.estCourant) {
+    return `<div class="ctx-ici">— vous êtes ici — ${esc(fmtDate(m.date))} · ${esc((m.subject || '').slice(0, 60))}</div>`;
+  }
+  const qui = m.isOutbound ? 'Toi' : 'Lui';
+  return `<div class="ctx-msg">
+    <button class="ctx-msg-head" data-account="${esc(m.account)}" data-folder="${esc(m.folder)}"
+      data-uid="${m.uid}" data-pj="${esc((m.attachmentNames || []).join('|'))}">
+      <span class="ctx-msg-date">${esc(fmtDate(m.date))}</span>
+      <span class="ctx-msg-qui">${qui}</span>
+      <span class="ctx-msg-sujet">${esc(m.subject || '(sans objet)')}</span>
+      ${m.hasAttachments ? '<span class="badge gray">📎</span>' : ''}
+      ${m.lienPar ? `<span class="ctx-lien" title="Pourquoi ce message est là">${esc(m.lienPar)}</span>` : ''}
+    </button>
+    <div class="ctx-msg-body hidden">${m.snippet ? `<div class="ctx-apercu">${esc(m.snippet)}</div>` : ''}</div>
+  </div>`;
 }
 
 // Ouvre le panneau de lecture depuis un élément « intelligence » (importants,

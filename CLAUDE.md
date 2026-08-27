@@ -213,14 +213,16 @@ passage : aucune nouvelle fonction d'arbitrage tant que la charge n'a pas baiss�
 - Le **silence ne prouve rien hors d'une demande d'argent** (§ 54).
 - Une **adresse commune ne fait pas un dossier** : le 46 rue de la République
   porte des dizaines de sujets distincts (charpentier, notaire, électricien).
+- **Un mot de service n'identifie personne** : « Comptabilité Client SIDER »
+  cherché sur son mot le plus LONG donnait 153 mails hors sujet. Le nom propre
+  est court (SIDER) — écarter compta/client/service/litiges d'abord (§ 56).
+- **Une fonction utile enfermée dans un écran n'existe pas ailleurs** : les 3
+  focales de `contexteDuMail` vivaient dans le lecteur ; « Voir l'histoire »
+  refaisait une recherche par mot-clé faute de pouvoir les appeler (§ 56).
 - **Ce qui n'est pas commité ne survit pas à la nuit** : le timer de 04:04 UTC
   restaure tout depuis git. Livrer par git, pas par scp.
 
 **À faire** :
-- **« Voir l'histoire »** doit passer par les 3 focales de `contexteDuMail`
-  (`sujet` → `lie` → `tout`), PAS par une recherche par mot-clé. Demandé le
-  27/08 : « tu devrais avoir la liste définie des emails qui traitent ce
-  dossier… sans me noyer dans tous ceux de SIDER ».
 - **Gardé dans un coin** (ses mots, 27/08) : voir le FIL d'un sujet sous la
   carte et pouvoir ouvrir ces mails ; joindre au brouillon les copies des mails
   auxquels il fait référence, **uniquement au besoin**.
@@ -233,10 +235,7 @@ passage : aucune nouvelle fonction d'arbitrage tant que la charge n'a pas baiss�
 - Suite de l'écran argent ; vue documentaire ; doublons de pièces ; étape 2 des
   liaisons (par EXPÉDITEUR) ; Fiscal-Manager ; rétention (QU'AVEC lui).
 
-**Dossier LEGALFREE** (mail envoyé le 26/08, réponse attendue) : apport BRIMMO +
-ALTOEN à ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au greffe**.
-Annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le 26/02. Deux
-devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 € (démission de
-gérance de son frère François Jean). Autre affaire bloquée : CAPTAIN CONTRAT, en
-attente de la **signature de Ludovic**, prélèvement de 294,67 € rejeté le
-13/12/2025.
+**Dossiers en cours** (LEGALFREE, CAPTAIN CONTRAT…) : le détail est au JOURNAL
+(§ 42, § 54) et surtout DANS L'APP — c'est précisément ce que `#/suivi` sert.
+Ce fichier tient les règles de travail, pas l'état des affaires : recopier ici
+ce que l'outil sait déjà le ferait vieillir en silence.
