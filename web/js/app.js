@@ -1692,12 +1692,23 @@ function renderBriefing(t, el) {
   // Une action = la carte disparaît, un bandeau « Fait · Annuler » apparaît.
   // Pas de confirmation : tout est réversible et journalisé (c'est justement
   // ce qui permet de supprimer les questions).
-  const agir = async (c, label, fn, node) => {
+  /**
+   * ⚠️ LE BANDEAU N'AVAIT PAS DE BOUTON. Le commentaire ci-dessus promettait
+   * « Fait · Annuler » depuis des semaines, et l'appel passait `null` comme
+   * `onUndo` — donc aucun bouton. Le mécanisme existait (`showUndoToast`, 10 s
+   * de décompte), il n'était simplement pas câblé. C'est pourtant lui qui rend
+   * le renversement acceptable : on peut décider à sa place PARCE QU'il peut
+   * défaire en un geste.
+   */
+  const agir = async (c, label, fn, node, undo) => {
     node.style.opacity = '0.4';
     try {
-      await fn();
+      const resultat = await fn();
       node.remove();
-      showUndoToast(`${label} — c'est noté.`, null);
+      showUndoToast(
+        `${label}.`,
+        undo ? async () => { await undo(resultat); renderToday(); } : null,
+      );
       const restants = el.querySelectorAll('.brief-card').length;
       const lead = el.querySelector('.brief-lead');
       if (lead) {
@@ -1724,7 +1735,7 @@ function renderBriefing(t, el) {
         .catch((err) => alert(err.message));
       return;
     }
-    agir(c, a.label.replace(/^[^\s]+\s/, ''), a.run, node);
+    agir(c, a.annonce ?? a.label.replace(/^[^\s]+\s/, ''), a.run, node, a.undo);
   }));
   el.querySelectorAll('[data-open]').forEach((s) => s.addEventListener('click', () => {
     openBriefReader(cartes[Number(s.dataset.open)]);
@@ -1796,15 +1807,61 @@ function briefTitle({ kind, x }) {
 }
 
 /** L'UNIQUE action recommandée. Le reste passe derrière le menu « ⋯ ». */
+/**
+ * L'ACTION UNIQUE D'UNE CARTE — et son annulation.
+ *
+ * ⚠️ CE QUI A CHANGÉ, ET POURQUOI. Ces libellés étaient des QUESTIONS :
+ * « C'est réglé ? », « C'est noté ? », « C'est fait ? », « Plus besoin ? ».
+ * Quatre boutons « Valider » déguisés, alors que le plan du 10/08 prescrivait
+ * l'inverse : « voilà ce que j'ai fait — interviens seulement si c'est faux ».
+ * Son retour du 26/08 : « je veux valider ou non UNE DÉCISION QUE TU AURAS
+ * DÉJÀ PRISE ».
+ *
+ * Chaque action porte donc son `undo`, la closure inverse passée au bandeau.
+ * Les routes existaient déjà (`followupRestore`, `deadlineAction('restore')`)
+ * et n'étaient appelées de nulle part ici.
+ *
+ * ⚠️ « JE L'AI PAYÉE » N'EST PAS UN LIBELLÉ, C'EST UN FAIT. L'ancien bouton
+ * exécutait `messageAction('seen')` : il marquait le mail LU en laissant croire
+ * qu'un paiement était enregistré. Il écrit désormais une `Declaration` — un
+ * état du monde, déclaré par lui, réversible si un mail le contredit.
+ */
 function briefAction({ kind, x }) {
   // L'affaire n'a pas de mail à ouvrir : son geste utile est le brouillon.
   if (kind === 'engagement') return { label: '✉️ Relancer', affaire: x.id };
-  if (kind === 'invoice') return { label: '✓ C\'est réglé', run: () => api.messageAction(x.account, { folder: x.folder, uid: x.uid, action: 'seen' }) };
+  if (kind === 'invoice') {
+    return {
+      label: '✓ Je l\'ai payée',
+      annonce: 'Noté comme payée',
+      run: () => api.declarer({ messageId: x.messageId, kind: 'pay' }),
+      undo: (r) => api.declarationAnnuler(r?.id),
+    };
+  }
   if (kind === 'reply') return { label: '↩️ Répondre', open: true };
-  if (kind === 'followup') return { label: '✓ Plus besoin', run: () => api.followupDismiss(x.account, x.threadId) };
-  if (x.status === 'proposed') return { label: '✓ C\'est noté', run: () => api.deadlineAction(x.account, x.id, 'confirm') };
-  return { label: '✓ C\'est fait', run: () => api.deadlineAction(x.account, x.id, 'done') };
+  if (kind === 'followup') {
+    return {
+      label: 'Je ne te le remontre plus',
+      annonce: 'Je ne te le remontre plus',
+      run: () => api.followupDismiss(x.account, x.threadId),
+      undo: () => api.followupRestore(x.account, x.threadId),
+    };
+  }
+  if (x.status === 'proposed') {
+    return {
+      label: 'J\'ai noté l\'échéance',
+      annonce: 'Échéance notée',
+      run: () => api.deadlineAction(x.account, x.id, 'confirm'),
+      undo: () => api.deadlineAction(x.account, x.id, 'restore'),
+    };
+  }
+  return {
+    label: 'Je la marque faite',
+    annonce: 'Marquée faite',
+    run: () => api.deadlineAction(x.account, x.id, 'done'),
+    undo: () => api.deadlineAction(x.account, x.id, 'restore'),
+  };
 }
+
 
 /** Les autres gestes possibles, discrets — 90 % du temps jamais ouverts. */
 function briefMore({ kind, x }) {

@@ -76,6 +76,9 @@ export const api = {
   // brouillon RÉDIGE seulement, l'envoi reste un clic explicite.
   attentes: () => request('GET', '/attentes'),
   attenteGeste: (id, geste, note) => request('POST', `/attentes/${id}`, { geste, note }),
+  // Un FAIT declare par lui (« je l'ai payée »), pas un mail marque lu.
+  declarer: (payload) => request('POST', '/declarations', payload),
+  declarationAnnuler: (id) => request('DELETE', `/declarations/${id}`),
   brouillonAttente: (id) => request('GET', `/attentes/${id}/brouillon`),
   // Argent (26/08) : par TIERS, jamais un total de portefeuille — cf. argent.ts.
   argentTiers: (limit = 60) => request('GET', `/argent/tiers?limit=${limit}`),
