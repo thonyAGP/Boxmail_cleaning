@@ -173,53 +173,63 @@ Brest. `thony56_gtr` : fonds ancien 2006-2008 (eBay, Assedic, réseaux morts).
 ## État courant (remplacer, ne pas empiler — détail dans docs/JOURNAL.md)
 
 **CAP : « RETROUVER SANS CLASSER »** (11/08) — ses boîtes sont des archives non
-structurées, pas des boîtes sales ; `docs/PLAN-ARCHIVE.md` est CLASSÉ. Cadre :
-`docs/PLAN-ASSISTANT.md`.
+structurées, pas des boîtes sales. Cadre : `docs/PLAN-ASSISTANT.md`.
 
-**DEUX TÂCHES PLANIFIÉES claude.ai tournent seules** — ne leur donner AUCUN
-connecteur hors Boxmail. Toutes deux se heurtent à la même limite : *une
-conversation CUMULE ses lots et meurt* (~60 mails, ~30 dossiers) — d'où des
-sous-agents à contexte NEUF et une coupure au TEMPS.
-1. **Analyse des mails**, `trig_01SLhekXbwP85yQTnP32Aaof`, :17 chaque heure
-   (§ 36-38). Vivier à compter via `candidateWhere` d'analysis.ts, PAS un
-   count naïf.
-2. **Suivi des affaires**, `trig_01SnQhTSebN3VnzLBx7dw9NS`, 06:43 UTC chaque
-   jour (§ 54). Chaîne : détecteur `anomalies.ts` (SQL, ~305 fils, gratuit) →
-   lecture (`next_dossiers_batch` / `submit_dossiers_batch`) → `Attente` sur
-   `#/suivi`. **Le score du détecteur n'est PAS un verdict : mesuré, il se
-   trompe une fois sur deux.** `npm run dossiers` pour voir sans consommer ;
-   `npm run attentes:dedoublonner` après toute vague antérieure à un déploiement.
+**LA RÈGLE QUI GOUVERNE TOUT** (§ 55) — « voilà ce que j'ai fait, interviens si
+c'est faux », jamais « que veux-tu faire ? ». Écrite le 10/08, livrée seulement
+le 27/08. Trois corollaires non négociables :
+- Le silence peut valider un état de FONCTIONNEMENT de l'assistant (je
+  surveille, je ne montre plus) ; **jamais** un état du MONDE (facture payée) —
+  d'où la table `Declaration`, un fait déclaré et réversible.
+- **Deux modèles séparés, jamais recombinés en un score** : le risque objectif
+  et la politique de présentation. Le second n'annule jamais le premier, sinon
+  le système apprend la procrastination.
+- Ton : paternaliste sur l'attention, affirmatif sur la recommandation, humble
+  sur les décisions conséquentes.
 
-**TROIS PIÈGES MESURÉS, à ne pas réapprendre** :
-- Un mail **sans extrait est INVISIBLE**, pas « en attente » (`candidateWhere`
-  exige `snippet != null`) : le cowork annonçait « tout est jugé » en n'ayant vu
-  que 29 % des mails. Toujours vérifier la COUVERTURE (§ 53).
-- Écran argent : **JAMAIS de total de portefeuille** — le haut du classement mêle
-  un château à 2,68 M€, des budgets de copropriété et des pesos chiliens.
-- Le **silence ne prouve rien hors d'une demande d'argent** : un créancier
-  relance, celui qui attend une signature classe et attend (§ 54).
+**DEUX TÂCHES PLANIFIÉES claude.ai tournent seules** — aucun connecteur hors
+Boxmail. Même limite pour les deux : *une conversation CUMULE ses lots et meurt*
+(~60 mails, ~30 dossiers) — sous-agents à contexte NEUF, coupure au TEMPS.
+1. **Analyse des mails**, `trig_01SLhekXbwP85yQTnP32Aaof`, :17 chaque heure.
+   Vivier à compter via `candidateWhere` d'analysis.ts, PAS un count naïf.
+2. **Suivi des affaires**, `trig_01SnQhTSebN3VnzLBx7dw9NS`, **:07 chaque heure**
+   (§ 54-55). Détecteur `anomalies.ts` (SQL, gratuit) → lecture par sous-agents
+   → `Attente`. **Le score du détecteur n'est PAS un verdict : il se trompe une
+   fois sur deux.** `npm run dossiers` pour voir sans consommer ;
+   `npm run attentes:dedoublonner` (option `--ids` : ne JAMAIS appliquer le lot
+   entier, 3 propositions sur 5 étaient de faux doublons).
 
-**Livré** (détail au journal) : § 43-45 Vue du jour, Affaires en cours, Contexte ·
-§ 46 recherche 132 s → ~300 ms · § 47-49 lecteur · § 50-51 recherche par mots,
-liaisons · § 52 Précédent/Suivant · § 53 extraits des ENVOYÉS (`isOutbound: false`
-était en dur) + écran 💶 argent · § 54 boucle de suivi.
+**MESURER AVANT D'AJOUTER** : `npm run charge` — décisions demandées pour 100
+mails reçus (cible 10-20 puis 5-10) ET taux de contradiction. Ne se lit JAMAIS
+seul : un écran qui ne montre rien obtiendrait un score parfait. Règle de
+passage : aucune nouvelle fonction d'arbitrage tant que la charge n'a pas baissé
+À COUVERTURE CONSTANTE.
+
+**PIÈGES MESURÉS, à ne pas réapprendre** :
+- Un mail **sans extrait est INVISIBLE**, pas « en attente » — vérifier la
+  COUVERTURE, jamais conclure d'un vivier vide (§ 53).
+- Écran argent : **JAMAIS de total de portefeuille** (château à 2,68 M€, budgets
+  de copropriété, pesos chiliens mêlés).
+- Le **silence ne prouve rien hors d'une demande d'argent** (§ 54).
+- Une **adresse commune ne fait pas un dossier** : le 46 rue de la République
+  porte des dizaines de sujets distincts (charpentier, notaire, électricien).
+- **Ce qui n'est pas commité ne survit pas à la nuit** : le timer de 04:04 UTC
+  restaure tout depuis git. Livrer par git, pas par scp.
 
 **À faire** :
-- **Mesurer ce que la boucle de suivi produit** sur le stock (~280 dossiers) :
-  proportion d'attentes réelles, qualité des « pourquoi » affichés. L'écran
-  `#/suivi` n'a pas été retouché (budget d'attention : 7 ordinaires/jour).
-- **Étape 5 du MVP** : la mémoire condensée de l'affaire (dernier point du plan).
-- **Suite de l'écran argent** (son retour attendu) : ne montre que les pièces
-  CHIFFRÉES (5 lignes sur 61 mails Legalfree) ; les SILENCES ne sont pas
-  signalés ; un tiers n'est pas un dossier (ECONOM/BRIMMO/ALTOEN = 3 sociétés).
-- Fin du rattrapage jojo56 ⇒ ~45 000 mails analysables (~2 semaines de cowork).
-- Vue documentaire ; doublons de pièces ; étape 2 des liaisons (par EXPÉDITEUR) ;
-  passe 3 de la recherche ; lot 6 ; Fiscal-Manager ; rétention (QU'AVEC lui).
+- **Mesurer la charge sur plusieurs jours** avant d'ajouter quoi que ce soit.
+- **Le contre-audit des NON-MONTRÉS** — la seule mesure des faux négatifs.
+  Auditer les cartes montrées mesure la précision, jamais ce qui est enterré.
+- Les états dormante / surveillée / candidate, réveil sur ÉVÉNEMENT.
+- Fusionner `#/suivi` et « Aujourd'hui » (contrats incompatibles : l'un reçoit
+  `actions[]` du serveur, l'autre les calcule côté client).
+- Suite de l'écran argent ; vue documentaire ; doublons de pièces ; étape 2 des
+  liaisons (par EXPÉDITEUR) ; Fiscal-Manager ; rétention (QU'AVEC lui).
 
-**Dossier LEGALFREE** (synthèse du 26/08, mail envoyé, réponse attendue) : apport
-BRIMMO + ALTOEN à ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au
-greffe**. Annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le
-26/02. Deux devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 €
-(démission de gérance de son frère François Jean). Autre affaire bloquée :
-CAPTAIN CONTRAT, en attente de la **signature de Ludovic**, prélèvement de
-294,67 € rejeté le 13/12/2025.
+**Dossier LEGALFREE** (mail envoyé le 26/08, réponse attendue) : apport BRIMMO +
+ALTOEN à ECONOM depuis le 24/06/2025. **2 478,68 € versés**, **rien au greffe**.
+Annulé le 19/01/2026 sans remboursement, PV du CAT pourtant signé le 26/02. Deux
+devis le 25/08/2026 : 1 296,01 € (déjà payé le 18/11) et 638,41 € (démission de
+gérance de son frère François Jean). Autre affaire bloquée : CAPTAIN CONTRAT, en
+attente de la **signature de Ludovic**, prélèvement de 294,67 € rejeté le
+13/12/2025.

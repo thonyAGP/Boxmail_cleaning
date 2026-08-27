@@ -5,6 +5,120 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 27/08 (55) — Le renversement promis le 10/08, enfin livré
+
+Sa demande, mot pour mot : « je suis sûr que tu devrais déjà être capable de
+prévoir ou de m'orienter afin que je valide ou non **une décision que tu auras
+déjà prise**. Je ne veux pas avoir des listes empilées de ce qui est à faire ou
+que tu imagines, mais **de ce que tu penses que je devrais faire**. »
+
+Et sur les 114 règles jamais activées, une précision qui change le diagnostic :
+« je n'ai même pas été y jeter un œil, car c'est une suite de 114 lignes à dire
+oui ou non ». Ce n'était pas un refus du classement — un refus qu'on le lui
+fasse faire.
+
+### Ce que l'audit du dépôt a trouvé
+
+`docs/PLAN-ASSISTANT.md:105-108`, écrit le 10/08, disait déjà : « Aujourd'hui
+l'écran demande "que veux-tu faire de ce mail ?". Demain il dit "voilà ce que
+j'ai fait — interviens seulement si c'est faux". L'absence de réaction vaut
+accord. Il n'y a pas de bouton Valider. »
+
+**Jamais livré. Douze sessions depuis.** Et le code *annonçait* le bon
+comportement sans l'appliquer : `web/js/app.js:1692` promettait en commentaire
+« un bandeau *Fait · Annuler* apparaît », la ligne suivante passait `null` comme
+`onUndo` — **le bouton n'a jamais existé**. Les routes d'annulation
+(`replyRestore`, `followupRestore`, `deadlineAction('restore')`) existaient et
+n'étaient appelées de nulle part sur cet écran.
+
+**16 surfaces d'arbitrage** recensées, dont 4 à usage MESURÉ NUL : 114 règles
+suggérées / 0 activée · 0 fusion, 0 renommage, 0 masquage en un mois · aucune
+trace de notation des moteurs. Trois affirmations fausses à l'écran : la phrase
+« N choses méritent ton attention » (celle de la colère du 18/08), le bouton
+« C'est réglé » qui n'enregistrait aucun paiement, le nettoyage annoncé en
+gigaoctets alors que moins de 2 % du volume est supprimable.
+
+### La consultation ChatGPT (protocole aveugle, 2 tours)
+
+`.consult/2026-08-26-aujourdhui/synthese.md`. Trois apports décisifs :
+
+**Deux modèles séparés, jamais recombinés en un score.** Le *risque objectif*
+(« si rien ne se passe, y a-t-il un problème ? ») et la *politique de
+présentation* (« est-il utile de le montrer aujourd'hui ? »). Le second n'a
+jamais le droit d'annuler le premier — sinon le système apprend la
+procrastination : « l'utilisateur ignore toujours les impôts pénibles, le
+système apprend qu'il ne souhaite pas les voir ».
+
+**« L'absence de réaction vaut accord » ne se généralise pas.** C'est la
+correction qui a modifié le plan. Le silence peut valider un état de
+FONCTIONNEMENT de l'assistant (je surveille, je ne montre plus, je regroupe) ;
+il ne doit JAMAIS fabriquer un état du MONDE (facture payée, document reçu).
+« Ton produit donne l'exemple parfait avec "C'est réglé" qui signifie en réalité
+"mail lu" : c'est une confusion entre interaction UI et état du monde. »
+
+**Le piège de sa demande.** Trois niveaux : prédire son comportement (utile pour
+l'attention, mais reproduit ses mauvaises habitudes) · recommander une action
+(**ce qu'il demande réellement**) · décider ce qui est bon pour lui (danger : le
+produit fabrique une fonction d'utilité qu'il ne connaît pas). « Il ne dispose
+pas de vingt ans d'historique des OBJECTIFS de l'utilisateur, mais de vingt ans
+de traces de COMPORTEMENT. » D'où la hiérarchie retenue : paternaliste sur
+l'attention, affirmatif sur la recommandation, humble sur les décisions
+conséquentes.
+
+### Livré
+
+**1. La table `Declaration`** — un fait déclaré, horodaté, jamais inféré. Elle
+se branche sur une porte qui existait déjà dans `semantique.ts:701` (« MANUEL —
+l'utilisateur a tranché ou agi. Sa vérité prime ») et ferme l'action sur son
+`kind` EXACT. Réversible : un mail qui contredit reprend le dessus. Éprouvé :
+une déclaration fait disparaître la facture de `generateToday()`, son annulation
+la fait revenir.
+
+**2. Le renversement des cartes.** Les quatre questions deviennent des annonces,
+chacune portant son `undo`. Le bandeau a enfin son bouton.
+
+**3. Le silence auditable** — `80 488 mails suivis · 82 dossiers ouverts ·
+79 peuvent attendre · 3 aujourd'hui`. La contrepartie d'un écran qui décide
+seul : « un système bavard et mauvais énerve, un système silencieux et mauvais
+cache des problèmes ». L'accroche devient « Voici ce dont je m'occuperais
+aujourd'hui ».
+
+**4. Quatre écrans retirés du menu**, badge compris. Les CAPACITÉS restent
+(routes accessibles par URL) : seule la console permanente disparaît.
+
+**5. La télémétrie.** `npm run charge` — mesuré : 12 reçus, 1 demandée, **8,3
+pour 100 mails**, 8 autonomes, 1 annulation. Le KPI était écrit depuis le 10/08
+et n'avait jamais été mesuré. Il ne se lit JAMAIS seul : « le meilleur produit
+du monde selon cette métrique serait celui qui ne montre rien ».
+
+`OperationEntry.decision` est un CHAMP explicite, pas le préfixe `ui_` : une
+métrique fondée sur un nom se dégrade en silence au prochain outil ajouté. Piège
+vérifié — un champ `decision` existait déjà dans le journal avec les valeurs
+`seen`/`trash` (le `reviewDecision` du dépouillement, imbriqué dans `params`).
+
+### Deux incidents, deux leçons
+
+**Le nom d'un dossier de migration est son identité.** J'ai appliqué
+`assertionNote` sous un nom provisoire puis commité sous son nom horodaté : au
+redémarrage, `duplicate column name`, **health 502**. Réparé par
+`prisma migrate resolve --applied`. La règle est dans `CLAUDE.md`.
+
+**Ce qui n'est pas commité ne survit pas à la nuit.** Le timer
+`boxmail-update.timer` a tourné à 04:04 UTC et restauré tous les fichiers
+déployés par `scp` — les boutons étaient revenus à l'ancien libellé sans que
+rien ne le signale. Une demi-heure perdue à en chercher la cause. Livrer par
+git, toujours.
+
+### Reste du chantier
+
+Volontairement hors de cette livraison, et à faire **après** avoir mesuré que la
+charge baisse : le modèle comportemental · les états dormante / surveillée /
+candidate avec réveil sur ÉVÉNEMENT · la fusion de `#/suivi` et « Aujourd'hui »
+(contrats incompatibles : l'un reçoit `actions[]` du serveur, l'autre les calcule
+côté client) · le **contre-audit des NON-MONTRÉS**, qui est la seule mesure des
+faux négatifs — « auditer les cartes montrées mesure la précision, jamais ce que
+l'assistant a enterré ».
+
 ## 26/08 (54) — Le suivi des affaires se met à jour tout seul
 
 Suite directe du § 53. Les 14 attentes affichées sur `#/suivi` avaient été
