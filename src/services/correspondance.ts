@@ -584,7 +584,50 @@ export async function contexteDuMail(opts: {
    * 158 ms pour en rendre 3. L'élargissement est gratuit — le `LIKE` sur
    * `toEmails` était déjà payé.
    */
-  const maison = await adressesDeLOrganisation(cible);
+  /**
+   * LES MAISONS DU DOSSIER — celles de TOUS les participants du fil, pas
+   * seulement celle de l'expéditeur du mail ouvert.
+   *
+   * ⚠️ MESURÉ APRÈS UNE PREMIÈRE CORRECTION INSUFFISANTE (27/08). Élargir au
+   * domaine de l'ancre faisait passer le dossier SIDER de 2 à 4 mails — mieux,
+   * mais toujours faux : le mail d'ancrage vient de `compta.client@qerys.com`,
+   * et les 34 mails de l'affaire sont chez `sider.biz`. Le dossier traverse
+   * DEUX maisons, et le fil est précisément ce qui les relie — il contient un
+   * message de `litiges@sider.biz` de juin 2024.
+   *
+   * La règle qui en sort : les interlocuteurs d'un dossier sont les
+   * PARTICIPANTS de son fil. Plafonné à trois maisons — au-delà, on n'a plus
+   * un dossier mais une liste de diffusion.
+   */
+  const participants = courant.threadId !== null
+    ? await db.message.findMany({
+        where: { threadId: courant.threadId, isDeleted: false },
+        select: { fromEmail: true, toEmails: true },
+        take: 60,
+      })
+    : [];
+  const candidatsAdresses = [
+    cible,
+    ...participants.flatMap((m) => [
+      m.fromEmail ?? '',
+      ...((JSON.parse(m.toEmails || '[]') as string[]) ?? []),
+    ]),
+  ]
+    .map((e) => (e || '').toLowerCase())
+    .filter(Boolean);
+  const maisons: { domaine: string; adresses: string[] }[] = [];
+  const vues = new Set<string>();
+  for (const adr of candidatsAdresses) {
+    const dom = (adr.split('@')[1] ?? '').toLowerCase();
+    if (!dom || vues.has(dom)) continue;
+    vues.add(dom);
+    const m = await adressesDeLOrganisation(adr);
+    if (m && !maisons.some((x) => x.domaine === m.domaine)) maisons.push(m);
+    if (maisons.length >= 3) break;
+  }
+  // Celle de l'interlocuteur courant reste la principale : c'est elle qui
+  // nomme l'onglet.
+  const maison = maisons.find((m) => cible.endsWith(`@${m.domaine}`)) ?? maisons[0] ?? null;
   const tous = await db.message.findMany({
     where: {
       isDeleted: false,
@@ -593,8 +636,8 @@ export async function contexteDuMail(opts: {
         { fromEmail: cible },
         { toEmails: { contains: cible } },
         ...(courant.threadId !== null ? [{ threadId: courant.threadId }] : []),
-        ...(maison ? [{ fromEmail: { in: maison.adresses } }] : []),
-        ...(maison ? [{ toEmails: { contains: `@${maison.domaine}` } }] : []),
+        ...maisons.map((m) => ({ fromEmail: { in: m.adresses } })),
+        ...maisons.map((m) => ({ toEmails: { contains: `@${m.domaine}` } })),
       ],
     },
     orderBy: { date: 'desc' },
@@ -674,7 +717,13 @@ export async function contexteDuMail(opts: {
     // élargie à la maison, sinon le troisième onglet resterait aveugle là où
     // les deux premiers voient enfin.
     sujets: focale === 'tout'
-      ? (await correspondance({ email: cible, emails: maison?.adresses, limit: 40 })).subjects
+      ? (
+          await correspondance({
+            email: cible,
+            emails: maisons.flatMap((m) => m.adresses),
+            limit: 40,
+          })
+        ).subjects
       : [],
   };
 }
