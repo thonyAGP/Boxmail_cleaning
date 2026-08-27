@@ -5,6 +5,59 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 27/08 (56) — SIDER : ce qui donnait « l'impression d'un truc solide »
+
+Trois défauts signalés depuis l'écran, sur un remboursement de 1 000 € au
+dossier « Comptabilité Client SIDER ». Son verdict : « tu donnes l'impression
+d'avoir créé un truc solide mais en fait c'est du vent. Rien n'est
+exploitable. »
+
+**1. Le brouillon proposait n'importe qui.** `motsDuNom()` retenait tout mot de
+≥ 4 lettres hors civilités : « comptabilite », « client » et « sider ». Les deux
+premiers désignent une FONCTION de boîte aux lettres, pas quelqu'un — d'où IKEA
+Service client, TotalEnergies service.client, Vis Express service.client
+proposés comme destinataires. Pire, le pré-rempli était devenu
+`compta.client@qerys.com` au lieu de `litiges@sider.biz`, pourtant dans le fil.
+Correctif : une liste de vocabulaire de service (compta, client, litiges,
+service, agence, formes juridiques, civilités) écartée AVANT le choix. Il ne
+reste que « sider ». Et s'il ne reste rien, on ne cherche pas par nom : les
+correspondants du fil suffisent.
+
+**2. « Voir l'histoire » renvoyait 153 mails.** Le bouton cherchait le mot le
+plus LONG du libellé — « Comptabilite », 12 lettres — chez 42 interlocuteurs
+sans rapport. Or la fonction qu'il demandait existait depuis le 18/08 : les
+trois focales de `contexteDuMail`, servies par le panneau « 📚 Contexte » du
+lecteur. Elle était ENFERMÉE : `chargerContexte` vivait dans
+`renderReaderAnalysis`, donc n'existait que si un mail était ouvert. Hissée hors
+du lecteur avec un paramètre `ctx` (le lecteur empile le mail courant, une
+modale se referme avant d'ouvrir). « Voir l'histoire » ouvre désormais sur
+`sujet` — le fil — et affiche les élargissements avec leur compteur.
+
+**3. Le constat était tronqué au milieu d'une phrase** — un `slice(0, 140)` dans
+`brouillons.ts`, retiré.
+
+**Le bouton « Proposer ».** Signalé dans la foulée : « je ne sais pas à quoi il
+correspond, et une fois cliqué il n'est pas annulable ». Trois défauts d'un
+coup — un libellé qui décrivait mon geste et pas son effet ; une création en
+statut `proposed` qui l'envoyait re-valider sur un AUTRE écran une date qu'il
+venait d'approuver ; aucun retour en arrière. Devient « ⏰ Me le rappeler »,
+crée `confirmed`, et pose un bandeau « Annuler ».
+
+**Le banc a trouvé un quatrième défaut, dans l'annulation elle-même** :
+`dismissDeadline` laisse la ligne en base, et la route d'analyse masque toute
+date déjà enregistrée QUEL QUE SOIT son statut (`knownKeys`). Annuler aurait
+donc enterré la date pour toujours. D'où `deleteDeadline`, réservé à
+l'annulation immédiate — « écarter » reste ce qu'il est, une décision de refus.
+
+**CLAUDE.md redescendu de 15,2 à 12,1 Ko** après son rappel — « claude.md n'a
+pas vocation à stocker toute cette merde d'historique ». Sorti : le détail du
+dossier LEGALFREE (il est ici et surtout dans l'app), les dates et anecdotes
+derrière chaque règle, le réglage du pilote ChatGPT (qui n'est pas une règle
+Boxmail). Gardé : les règles à l'impératif. Contrôle automatique du diff pour
+vérifier qu'aucun repère technique n'avait disparu — deux avaient sauté
+(`npm run genkey`, `analysis.ts`), remis. C'est la deuxième dérive du fichier
+après les 84 Ko du 01/08 : le seuil d'alarme (~12 Ko) est écrit en tête.
+
 ## 27/08 (55) — Le renversement promis le 10/08, enfin livré
 
 Sa demande, mot pour mot : « je suis sûr que tu devrais déjà être capable de
