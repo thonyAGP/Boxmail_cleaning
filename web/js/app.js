@@ -6053,11 +6053,11 @@ let _fusionSource = null;
  * sélecteur global. On n'utilise pas non plus l'id `modal-body`, déjà pris par
  * la modale de nettoyage.
  */
-function ouvrirModale(titre, corpsHtml, piedHtml = '') {
+function ouvrirModale(titre, corpsHtml, piedHtml = '', classe = '') {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay under-reader';
-  overlay.innerHTML = `<div class="modal">
+  overlay.innerHTML = `<div class="modal ${classe}">
     <div class="modal-head"><h2>${titre}</h2>
       <button class="modal-close" title="Fermer">✕</button></div>
     <div class="modal-body">${corpsHtml}</div>
@@ -6261,40 +6261,118 @@ function formulaireAffaire(a = null) {
  * @param {object} opts    { titre, apresEnvoi } — pour les attentes (26/08),
  *                         qui ne sont pas des affaires et n'ont pas de report.
  */
+/**
+ * ÉCRIRE UNE RÉPONSE — un plan de travail, pas une boîte de dialogue.
+ *
+ * ⚠️ REFAIT LE 27/08, capture d'un écran de 2 000 px en main. La modale faisait
+ * 560 px de LARGE FIXE : elle occupait un dixième de sa surface pendant qu'il
+ * traitait le sujet. Ses mots : « revois pourquoi tes fiches ne sont jamais
+ * responsives… pour un sujet que je suis en train de traiter, écrire un email,
+ * voir pourquoi, aller potentiellement sur le fil de conversation ».
+ *
+ * Trois choses à faire en même temps, donc trois choses visibles en même temps.
+ * À gauche : le message. À droite : ce sur quoi il s'appuie, et LE FIL —
+ * dépliable sur place avec ses trois focales, puisque `chargerContexte` a été
+ * sortie du lecteur. Sous 1 100 px, la droite repasse dessous : même page,
+ * empilée. Les largeurs sont en `min(px, vw)`, jamais en pixels fixes — c'est
+ * exactement le défaut qu'il nomme « jamais responsives ».
+ */
 function modaleBrouillon(br, a, opts = {}) {
+  /**
+   * À QUI ÉCRIRE — une LISTE, plus une volée de pastilles.
+   *
+   * ⚠️ Deuxième correction du même bloc (27/08). La liste des destinataires
+   * était juste — c'est bien `litiges@sider.biz` qui est proposé — mais
+   * illisible : « bien les différents destinataires, mais pas très pratique ».
+   * Huit pastilles identiques, certaines montrant un NOM (« Encours Sider »),
+   * d'autres une ADRESSE (« contact@sider.biz ») : impossible de comparer ce
+   * qu'on ne voit pas au même endroit.
+   *
+   * Ici : une ligne par adresse, l'ADRESSE toujours visible puisque c'est elle
+   * qu'on choisit, le nom en second, et à droite la raison d'être proposé.
+   * Triées par pertinence — ceux du fil d'abord, puis les plus récents — et
+   * repliées au-delà de quatre : le choix se fait dans les trois premières
+   * lignes, le reste est une réserve, pas une liste à lire.
+   */
+  const cands = [...(br.candidats ?? [])].sort((x, y) => {
+    const filX = x.origine === 'fil' ? 0 : 1;
+    const filY = y.origine === 'fil' ? 0 : 1;
+    if (filX !== filY) return filX - filY;
+    return String(y.dernier ?? '').localeCompare(String(x.dernier ?? ''));
+  });
+  const ligneCand = (c) => {
+    const raison = c.origine === 'fil'
+      ? 'dans ce fil'
+      : c.messages
+        ? `${c.messages} message${c.messages > 1 ? 's' : ''}`
+        : 'déjà en contact';
+    return `<button type="button" class="br-dest ${c.email === br.to ? 'actif' : ''}" data-email="${esc(c.email)}">
+      <span class="br-dest-mail">${esc(c.email)}</span>
+      <span class="br-dest-nom">${esc(c.nom && c.nom !== c.email ? c.nom : '')}</span>
+      <span class="br-dest-raison">${c.dejaEchange ? '↩︎ ' : ''}${raison}${c.dernier ? ` · ${esc(c.dernier)}` : ''}</span>
+    </button>`;
+  };
+
   ouvrirModale(opts.titre || '✉️ Brouillon de relance', `
-    <div class="form-vert">
-      <p class="muted">Rien ne part tant que tu n'as pas envoyé toi-même. Relis, corrige, copie.</p>
-      <label>À<input id="br-to" type="text" value="${esc(br.to)}" placeholder="choisis ci-dessous ou saisis une adresse"></label>
-      ${(br.candidats ?? []).length ? `<div class="br-candidats">
-        <span class="muted">${br.to ? 'Autres destinataires possibles' : 'À qui écrire ?'} —</span>
-        ${br.candidats.map((c) => `<button type="button" class="find-chip br-cand" data-email="${esc(c.email)}"
-          title="${esc(c.email)}${c.messages ? ` · ${c.messages} message(s)` : ''}${c.dernier ? ` · dernier le ${esc(c.dernier)}` : ''}">
-          ${c.dejaEchange ? '↩︎ ' : ''}${esc(c.nom || c.email)}
-          <span class="muted">${c.origine === 'fil' ? 'dans ce fil' : (c.messages ? `${c.messages} msg` : '')}</span>
-        </button>`).join('')}
-      </div>` : ''}
-      <label>Objet<input id="br-subject" type="text" value="${esc(br.subject)}"></label>
-      <label>Message<textarea id="br-body" rows="14">${esc(br.body)}</textarea></label>
-      ${(br.appuis ?? []).length ? `<details><summary>Sur quoi ce brouillon s'appuie</summary>
-        <ul>${br.appuis.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+    <div class="br-plan">
+      <div class="br-ecrire form-vert">
+        <p class="muted">Rien ne part tant que tu n'as pas envoyé toi-même. Relis, corrige, copie.</p>
+        <label>À<input id="br-to" type="text" value="${esc(br.to)}" placeholder="choisis ci-dessous ou saisis une adresse"></label>
+        ${cands.length ? `<div class="br-destinataires">
+          <div class="br-dest-liste">${cands.slice(0, 4).map(ligneCand).join('')}</div>
+          ${cands.length > 4 ? `<div class="br-dest-liste hidden" id="br-dest-reste">
+              ${cands.slice(4).map(ligneCand).join('')}</div>
+            <button type="button" class="btn btn-sm" id="br-dest-plus">
+              ▸ ${cands.length - 4} autre${cands.length - 4 > 1 ? 's' : ''} adresse${cands.length - 4 > 1 ? 's' : ''}</button>` : ''}
+        </div>` : ''}
+        <label>Objet<input id="br-subject" type="text" value="${esc(br.subject)}"></label>
+        <label>Message<textarea id="br-body" rows="18">${esc(br.body)}</textarea></label>
+      </div>
+      <aside class="br-contexte">
+        ${(br.appuis ?? []).length ? `<div class="br-bloc">
+          <h3>Sur quoi ce brouillon s'appuie</h3>
+          <ul class="br-appuis">${br.appuis.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+        </div>` : ''}
+        <div class="br-bloc br-fil">
+          <h3>Le fil de ce sujet</h3>
+          <div id="br-histoire">${br.messageId
+            ? '<div class="empty"><span class="spinner"></span>Je rassemble le fil…</div>'
+            : '<div class="empty">Aucun mail d’ancrage : ce sujet n’a pas encore de fil rattaché.</div>'}</div>
+        </div>
+      </aside>
     </div>`,
     `<span class="muted" id="br-etat"></span>
       <button class="btn" id="br-close">Fermer</button>
       <button class="btn" id="br-copy">📋 Copier</button>
-      <button class="btn btn-primary" id="br-send">✉️ Envoyer</button>`);
+      <button class="btn btn-primary" id="br-send">✉️ Envoyer</button>`,
+    'modal-plan');
   $('#br-close').addEventListener('click', closeModal);
+  $('#br-dest-plus')?.addEventListener('click', (e) => {
+    $('#br-dest-reste')?.classList.remove('hidden');
+    e.currentTarget.remove();
+  });
+
+  // LE FIL, À CÔTÉ DU BROUILLON. Même composant que « Voir l'histoire » : les
+  // trois focales, un clic déplie le mail sur place. Il n'a plus à fermer ce
+  // qu'il écrit pour aller vérifier ce qui a été dit.
+  if (br.messageId) {
+    const zone = $('#br-histoire');
+    chargerContexte(zone, { messageId: br.messageId }, 'sujet', br.subject || '', {
+      avantOuverture: closeModal,
+    }).catch(() => {
+      zone.innerHTML = '<div class="empty">Le fil n’a pas pu être chargé.</div>';
+    });
+  }
 
   // À QUI ÉCRIRE. Son retour du 26/08, écran en main : « à quoi bon sans avoir
   // le destinataire ». Le champ arrivait vide dès que l'attente n'était
   // rattachée à aucun fil. On ne devine pas une adresse — on présente les
   // candidats, et c'est lui qui tranche en un clic.
-  document.querySelectorAll('.br-cand').forEach((b) => {
+  document.querySelectorAll('.br-dest').forEach((b) => {
     b.addEventListener('click', () => {
       const champ = $('#br-to');
       champ.value = b.dataset.email;
-      champ.focus();
-      document.querySelectorAll('.br-cand').forEach((x) => x.classList.remove('actif'));
+      document.querySelectorAll('.br-dest').forEach((x) => x.classList.remove('actif'));
       b.classList.add('actif');
     });
   });

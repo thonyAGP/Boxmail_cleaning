@@ -38,6 +38,13 @@ export interface Brouillon {
    * une adresse choisie au hasard serait pire qu'un champ vide.
    */
   candidats?: Destinataire[];
+  /**
+   * Le mail d'ancrage, quand il existe — pour que l'écran d'écriture puisse
+   * afficher LE FIL à côté du brouillon. Sa demande du 27/08, capture en
+   * main : « je suis en train de traiter un sujet, écrire un email, voir
+   * pourquoi, aller potentiellement sur le fil de conversation ».
+   */
+  messageId?: number | null;
 }
 
 const dateFr = (d: Date | string | null | undefined): string =>
@@ -153,6 +160,7 @@ export async function brouillonRelance(engagementId: number): Promise<Brouillon>
     // Compte d'envoi : celui saisi sur l'affaire, sinon celui des mails
     // rattachés. Sans lui, le bouton « Envoyer » ne saurait pas d'où partir.
     accountSlug: e.accountSlug ?? mails[mails.length - 1]?.accountSlug ?? null,
+    messageId: mails[mails.length - 1]?.id ?? null,
     appuis,
   };
 }
@@ -218,6 +226,7 @@ export async function brouillonReponse(messageId: number): Promise<Brouillon> {
     subject: `Re: ${sujet}`,
     body: lignes.join('\n'),
     accountSlug: m.accountSlug,
+    messageId: m.id,
     appuis,
   };
 }
@@ -621,6 +630,7 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
     subject: a.cote === 'eux' ? `Relance — ${a.quoi}` : a.quoi,
     body: lignes.join('\n'),
     accountSlug: a.accountSlug,
+    messageId: a.messageId ?? null,
     appuis,
     // Toujours proposés, même quand une adresse a été trouvée : le fil peut
     // compter plusieurs interlocuteurs, et c'est lui qui sait auquel écrire.

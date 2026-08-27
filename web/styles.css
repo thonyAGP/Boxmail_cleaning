@@ -464,13 +464,60 @@ a.tab { text-decoration: none; }
   position: fixed; inset: 0; background: rgba(18, 32, 44, .55); z-index: 100;
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
+/* ⚠️ LARGEURS RELATIVES, JAMAIS FIXES (27/08). Elles étaient en pixels secs :
+   sur un écran de 2 000 px, une modale de 560 px occupe un dixième de la
+   surface — « revois pourquoi tes fiches ne sont jamais responsives ». Un
+   `min(px, vw)` garde la lisibilité sur petit écran ET occupe la place quand
+   elle existe. */
 .modal {
-  background: var(--surface-main); border-radius: var(--radius-lg); width: 560px; max-width: 100%;
+  background: var(--surface-main); border-radius: var(--radius-lg);
+  width: min(620px, 94vw);
   max-height: 88vh; overflow-y: auto; box-shadow: 0 16px 50px rgba(0,0,0,.3);
   border: 1px solid var(--border);
 }
 /* Modale « liste de mails » : large pour lire chaque ligne d'un coup. */
-.modal.modal-wide { width: 1100px; }
+.modal.modal-wide { width: min(1100px, 94vw); }
+
+/* ── PLAN DE TRAVAIL : écrire, vérifier, relire le fil — en même temps ──────
+   Trois gestes simultanés méritent trois zones simultanées. La colonne de
+   droite retombe SOUS le message quand la place manque : c'est la même page,
+   empilée, jamais un contenu perdu. */
+.modal.modal-plan { width: min(1500px, 96vw); }
+.br-plan { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.br-ecrire { min-width: 0; }
+.br-ecrire textarea { min-height: 340px; resize: vertical; }
+.br-contexte { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.br-bloc {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-alt, rgba(0,0,0,.02)); padding: 12px 14px;
+}
+.br-bloc h3 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); }
+.br-appuis { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); }
+.br-appuis li { margin-bottom: 4px; }
+.br-fil { max-height: 52vh; overflow-y: auto; }
+@media (max-width: 1100px) { .br-plan { grid-template-columns: 1fr; } .br-fil { max-height: none; } }
+
+/* ── À QUI ÉCRIRE : une liste comparable, pas une volée de pastilles ────────
+   « bien les différents destinataires, mais pas très pratique » (27/08). On
+   aligne donc l'ADRESSE — c'est elle qu'on choisit — puis le nom, puis la
+   raison d'être proposé. Trois colonnes, trois lignes de regard. */
+.br-destinataires { margin: -4px 0 4px; }
+.br-dest-liste { display: flex; flex-direction: column; gap: 2px; }
+.br-dest {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) auto;
+  gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  padding: 6px 9px; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: none; cursor: pointer; font-size: 12.5px; color: var(--text);
+}
+.br-dest:hover { background: var(--surface-alt, rgba(0,0,0,.04)); }
+.br-dest.actif { border-color: var(--accent, #2d6cdf); background: rgba(45,108,223,.07); }
+.br-dest-mail { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-dest-nom { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-dest-raison { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+@media (max-width: 620px) {
+  .br-dest { grid-template-columns: 1fr; gap: 1px; }
+  .br-dest-raison { white-space: normal; }
+}
 /* La modale passe SOUS le panneau de lecture (z 95/96) : on peut ouvrir
    un mail depuis la liste sans la fermer. */
 .modal-overlay.under-reader { z-index: 94; }
