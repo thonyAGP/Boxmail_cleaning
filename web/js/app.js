@@ -6545,14 +6545,29 @@ async function gesteAttente(id, code, carte) {
   if (code === 'voir') {
     const a = _attentes?.find((x) => x.id === id);
     if (!a) return;
-    // Le libellé brut ne trouve rien : « Comptastar — Loïse Barbis » porte un
-    // tiret cadratin et deux mots rares qui, cherchés ensemble, excluent tout.
-    // On prend l'adresse quand on l'a, sinon le mot le plus distinctif du nom.
+    /**
+     * ⚠️ LE MOT LE PLUS LONG N'EST PAS LE PLUS DISTINCTIF (corrigé le 27/08).
+     *
+     * Mesuré à l'écran sur le dossier « Comptabilité Client SIDER » — un
+     * remboursement de 1 000 € : le mot le plus long est « Comptabilite »
+     * (12 lettres), et la recherche rendait 153 mails chez 42 interlocuteurs,
+     * dont aucun ne concernait l'affaire. Son verdict : « c'est n'importe quoi,
+     * tu donnes l'impression d'avoir créé un truc solide mais c'est du vent ».
+     *
+     * Le mot qui désigne quelqu'un ici est « SIDER » — 5 lettres. On écarte
+     * donc d'abord tout le vocabulaire de service (client, compta, relation,
+     * litiges…), puis on prend le PREMIER mot restant : dans un libellé, le
+     * nom propre vient en général après la fonction.
+     */
+    const CREUX = /^(client|clients|clientele|compta|comptable|comptabilite|service|services|relation|relations|contact|contacts|facturation|facture|factures|litige|litiges|encours|commercial|commerciale|support|assistance|accueil|info|infos|admin|administratif|direction|secretariat|gestion|recouvrement|reclamation|juridique|agence|cabinet|bureau|siege|groupe|equipe|maitre|madame|monsieur|sarl|sasu|eurl|selarl|societe|entreprise|pour|avec|dans|chez|suite|dossier|demande)$/i;
     const mots = (a.qui || '')
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .split(/[^A-Za-zÀ-ÿ0-9]+/)
-      .filter((m) => m.length >= 4 && !/^(maitre|madame|monsieur|cabinet|service|agence)$/i.test(m));
-    const terme = a.quiEmail || mots.sort((x, y) => y.length - x.length)[0] || a.qui;
+      .filter((m) => m.length >= 4 && !CREUX.test(m));
+    // Si tout est générique, la recherche par nom ne trouverait que du bruit :
+    // on ouvre alors la conversation elle-même quand on la connaît.
+    if (!mots.length && a.threadId) { location.hash = `#/search?q=${encodeURIComponent(a.qui)}`; return; }
+    const terme = a.quiEmail || mots[0] || a.qui;
     location.hash = `#/search?q=${encodeURIComponent(terme)}`;
     return;
   }

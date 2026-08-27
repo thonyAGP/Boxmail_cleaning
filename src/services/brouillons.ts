@@ -248,9 +248,45 @@ export interface Destinataire {
   dejaEchange: boolean;
 }
 
-/** Les mots qui identifient un correspondant : ≥ 4 lettres, sans civilité. */
+/**
+ * LE VOCABULAIRE QUI N'IDENTIFIE PERSONNE.
+ *
+ * ⚠️ MESURÉ À L'ÉCRAN LE 27/08, et c'est le défaut qui a fait dire à Anthony
+ * « rien n'est exploitable ». Le dossier « Comptabilité Client SIDER » — un
+ * remboursement de 1 000 € — proposait d'écrire à IKEA Service **client**, à
+ * TotalEnergies service.**client**, à Vis Express service.**client** et à un
+ * notaire pour sa **comptabilité**. Trois mots dans le libellé, dont DEUX qui
+ * ne désignent que la fonction d'une boîte aux lettres.
+ *
+ * Pire : le destinataire pré-rempli était devenu `compta.client@qerys.com`
+ * plutôt que `litiges@sider.biz`, pourtant présent dans le fil — parce que
+ * « compta » et « client » matchaient. L'amélioration censée choisir le bon
+ * interlocuteur choisissait le mauvais.
+ *
+ * Après filtrage il ne reste que « sider » : le nom propre, celui qui désigne
+ * quelqu'un. Et s'il ne reste RIEN, on ne cherche pas par nom du tout — les
+ * correspondants du fil suffisent. Mieux vaut deux adresses justes que huit
+ * dont six absurdes.
+ */
+const MOTS_DE_SERVICE = new Set([
+  // Fonctions de boîte aux lettres
+  'client', 'clients', 'clientele', 'compta', 'comptable', 'comptabilite',
+  'service', 'services', 'relation', 'relations', 'contact', 'contacts',
+  'facturation', 'facture', 'factures', 'litige', 'litiges', 'encours',
+  'commercial', 'commerciale', 'support', 'assistance', 'accueil', 'info',
+  'infos', 'admin', 'administratif', 'direction', 'secretariat', 'gestion',
+  'recouvrement', 'reclamation', 'reclamations', 'juridique', 'agence',
+  'cabinet', 'bureau', 'siege', 'groupe', 'equipe',
+  // Civilités
+  'maitre', 'madame', 'monsieur', 'mademoiselle',
+  // Formes juridiques
+  'sarl', 'sasu', 'scp', 'eurl', 'selarl', 'sci', 'societe', 'entreprise',
+  // Mots vides fréquents dans un libellé
+  'pour', 'avec', 'dans', 'chez', 'suite', 'dossier', 'demande',
+]);
+
+/** Les mots qui identifient VRAIMENT un correspondant : ≥ 4 lettres, jamais du vocabulaire de service. */
 function motsDuNom(qui: string): string[] {
-  const CIVILITES = new Set(['maitre', 'madame', 'monsieur', 'cabinet', 'service', 'agence']);
   return [
     ...new Set(
       (qui || '')
@@ -258,7 +294,7 @@ function motsDuNom(qui: string): string[] {
         .replace(/[̀-ͯ]/g, '')
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .filter((m) => m.length >= 4 && !CIVILITES.has(m)),
+        .filter((m) => m.length >= 4 && !MOTS_DE_SERVICE.has(m)),
     ),
   ].slice(0, 4);
 }
@@ -441,7 +477,12 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
    * c'est d'aller chercher les MÊMES FAITS à la source — le dernier message
    * du fil, daté et signé — et de les écrire à la troisième personne.
    */
-  appuis.push(`constat : ${a.pourquoi.slice(0, 140)}`);
+  // ⚠️ NE PAS TRONQUER. `slice(0, 140)` coupait en plein milieu d'une phrase :
+  // « …un trop-perçu de 1000€ sur le compte BRIMMO (virement de mai 2024
+  // devenu inutile suite à deux ». Ce bloc est un DÉPLIANT que l'utilisateur
+  // ouvre pour vérifier : rien ne contraint sa hauteur, et un constat amputé
+  // ne prouve plus rien.
+  appuis.push(`constat : ${a.pourquoi}`);
 
   // LE DERNIER MOUVEMENT DU FIL : qui a parlé, quand, de quoi. C'est ce qui
   // transforme « Je fais suite à » en « vous m'avez adressé le 16 octobre ».
