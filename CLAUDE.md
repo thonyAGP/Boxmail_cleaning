@@ -129,6 +129,15 @@ personnel » dans toute stratégie de nettoyage.
 - Pas d'octet nul littéral dans les sources (ripgrep saute le fichier en
   silence) : l'échapper.
 
+**Connecteurs**
+- Un nom de fichier venu d'un mail ne se recopie JAMAIS dans un en-tête HTTP :
+  `entete-fichier.ts` (repli ASCII + `filename*`). Un accent DÉCOMPOSÉ (`e` +
+  U+0301, hors Latin-1) faisait lever `setHeader` → 500 → le pull comptable
+  s'arrêtait là et repartait de 0 : 8 pièces sur 286, trois semaines gelées.
+- Un consommateur qui s'arrête à la première pièce en échec fige tout et ne
+  DIT rien. Toute boucle d'import : mettre l'échec de côté, avancer le curseur,
+  rendre compte à l'écran de la liste des échecs.
+
 ## Contenu des boîtes (à ne plus redécouvrir)
 
 `Colocar` n'est PAS de la colocation : SASU de location/négoce de VÉHICULES.
