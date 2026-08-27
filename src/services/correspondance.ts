@@ -625,9 +625,10 @@ export async function contexteDuMail(opts: {
     if (m && !maisons.some((x) => x.domaine === m.domaine)) maisons.push(m);
     if (maisons.length >= 3) break;
   }
-  // Celle de l'interlocuteur courant reste la principale : c'est elle qui
-  // nomme l'onglet.
-  const maison = maisons.find((m) => cible.endsWith(`@${m.domaine}`)) ?? maisons[0] ?? null;
+  // La maison qui NOMME l'onglet est choisie plus bas, une fois l'univers
+  // connu : celle du mail ouvert n'est pas forcément celle du dossier.
+  const maisonDuMailOuvert =
+    maisons.find((m) => cible.endsWith(`@${m.domaine}`)) ?? maisons[0] ?? null;
   const tous = await db.message.findMany({
     where: {
       isDeleted: false,
@@ -642,7 +643,7 @@ export async function contexteDuMail(opts: {
     },
     orderBy: { date: 'desc' },
     take: 600,
-    select: { ...selection(), threadId: true, dossiers: { select: { dossierId: true } } },
+    select: { ...selection(), threadId: true, fromEmail: true, dossiers: { select: { dossierId: true } } },
   });
 
   const sujetRef = normaliserSujet(courant.normalizedSubject ?? courant.subject);
@@ -694,6 +695,27 @@ export async function contexteDuMail(opts: {
   const gardes = retenus.slice(0, plafond + 1).map((m) => m.messageId);
   const messages = parDate.filter((m) => gardes.includes(m.messageId));
 
+  /**
+   * QUELLE MAISON NOMME L'ONGLET. Pas celle du mail ouvert : celle qui PORTE
+   * le dossier. Mesuré sur SIDER — le mail d'ancrage vient de
+   * `compta.client@qerys.com`, mais 28 des 36 mails de l'affaire sont chez
+   * `sider.biz`. Écrire « Tout avec qerys.com » désignerait l'intermédiaire et
+   * pas l'interlocuteur. On prend donc celle qui pèse le plus dans l'univers.
+   */
+  const poids = new Map<string, number>();
+  for (const m of tous) {
+    const d = (m.fromEmail ?? '').toLowerCase().split('@')[1];
+    if (d) poids.set(d, (poids.get(d) ?? 0) + 1);
+  }
+  const maisonPrincipale =
+    maisons
+      .map((m) => ({
+        domaine: m.domaine,
+        n: [...poids].filter(([d]) => d === m.domaine || d.endsWith(`.${m.domaine}`))
+          .reduce((t, [, v]) => t + v, 0),
+      }))
+      .sort((a, b) => b.n - a.n)[0]?.domaine ?? maisonDuMailOuvert?.domaine ?? null;
+
   const nom = courant.isOutbound
     ? (tous.find((m) => !m.isOutbound && m.fromName)?.fromName ?? email)
     : (courant.fromName ?? email);
@@ -705,7 +727,7 @@ export async function contexteDuMail(opts: {
     // l'onglet doit afficher. « Tout avec Comptabilité » désignait la boîte aux
     // lettres qui avait écrit ce jour-là ; « Tout avec sider.biz » désigne
     // l'interlocuteur réel.
-    organisation: maison?.domaine ?? null,
+    organisation: maisonPrincipale,
     accounts: [...new Set(tous.map((m) => m.accountSlug))],
     messageIdCourant: courant.id,
     focale,
