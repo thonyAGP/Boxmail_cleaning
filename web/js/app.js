@@ -63,14 +63,20 @@ function refreshRulesBadge() {
     });
 }
 
-// Badge « 💡 Règles proposées » (A6) : ce que l'assistant a appris de tes habitudes.
+/**
+ * ⚠️ BADGE SUPPRIMÉ (27/08) — il ne compte plus rien, exprès.
+ *
+ * Il affichait en permanence le nombre de règles en attente de validation :
+ * 114, dont zéro n'a jamais été activée. Autrement dit une pastille rouge
+ * permanente rappelant une dette qu'il ne paiera pas — et qu'il a raison de ne
+ * pas payer, puisque trier 114 lignes de oui/non n'est pas de l'assistance.
+ *
+ * La fonction est conservée vide plutôt que supprimée : elle est appelée
+ * depuis plusieurs endroits du démarrage, et un badge qui ne s'affiche plus
+ * vaut mieux qu'une pile d'appels à débusquer.
+ */
 function refreshSuggestionsBadge() {
-  api.suggestions().then((s) => {
-    const b = $('#suggestions-badge');
-    if (!b) return;
-    b.textContent = fmtNum(s.total);
-    b.classList.toggle('hidden', s.total === 0);
-  }).catch(() => {});
+  document.querySelector('#suggestions-badge')?.classList.add('hidden');
 }
 
 // Badge « ⭐ Mails suivis » de la sidebar (L5.13).
@@ -636,12 +642,23 @@ const HUBS = {
     ['unsubscribe', '#/unsubscribe', '🚫 Désinscriptions'],
     ['bigclean', '#/bigclean', '🧺 Libérer de l\'espace'],
   ],
-  organize: [
-    ['dossiers', '#/dossiers', '📁 Mes dossiers'],
-    ['rules', '#/rules', '🗂️ Classement automatique'],
-    ['suggestions', '#/suggestions', '💡 Règles proposées'],
-    ['verify', '#/verify', '🔬 Corriger l\'assistant'],
-  ],
+  // ⚠️ LE HUB « organize » A ÉTÉ RETIRÉ (27/08), avec ses quatre écrans :
+  // 📁 Mes dossiers · 🗂️ Classement automatique · 💡 Règles proposées ·
+  // 🔬 Corriger l'assistant.
+  //
+  // Usage MESURÉ : 114 règles suggérées et 0 activée ; 0 fusion, 0 renommage,
+  // 0 masquage en un mois ; aucune trace de notation des moteurs. Son verdict
+  // du 26/08 explique pourquoi, et ce n'était pas un manque de discipline :
+  // « c'est une suite de 114 lignes à dire oui ou non, alors que tu devrais
+  // déjà être capable de m'orienter afin que je valide une décision que tu
+  // auras DÉJÀ PRISE ». Le plan du 10/08 l'avait d'ailleurs prescrit —
+  // « faire disparaître les règles de l'interface » — sans que ce soit fait.
+  //
+  // LES CAPACITÉS RESTENT : les routes répondent toujours (récupération
+  // possible par URL), les services ne bougent pas. Ce qui disparaît, c'est la
+  // console permanente de maintenance. Une correction se fera désormais AU
+  // MOMENT où l'erreur est visible — « j'ai regroupé ces deux conversations,
+  // Annuler » — et non dans un écran d'administration.
 };
 
 function hubTabs(activeKey) {
@@ -1646,6 +1663,7 @@ function renderBriefing(t, el) {
 
   // « Je me suis occupé du reste » : ce qui n'a PAS demandé son attention.
   const traites = (t.canWait?.count ?? 0) + (t.noise?.total ?? 0);
+  const v = t.veille ?? null;
 
   const carteHtml = (c, i) => {
     const a = briefAction(c);
@@ -1677,14 +1695,40 @@ function renderBriefing(t, el) {
   el.innerHTML = `
     <div class="brief">
       <div class="brief-hello">${salut} Anthony.</div>
+      <!--
+        ⚠️ « N CHOSES MÉRITENT TON ATTENTION » A ÉTÉ RETIRÉ (27/08).
+        C'était mot pour mot la phrase de la capture du 18/08 : elle coiffait
+        une offre d'anniversaire de location de voiture, une promo de
+        téléphone et une notification Airbnb — pendant qu'une mise en demeure
+        URSSAF de 418 €, correctement analysée, était absente de l'écran.
+        Son mot : « qu'est-ce que c'est que ton analyse de merde ? ». Le tri
+        en dessous a été refait dès le lendemain ; la PROMESSE affichée, elle,
+        était restée intacte.
+        Une phrase qui promet de trier ne vaut que ce que vaut le tri. On
+        annonce donc ce qu'on a fait, pas ce qu'on prétend valoir.
+      -->
       <div class="brief-lead">${cartes.length === 0
-        ? 'Rien ne demande ton attention. Tout est sous contrôle.'
-        : `<strong>${fmtNum(cartes.length)} chose${cartes.length > 1 ? 's méritent' : ' mérite'} ton attention</strong> aujourd'hui.${
-            reste > 0 ? ` <span class="muted">${fmtNum(reste)} autre${reste > 1 ? 's' : ''} peuvent attendre.</span>` : ''
-          }`}</div>
+        ? 'Rien ne réclame ton attention aujourd\'hui.'
+        : `Voici ce dont je m'occuperais <strong>aujourd'hui</strong>.`}</div>
       ${cartes.map(carteHtml).join('')}
       ${traites > 0 ? `<div class="brief-done">✓ Je me suis occupé de <strong>${fmtNum(traites)}</strong> autres mails sans avoir besoin de toi
         <a href="#/operations" class="muted">voir ce que j'ai fait</a></div>` : ''}
+      <!--
+        LE SILENCE DOIT ÊTRE AUDITABLE. C'est la contrepartie d'un écran qui
+        décide seul : « un système bavard et mauvais énerve, un système
+        silencieux et mauvais cache des problèmes ». Un écran à trois cartes
+        peut sembler spectaculairement meilleur alors qu'il a seulement enterré
+        davantage de choses.
+        Ces quatre nombres sont donc permanents, et le détail consultable en un
+        clic — sa demande du 26/08 : une ligne, le détail sur demande.
+      -->
+      ${v ? `<div class="brief-veille">
+        <span>${fmtNum(v.mailsSuivis)} mails suivis</span>
+        <span>${fmtNum(v.dossiersOuverts)} dossier${v.dossiersOuverts > 1 ? 's' : ''} ouvert${v.dossiersOuverts > 1 ? 's' : ''}</span>
+        <span>${fmtNum(Math.max(0, v.dossiersOuverts - cartes.length))} peuvent attendre</span>
+        <span class="brief-veille-fort">${fmtNum(cartes.length)} aujourd'hui</span>
+        <a href="#/suivi">voir</a>
+      </div>` : ''}
       ${reste > 0 ? `<div class="brief-rest"><button class="btn btn-sm" id="brief-more-all">Voir les ${fmtNum(reste)} autres</button></div>` : ''}
     </div>`;
 

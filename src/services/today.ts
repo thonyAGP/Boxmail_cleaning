@@ -189,6 +189,29 @@ export interface TodaySummary {
   noise: { buckets: NoiseBucketStat[]; total: number; sizeBytes: number };
   /** false = catégories A1 jamais calculées → proposer le recalcul. */
   categorized: boolean;
+  /**
+   * CE QUE JE SURVEILLE SANS TE LE MONTRER — la preuve que le silence n'est
+   * pas de l'oubli.
+   *
+   * Le risque principal de cet écran n'est plus d'en dire trop, c'est d'en
+   * dire trop peu : « un système bavard et mauvais énerve, un système
+   * silencieux et mauvais cache des problèmes ». Un écran qui affiche trois
+   * cartes peut sembler spectaculairement meilleur alors qu'il a seulement
+   * enterré davantage de choses.
+   *
+   * Ces quatre nombres sont donc affichés en permanence, et le détail est
+   * consultable. Choix d'Anthony le 26/08 : une ligne, le détail sur demande.
+   */
+  veille: {
+    /** Tous les mails indexés, toutes boîtes — l'assiette de la surveillance. */
+    mailsSuivis: number;
+    /** Dossiers ouverts : les attentes non closes. */
+    dossiersOuverts: number;
+    /** Ceux qui dorment aujourd'hui, sans que ce soit une défaillance. */
+    peuventAttendre: number;
+    /** Ce qui est effectivement devant lui. */
+    aujourdhui: number;
+  };
 }
 
 const TOP = 10;
@@ -411,6 +434,13 @@ export async function generateToday(): Promise<TodaySummary> {
 
   const categorizedCount = await db.sender.count({ where: { category: { not: null } } });
 
+  // CE QUE JE SURVEILLE SANS LE MONTRER — deux comptes simples et indexés,
+  // pas une agrégation : cet écran fait déjà une cinquantaine de requêtes.
+  const [mailsSuivis, dossiersOuverts] = await Promise.all([
+    db.message.count({ where: { isDeleted: false } }),
+    db.attente.count({ where: { etat: { in: ['ouverte', 'probable'] } } }),
+  ]);
+
   return {
     generatedAt: new Date().toISOString(),
     accounts: names,
@@ -448,6 +478,15 @@ export async function generateToday(): Promise<TodaySummary> {
       sizeBytes: buckets.reduce((s, b) => s + b.sizeBytes, 0),
     },
     categorized: categorizedCount > 0,
+    veille: {
+      mailsSuivis,
+      dossiersOuverts,
+      // 'aujourdhui' est fixé par l'INTERFACE, qui seule sait combien de
+      // cartes elle affiche après dédoublonnage et plafond. Le serveur donne
+      // le total ; le reste s'en déduit à l'affichage.
+      peuventAttendre: dossiersOuverts,
+      aujourdhui: 0,
+    },
   };
 }
 
