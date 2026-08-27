@@ -11337,7 +11337,8 @@ function renderReaderAnalysis(a, item, opts = {}) {
     .map(
       (d, k) => `<span class="ra-deadline">📅 ${fmtDate(d.date)}
         <span class="muted" style="font-size:11px" title="${esc(d.sourceText)}">(${esc(d.type)})</span>
-        <button class="btn btn-sm ra-propose" data-k="${k}">➕ Proposer</button></span>`,
+        <button class="btn btn-sm ra-propose" data-k="${k}"
+          title="Ajoute cette date à tes échéances — annulable">⏰ Me le rappeler</button></span>`,
     )
     .join(' ');
 
@@ -11672,23 +11673,56 @@ function renderReaderAnalysis(a, item, opts = {}) {
     } catch (err) { alert(err.message); }
   });
 
+  /**
+   * ⏰ ME LE RAPPELER — anciennement « ➕ Proposer ».
+   *
+   * ⚠️ TROIS DÉFAUTS CORRIGÉS LE 27/08, tous signalés par Anthony :
+   * « je ne sais pas à quoi correspond le bouton "proposer" qui d'ailleurs
+   *   une fois cliqué n'est pas annulable. »
+   *
+   * 1. LE LIBELLÉ NE DISAIT RIEN. « Proposer » décrit le geste de l'assistant,
+   *    pas l'effet pour lui. Proposer à qui ? Pour quoi ? Le bouton dit
+   *    maintenant ce qu'il obtient : un rappel à cette date.
+   *
+   * 2. SON CLIC LUI CRÉAIT DU TRAVAIL. La date partait en `proposed`, et le
+   *    badge l'envoyait « valider dans 📅 Dates à confirmer » — un autre écran,
+   *    un second clic, pour une date qu'il avait sous les yeux et qu'il venait
+   *    d'approuver. C'est le « bouton Valider déguisé » que tout le chantier
+   *    du 27/08 démonte : on ne transforme pas une conclusion en question.
+   *    Elle part donc en `confirmed`.
+   *
+   * 3. AUCUN RETOUR EN ARRIÈRE. Le bouton disparaissait, remplacé par un badge
+   *    figé. Un geste qui écrit en base sans porte de sortie oblige à réfléchir
+   *    AVANT de cliquer — exactement la charge qu'on prétend lui retirer.
+   *    Le bandeau « Fait · Annuler » rend le clic gratuit.
+   */
   el.querySelectorAll('.ra-propose').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const d = a.deadlines.detected[Number(btn.dataset.k)];
       btn.disabled = true;
       try {
-        await api.proposeDeadline(item.account, {
+        const cree = await api.proposeDeadline(item.account, {
           folder: item.folder,
           uid: item.uid,
           date: d.date,
           type: d.type,
           sourceText: d.sourceText,
+          status: 'confirmed', // son clic EST la validation
         });
-        btn.replaceWith(Object.assign(document.createElement('span'), {
-          className: 'badge orange',
-          textContent: '✓ proposée — à valider dans 📅 Dates à confirmer',
-        }));
+        const marque = Object.assign(document.createElement('span'), {
+          className: 'badge blue',
+          textContent: '✓ dans tes échéances',
+        });
+        btn.replaceWith(marque);
         refreshDeadlinesBadge();
+        showUndoToast(`⏰ Rappel noté pour le ${fmtDate(d.date)}.`, async () => {
+          // EFFACER, pas « écarter » : un écarté resterait en base et le mail
+          // ne reproposerait plus jamais cette date (mesuré au banc le 27/08).
+          await api.deadlineAction(item.account, cree.id, 'delete');
+          marque.replaceWith(btn);
+          btn.disabled = false;
+          refreshDeadlinesBadge();
+        });
       } catch (err) {
         alert(err.message);
         btn.disabled = false;

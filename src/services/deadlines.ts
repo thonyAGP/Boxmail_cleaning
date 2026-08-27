@@ -899,6 +899,38 @@ export function restoreDeadline(account: string, id: number): Promise<DeadlineIt
 }
 
 /**
+ * EFFACER une échéance — « comme si je n'avais rien cliqué ».
+ *
+ * ⚠️ NE PAS CONFONDRE AVEC `dismissDeadline`. « Écarter » est une DÉCISION :
+ * la ligne reste, avec le statut `dismissed`. Or le panneau de lecture masque
+ * toute date déjà présente en base, quel que soit son statut (`knownKeys`
+ * dans la route d'analyse) — autrement dit un « écarté » enterre la date pour
+ * de bon : elle ne sera plus jamais reproposée à la lecture du mail.
+ *
+ * C'est acceptable quand l'utilisateur REJETTE la date. Ça ne l'est pas quand
+ * il annule dans les dix secondes le clic qu'il vient de faire : il demande
+ * un retour à l'état d'avant, pas l'enregistrement d'un refus. Mesuré au banc
+ * le 27/08 — la deuxième ouverture du même mail ne détectait plus la date.
+ *
+ * Réservé à l'annulation immédiate d'une création. Ailleurs, écarter suffit.
+ */
+export async function deleteDeadline(account: string, id: number): Promise<{ ok: true }> {
+  await ensureDbReady();
+  const row = await db.deadline.findFirst({ where: { id, accountSlug: account } });
+  if (!row) throw new Error(`Échéance ${id} introuvable pour le compte « ${account} ».`);
+  await db.deadline.delete({ where: { id } });
+  await recordOperation({
+    account,
+    tool: 'delete_deadline',
+    decision: 'annulee',
+    params: { deadlineId: id, date: row.date.toISOString() },
+    items: [{ subject: row.title, date: row.date.toISOString() }],
+    result: 'échéance effacée (annulation)',
+  });
+  return { ok: true };
+}
+
+/**
  * Propose une échéance depuis le panneau de lecture (L5.4) : l'utilisateur a
  * vu la date dans le mail ouvert et clique « Proposer ». Idempotent (contrainte
  * unique compte+mail+date) et jamais d'écrasement d'un statut travaillé.
@@ -906,7 +938,17 @@ export function restoreDeadline(account: string, id: number): Promise<DeadlineIt
 export async function proposeDeadline(
   account: string,
   messageId: number,
-  input: { date: Date; type?: DeadlineType; sourceText?: string },
+  /**
+   * `status` : `proposed` = l'assistant SUGGÈRE, il reste à valider ailleurs.
+   * `confirmed` = c'est déjà tranché.
+   *
+   * ⚠️ Quand le geste vient d'un CLIC de l'utilisateur sur une date qu'il a
+   * sous les yeux, créer en `proposed` est absurde : son clic EST la
+   * validation, et le badge « à valider dans Dates à confirmer » lui ajoutait
+   * une corvée sur un autre écran. C'est exactement le travers que le chantier
+   * du 27/08 corrige — ne pas transformer une conclusion en question.
+   */
+  input: { date: Date; type?: DeadlineType; sourceText?: string; status?: 'proposed' | 'confirmed' },
 ): Promise<DeadlineItem> {
   await ensureDbReady();
   const msg = await db.message.findFirst({
@@ -938,9 +980,12 @@ export async function proposeDeadline(
       title: msg.subject ?? '(sans sujet)',
       date: input.date,
       type: input.type ?? 'other',
-      status: 'proposed',
+      status: input.status ?? 'proposed',
       confidence: 0.9,
-      reason: 'proposée depuis le panneau de lecture (date vérifiée dans le mail ouvert)',
+      reason:
+        input.status === 'confirmed'
+          ? 'notée par toi depuis la lecture du mail'
+          : 'proposée depuis le panneau de lecture (date vérifiée dans le mail ouvert)',
       sourceText: (input.sourceText ?? '').slice(0, 300),
       fromEmail: msg.fromEmail,
       fromName: msg.fromName,
@@ -950,9 +995,10 @@ export async function proposeDeadline(
   await recordOperation({
     account,
     tool: 'propose_deadline',
+    decision: input.status === 'confirmed' ? 'humaine' : 'auto',
     params: { messageId, date: input.date.toISOString(), type: row.type },
     items: [{ subject: row.title, date: input.date.toISOString() }],
-    result: 'échéance proposée depuis la lecture',
+    result: input.status === 'confirmed' ? 'échéance notée' : 'échéance proposée depuis la lecture',
   });
   return toItem(row, metas.get(messageId));
 }

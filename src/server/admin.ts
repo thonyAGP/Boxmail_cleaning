@@ -48,6 +48,7 @@ import {
   dismissDeadline,
   completeDeadline,
   restoreDeadline,
+  deleteDeadline,
   proposeDeadline,
   extractDeadlines,
   type DeadlineType,
@@ -1604,6 +1605,9 @@ export function buildAdminRouter(): Router {
   router.post('/accounts/:slug/deadlines/:id/dismiss', deadlineAction(dismissDeadline));
   router.post('/accounts/:slug/deadlines/:id/done', deadlineAction(completeDeadline));
   router.post('/accounts/:slug/deadlines/:id/restore', deadlineAction(restoreDeadline));
+  // Effacement pur — le retour en arrière d'un clic, pas un refus (voir
+  // deleteDeadline : « écarter » masquerait la date pour toujours).
+  router.post('/accounts/:slug/deadlines/:id/delete', deadlineAction(deleteDeadline));
   // Transforme une échéance en tâche (idempotent : réutilise la tâche existante).
   router.post('/accounts/:slug/deadlines/:id/task', deadlineAction(taskFromDeadline));
 
@@ -3196,6 +3200,8 @@ export function buildAdminRouter(): Router {
           date,
           type,
           sourceText: String(req.body?.sourceText ?? ''),
+          // Un clic sur une date qu'il a sous les yeux VAUT validation.
+          status: req.body?.status === 'confirmed' ? 'confirmed' : 'proposed',
         }),
       );
     }),

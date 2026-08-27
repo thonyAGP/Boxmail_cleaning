@@ -219,13 +219,14 @@ export const api = {
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/analysis`, { folder, uid, text }),
   setMessageIntent: (slug, { folder, uid, intent }) =>
     request('PATCH', `/accounts/${encodeURIComponent(slug)}/messages/intent`, { folder, uid, intent }),
-  proposeDeadline: (slug, { folder, uid, date, type, sourceText }) =>
+  proposeDeadline: (slug, { folder, uid, date, type, sourceText, status }) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/propose-deadline`, {
       folder,
       uid,
       date,
       type,
       sourceText,
+      status,
     }),
   sendMail: (slug, payload) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/send`, payload),

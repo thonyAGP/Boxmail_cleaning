@@ -217,6 +217,13 @@ passage : aucune nouvelle fonction d'arbitrage tant que la charge n'a pas baiss�
   restaure tout depuis git. Livrer par git, pas par scp.
 
 **À faire** :
+- **« Voir l'histoire »** doit passer par les 3 focales de `contexteDuMail`
+  (`sujet` → `lie` → `tout`), PAS par une recherche par mot-clé. Demandé le
+  27/08 : « tu devrais avoir la liste définie des emails qui traitent ce
+  dossier… sans me noyer dans tous ceux de SIDER ».
+- **Gardé dans un coin** (ses mots, 27/08) : voir le FIL d'un sujet sous la
+  carte et pouvoir ouvrir ces mails ; joindre au brouillon les copies des mails
+  auxquels il fait référence, **uniquement au besoin**.
 - **Mesurer la charge sur plusieurs jours** avant d'ajouter quoi que ce soit.
 - **Le contre-audit des NON-MONTRÉS** — la seule mesure des faux négatifs.
   Auditer les cartes montrées mesure la précision, jamais ce qui est enterré.
