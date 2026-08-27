@@ -32,3 +32,6 @@ ux-review/
 
 # Contre-revues ChatGPT : journaux et captures, jamais versionnés
 .consult/
+
+# Captures des bancs de preuve — jamais versionnées.
+preuve-*.png
