@@ -13,6 +13,7 @@ import { logger } from '../logger.js';
 import { listCandidates, resolveAttachment } from '../services/accounting.js';
 import { getAccountRecord } from '../services/accounts.js';
 import { recordOperation } from '../services/oplog.js';
+import { enteteFichier } from './entete-fichier.js';
 
 function checkToken(req: Request, res: Response, next: NextFunction): void {
   const expected = config.accounting.readToken;
@@ -73,10 +74,10 @@ export function buildAccountingRouter(): Router {
       });
       res.setHeader('Content-Type', r.contentType);
       res.setHeader('Content-Length', String(r.content.length));
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${r.filename.replace(/["\\\r\n]/g, '_')}"`,
-      );
+      // Le nom vient du mail : il peut porter un accent décomposé qu'un en-tête
+      // HTTP refuse. Une pièce ainsi nommée rendait 500 et ARRÊTAIT le pull de
+      // Fiscal-Manager — voir entete-fichier.ts.
+      res.setHeader('Content-Disposition', enteteFichier(r.filename, 'attachment'));
       res.end(r.content);
     } catch (err) {
       logger.error('téléchargement candidat comptable en échec', {

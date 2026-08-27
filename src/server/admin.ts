@@ -180,6 +180,7 @@ import {
 import { readOperations, recordOperation } from '../services/oplog.js';
 import { db, ensureDbReady } from '../db/client.js';
 import { version, checkUpdates, applyUpdate } from '../services/update.js';
+import { enteteFichier } from './entete-fichier.js';
 
 /**
  * API REST de l'interface web d'administration (/api/*).
@@ -2703,7 +2704,6 @@ export function buildAdminRouter(): Router {
         }
         // Le download du mail pose \Seen côté serveur : l'index suit.
         await reflectActionInIndex(rec.account, folder, uid, 'seen').catch(() => {});
-        const safeName = att.filename.replace(/[\r\n"\\]/g, '_');
         // inline=1 → « Voir » : le navigateur affiche (PDF/image) au lieu de
         // forcer le téléchargement, et met en cache. Sinon : téléchargement.
         const disposition = req.query.inline ? 'inline' : 'attachment';
@@ -2712,10 +2712,9 @@ export function buildAdminRouter(): Router {
         if (req.query.inline) res.setHeader('Cache-Control', 'private, max-age=86400');
         res
           .type(att.contentType)
-          .setHeader(
-            'Content-Disposition',
-            `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(att.filename)}`,
-          )
+          // Le repli ASCII déplie aussi les accents DÉCOMPOSÉS : un « e » suivi
+          // de U+0301 fait tomber setHeader (voir entete-fichier.ts).
+          .setHeader('Content-Disposition', enteteFichier(att.filename, disposition))
           .send(att.content);
       } catch (err) {
         res.status(502).json({
