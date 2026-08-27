@@ -221,6 +221,8 @@ export interface DetectReport {
   viaCorps: number;
   /** Corps qu'il a fallu descendre en IMAP faute de texte indexé. */
   corpsLusEnImap: number;
+  /** Mêmes fournisseur+référence+montant déjà présents : un seul suffit. */
+  doublonsEcartes: number;
 }
 
 /**
@@ -367,6 +369,7 @@ export async function detectAccountingCandidates(
     viaRepli: 0,
     viaCorps: 0,
     corpsLusEnImap: 0,
+    doublonsEcartes: 0,
   };
   const limit = Math.min(opts.limit ?? 300, 1000);
 
@@ -406,6 +409,11 @@ export async function detectAccountingCandidates(
         {
           AND: [
             { hasAttachments: false },
+            // UN JUSTIFICATIF NE PORTE PAS DE LIEN DE DÉSINSCRIPTION. Le signal
+            // est déjà en base et il est décisif : c'est lui qui écarte « Jump ·
+            // Du nouveau pour vos commandes de chèques culture », une lettre
+            // d'information que la détection prenait pour une dépense de 250 €.
+            { hasListUnsubscribe: false },
             { OR: SUJETS_JUSTIFICATIF_CORPS.map((mot) => ({ searchShort: { contains: mot } })) },
           ],
         },
@@ -472,6 +480,35 @@ export async function detectAccountingCandidates(
       const issu = await candidatDepuisLeCorps(rec, m, report);
       if (!issu) continue;
       report.scanned++;
+      /**
+       * UN MÊME BILLET NE DOIT PRODUIRE QU'UNE PIÈCE.
+       *
+       * ⚠️ Mesuré le 27/08 : la réservation S7T4GC est arrivée TROIS fois
+       * (confirmation, renvoi, rappel) et devenait trois pièces de 160,36 € —
+       * soit une déduction en triple. Le dédoublonnage porte sur le trio
+       * (fournisseur, référence, montant), et UNIQUEMENT quand une référence
+       * existe : sans elle, impossible de distinguer deux vrais achats
+       * identiques le même jour (trois affranchissements La Poste à 7,65 €).
+       */
+      if (issu.doc.reference) {
+        const jumelle = (
+          await db.accountingCandidate.findMany({
+            where: { accountSlug: rec.account, status: 'ACTIVE', bodyDocJson: { not: null } },
+            select: { bodyDocJson: true },
+          })
+        ).some((c) => {
+          const d = JSON.parse(c.bodyDocJson as string) as JustificatifCorps;
+          return (
+            d.reference === issu.doc.reference &&
+            d.supplier === issu.doc.supplier &&
+            d.amountTtc === issu.doc.amountTtc
+          );
+        });
+        if (jumelle) {
+          report.doublonsEcartes++;
+          continue;
+        }
+      }
       await db.accountingCandidate.create({
         data: {
           candidateId: randomUUID(),

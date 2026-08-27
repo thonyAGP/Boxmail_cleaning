@@ -186,6 +186,12 @@ fonction d'arbitrage tant que la charge n'a pas baissé À COUVERTURE CONSTANTE.
 **Pièges de conception mesurés** :
 - Un mail **sans extrait est INVISIBLE**, pas « en attente » : vérifier la
   COUVERTURE, ne jamais conclure d'un vivier vide.
+- **UN TEXTE TRONQUÉ NE PERMET JAMAIS DE CONCLURE « NON ».** Trois troncatures
+  d'affilée ont fait rendre 0 billet d'avion sur 94 candidats : `analysisInput`
+  est un EXTRAIT choisi (~2 200 car.), `readEmail().text` s'arrête à 5 000 car.
+  quand le HTML en fait 220 000, et une fenêtre de lecture trop courte rate un
+  montant écrit deux lignes sous son libellé. Avant tout verdict négatif :
+  d'où vient le texte, et est-il complet ?
 - Écran argent : **jamais de total de portefeuille** (château à 2,68 M€,
   budgets de copropriété, pesos chiliens mêlés).
 - Le **silence ne prouve rien hors d'une demande d'argent**.

@@ -5,6 +5,60 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 27/08 (57) — Les billets d'avion, et trois troncatures en enfilade
+
+Sa demande, avec le piège déjà identifié par lui : « la protection
+anti-suppression de Boxmail repose sur l'hypothèse qu'un candidat comptable a
+toujours une pièce jointe. Faire entrer des mails sans PJ casse cette hypothèse
+en silence. » Les billets d'avion ne portent AUCUNE pièce jointe — le corps EST
+le justificatif — et ils étaient oubliés systématiquement dans Jump et Expensya.
+
+**La protection d'abord.** Le commentaire en tête d'`accounting.ts` affirmait
+qu'« un candidat est par définition un mail à pièce jointe », donc que la clause
+`m.hasAttachments = 0` de `retention.ts` suffisait. Vrai tant que la détection
+exigeait une pièce. Une confirmation de vol coche `hasAttachments = 0` ET
+`intent NOT IN ('invoice','document')` : les deux conditions de suppression à la
+fois, et comme aucun PDF n'est stocké, le justificatif serait perdu pour de bon.
+Clause explicite ajoutée : tout mail portant un `AccountingCandidate` **ACTIF**
+est protégé. `SKIPPED` en est exclu — le protéger aurait gelé en silence le
+nettoyage de tous les mails « facture » sans pièce. Le banc vérifie les deux
+sens, y compris la contre-épreuve qu'un mail ordinaire reste supprimable.
+
+**La pièce synthétique.** `attachmentId` = `"body"`, constante donc stable :
+c'est ce qui empêche le doublon côté Fiscal-Manager (contrainte unique
+`sourceSystem, sourceCandidateId, sourceAttachmentId`). Le corps est rendu en
+PDF **à la demande**, par un générateur maison sans dépendance
+(`services/pdf.ts`), déterministe à l'octet, rien n'est persisté. Vérifié dans
+Chrome : un défaut vu au RENDU — « Malaga (AGP) ? Brest (BES) », la flèche
+n'existant pas en WinAnsi — corrigé par translittération, parce que sur un
+billet la flèche EST l'itinéraire.
+
+**PUIS TROIS TRONCATURES, l'une après l'autre**, et c'est le vrai enseignement
+de la journée. Le rattrapage sur `lb2i` a rendu **0 billet sur 94 candidats**,
+trois fois de suite, pour trois raisons différentes :
+
+1. `analysisInput` est un extrait SÉLECTIONNÉ (~2 200 car., passages sautés
+   marqués « […] ») : les 2 280 caractères indexés de la confirmation Volotea ne
+   contenaient AUCUNE ligne de paiement.
+2. Le repli « lire le corps complet » ne l'était pas : `readEmail().text`
+   s'arrête à 5 000 caractères — c'est un texte d'AFFICHAGE — alors que le HTML
+   du mail fait **220 395** caractères. Dans les 5 000 lus, les seules lignes
+   portant un montant étaient « à partir de 2 € » : de la publicité.
+3. Une fois le HTML converti, le montant était là… mais **deux lignes sous son
+   libellé** (`175 | Montant payé avec MASTERCARD:` / `177 | 160,36€`), mise en
+   page HTML ordinaire. Ma fenêtre ne regardait que la ligne précédente.
+
+À chaque étape j'ai conclu « pas de montant » sans avoir lu le texte qui le
+portait. C'est le § 53 sous trois formes. La règle est montée dans CLAUDE.md :
+**un texte tronqué ne permet jamais de conclure « non »** — avant tout verdict
+négatif, se demander d'où vient le texte et s'il est complet.
+
+Ce qui a permis d'en sortir : ne rien supposer et aller LIRE le mail réel sur
+la production, à chaque fois. Le banc synthétique était vert du premier coup et
+le serait resté — il testait des corps que j'avais écrits moi-même. Il rejoue
+désormais la mise en page réelle, avec ses pièges (« à partir de 2 € »,
+« économisé 39.42€ » dans le même corps).
+
 ## 27/08 (56) — SIDER : ce qui donnait « l'impression d'un truc solide »
 
 Trois défauts signalés depuis l'écran, sur un remboursement de 1 000 € au

@@ -83,6 +83,13 @@ const MARQUEURS_BRUIT = [
   'dernière minute', 'derniere minute', 'bons plans', 'inspirez-vous',
   'évaluez votre', 'evaluez votre', 'donnez votre avis', 'enquête de satisfaction',
   'enquete de satisfaction', 'modification de votre vol', 'horaire de votre vol',
+  // UNE COMMANDE ANNULÉE N'EST PAS UNE DÉPENSE (mesuré le 27/08 sur ses
+  // boîtes) : « Votre commande a été annulée suite à un problème technique »
+  // portait 12 € et 33 €, et devenait deux pièces comptables.
+  'annulee', 'annulé', 'annule', 'annulation', 'remboursement de votre commande',
+  // Vocabulaire de lettre d'information — « Jump · Du nouveau pour vos
+  // commandes de chèques culture » devenait une dépense de 250 €.
+  'du nouveau', 'nouveautes', 'nouveautés', 'decouvrez', 'découvrez',
 ];
 
 /** Marques dont le nom de domaine ne dit pas le nom commercial. */
