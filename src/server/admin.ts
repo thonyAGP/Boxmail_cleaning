@@ -2195,6 +2195,7 @@ export function buildAdminRouter(): Router {
       await recordOperation({
         account: m?.accountSlug ?? '?',
         tool: 'ui_declaration',
+        decision: 'humaine',
         params: { messageId, kind, note: note ?? undefined, sujet: m?.subject?.slice(0, 120) },
         result: 'declaree',
       });
@@ -2223,6 +2224,7 @@ export function buildAdminRouter(): Router {
       await recordOperation({
         account: m?.accountSlug ?? '?',
         tool: 'ui_declaration_undo',
+        decision: 'annulee',
         params: { messageId: d.messageId, kind: d.kind },
         result: 'annulee',
       });

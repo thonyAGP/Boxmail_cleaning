@@ -27,6 +27,27 @@ export interface OperationEntry {
    * lien mort).
    */
   items?: { subject: string; date: string | null; folder?: string; uid?: number }[];
+  /**
+   * QUI A DÉCIDÉ — le champ qui rend la charge mesurable.
+   *
+   *   `humaine` : l'interface lui a demandé de trancher, et il a tranché.
+   *   `auto`    : l'assistant a décidé seul (règle appliquée, analyse, tri).
+   *   `annulee` : il a défait une décision automatique. C'est la mesure de
+   *               qualité la plus fine qu'on puisse obtenir SANS lui poser une
+   *               seule question — 138 décisions autonomes, 4 annulations,
+   *               2,9 % de contradiction.
+   *
+   * ⚠️ POURQUOI UN CHAMP ET PAS LE PRÉFIXE `ui_`. La convention de nommage
+   * n'est pas un contrat : `attente.regle` et `engagement_creer` sont des
+   * gestes humains sans préfixe, et le front reclasse tout `tool` inconnu en
+   * « réglages ». Une métrique fondée sur le nom se dégraderait en silence au
+   * prochain outil ajouté. Le champ est explicite, donc vérifiable.
+   *
+   * Absent = non classé : ces lignes sont EXCLUES du calcul plutôt que
+   * comptées par défaut dans un camp. Une métrique qui gonfle toute seule ne
+   * vaut rien.
+   */
+  decision?: 'humaine' | 'auto' | 'annulee';
 }
 
 const SENSITIVE_KEYS = /token|secret|password|authorization|bearer|cache/i;
@@ -57,12 +78,60 @@ export async function readOperations(limit = 30): Promise<Record<string, unknown
     });
 }
 
+/** Une journée de charge décisionnelle. */
+export interface ChargeJour {
+  jour: string;
+  humaines: number;
+  auto: number;
+  annulees: number;
+}
+
+/**
+ * LA CHARGE DÉCISIONNELLE, jour par jour.
+ *
+ * `readOperations(limit)` ne sait lire que les N dernières lignes : impossible
+ * d'en tirer une série. Cette fonction relit le journal et compte.
+ *
+ * ⚠️ CE CHIFFRE NE SE LIT JAMAIS SEUL. « Décisions demandées » s'optimise
+ * pathologiquement : le meilleur produit du monde selon cette métrique serait
+ * celui qui ne montre RIEN. Il se lit contre une seconde métrique — ce qui a
+ * été manqué — et la règle de passage est : faire baisser la charge À
+ * COUVERTURE CONSTANTE OU MEILLEURE.
+ */
+export async function chargeDecisionnelle(jours = 14): Promise<ChargeJour[]> {
+  if (!existsSync(config.files.operationsLog)) return [];
+  const raw = await readFile(config.files.operationsLog, 'utf8');
+  const depuis = Date.now() - jours * 86_400_000;
+  const parJour = new Map<string, ChargeJour>();
+  for (const ligne of raw.split('\n')) {
+    if (ligne.trim() === '') continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(ligne) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const d = typeof o.decision === 'string' ? o.decision : null;
+    if (!d) continue; // non classé : exclu, jamais compté par défaut
+    const ts = typeof o.ts === 'string' ? Date.parse(o.ts) : NaN;
+    if (!Number.isFinite(ts) || ts < depuis) continue;
+    const jour = new Date(ts).toISOString().slice(0, 10);
+    const e = parJour.get(jour) ?? { jour, humaines: 0, auto: 0, annulees: 0 };
+    if (d === 'humaine') e.humaines++;
+    else if (d === 'auto') e.auto++;
+    else if (d === 'annulee') e.annulees++;
+    parJour.set(jour, e);
+  }
+  return [...parJour.values()].sort((a, b) => a.jour.localeCompare(b.jour));
+}
+
 export async function recordOperation(entry: OperationEntry): Promise<void> {
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     account: entry.account,
     tool: entry.tool,
     dryRun: entry.dryRun ?? false,
+    decision: entry.decision,
     folder: entry.folder,
     params: scrub(entry.params),
     affectedUids: entry.affectedUids,

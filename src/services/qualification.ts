@@ -1,5 +1,6 @@
 import { db, ensureDbReady } from '../db/client.js';
 import { detecterAnomalies, phraseDe, type Anomalie } from './anomalies.js';
+import { recordOperation } from './oplog.js';
 
 /**
  * LA BOUCLE : détecteur mécanique → qualification par l'IA → attentes.
@@ -501,6 +502,18 @@ export async function enregistrerQualifications(
     attentes++;
   }
 
+  // LA TRACE DE CE QUE L'ASSISTANT A DECIDE SEUL — le denominateur du taux de
+  // contradiction (annulations / decisions autonomes). Sans elle, on saurait
+  // combien de fois il se contredit, jamais sur combien de decisions.
+  if (lus > 0) {
+    await recordOperation({
+      account: 'tous',
+      tool: 'qualification_dossiers',
+      decision: 'auto',
+      params: { lus, attentes, rejets: rejets.length },
+      result: `${lus} dossier(s) qualifie(s)`,
+    });
+  }
   return { lus, attentes, rejets };
 }
 

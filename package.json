@@ -34,7 +34,8 @@
     "genkey": "node --input-type=module -e \"import{randomBytes}from'node:crypto';console.log(randomBytes(32).toString('base64'))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dossiers": "tsx src/cli/dossiers.ts",
-    "attentes:dedoublonner": "tsx src/cli/attentes-dedoublonner.ts"
+    "attentes:dedoublonner": "tsx src/cli/attentes-dedoublonner.ts",
+    "charge": "tsx src/cli/charge.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.2",

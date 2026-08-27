@@ -1131,6 +1131,8 @@ export async function applySemanticVerdicts(
     await recordOperation({
       account,
       tool: 'ai_analysis_semantique',
+    // L'assistant a juge seul : c'est le denominateur du taux de contradiction.
+    decision: 'auto',
       params: { model, verdicts: items.length, schemaVersion: SCHEMA_VERSION, promptVersion },
       result: `${items.length} verdict(s) sémantique(s) enregistrés`,
       items,

@@ -232,6 +232,9 @@ export async function marquer(id: number, geste: Geste, note?: string): Promise<
   });
   await recordOperation({
     tool: `attente.${geste}`,
+    // Rouvrir, c'est defaire ce que l'assistant avait conclu : c'est la
+    // mesure de contradiction, pas une decision de plus.
+    decision: geste === 'rouvrir' ? 'annulee' : 'humaine',
     account: a.accountSlug,
     params: { id: a.id, quoi: a.quoi.slice(0, 120), qui: a.qui, etat, note: propre || undefined },
     result: etat,
