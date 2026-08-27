@@ -7892,10 +7892,13 @@ async function renderPiecesCompta() {
   const main = $('#main');
   main.innerHTML = `<div class="page-head">
     <div><h1>🧾 Ce qui part à la compta</h1>
-      <div class="sub">Les justificatifs que j'ai repérés dans tes mails et transmis à
-      Fiscal-Manager (écran « Pièces reçues »). Chaque ligne montre <strong>la phrase du mail</strong>
-      sur laquelle je me suis appuyé — tu peux vérifier, et ouvrir le mail d'origine.
-      Rien n'est supprimé, rien n'est envoyé ailleurs.</div></div>
+      <div class="sub">Les justificatifs repérés dans tes mails, mis à disposition de
+      <strong>Fiscal-Manager</strong> (écran « Pièces reçues »), qui vient les chercher quand tu
+      l'actualises — rien n'est poussé automatiquement. Clique une ligne pour voir
+      <strong>la phrase du mail</strong> sur laquelle je me suis appuyé.
+      <br><strong>Toutes les boîtes sont là</strong> : seuls les frais de <strong>LB2I</strong>
+      partent ensuite en note de frais, les autres sociétés suivent leur propre chemin — d'où le
+      filtre par boîte. Rien n'est supprimé, rien n'est envoyé ailleurs.</div></div>
     <div class="head-actions"><button class="btn" id="pc-refresh">↻ Actualiser</button></div></div>
     <div id="pc-body"><div class="empty"><span class="spinner"></span>Je rassemble les pièces…</div></div>`;
   $('#pc-refresh').addEventListener('click', renderPiecesCompta);
@@ -7907,54 +7910,129 @@ async function renderPiecesCompta() {
     $('#pc-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
     return;
   }
-  const items = d.items ?? [];
+  const items = (d.items ?? []).slice().sort((a, b) =>
+    String(b.message?.receivedAt ?? '').localeCompare(String(a.message?.receivedAt ?? '')));
+  if (!items.length) {
+    $('#pc-body').innerHTML = `<div class="empty">Aucune pièce transmise pour l'instant.
+      Elles apparaissent après une synchronisation, ou après le rattrapage automatique au démarrage.</div>`;
+    return;
+  }
   const corps = items.filter((i) => i.porteeParLeCorps);
-  const jointes = items.filter((i) => !i.porteeParLeCorps);
+  /**
+   * FILTRER PAR BOÎTE — pas un confort, une nécessité comptable.
+   *
+   * ⚠️ Sa correction du 27/08 : « ce qui est envoyé à Jump ou Expensya est
+   * uniquement les frais de LB2I ». Toutes ses boîtes produisent des pièces
+   * (BRIMMO, Au-marais, ECONOM…) mais elles ne suivent PAS le même chemin
+   * comptable. Mélanger 213 lignes de six sociétés sans pouvoir les séparer,
+   * c'est rendre l'écran inexploitable pour la seule question qu'il se pose :
+   * « qu'est-ce qui part en note de frais ? »
+   */
+  const parBoite = new Map();
+  for (const i of items) parBoite.set(i.mailboxId, (parBoite.get(i.mailboxId) ?? 0) + 1);
+  const boites = [...parBoite].sort((a, b) => b[1] - a[1]);
 
-  const ligne = (i) => {
+  const ligne = (i, n) => {
     const doc = i.document ?? {};
     const a = i.attachments?.[0];
     const preuve = (doc.reasons ?? []).find((r) => r.startsWith('montant')) ?? (doc.reasons ?? [])[0];
-    return `<article class="pc-piece">
-      <div class="pc-tete">
-        <span class="pc-fournisseur">${esc(doc.supplier || '(fournisseur non lu)')}</span>
-        <span class="pc-montant">${doc.amountTtc != null ? fmtEur(doc.amountTtc, 'EUR') : '—'}</span>
-        <span class="muted">${esc(fmtDate(i.message?.receivedAt))}</span>
-      </div>
-      <div class="pc-sujet">${esc((i.message?.subject || '').trim() || '(sans objet)')}</div>
-      ${preuve ? `<div class="pc-preuve">${esc(preuve)}</div>` : ''}
-      <div class="pc-pied">
-        <span class="muted">${doc.invoiceNumber ? `réf. ${esc(doc.invoiceNumber)} · ` : ''}${esc(i.mailboxId)}${
-          i.companyCandidate ? ` · ${esc(i.companyCandidate)}` : ' · société à qualifier'
-        }${a ? ` · ${esc(a.filename)}` : ''}</span>
-        ${i.source ? `<button class="btn btn-sm pc-ouvrir" data-account="${esc(i.source.account)}"
+    return `<tr class="pc-l" data-n="${n}">
+      <td class="muted nowrap">${esc(fmtDate(i.message?.receivedAt))}</td>
+      <td class="nowrap">${accountChip(i.mailboxId)}</td>
+      <td class="pc-f">${esc(doc.supplier || '(non lu)')}</td>
+      <td class="num pc-m">${doc.amountTtc != null ? fmtEur(doc.amountTtc, 'EUR') : '—'}</td>
+      <td class="muted nowrap">${doc.invoiceNumber ? esc(doc.invoiceNumber) : ''}</td>
+      <td class="pc-s" title="${esc((i.message?.subject || '').trim())}">${
+        esc((i.message?.subject || '').trim() || '(sans objet)')}</td>
+      <td class="nowrap">${i.porteeParLeCorps
+        ? '<span class="badge blue" title="Ce mail n’a aucune pièce jointe : le message lui-même est le justificatif, rendu en PDF.">le mail</span>'
+        : '<span class="badge gray" title="Le justificatif est un fichier attaché au mail.">pièce jointe</span>'}</td>
+      <td class="nowrap"><button class="btn btn-sm pc-why" data-n="${n}" title="Pourquoi cette ligne ?">Pourquoi ?</button></td>
+    </tr>
+    <tr class="pc-detail hidden" data-d="${n}"><td colspan="8">
+      ${preuve ? `<div class="pc-preuve">${esc(preuve)}</div>` : '<div class="muted">Aucune justification enregistrée.</div>'}
+      <div class="pc-meta">
+        ${a ? `📄 ${esc(a.filename)} · ${fmtSize(a.sizeBytes)}` : ''}
+        ${i.companyCandidate ? ` · société proposée : <strong>${esc(i.companyCandidate)}</strong>` : ' · société à qualifier dans Fiscal-Manager'}
+        ${i.source ? `<button class="btn btn-sm pc-open" data-account="${esc(i.source.account)}"
           data-folder="${esc(i.source.folder)}" data-uid="${i.source.uid}">Ouvrir le mail ↗</button>` : ''}
       </div>
-    </article>`;
+    </td></tr>`;
   };
+
+  const rendre = (liste) => `<div class="tablewrap"><table class="table-compact pc-table">
+    <thead><tr>
+      <th style="width:92px">Reçu le</th><th style="width:96px">Boîte</th>
+      <th style="width:190px">Fournisseur</th><th class="num" style="width:110px">Montant</th>
+      <th style="width:120px">Référence</th><th>Sujet du mail</th>
+      <th style="width:96px">Justificatif</th><th style="width:96px"></th>
+    </tr></thead>
+    <tbody>${liste.map((i) => ligne(i, items.indexOf(i))).join('')}</tbody></table></div>`;
 
   $('#pc-body').innerHTML = `
     <div class="pc-resume">
-      <strong>${fmtNum(items.length)}</strong> pièce(s) transmise(s) —
-      dont <strong>${fmtNum(corps.length)}</strong> sans pièce jointe, où le mail LUI-MÊME est le
-      justificatif (billets d'avion, confirmations de commande).
+      <strong>${fmtNum(items.length)}</strong> pièce(s) transmise(s), dont
+      <strong>${fmtNum(corps.length)}</strong> où <strong>le mail lui-même est le justificatif</strong>
+      (billets d'avion, confirmations de commande) — celles-là n'ont aucune pièce jointe et étaient
+      perdues jusqu'ici.
     </div>
-    ${corps.length ? `<h2 class="pc-titre">Le mail est le justificatif</h2>
-      <div class="pc-liste">${corps.map(ligne).join('')}</div>` : ''}
-    ${jointes.length ? `<h2 class="pc-titre">Avec une pièce jointe</h2>
-      <div class="pc-liste">${jointes.slice(0, 60).map(ligne).join('')}</div>
-      ${jointes.length > 60 ? `<div class="muted" style="margin-top:8px">
-        ${fmtNum(jointes.length - 60)} autre(s) non affichée(s) — elles sont toutes dans Fiscal-Manager.</div>` : ''}` : ''}
-    ${items.length ? '' : `<div class="empty">Aucune pièce transmise pour l'instant.
-      Elles apparaissent après une synchronisation, ou après le rattrapage automatique au démarrage.</div>`}`;
+    <div class="pc-filtres">
+      <span class="muted">Nature —</span>
+      <button class="find-chip actif" data-filtre="tout">Tout · ${fmtNum(items.length)}</button>
+      <button class="find-chip" data-filtre="corps">Le mail est le justificatif · ${fmtNum(corps.length)}</button>
+      <button class="find-chip" data-filtre="jointe">Avec pièce jointe · ${fmtNum(items.length - corps.length)}</button>
+    </div>
+    <div class="pc-filtres">
+      <span class="muted">Boîte —</span>
+      <button class="find-chip actif" data-boite="">Toutes</button>
+      ${boites.map(([b, n]) => `<button class="find-chip" data-boite="${esc(b)}">${esc(b)} · ${fmtNum(n)}</button>`).join('')}
+    </div>
+    <div id="pc-table">${rendre(items)}</div>`;
 
-  $('#pc-body').querySelectorAll('.pc-ouvrir').forEach((b) => {
-    b.addEventListener('click', () => {
-      openReaderFor({
-        account: b.dataset.account,
-        folder: b.dataset.folder,
-        uid: Number(b.dataset.uid),
+  const brancher = () => {
+    $('#pc-body').querySelectorAll('.pc-why').forEach((b) => {
+      b.addEventListener('click', () => {
+        const d = $('#pc-body').querySelector(`[data-d="${b.dataset.n}"]`);
+        if (d) d.classList.toggle('hidden');
       });
+    });
+    $('#pc-body').querySelectorAll('.pc-open').forEach((b) => {
+      b.addEventListener('click', () => openReaderFor({
+        account: b.dataset.account, folder: b.dataset.folder, uid: Number(b.dataset.uid),
+      }));
+    });
+  };
+  brancher();
+
+  // Les deux filtres se COMBINENT : « le mail est le justificatif » ET « lb2i »
+  // est exactement la question « quels billets d'avion partent en note de
+  // frais ? ». Deux filtres qui s'annulent l'un l'autre seraient inutiles.
+  let nature = 'tout';
+  let boite = '';
+  const appliquer = () => {
+    let liste = nature === 'corps' ? corps
+      : nature === 'jointe' ? items.filter((i) => !i.porteeParLeCorps)
+      : items;
+    if (boite) liste = liste.filter((i) => i.mailboxId === boite);
+    $('#pc-table').innerHTML = liste.length
+      ? rendre(liste)
+      : '<div class="empty">Aucune pièce pour ce filtre.</div>';
+    brancher();
+  };
+  $('#pc-body').querySelectorAll('[data-filtre]').forEach((b) => {
+    b.addEventListener('click', () => {
+      $('#pc-body').querySelectorAll('[data-filtre]').forEach((x) => x.classList.remove('actif'));
+      b.classList.add('actif');
+      nature = b.dataset.filtre;
+      appliquer();
+    });
+  });
+  $('#pc-body').querySelectorAll('[data-boite]').forEach((b) => {
+    b.addEventListener('click', () => {
+      $('#pc-body').querySelectorAll('[data-boite]').forEach((x) => x.classList.remove('actif'));
+      b.classList.add('actif');
+      boite = b.dataset.boite;
+      appliquer();
     });
   });
 }
@@ -8021,12 +8099,18 @@ function renderHelp() {
   ${section('🧾 Les justificatifs pour ta compta', `
     ${qa('Qu’est-ce que Boxmail envoie à la compta, exactement ?',
       `Quand un mail contient une <strong>facture, un reçu ou un billet payé</strong>, je le repère et
-      je le transmets à <strong>Fiscal-Manager</strong> (son écran « Pièces reçues »), d'où il part
-      ensuite vers Jump ou Expensya. Je ne décide de rien : je REPÈRE, tu qualifies là-bas.
-      <br><br>Deux cas. Soit le mail porte une <strong>pièce jointe</strong> (une facture PDF) — c'est
-      le cas classique. Soit il n'en a aucune et <strong>le mail LUI-MÊME est le justificatif</strong> :
-      c'est le cas des billets d'avion et des confirmations de commande. Ceux-là étaient perdus
-      jusqu'au 27/08 ; ils remontent maintenant, transformés en PDF.`)}
+      je le transmets à <strong>Fiscal-Manager</strong>, sur son écran « Pièces reçues ».
+      <strong>Ça s'arrête là.</strong> Je ne décide de rien : je REPÈRE, tu qualifies là-bas — c'est
+      toi qui dis à quelle société la pièce appartient et ce qu'elle devient.
+      <br><br>⚠️ <strong>Toutes tes boîtes sont concernées</strong> — BRIMMO, Au-marais, ECONOM… — et
+      elles ne vont PAS au même endroit. Ce qui part vers <strong>Jump ou Expensya</strong>, ce sont
+      <strong>uniquement les frais de LB2I</strong> ; les factures des autres sociétés suivent leur
+      propre chemin comptable. C'est pour ça que la colonne « Boîte » est affichée partout, et
+      filtrable.
+      <br><br>Deux cas de figure. Soit le mail porte une <strong>pièce jointe</strong> (une facture
+      PDF) — c'est le cas classique. Soit il n'en a aucune et <strong>le mail LUI-MÊME est le
+      justificatif</strong> : billets d'avion, confirmations de commande. Ceux-là étaient perdus
+      jusqu'au 27/08 ; ils remontent maintenant, rendus en PDF.`)}
     ${qa('Comment ça part ? Est-ce que je dois faire quelque chose ?',
       `<strong>Non, rien.</strong> Le repérage se fait tout seul à chaque synchronisation, sur les
       nouveaux mails. Un rattrapage sur les 12 derniers mois se déclenche aussi au démarrage, une

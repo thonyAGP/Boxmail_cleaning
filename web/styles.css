@@ -1428,30 +1428,33 @@ th.sortable:hover { color: var(--primary); }
 
 
 /* ── CE QUI PART À LA COMPTA (27/08) ───────────────────────────────────────
-   Un travail qu'on ne peut pas vérifier n'est pas livré : ces pièces
-   partaient vers Fiscal-Manager sans qu'aucun écran ne les montre. Chaque
-   ligne porte donc SA PREUVE — la phrase du mail sur laquelle je me suis
-   appuyé — et de quoi ouvrir le mail d'origine. */
+   ⚠️ D'ABORD LIVRÉ EN CARTES, ET C'ÉTAIT FAUX. Sur 213 justificatifs, une
+   grille de fiches donne un mur illisible : boutons repliés sur deux lignes,
+   noms de fichiers coupés, montants noyés. Son verdict : « c'est
+   incompréhensible tes cartes, où as-tu vu faire ça ». Les cartes servent à
+   TRANCHER trois ou quatre choses ; un registre de 213 lignes homogènes est
+   un TABLEAU. La justification, elle, se déplie à la demande — l'afficher
+   213 fois serait du bruit, ne jamais l'afficher serait un acte de foi. */
 .pc-resume {
   background: var(--surface-alt, rgba(0,0,0,.03)); border: 1px solid var(--border);
-  border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 18px; font-size: 13.5px;
+  border-radius: var(--radius-md); padding: 11px 14px; margin-bottom: 14px; font-size: 13px;
 }
-.pc-titre { font-size: 14px; margin: 22px 0 10px; color: var(--text-secondary); }
-.pc-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: 12px; }
-.pc-piece {
-  border: 1px solid var(--border); border-radius: var(--radius-md);
-  background: var(--surface-main); padding: 12px 14px;
-}
-.pc-tete { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.pc-fournisseur { font-weight: 600; }
-.pc-montant { font-variant-numeric: tabular-nums; font-weight: 600; margin-left: auto; }
-.pc-sujet { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 8px; }
-/* La citation du mail : c'est la pièce à conviction, elle doit se lire comme
-   telle — retrait et filet, pas un simple gris de plus. */
+.pc-filtres { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.pc-filtres .muted { font-size: 12px; margin-right: 2px; }
+.pc-table td { vertical-align: top; }
+.pc-table .nowrap { white-space: nowrap; }
+.pc-l { cursor: default; }
+.pc-l:hover { background: var(--surface-alt, rgba(0,0,0,.03)); }
+.pc-f { font-weight: 600; }
+.pc-m { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Le sujet est la colonne élastique : elle absorbe la largeur, sur UNE ligne,
+   le texte complet restant en infobulle. */
+.pc-s { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-detail td { background: var(--surface-alt, rgba(0,0,0,.03)); padding: 10px 12px; }
+/* La citation du mail : c'est la pièce à conviction, elle se lit comme telle. */
 .pc-preuve {
-  font-size: 12px; color: var(--text); border-left: 3px solid var(--accent, #2d6cdf);
-  padding: 5px 0 5px 10px; background: rgba(45,108,223,.05); border-radius: 0 4px 4px 0;
+  font-size: 12.5px; border-left: 3px solid var(--accent, #2d6cdf);
+  padding: 5px 0 5px 10px; background: rgba(45,108,223,.06); border-radius: 0 4px 4px 0;
 }
-.pc-pied { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.pc-pied .muted { font-size: 11.5px; }
-.pc-pied .btn { margin-left: auto; }
+.pc-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 11.5px; color: var(--text-muted); }
+.pc-meta .btn { margin-left: auto; }
