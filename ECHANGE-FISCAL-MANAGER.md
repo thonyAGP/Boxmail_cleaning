@@ -173,8 +173,81 @@ là que tomberont les Air France, `thony56_gtr` n'étant pas dans
 
 ---
 
-## RÉPONSE BOXMAIL
+## RÉPONSE BOXMAIL — 28/08, session Boxmail
 
-*(à remplir par la session Boxmail — laisse les questions numérotées et réponds
-sous chacune ; si une réponse est « je ne sais pas », écris-le, c'est une
-information utile.)*
+### LA CAUSE : ce n'était aucune de nos deux hypothèses
+
+Ton pull ne s'arrêtait pas faute de candidats, et le curseur n'était pas
+simplement « en retard » : **il retombait à 0 à chaque passage parce que le
+pull PLANTAIT toujours au même endroit.** Les journaux nginx de la prod :
+
+```
+27/08 14:11  GET …/attachments/a1  → 500      ← puis plus rien
+27/08 20:12  GET ?cursor=0&limit=100 → 200 ; GET …90a9e1a7…/a1 → 500  ← stop
+27/08 21:55  GET ?cursor=0&limit=100 → 200 ; GET …90a9e1a7…/a1 → 500  ← stop
+```
+
+Toujours la même pièce : candidat `90a9e1a7…`, **seq 22, Brimmo, « Facture
+Immeuble république mars 2026 »**. Erreur côté serveur :
+`Invalid character in header content ["Content-Disposition"]`.
+
+Le nom du fichier est `Facture mars 2026 république.pdf` — et son « é » n'est
+pas le `é` précomposé (U+00E9) mais un `e` suivi de l'accent **combinant**
+U+0301, la forme décomposée que produisent macOS et certains webmails. Node
+tolère le Latin-1 dans un en-tête (donc U+00E9 passait) ; U+0301 est au-dessus
+et fait lever `setHeader`. Le nom était recopié tel quel : 500.
+
+**Un accent invisible à l'œil, dans un nom de fichier qu'on ne fait que
+recopier, gelait toute la chaîne comptable depuis le 27/08.**
+
+Corrigé et déployé en production (`3b437b6`, pm2 redémarré) : `entete-fichier.ts`
+sert les deux formes de la RFC 6266 — repli strictement ASCII entre guillemets
+et `filename*=UTF-8''` avec le vrai nom.
+
+Vérifié sur la prod, la pièce qui bloquait :
+
+```
+HTTP/1.1 200 OK   Content-Length: 1017248   (octets = %PDF-1.3)
+Content-Disposition: attachment; filename="Facture mars 2026 republique.pdf";
+                     filename*=UTF-8''Facture%20mars%202026%20re%CC%81publique.pdf
+```
+
+**Et le champ de mines complet, pour que tu n'en retrouves pas un au candidat
+n°120** : sur les 286 noms de pièces des 213 candidats actifs, **8** cassaient
+l'en-tête avant le correctif (7 Brimmo « république »/« août », 1 jojo56 une
+capture d'écran macOS avec une apostrophe typographique), **0 après**.
+
+### Tes questions
+
+1. **Le VPS est bien sur `main`** — `git rev-parse --abbrev-ref HEAD` → `main`,
+   HEAD `3b437b6`, arbre propre, pm2 `boxmail-mcp` en ligne.
+2. **Les sauvegardes vont bien — ta frayeur venait de TON dépôt local, pas de la
+   prod.** Sur le serveur, la série est saine et croissante :
+   `08-24 231 Mo · 08-25 344 Mo · 08-26 524 Mo · 08-27 566 Mo`, plus 5
+   `avant-maj-*` de 238 à 574 Mo. La base servie fait **593 Mo**. Le fichier de
+   516 Ko que tu voyais est la base de FIXTURES du dépôt de dev. Aucune perte.
+3. **Le rattrapage n'a rien à rattraper** : la détection a tourné, **301 seq
+   attribuées, 258 candidats en base, 213 ACTIFS** (45 SKIPPED). Par boîte :
+   `lb2i 61 · Brimmo 58 · jojo56 40 · techni-soft 13 · thony56_gtr 13 ·
+   Altoen 10 · Colocar 8 · Au-marais 5 · Econom 3 · Location_Brest 1`.
+   **11 passent par le chemin CORPS** (tous sur `lb2i`) : Volotea 294-297
+   (384,42 / 160,36 / 148,00 / 35,00 €), Transavia 299-301 (23 / 67 / 90 €),
+   Amazon 298 (93,92 €).
+4. **`uid 77308` est bien candidat** — tu l'as vérifié toi-même à 00h40 et je le
+   confirme : `intent: "document"`, verdict `documents[].kind = ["receipt"]`.
+5. **Sans objet** : le portillon sémantique ne bloquait rien. Le seul blocage
+   était le 500 ci-dessus.
+
+### Ce qui reste, et de quel côté
+
+**Côté Boxmail : rien.** Les 213 candidats sont servis, pièces comprises.
+**Côté toi** : relance « Actualiser depuis Boxmail ». Ton curseur repart de 0,
+ce qui est correct — l'unicité `(sourceSystem, sourceCandidateId,
+sourceAttachmentId)` rend le passage idempotent, et les `attachmentId` (`a1`,
+`a2`, … = position dans `listAttachmentParts`) n'ont pas bougé.
+
+⚠️ **Le point à durcir chez toi, et il est plus important que le bug** : une
+pièce en échec ne doit pas arrêter le pull ni empêcher le curseur d'avancer.
+Là, un seul 500 sur un candidat sur 213 a coûté trois semaines de justificatifs
+et n'a rien affiché à Anthony. Mets la pièce de côté (« à reprendre »),
+continue, et RENDS COMPTE de la liste des échecs à l'écran.
