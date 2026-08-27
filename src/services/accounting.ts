@@ -53,6 +53,7 @@ import {
 } from './semantique.js';
 import {
   justificatifDansLeCorps,
+  meriteLectureComplete,
   nomDeFichier,
   type JustificatifCorps,
 } from './justificatif-corps.js';
@@ -247,13 +248,19 @@ async function candidatDepuisLeCorps(
   },
   report: DetectReport,
 ): Promise<{ piece: CandidateAttachment; doc: JustificatifCorps } | null> {
-  const indexe = (m.analysisInput ?? m.snippet ?? '').trim();
-  let texte = indexe;
+  let texte = (m.analysisInput ?? m.snippet ?? '').trim();
+  const entete = { subject: m.subject, fromName: m.fromName, fromEmail: m.fromEmail };
 
-  // Sans texte indexé, on ne peut RIEN juger — et conclure « non » serait un
-  // faux négatif silencieux, exactement le piège du § 53 (« un mail sans
-  // extrait est invisible, pas en attente »). On descend donc le corps.
-  if (texte.length < 40) {
+  /**
+   * ⚠️ NE JAMAIS CONCLURE « NON » SUR UN TEXTE TRONQUÉ. `analysisInput` est un
+   * extrait SÉLECTIONNÉ (~2 200 caractères, passages sautés marqués « […] ») :
+   * sur les quatre réservations Volotea de `lb2i`, la ligne « Montant payé avec
+   * MASTERCARD: 160,36 € » n'y était PAS. Le premier rattrapage a donc rendu
+   * zéro billet en balayant les 94 bons candidats. On descend le corps entier
+   * dès que le mail ressemble à une pièce sans qu'on ait pu lire son montant.
+   */
+  let doc = texte.length >= 40 ? justificatifDansLeCorps({ ...entete, texte }) : null;
+  if (!doc && (texte.length < 40 || meriteLectureComplete({ subject: m.subject, texte }))) {
     try {
       const corps = await imapService.readEmail(rec, m.folder.path, m.uid);
       texte = (corps.text || '').trim();
@@ -261,18 +268,12 @@ async function candidatDepuisLeCorps(
     } catch {
       return null; // repris au prochain passage
     }
+    doc = justificatifDansLeCorps({ ...entete, texte });
   }
-
-  const doc = justificatifDansLeCorps({
-    subject: m.subject,
-    fromName: m.fromName,
-    fromEmail: m.fromEmail,
-    texte,
-  });
   if (!doc) return null;
 
-  // Le PDF se rend sur le corps COMPLET, jamais sur l'extrait tronqué : un
-  // justificatif amputé n'est pas un justificatif.
+  // Le PDF se rend sur le corps COMPLET, jamais sur l'extrait : un justificatif
+  // amputé n'est pas un justificatif.
   let complet = texte;
   try {
     const corps = await imapService.readEmail(rec, m.folder.path, m.uid);

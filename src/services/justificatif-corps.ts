@@ -214,6 +214,37 @@ export function emetteur(fromName: string | null, fromEmail: string | null): str
   return principale.charAt(0).toUpperCase() + principale.slice(1);
 }
 
+/**
+ * CE MAIL MÉRITE-T-IL QU'ON DESCENDE SON CORPS COMPLET ?
+ *
+ * ⚠️ LA QUESTION QUI A FAILLI TOUT FAIRE ÉCHOUER (27/08). Le premier
+ * rattrapage sur `lb2i` a rendu **0 billet** — alors que le préfiltre voyait
+ * bien les 94 mails candidats, dont les quatre réservations Volotea. Cause :
+ * je jugeais sur `analysisInput`, un extrait SÉLECTIONNÉ de ~2 200 caractères
+ * où les passages sautés sont remplacés par « […] ». Les 2 280 caractères
+ * indexés de la confirmation Volotea ne contenaient AUCUNE ligne de paiement :
+ * elle avait été coupée. Conclure « pas un justificatif » sur un texte tronqué,
+ * c'est refaire le piège du § 53 — « un mail sans extrait est INVISIBLE, pas
+ * en attente ».
+ *
+ * Donc : quand le texte indexé porte un marqueur de pièce et aucun bruit, mais
+ * pas de montant, on ne conclut PAS — on descend le corps entier. Le coût
+ * reste borné par la présélection SQL (94 mails sur douze mois pour cette
+ * boîte), et il n'est payé qu'une fois : le verdict est ensuite mémorisé.
+ */
+export function meriteLectureComplete(input: {
+  subject: string | null;
+  texte: string;
+}): boolean {
+  const sujet = input.subject ?? '';
+  const texte = input.texte ?? '';
+  if (contient(sansAccents(sujet), MARQUEURS_BRUIT)) return false;
+  if (!contient(sansAccents(`${sujet}\n${texte}`), MARQUEURS_PIECE)) return false;
+  // Un montant déjà lisible ? Alors le texte indexé suffisait, et s'il n'a rien
+  // donné c'est pour une autre raison — inutile de payer une descente IMAP.
+  return montantPaye(texte) === null;
+}
+
 export function justificatifDansLeCorps(input: {
   subject: string | null;
   fromName: string | null;
