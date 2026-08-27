@@ -186,6 +186,10 @@ fonction d'arbitrage tant que la charge n'a pas baissé À COUVERTURE CONSTANTE.
 **Pièges de conception mesurés** :
 - Un mail **sans extrait est INVISIBLE**, pas « en attente » : vérifier la
   COUVERTURE, ne jamais conclure d'un vivier vide.
+- **REGARDER UN COMPTEUR NE REMPLACE PAS LIRE LA LISTE.** « 7 justificatifs
+  retrouvés » était vrai et cachait un billet compté 3 fois, une newsletter à
+  250 € et deux commandes annulées. Corollaire : **ce qui n'a pas d'écran n'est
+  pas vérifiable** — le connecteur compta a tourné 20 jours en aveugle.
 - **UN TEXTE TRONQUÉ NE PERMET JAMAIS DE CONCLURE « NON ».** Trois troncatures
   d'affilée ont fait rendre 0 billet d'avion sur 94 candidats : `analysisInput`
   est un EXTRAIT choisi (~2 200 car.), `readEmail().text` s'arrête à 5 000 car.
@@ -198,6 +202,11 @@ fonction d'arbitrage tant que la charge n'a pas baissé À COUVERTURE CONSTANTE.
 - **Un mot de service n'identifie personne** : chercher « Comptabilité Client
   SIDER » sur son mot le plus LONG rendait 153 mails hors sujet. Le nom propre
   est court — écarter compta/client/service/litiges d'abord.
+
+**Écrans livrés le 27/08** : `#/pieces-compta` (ce qui part à la compta, avec la
+citation du mail et le filtre par boîte — seul LB2I part en note de frais) ;
+« Voir l'histoire » branché sur les 3 focales ; modale de réponse en plan de
+travail (message + appuis + fil, largeurs en `min(px, vw)` et jamais en pixels).
 
 **À faire** :
 - **Gardé dans un coin** (ses mots) : voir le FIL d'un sujet sous la carte et

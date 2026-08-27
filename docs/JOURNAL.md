@@ -5,6 +5,47 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 27/08 (58) — « Où je trouve le résumé ? » — et la leçon des cartes
+
+Trois retours d'affilée, tous justes, tous sur la même faille : **ce que je
+livre doit être VU par lui, pas seulement écrit quelque part.**
+
+**1. « Tu as fait plein de trucs que tu ne m'as pas documentés. »** Le défaut
+était plus grave qu'un manque de doc : le connecteur Fiscal-Manager tournait
+depuis le 07/08 sans qu'AUCUN écran de Boxmail ne montre ce qu'il envoyait.
+C'est précisément ce qui a laissé passer un billet compté trois fois et une
+lettre d'information prise pour 250 € de dépense — je regardais un compteur,
+pas une liste. Livré : l'écran `#/pieces-compta` et une section d'aide qui
+répond à ses cinq questions (ce que j'envoie, comment ça part, comment il
+vérifie, sur quoi je me base, ce qui peut m'échapper).
+
+**2. « C'est incompréhensible tes cartes, où as-tu vu faire ça. »** J'avais
+livré 213 justificatifs en grille de fiches : boutons repliés sur deux lignes,
+noms de fichiers coupés, montants noyés. Les cartes servent à TRANCHER trois ou
+quatre choses ; un registre de lignes homogènes est un TABLEAU. Refait en
+tableau, lignes de 32 px vérifiées au banc, justification dépliable à la
+demande — l'afficher 213 fois est du bruit, ne jamais l'afficher est un acte de
+foi.
+
+**3. « Ce qui est envoyé à Jump ou Expensya est uniquement les frais de
+LB2I. »** J'avais écrit dans l'aide que les pièces partaient « ensuite vers Jump
+ou Expensya » : faux pour une facture BRIMMO ou Au-marais. La chaîne exacte est
+« Boxmail met à disposition → Fiscal-Manager vient chercher → c'est là qu'il
+qualifie par société ». D'où le filtre par BOÎTE, qui n'est pas un confort :
+combiné au filtre de nature, il répond à « quels billets partent en note de
+frais ? ».
+
+**Sa question la plus précise de la journée** : « Fiscal-Manager perd le lien de
+téléchargement ou tu le lui transmets ? » Vérifié dans SON dépôt plutôt
+qu'affirmé (`lib/accounting/boxmail-pull.ts`) : au pull il télécharge le PDF et
+le stocke chez lui (`fileBytes`), avec un SHA-256 pour repérer un même document
+arrivé par un autre mail. Une fois importée, la pièce ne dépend plus de Boxmail.
+La seule fenêtre fragile est entre le repérage et le premier téléchargement —
+d'où l'importance de la clause de protection.
+
+**Deux règles montées dans CLAUDE.md** : un texte tronqué ne permet jamais de
+conclure « non » ; et regarder un compteur ne remplace pas lire la liste.
+
 ## 27/08 (57) — Les billets d'avion, et trois troncatures en enfilade
 
 Sa demande, avec le piège déjà identifié par lui : « la protection
