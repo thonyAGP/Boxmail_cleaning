@@ -43,7 +43,7 @@ import { randomUUID } from 'node:crypto';
 import { db, ensureDbReady } from '../db/client.js';
 import { logger } from '../logger.js';
 import { documentHints } from './attachment-text.js';
-import { imapService } from './imap.js';
+import { imapService, htmlToText } from './imap.js';
 import { recordOperation } from './oplog.js';
 import type { AccountRecord } from './accounts.js';
 import {
@@ -224,6 +224,46 @@ export interface DetectReport {
 }
 
 /**
+ * LE CORPS ENTIER, LISIBLE — la seule matière sur laquelle on a le droit de
+ * conclure « ce n'est pas un justificatif ».
+ *
+ * ⚠️ DEUX TRONCATURES SUCCESSIVES M'ONT FAIT RENDRE ZÉRO BILLET (27/08) :
+ *  1. `analysisInput` est un extrait SÉLECTIONNÉ (~2 200 car.) — la ligne du
+ *     montant n'y était pas ;
+ *  2. `readEmail().text` est tronqué à 5 000 caractères, parce que c'est un
+ *     texte d'AFFICHAGE. Sur la confirmation Volotea, le HTML fait 220 395
+ *     caractères et « Montant payé avec MASTERCARD » tombe bien au-delà.
+ * Deux fois, j'ai conclu « pas de montant » sans avoir lu le texte qui le
+ * portait. On repart donc du HTML quand il est là.
+ *
+ * NETTOYAGE : ces mails sont à 90 % de la navigation (liens de suivi, bandeaux,
+ * fragments de CSS). On retire ce qui n'est pas du texte — sinon le PDF de
+ * justificatif serait quinze pages de soupe. Le nettoyage est DÉTERMINISTE et
+ * partagé par la détection et par le rendu : c'est ce qui garantit que la
+ * taille annoncée à Fiscal-Manager est celle qui sera servie.
+ */
+export function corpsLisible(corps: { text?: string | null; html?: string | null; truncated?: boolean }): string {
+  const brut =
+    corps.truncated && corps.html ? htmlToText(corps.html) : (corps.text || '');
+  const lignes = brut
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    // Lignes qui ne portent aucune information : URL seule, séparateurs
+    // décoratifs, restes de feuille de style.
+    .filter((l) => !/^\(?\s*https?:\/\/\S+\s*\)?$/.test(l))
+    .filter((l) => !/^[*_=~-]{4,}$/.test(l))
+    .filter((l) => !(l.includes('{') && l.includes('}') && l.includes(':')));
+  const out: string[] = [];
+  for (const l of lignes) {
+    if (!l && !out.length) continue;
+    if (!l && !out[out.length - 1]) continue; // pas deux vides d'affilée
+    out.push(l);
+  }
+  return out.join('\n').slice(0, 20_000).trim();
+}
+
+/**
  * Le mail lui-même est-il le justificatif ? Renvoie de quoi créer le candidat,
  * ou null. Coût : ZÉRO descente IMAP quand le texte indexé suffit à conclure
  * NON — c'est le cas de l'immense majorité des mails présélectionnés.
@@ -260,26 +300,26 @@ async function candidatDepuisLeCorps(
    * dès que le mail ressemble à une pièce sans qu'on ait pu lire son montant.
    */
   let doc = texte.length >= 40 ? justificatifDansLeCorps({ ...entete, texte }) : null;
+  let complet = texte;
   if (!doc && (texte.length < 40 || meriteLectureComplete({ subject: m.subject, texte }))) {
     try {
-      const corps = await imapService.readEmail(rec, m.folder.path, m.uid);
-      texte = (corps.text || '').trim();
+      complet = corpsLisible(await imapService.readEmail(rec, m.folder.path, m.uid));
       report.corpsLusEnImap++;
     } catch {
       return null; // repris au prochain passage
     }
-    doc = justificatifDansLeCorps({ ...entete, texte });
+    doc = justificatifDansLeCorps({ ...entete, texte: complet });
   }
   if (!doc) return null;
 
-  // Le PDF se rend sur le corps COMPLET, jamais sur l'extrait : un justificatif
-  // amputé n'est pas un justificatif.
-  let complet = texte;
-  try {
-    const corps = await imapService.readEmail(rec, m.folder.path, m.uid);
-    if ((corps.text || '').trim().length > complet.length) complet = corps.text.trim();
-  } catch {
-    return null;
+  // Le PDF se rend sur le MÊME texte que celui qui a servi à conclure — sans
+  // quoi la taille annoncée ne serait pas celle qui sera servie.
+  if (complet === texte) {
+    try {
+      complet = corpsLisible(await imapService.readEmail(rec, m.folder.path, m.uid));
+    } catch {
+      return null;
+    }
   }
 
   const pdf = mailEnPdf({
@@ -855,11 +895,10 @@ export async function resolveAttachment(
       ? (JSON.parse(cand.bodyDocJson) as JustificatifCorps)
       : null;
     try {
-      const corps = await imapService.readEmail(rec, msg.folder.path, msg.uid);
-      const texte = (corps.text || '').trim();
+      const texte = corpsLisible(await imapService.readEmail(rec, msg.folder.path, msg.uid));
       if (!texte) return markMissing('Le corps du mail est vide : plus de justificatif.');
       const pdf = mailEnPdf({
-        subject: cand.subject ?? corps.subject ?? '(sans objet)',
+        subject: cand.subject ?? '(sans objet)',
         fromName: cand.fromName,
         fromEmail: cand.fromEmail,
         date: cand.receivedAt,

@@ -1136,7 +1136,14 @@ function formatEnvelopeAddr(a: { name?: string | null; address?: string | null }
   return a.name ? `${a.name} <${addr}>` : addr;
 }
 
-function htmlToText(html: string): string {
+/**
+ * HTML → texte. EXPORTÉE depuis le 27/08 : la détection comptable en a besoin
+ * pour lire un corps ENTIER. `readEmail` tronque son `text` à 5 000 caractères
+ * (c'est un affichage), et sur une confirmation Volotea de 220 Ko de HTML la
+ * ligne « Montant payé » tombe très au-delà — le rattrapage rendait 0 billet
+ * sur 94 candidats à cause de ça.
+ */
+export function htmlToText(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
