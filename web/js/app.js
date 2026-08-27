@@ -700,6 +700,8 @@ function route() {
     renderSettings();
   } else if (hash.startsWith('#/help')) {
     renderHelp();
+  } else if (hash.startsWith('#/pieces-compta')) {
+    renderPiecesCompta();
   } else if (hash.startsWith('#/attachments')) {
     renderAttachments();
   } else if (hash.startsWith('#/unsubscribe')) {
@@ -7872,6 +7874,91 @@ function renderAttachResults() {
   });
 }
 
+/**
+ * CE QUI PART À LA COMPTA — l'écran de vérification (27/08).
+ *
+ * ⚠️ POURQUOI IL EXISTE. Le connecteur Fiscal-Manager tournait depuis le 07/08
+ * sans qu'AUCUN écran ne montre ce qu'il envoyait : les pièces partaient vers
+ * un autre logiciel, et il fallait me croire sur parole. Sa remarque : « il est
+ * important que l'on puisse voir ce que tu as fait, je ne l'ai pas bien
+ * compris ». Un travail invisible n'est pas vérifiable — c'est ce qui a laissé
+ * passer un billet compté TROIS fois et une lettre d'information prise pour une
+ * dépense de 250 €.
+ *
+ * Chaque ligne porte donc SA PREUVE : la phrase exacte du mail qui justifie le
+ * montant. Pas « fais-moi confiance » — « voilà où je l'ai lu ».
+ */
+async function renderPiecesCompta() {
+  const main = $('#main');
+  main.innerHTML = `<div class="page-head">
+    <div><h1>🧾 Ce qui part à la compta</h1>
+      <div class="sub">Les justificatifs que j'ai repérés dans tes mails et transmis à
+      Fiscal-Manager (écran « Pièces reçues »). Chaque ligne montre <strong>la phrase du mail</strong>
+      sur laquelle je me suis appuyé — tu peux vérifier, et ouvrir le mail d'origine.
+      Rien n'est supprimé, rien n'est envoyé ailleurs.</div></div>
+    <div class="head-actions"><button class="btn" id="pc-refresh">↻ Actualiser</button></div></div>
+    <div id="pc-body"><div class="empty"><span class="spinner"></span>Je rassemble les pièces…</div></div>`;
+  $('#pc-refresh').addEventListener('click', renderPiecesCompta);
+
+  let d;
+  try {
+    d = await api.piecesCompta();
+  } catch (err) {
+    $('#pc-body').innerHTML = `<div class="notice warn">⚠️ ${esc(err.message)}</div>`;
+    return;
+  }
+  const items = d.items ?? [];
+  const corps = items.filter((i) => i.porteeParLeCorps);
+  const jointes = items.filter((i) => !i.porteeParLeCorps);
+
+  const ligne = (i) => {
+    const doc = i.document ?? {};
+    const a = i.attachments?.[0];
+    const preuve = (doc.reasons ?? []).find((r) => r.startsWith('montant')) ?? (doc.reasons ?? [])[0];
+    return `<article class="pc-piece">
+      <div class="pc-tete">
+        <span class="pc-fournisseur">${esc(doc.supplier || '(fournisseur non lu)')}</span>
+        <span class="pc-montant">${doc.amountTtc != null ? fmtEur(doc.amountTtc, 'EUR') : '—'}</span>
+        <span class="muted">${esc(fmtDate(i.message?.receivedAt))}</span>
+      </div>
+      <div class="pc-sujet">${esc((i.message?.subject || '').trim() || '(sans objet)')}</div>
+      ${preuve ? `<div class="pc-preuve">${esc(preuve)}</div>` : ''}
+      <div class="pc-pied">
+        <span class="muted">${doc.invoiceNumber ? `réf. ${esc(doc.invoiceNumber)} · ` : ''}${esc(i.mailboxId)}${
+          i.companyCandidate ? ` · ${esc(i.companyCandidate)}` : ' · société à qualifier'
+        }${a ? ` · ${esc(a.filename)}` : ''}</span>
+        ${i.source ? `<button class="btn btn-sm pc-ouvrir" data-account="${esc(i.source.account)}"
+          data-folder="${esc(i.source.folder)}" data-uid="${i.source.uid}">Ouvrir le mail ↗</button>` : ''}
+      </div>
+    </article>`;
+  };
+
+  $('#pc-body').innerHTML = `
+    <div class="pc-resume">
+      <strong>${fmtNum(items.length)}</strong> pièce(s) transmise(s) —
+      dont <strong>${fmtNum(corps.length)}</strong> sans pièce jointe, où le mail LUI-MÊME est le
+      justificatif (billets d'avion, confirmations de commande).
+    </div>
+    ${corps.length ? `<h2 class="pc-titre">Le mail est le justificatif</h2>
+      <div class="pc-liste">${corps.map(ligne).join('')}</div>` : ''}
+    ${jointes.length ? `<h2 class="pc-titre">Avec une pièce jointe</h2>
+      <div class="pc-liste">${jointes.slice(0, 60).map(ligne).join('')}</div>
+      ${jointes.length > 60 ? `<div class="muted" style="margin-top:8px">
+        ${fmtNum(jointes.length - 60)} autre(s) non affichée(s) — elles sont toutes dans Fiscal-Manager.</div>` : ''}` : ''}
+    ${items.length ? '' : `<div class="empty">Aucune pièce transmise pour l'instant.
+      Elles apparaissent après une synchronisation, ou après le rattrapage automatique au démarrage.</div>`}`;
+
+  $('#pc-body').querySelectorAll('.pc-ouvrir').forEach((b) => {
+    b.addEventListener('click', () => {
+      openReaderFor({
+        account: b.dataset.account,
+        folder: b.dataset.folder,
+        uid: Number(b.dataset.uid),
+      });
+    });
+  });
+}
+
 // ---------------------------------------------------------------- Aide (L5.10)
 function renderHelp() {
   const main = $('#main');
@@ -7930,6 +8017,54 @@ function renderHelp() {
     ${qa('Je change de page pendant une synchro, c\'est grave ?',
       `Non. Les synchros continuent sur le serveur : la pastille d'activité en bas à gauche suit
       l'avancement, et tu peux revenir sur la boîte à tout moment.`)}`)}
+
+  ${section('🧾 Les justificatifs pour ta compta', `
+    ${qa('Qu’est-ce que Boxmail envoie à la compta, exactement ?',
+      `Quand un mail contient une <strong>facture, un reçu ou un billet payé</strong>, je le repère et
+      je le transmets à <strong>Fiscal-Manager</strong> (son écran « Pièces reçues »), d'où il part
+      ensuite vers Jump ou Expensya. Je ne décide de rien : je REPÈRE, tu qualifies là-bas.
+      <br><br>Deux cas. Soit le mail porte une <strong>pièce jointe</strong> (une facture PDF) — c'est
+      le cas classique. Soit il n'en a aucune et <strong>le mail LUI-MÊME est le justificatif</strong> :
+      c'est le cas des billets d'avion et des confirmations de commande. Ceux-là étaient perdus
+      jusqu'au 27/08 ; ils remontent maintenant, transformés en PDF.`)}
+    ${qa('Comment ça part ? Est-ce que je dois faire quelque chose ?',
+      `<strong>Non, rien.</strong> Le repérage se fait tout seul à chaque synchronisation, sur les
+      nouveaux mails. Un rattrapage sur les 12 derniers mois se déclenche aussi au démarrage, une
+      seule fois.<br><br>Le PDF n'est <strong>jamais stocké</strong> : il est fabriqué au moment où
+      Fiscal-Manager le demande, à partir de ton mail. Ton mail reste chez Microsoft, il n'est ni
+      déplacé ni modifié.`)}
+    ${qa('Comment je vérifie que c’est bien fait ?',
+      `Écran <a href="#/pieces-compta">🧾 Ce qui part à la compta</a>. Chaque ligne montre le
+      fournisseur, le montant, la référence — et surtout <strong>la phrase exacte du mail</strong>
+      sur laquelle je me suis appuyé (« Montant payé avec MASTERCARD: 160,36€ »). Tu peux ouvrir le
+      mail d'origine en un clic et juger toi-même.<br><br>C'est volontaire : je ne te demande pas de
+      me croire, je te montre où je l'ai lu. C'est ce contrôle qui a permis de voir qu'un billet
+      était compté trois fois et qu'une lettre d'information passait pour une dépense de 250 €.`)}
+    ${qa('Sur quoi je me base pour dire « c’est un justificatif » ?',
+      `Trois conditions, toutes obligatoires : <strong>un montant annoncé comme PAYÉ</strong> (pas un
+      prix affiché, pas un « à partir de »), <strong>un marqueur de pièce</strong> (réservation
+      confirmée, référence de dossier, billet, commande), et <strong>aucun marqueur de bruit</strong>
+      (enregistrement, retard, rappel, promo, annulation). Un mail qui porte un lien de
+      désinscription est écarté d'office : un justificatif n'en a pas.<br><br>Je suis volontairement
+      <strong>prudent</strong> : mieux vaut rater une pièce que noyer ton écran. Celles qui manquent,
+      tu les envoies à la main depuis le lecteur.`)}
+    ${qa('Qu’est-ce qui peut m’échapper ou se tromper ?',
+      `Trois limites, dites franchement.<br><br>
+      <strong>1. Les doublons sans référence.</strong> Un même billet reçu deux fois est écarté grâce à
+      sa référence (S7T4GC). Mais trois affranchissements La Poste à 7,65 € le même jour n'ont
+      <em>aucune</em> référence : impossible de savoir si ce sont trois vrais achats ou trois copies.
+      Je les laisse passer tous les trois — mieux vaut un doublon visible qu'une vraie dépense
+      effacée. À toi de trancher dans « Pièces reçues ».<br><br>
+      <strong>2. Les mails que je ne sais pas lire.</strong> Si le montant n'est écrit nulle part en
+      clair (image seule, pièce jointe non lisible), je ne le vois pas.<br><br>
+      <strong>3. La société proposée est une PROPOSITION.</strong> Elle vient de la boîte de réception,
+      pas du document. Un fournisseur qui t'a en client pour plusieurs sociétés peut écrire sur la
+      mauvaise boîte — Fiscal-Manager te laisse la corriger.`)}
+    ${qa('Est-ce qu’un justificatif peut être supprimé par erreur ?',
+      `Non, et c'était le vrai risque. Comme aucun PDF n'est conservé, supprimer le mail détruirait
+      le justificatif pour de bon. <strong>Tout mail devenu pièce comptable est donc protégé de
+      toute suppression automatique</strong>, avec ou sans pièce jointe. C'est vérifié dans les deux
+      sens : la pièce est protégée, et un mail ordinaire reste nettoyable.`)}`)}
 
   ${section('🧹 Nettoyage & corbeille', `
     ${qa('Le nettoyage peut-il perdre des mails ?',

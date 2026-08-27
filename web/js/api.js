@@ -75,6 +75,7 @@ export const api = {
   // l'utilisateur est une preuve facultative, jamais un entretien exigé ; le
   // brouillon RÉDIGE seulement, l'envoi reste un clic explicite.
   attentes: () => request('GET', '/attentes'),
+  piecesCompta: () => request('GET', '/accounting/pieces'),
   attenteGeste: (id, geste, note) => request('POST', `/attentes/${id}`, { geste, note }),
   // Un FAIT declare par lui (« je l'ai payée »), pas un mail marque lu.
   declarer: (payload) => request('POST', '/declarations', payload),

@@ -2129,6 +2129,64 @@ export function buildAdminRouter(): Router {
     }),
   );
 
+  /**
+   * LES PIÈCES POUR LA COMPTA — ce que Boxmail a repéré et transmis.
+   *
+   * ⚠️ POURQUOI CETTE ROUTE EXISTE (27/08). Le connecteur Fiscal-Manager
+   * fonctionnait « à l'aveugle » depuis le 07/08 : les pièces partaient vers un
+   * AUTRE logiciel et AUCUN écran de Boxmail ne les montrait. Sa remarque, mot
+   * pour mot : « il est important que l'on puisse voir ce que tu as fait, je ne
+   * l'ai pas bien compris ». Un travail qu'on ne peut pas vérifier n'est pas
+   * livré — c'est ce qui a permis à un billet compté TROIS fois et à une
+   * newsletter à 250 € de passer inaperçus.
+   *
+   * Lecture seule. Elle sert le même contenu que l'API du connecteur, plus la
+   * PREUVE en français (la phrase du mail qui justifie chaque montant) et de
+   * quoi ouvrir le mail d'origine.
+   */
+  router.get(
+    '/accounting/pieces',
+    guard(async (_req, res) => {
+      const { listCandidates } = await import('../services/accounting.js');
+      // On pagine jusqu'au bout : les dernières trouvées sont les plus
+      // intéressantes, et un plafond silencieux les cacherait.
+      const items: Awaited<ReturnType<typeof listCandidates>>['items'] = [];
+      let cursor = 0;
+      for (let page = 0; page < 20; page++) {
+        const p = await listCandidates(cursor, 200);
+        items.push(...p.items);
+        if (!p.hasMore || !p.nextCursor) break;
+        cursor = Number(p.nextCursor);
+      }
+      const messageIds = items.map((i) => i.candidateId);
+      // Le mail d'origine, pour pouvoir l'ouvrir depuis l'écran.
+      const rows = await db.accountingCandidate.findMany({
+        where: { candidateId: { in: messageIds.slice(0, 900) } },
+        select: { candidateId: true, messageId: true },
+      });
+      const parCandidat = new Map(rows.map((r) => [r.candidateId, r.messageId]));
+      const mails = await db.message.findMany({
+        where: { id: { in: [...parCandidat.values()].slice(0, 900) } },
+        select: { id: true, uid: true, accountSlug: true, folder: { select: { path: true } } },
+      });
+      const parMail = new Map(mails.map((m) => [m.id, m]));
+      res.json({
+        items: items.map((i) => {
+          const mail = parMail.get(parCandidat.get(i.candidateId) ?? -1);
+          return {
+            ...i,
+            // Le corps rendu en PDF n'est pas une pièce jointe du mail : on le
+            // signale, sinon « pièce jointe » serait un mensonge à l'écran.
+            porteeParLeCorps: i.attachments.some((a) => a.attachmentId === 'body'),
+            source: mail
+              ? { account: mail.accountSlug, folder: mail.folder.path, uid: mail.uid }
+              : null,
+          };
+        }),
+      });
+    }),
+  );
+
   // ATTENTES (26/08) : ce qui est attendu, de lui ou d'eux. L'objet central du
   // suivi — « les cas les plus précieux ne sont pas des mails importants, ce
   // sont des transitions attendues qui n'ont jamais eu lieu ».
