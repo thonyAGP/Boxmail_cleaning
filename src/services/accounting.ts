@@ -817,7 +817,47 @@ export async function listCandidates(
     const corpsDoc: JustificatifCorps | null = r.bodyDocJson
       ? (JSON.parse(r.bodyDocJson) as JustificatifCorps)
       : null;
-    const hints = !verdictDoc && !corpsDoc && doc?.text ? documentHints(doc.text) : null;
+    const hints = !corpsDoc && doc?.text ? documentHints(doc.text) : null;
+    /**
+     * COMPLÉTER LE VERDICT PAR LE TEXTE DE LA PIÈCE — sans le contredire.
+     *
+     * ⚠️ MESURÉ SUR SES 213 PIÈCES (27/08). Le repli heuristique n'était
+     * consulté QUE si le verdict était totalement muet (`!verdictDoc && …`).
+     * Conséquence : un verdict qui dit « facture de BIONAT » SANS montant
+     * bloquait la lecture du document, qui portait pourtant la somme. Sur 23
+     * pièces « fournisseur sans montant », **5 étaient récupérables** — dont
+     * les deux billets Air France à 211,78 € et 441,78 €, précisément ceux
+     * qu'Anthony signalait comme vides.
+     *
+     * ⚠️ ET ON NE PREND PAS N'IMPORTE QUEL CHIFFRE. `documentHints` a deux
+     * niveaux : un total ÉTIQUETÉ dans le document, et un repli « montant le
+     * plus élevé trouvé » qui est une devinette — c'est lui qui produisait
+     * « 100 000,00 € » sur une facture de climatisation. Seul le montant
+     * étiqueté complète le verdict ; la devinette reste réservée aux pièces
+     * dont on ne sait rien d'autre.
+     */
+    const montantEtiquete =
+      hints?.amountTtc != null &&
+      hints.reasons.some((x) => x.startsWith('total lu dans le document'))
+        ? hints.amountTtc
+        : null;
+    const complements: string[] = [];
+    const supplierFinal = verdictDoc?.supplier ?? null;
+    let montantFinal = verdictDoc?.amountTtc ?? null;
+    let numeroFinal = verdictDoc?.invoiceNumber ?? null;
+    if (verdictDoc) {
+      if (montantFinal == null && montantEtiquete != null) {
+        montantFinal = montantEtiquete;
+        complements.push(
+          `montant ${montantEtiquete.toFixed(2).replace('.', ',')} € lu DANS LE DOCUMENT — ` +
+            `l'analyse ne l'avait pas relevé`,
+        );
+      }
+      if (!numeroFinal && hints?.invoiceNumber) {
+        numeroFinal = hints.invoiceNumber;
+        complements.push(`numéro « ${hints.invoiceNumber} » lu dans le document`);
+      }
+    }
     return {
       candidateId: r.candidateId,
       detectedAt: r.detectedAt.toISOString(),
@@ -852,16 +892,18 @@ export async function listCandidates(
         : verdictDoc
         ? {
             document: {
-              supplier: verdictDoc.supplier,
-              amountTtc: verdictDoc.amountTtc,
-              invoiceNumber: verdictDoc.invoiceNumber,
+              supplier: supplierFinal,
+              amountTtc: montantFinal,
+              invoiceNumber: numeroFinal,
               // La vision ne sert plus que si le verdict n'a pas suffi : une
               // pièce scannée dont l'analyse a déjà lu l'émetteur ET le
               // montant n'a plus rien à demander à read_attachment.
+              // La vision ne sert plus que si, MÊME APRÈS complément, il
+              // manque l'essentiel : rappeler une lecture pour un champ qu'on
+              // vient de retrouver serait du travail pour rien.
               needsVision:
-                doc?.kind === 'scan' &&
-                (verdictDoc.supplier === null || verdictDoc.amountTtc === null),
-              reasons: verdictDoc.reasons,
+                doc?.kind === 'scan' && (supplierFinal === null || montantFinal === null),
+              reasons: [...verdictDoc.reasons, ...complements],
             },
           }
         : hints || doc?.kind === 'scan'
