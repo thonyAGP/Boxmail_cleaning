@@ -272,6 +272,23 @@ export function protectionClauses(_now = Date.now()): { clauses: string[]; param
       `m.isFlagged = 0`,
       `NOT EXISTS (SELECT 1 FROM Task t WHERE t.messageId = m.id AND t.status = 'todo')`,
       `NOT EXISTS (SELECT 1 FROM Deadline d WHERE d.messageId = m.id AND d.status IN ('proposed','confirmed'))`,
+      // UNE PIÈCE COMPTABLE VIVANTE NE SE SUPPRIME PAS (27/08). Veto de
+      // sécurité, pas condition d'éligibilité : Boxmail ne stocke AUCUN PDF —
+      // l'IMAP est le stockage durable, et Fiscal-Manager streame la pièce à la
+      // demande. Supprimer le mail détruit donc le justificatif, définitivement.
+      //
+      // ⚠️ CETTE CLAUSE RÉPARE UN COMMENTAIRE QUI MENTAIT. `accounting.ts`
+      // affirmait « un candidat est par définition un mail À PIÈCE JOINTE, donc
+      // la clause hasAttachments le protège déjà, aucune clause supplémentaire ».
+      // C'était vrai tant que la détection exigeait une pièce jointe. Dès qu'un
+      // justificatif porté par le CORPS entre dans les candidats (billets
+      // d'avion), il coche `hasAttachments = 0` ET `intent NOT IN
+      // ('invoice','document')` — les deux conditions de suppression à la fois.
+      //
+      // SKIPPED est volontairement exclu : c'est un négatif mémorisé (« vu, pas
+      // de pièce exploitable »), pas une pièce. Le protéger gèlerait en silence
+      // le nettoyage de tous les mails d'intention « facture » sans pièce.
+      `NOT EXISTS (SELECT 1 FROM AccountingCandidate ac WHERE ac.messageId = m.id AND ac.status = 'ACTIVE')`,
       `(s.priority IS NULL OR s.priority != 'always_important')`,
       `(m.analysisConfidence IS NULL OR m.analysisConfidence != 'low')`,
       // Un mail qui PORTE un document ne se supprime pas (retour utilisateur

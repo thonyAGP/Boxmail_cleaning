@@ -106,6 +106,37 @@ GET /api/v1/accounting-candidates/{candidateId}/attachments/{attachmentId}
 
 Aucun POST/ack/webhook : Fiscal-Manager garde son curseur localement.
 
+### La pièce SYNTHÉTIQUE — quand le justificatif est le CORPS (27/08)
+
+Une catégorie entière de dépenses n'arrivait jamais ici : **les billets
+d'avion**. Ces mails ne portent aucune pièce jointe — le message lui-même est
+le justificatif. La détection les excluait structurellement (`hasAttachments`),
+et le verdict les analyse comme « confirmation », jamais comme « facture ».
+
+Ils entrent désormais dans le contrat EXISTANT, sans qu'il change d'un iota :
+
+- `attachmentId` = **`"body"`** — constante, donc stable et déterministe. Elle
+  ne peut pas entrer en collision avec les pièces réelles (`a1`, `a2`, …).
+  C'est ce qui garantit l'unicité `(sourceSystem, sourceCandidateId,
+  sourceAttachmentId)` côté Fiscal-Manager : deux pulls ne créent pas de doublon.
+- `filename` = `<Marque>_<Référence>.pdf` (ex. `Volotea_S7T4GC.pdf`), à défaut
+  `<Marque>_mail<id>.pdf`.
+- `contentType` = `application/pdf`, `sizeBytes` = la taille exacte du PDF rendu.
+- `document` = `{ supplier, amountTtc (euros décimaux), invoiceNumber,
+  needsVision: false, reasons[] }` — lus dans le corps à la détection et
+  STOCKÉS (colonne `bodyDocJson`), donc stables.
+- Le GET de la pièce **rend le corps en PDF à la demande** (`services/pdf.ts`,
+  sans dépendance) et **ne persiste rien** : la décision n° 3 tient toujours,
+  l'IMAP reste le stockage durable. Le rendu est déterministe — deux
+  téléchargements donnent le même octet.
+
+⚠️ **Invariant de rétention.** Un candidat n'est plus « par définition un mail à
+pièce jointe » : la clause `m.hasAttachments = 0` ne le protège plus. C'est
+maintenant une clause explicite de `retention.ts` qui protège tout mail portant
+un `AccountingCandidate` **ACTIF**. Toute extension future de la détection doit
+rester couverte par CETTE clause — sans quoi on fabrique des pièces comptables
+automatiquement supprimables, et le justificatif est perdu définitivement.
+
 ## Phases
 
 - **V1 — tranche verticale « zéro facture perdue »** (quelques jours) :

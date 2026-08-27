@@ -245,6 +245,51 @@ const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'accounting-body-doc-v1',
+    label: 'Je retrouve les billets d’avion, qui n’ont jamais de pièce jointe',
+    link: null,
+    run: async () => {
+      /**
+       * LE RATTRAGE DES JUSTIFICATIFS PORTÉS PAR LE CORPS (27/08).
+       *
+       * `accounting-candidates-v1` a déjà tourné et est marqué fait : il ne
+       * repassera jamais. Or il ne pouvait PAS voir ces mails-là — il exigeait
+       * une pièce jointe. Sans cette seconde entrée, la nouvelle détection ne
+       * s'appliquerait qu'aux mails à venir, et les vols déjà payés resteraient
+       * invisibles. D'où un identifiant distinct : c'est un autre rattrapage,
+       * sur un autre vivier.
+       *
+       * Idempotent : un mail déjà candidat est reconnu et sauté.
+       */
+      const { detectAccountingCandidates } = await import('./accounting.js');
+      let created = 0;
+      let lus = 0;
+      let failures = 0;
+      const names = await listAccountNames();
+      for (const name of names) {
+        try {
+          const rec = await getAccountRecord(name);
+          if (!rec) continue;
+          const r = await detectAccountingCandidates(rec, { sinceDays: 365, limit: 500 });
+          created += r.viaCorps;
+          lus += r.corpsLusEnImap;
+        } catch (err) {
+          failures++;
+          logger.warn('rattrapage justificatifs portés par le corps : compte ignoré', {
+            account: name,
+            error: (err as Error).message,
+          });
+        }
+      }
+      if (names.length > 0 && failures === names.length) {
+        throw new Error('aucune boîte accessible pour le rattrapage');
+      }
+      return created > 0
+        ? `${created} justificatif(s) sans pièce jointe retrouvé(s) sur 12 mois — billets d'avion, réservations — et transmis à la comptabilité (${lus} corps relus).`
+        : `Aucun justificatif porté par le corps trouvé sur les 12 derniers mois (${lus} corps relus).`;
+    },
+  },
+  {
     id: 'attachment-reading-v1',
     label: 'Je lis maintenant le contenu des pièces jointes',
     link: '#/attachments',

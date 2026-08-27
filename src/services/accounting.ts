@@ -25,10 +25,18 @@
  * l'OPÉRATEUR, pas d'elle — le fournisseur envoyé au logiciel comptable est
  * l'ÉMETTEUR lu par l'analyse, jamais l'expéditeur du mail.
  *
- * Protection : un candidat est par définition un mail À PIÈCE JOINTE — la
- * protection centrale (retention.ts, clause `m.hasAttachments = 0`) exclut
- * déjà ces mails de TOUTE suppression automatique, quel que soit le régime de
- * détection. Aucune clause supplémentaire.
+ * PROTECTION — ce paragraphe a menti jusqu'au 27/08. Il affirmait qu'« un
+ * candidat est par définition un mail À PIÈCE JOINTE », donc que la clause
+ * `m.hasAttachments = 0` de retention.ts suffisait, « aucune clause
+ * supplémentaire ». L'hypothèse tenait tant que la détection exigeait une pièce
+ * jointe. Elle tombe avec les JUSTIFICATIFS PORTÉS PAR LE CORPS (billets
+ * d'avion, § plus bas) : ces mails cochent `hasAttachments = 0` ET
+ * `intent NOT IN ('invoice','document')` — les deux conditions de suppression
+ * en même temps. Et comme Boxmail ne stocke aucun PDF, supprimer le mail
+ * détruit le justificatif pour de bon.
+ * La protection est donc explicite depuis : une clause de retention.ts protège
+ * tout mail portant un `AccountingCandidate` ACTIF, avec ou sans pièce jointe.
+ * TOUTE extension de la détection doit rester couverte par CETTE clause.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -43,6 +51,12 @@ import {
   resolveMailSemanticState,
   type EtatSemantique,
 } from './semantique.js';
+import {
+  justificatifDansLeCorps,
+  nomDeFichier,
+  type JustificatifCorps,
+} from './justificatif-corps.js';
+import { mailEnPdf } from './pdf.js';
 
 /**
  * Boîte → société par défaut. PROPOSITION, jamais « vérifiée » : Anthony a
@@ -102,6 +116,30 @@ function usableAttachments(
   });
   return out;
 }
+
+/**
+ * L'IDENTIFIANT DE LA PIÈCE SYNTHÉTIQUE — le corps rendu en PDF.
+ *
+ * ⚠️ IL DOIT ÊTRE STABLE ET DÉTERMINISTE. Fiscal-Manager porte une contrainte
+ * unique `(sourceSystem, sourceCandidateId, sourceAttachmentId)` : un
+ * identifiant qui changerait d'un passage à l'autre créerait un DOUBLON à
+ * chaque « Actualiser ». D'où une constante, et non un identifiant calculé.
+ * Il ne peut pas entrer en collision avec les pièces réelles, numérotées
+ * `a1`, `a2`, … par `usableAttachments`.
+ */
+export const PIECE_CORPS = 'body';
+
+/**
+ * Les mots du SUJET qui rendent un mail sans pièce jointe digne d'être lu.
+ * Présélection SQL grossière et volontairement courte : elle borne le coût
+ * (une descente IMAP par mail retenu), la vraie décision revient à
+ * `justificatifDansLeCorps`. Cherchés dans `searchShort` — la copie dépliée
+ * sans accents et en minuscules, seule colonne où un LIKE est fiable sous
+ * SQLite (`contains` y est sensible à la casse).
+ */
+const SUJETS_JUSTIFICATIF_CORPS = [
+  'reservation', 'confirmation', 'commande', 'billet', 'e-ticket', 'booking',
+];
 
 /**
  * Types de documents du verdict qui font une PIÈCE COMPTABLE. Volontairement
@@ -178,6 +216,94 @@ export interface DetectReport {
   viaVerdict: number;
   /** Candidats créés par le critère historique (pas encore de verdict). */
   viaRepli: number;
+  /** Candidats dont le JUSTIFICATIF EST LE CORPS (billets d'avion). */
+  viaCorps: number;
+  /** Corps qu'il a fallu descendre en IMAP faute de texte indexé. */
+  corpsLusEnImap: number;
+}
+
+/**
+ * Le mail lui-même est-il le justificatif ? Renvoie de quoi créer le candidat,
+ * ou null. Coût : ZÉRO descente IMAP quand le texte indexé suffit à conclure
+ * NON — c'est le cas de l'immense majorité des mails présélectionnés.
+ *
+ * Le PDF est rendu ICI pour connaître sa taille exacte : Fiscal-Manager
+ * annonce `sizeBytes` à ses utilisateurs, refuse une pièce vide et plafonne à
+ * 10 Mo. Il n'est pas conservé — le rendu est déterministe, la route de
+ * téléchargement le refabrique à l'identique depuis le même corps.
+ */
+async function candidatDepuisLeCorps(
+  rec: AccountRecord,
+  m: {
+    id: number;
+    uid: number;
+    subject: string | null;
+    fromName: string | null;
+    fromEmail: string | null;
+    date: Date | null;
+    analysisInput: string | null;
+    snippet: string | null;
+    folder: { path: string };
+  },
+  report: DetectReport,
+): Promise<{ piece: CandidateAttachment; doc: JustificatifCorps } | null> {
+  const indexe = (m.analysisInput ?? m.snippet ?? '').trim();
+  let texte = indexe;
+
+  // Sans texte indexé, on ne peut RIEN juger — et conclure « non » serait un
+  // faux négatif silencieux, exactement le piège du § 53 (« un mail sans
+  // extrait est invisible, pas en attente »). On descend donc le corps.
+  if (texte.length < 40) {
+    try {
+      const corps = await imapService.readEmail(rec, m.folder.path, m.uid);
+      texte = (corps.text || '').trim();
+      report.corpsLusEnImap++;
+    } catch {
+      return null; // repris au prochain passage
+    }
+  }
+
+  const doc = justificatifDansLeCorps({
+    subject: m.subject,
+    fromName: m.fromName,
+    fromEmail: m.fromEmail,
+    texte,
+  });
+  if (!doc) return null;
+
+  // Le PDF se rend sur le corps COMPLET, jamais sur l'extrait tronqué : un
+  // justificatif amputé n'est pas un justificatif.
+  let complet = texte;
+  try {
+    const corps = await imapService.readEmail(rec, m.folder.path, m.uid);
+    if ((corps.text || '').trim().length > complet.length) complet = corps.text.trim();
+  } catch {
+    return null;
+  }
+
+  const pdf = mailEnPdf({
+    subject: m.subject ?? '(sans objet)',
+    fromName: m.fromName,
+    fromEmail: m.fromEmail,
+    date: m.date,
+    texte: complet,
+    entetes: [
+      `Fournisseur : ${doc.supplier}`,
+      `Montant payé : ${doc.amountTtc.toFixed(2).replace('.', ',')} ${doc.devise}`,
+      ...(doc.reference ? [`Référence : ${doc.reference}`] : []),
+    ],
+  });
+
+  return {
+    piece: {
+      attachmentId: PIECE_CORPS,
+      index: -1, // pas une partie MIME : le corps
+      filename: nomDeFichier(doc, m.id),
+      contentType: 'application/pdf',
+      sizeBytes: pdf.length,
+    },
+    doc,
+  };
 }
 
 /**
@@ -198,13 +324,14 @@ export async function detectAccountingCandidates(
     sourceMissingMarked: 0,
     viaVerdict: 0,
     viaRepli: 0,
+    viaCorps: 0,
+    corpsLusEnImap: 0,
   };
   const limit = Math.min(opts.limit ?? 300, 1000);
 
   const messages = await db.message.findMany({
     where: {
       accountSlug: rec.account,
-      hasAttachments: true,
       isDeleted: false,
       isOutbound: false,
       // DEUX RÉGIMES (lot 4i). Le discriminant est l'existence d'une ligne
@@ -216,9 +343,31 @@ export async function detectAccountingCandidates(
       //     disait autre chose qu'« invoice » ;
       //  2. pas de verdict : le critère historique (intention facture), en
       //     repli, en attendant l'analyse.
+      //
+      //  ⚠️ TROISIÈME VOIE (27/08) : le JUSTIFICATIF PORTÉ PAR LE CORPS. Les
+      //     mails de réservation de vol ne portent aucune pièce jointe, et le
+      //     verdict les analyse comme « confirmation » ou « voyage », jamais
+      //     comme « facture » : ils échouaient aux DEUX voies ci-dessus et
+      //     n'atteignaient jamais Fiscal-Manager. La présélection est ici un
+      //     simple mot du sujet ; c'est `justificatifDansLeCorps` qui tranche.
       OR: [
-        { verdict: { is: { documents: { some: { kind: { in: KINDS_PIECE_COMPTABLE } } } } } },
-        { AND: [{ verdict: { is: null } }, { intent: 'invoice' }] },
+        {
+          AND: [
+            { hasAttachments: true },
+            {
+              OR: [
+                { verdict: { is: { documents: { some: { kind: { in: KINDS_PIECE_COMPTABLE } } } } } },
+                { AND: [{ verdict: { is: null } }, { intent: 'invoice' }] },
+              ],
+            },
+          ],
+        },
+        {
+          AND: [
+            { hasAttachments: false },
+            { OR: SUJETS_JUSTIFICATIF_CORPS.map((mot) => ({ searchShort: { contains: mot } })) },
+          ],
+        },
       ],
       folder: { role: { notIn: ['trash', 'spam', 'sent', 'drafts'] } },
       ...(opts.indexedSince ? { createdAt: { gte: opts.indexedSince } } : {}),
@@ -236,6 +385,10 @@ export async function detectAccountingCandidates(
       fromName: true,
       fromEmail: true,
       date: true,
+      hasAttachments: true,
+      // Le texte indexé sert au PRÉ-jugement, avant toute descente IMAP.
+      analysisInput: true,
+      snippet: true,
       folder: { select: { path: true } },
     },
   });
@@ -267,6 +420,40 @@ export async function detectAccountingCandidates(
     if (m.internetMessageId && byMsgIdHeader.has(m.internetMessageId)) continue;
     const etat = etats.get(m.id);
     const viaVerdict = !!etat?.analyse.verdictPresent;
+
+    // ── VOIE DU CORPS ──────────────────────────────────────────────────
+    // Elle passe AVANT le portillon du verdict, et c'est tout l'enjeu : une
+    // confirmation de réservation EST analysée — le verdict existe — mais il
+    // la déclare « confirmation » ou « voyage », jamais « facture ». La
+    // laisser franchir le portillon ci-dessous reviendrait à l'écarter pour
+    // toujours, ce qui est précisément ce qui se passait.
+    if (!m.hasAttachments) {
+      const issu = await candidatDepuisLeCorps(rec, m, report);
+      if (!issu) continue;
+      report.scanned++;
+      await db.accountingCandidate.create({
+        data: {
+          candidateId: randomUUID(),
+          accountSlug: rec.account,
+          messageId: m.id,
+          internetMessageId: m.internetMessageId,
+          companyCandidate: company,
+          companyBasis: basis,
+          status: 'ACTIVE',
+          receivedAt: m.date,
+          fromName: m.fromName,
+          fromEmail: m.fromEmail,
+          subject: m.subject,
+          attachmentsJson: JSON.stringify([issu.piece]),
+          bodyDocJson: JSON.stringify(issu.doc),
+        },
+      });
+      if (m.internetMessageId) byMsgIdHeader.add(m.internetMessageId);
+      report.created++;
+      report.viaCorps++;
+      continue;
+    }
+
     // Verdict présent mais plus aucun document comptable déclaré : pas un
     // candidat — et pas de repli non plus, l'analyse a parlé.
     if (viaVerdict && !pieceComptableDuVerdict(etat)) continue;
@@ -355,11 +542,49 @@ export async function sendMessageToAccounting(
   }
 
   const parts = await imapService.listAttachments(rec, folder, uid);
-  const usable = usableAttachments(parts);
+  let usable = usableAttachments(parts);
+  let corpsDoc: JustificatifCorps | null = null;
+
+  // AUCUNE PIÈCE JOINTE ? Le corps est peut-être LUI-MÊME le justificatif
+  // (billet d'avion). Le même verrou que la détection automatique tombait ici :
+  // Anthony cliquait « Envoyer à la compta » sur une confirmation de vol et
+  // s'entendait répondre « rien à transmettre ».
+  if (usable.length === 0) {
+    let texte = '';
+    try {
+      texte = ((await imapService.readEmail(rec, folder, uid)).text || '').trim();
+    } catch {
+      texte = '';
+    }
+    corpsDoc = texte
+      ? justificatifDansLeCorps({
+          subject: m.subject, fromName: m.fromName, fromEmail: m.fromEmail, texte,
+        })
+      : null;
+    if (corpsDoc) {
+      const pdf = mailEnPdf({
+        subject: m.subject ?? '(sans objet)',
+        fromName: m.fromName, fromEmail: m.fromEmail, date: m.date, texte,
+        entetes: [
+          `Fournisseur : ${corpsDoc.supplier}`,
+          `Montant payé : ${corpsDoc.amountTtc.toFixed(2).replace('.', ',')} ${corpsDoc.devise}`,
+          ...(corpsDoc.reference ? [`Référence : ${corpsDoc.reference}`] : []),
+        ],
+      });
+      usable = [{
+        attachmentId: PIECE_CORPS,
+        index: -1,
+        filename: nomDeFichier(corpsDoc, m.id),
+        contentType: 'application/pdf',
+        sizeBytes: pdf.length,
+      }];
+    }
+  }
+
   if (usable.length === 0) {
     return {
       ok: false, already: false, attachments: 0,
-      reason: 'Ce mail ne porte aucune pièce exploitable (PDF, JPG, PNG) — rien à transmettre.',
+      reason: 'Ce mail ne porte aucune pièce exploitable (PDF, JPG, PNG), et son corps ne contient pas de montant payé identifiable — rien à transmettre.',
     };
   }
 
@@ -373,6 +598,7 @@ export async function sendMessageToAccounting(
     fromEmail: m.fromEmail,
     subject: m.subject,
     attachmentsJson: JSON.stringify(usable),
+    bodyDocJson: corpsDoc ? JSON.stringify(corpsDoc) : null,
   };
   // Un candidat SKIPPED (vu sans pièce exploitable à l'époque) est réveillé
   // plutôt que doublé — l'unicité compte+mail l'interdirait de toute façon.
@@ -506,7 +732,14 @@ export async function listCandidates(
     // Le verdict d'abord ; la lecture heuristique du texte de la pièce ne
     // reprend la main que s'il ne dit rien (repli avoué dans les raisons).
     const verdictDoc = pieceComptableDuVerdict(etats.get(r.messageId));
-    const hints = !verdictDoc && doc?.text ? documentHints(doc.text) : null;
+    // LE JUSTIFICATIF PORTÉ PAR LE CORPS prime sur tout : il n'a ni verdict
+    // comptable (l'analyse dit « confirmation ») ni texte de pièce jointe (il
+    // n'y en a pas). Ses faits ont été lus à la détection et stockés — les
+    // recalculer ici les ferait dépendre de l'état d'indexation du moment.
+    const corpsDoc: JustificatifCorps | null = r.bodyDocJson
+      ? (JSON.parse(r.bodyDocJson) as JustificatifCorps)
+      : null;
+    const hints = !verdictDoc && !corpsDoc && doc?.text ? documentHints(doc.text) : null;
     return {
       candidateId: r.candidateId,
       detectedAt: r.detectedAt.toISOString(),
@@ -526,7 +759,19 @@ export async function listCandidates(
         contentType: a.contentType,
         sizeBytes: a.sizeBytes,
       })),
-      ...(verdictDoc
+      ...(corpsDoc
+        ? {
+            document: {
+              supplier: corpsDoc.supplier,
+              amountTtc: corpsDoc.amountTtc,
+              invoiceNumber: corpsDoc.reference,
+              // Rien à faire lire par la vision : le justificatif est du TEXTE,
+              // déjà lu. C'est même l'intérêt de cette voie.
+              needsVision: false,
+              reasons: corpsDoc.reasons,
+            },
+          }
+        : verdictDoc
         ? {
             document: {
               supplier: verdictDoc.supplier,
@@ -598,6 +843,46 @@ export async function resolveAttachment(
 
   const rec = await getRecord(cand.accountSlug);
   if (!rec) return { ok: false, code: 404, reason: 'Compte mail introuvable.' };
+
+  // ── LA PIÈCE SYNTHÉTIQUE : le corps du mail rendu en PDF ────────────────
+  // Rendu À LA DEMANDE, jamais stocké (décision n° 3 du connecteur : l'IMAP
+  // est le stockage durable). Le rendu est déterministe, donc deux
+  // téléchargements donnent le même octet — c'est ce qui permet à
+  // Fiscal-Manager de retirer la pièce deux fois sans créer de doublon.
+  if (att.attachmentId === PIECE_CORPS) {
+    const doc: JustificatifCorps | null = cand.bodyDocJson
+      ? (JSON.parse(cand.bodyDocJson) as JustificatifCorps)
+      : null;
+    try {
+      const corps = await imapService.readEmail(rec, msg.folder.path, msg.uid);
+      const texte = (corps.text || '').trim();
+      if (!texte) return markMissing('Le corps du mail est vide : plus de justificatif.');
+      const pdf = mailEnPdf({
+        subject: cand.subject ?? corps.subject ?? '(sans objet)',
+        fromName: cand.fromName,
+        fromEmail: cand.fromEmail,
+        date: cand.receivedAt,
+        texte,
+        entetes: doc
+          ? [
+              `Fournisseur : ${doc.supplier}`,
+              `Montant payé : ${doc.amountTtc.toFixed(2).replace('.', ',')} ${doc.devise}`,
+              ...(doc.reference ? [`Référence : ${doc.reference}`] : []),
+            ]
+          : [],
+      });
+      if (cand.status === 'SOURCE_MISSING') {
+        await db.accountingCandidate.update({ where: { seq: cand.seq }, data: { status: 'ACTIVE' } });
+      }
+      return { ok: true, filename: att.filename, contentType: 'application/pdf', content: pdf };
+    } catch (err) {
+      logger.warn('rendu du justificatif porté par le corps en échec', {
+        candidateId,
+        error: (err as Error).message,
+      });
+      return markMissing('Le mail source est inaccessible.');
+    }
+  }
 
   try {
     let dl = await imapService.downloadAttachment(rec, msg.folder.path, msg.uid, att.index);

@@ -35,7 +35,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dossiers": "tsx src/cli/dossiers.ts",
     "attentes:dedoublonner": "tsx src/cli/attentes-dedoublonner.ts",
-    "charge": "tsx src/cli/charge.ts"
+    "charge": "tsx src/cli/charge.ts",
+    "compta:rattrapage": "tsx src/cli/compta-rattrapage.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^2.16.2",

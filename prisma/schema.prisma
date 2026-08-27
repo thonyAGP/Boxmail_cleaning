@@ -385,6 +385,13 @@ model AccountingCandidate {
   // JSON [{ attachmentId, index, filename, contentType, sizeBytes }] —
   // index = position dans listAttachmentParts (ordre downloadAttachment).
   attachmentsJson   String
+  // JUSTIFICATIF PORTÉ PAR LE CORPS (27/08) — JSON des faits lus dans le
+  // message lui-même quand il n'a AUCUNE pièce jointe : fournisseur, montant
+  // payé, référence, et les raisons en français. null = candidat ordinaire, à
+  // pièce jointe, dont les faits viennent du verdict ou du texte de la pièce.
+  // Stocké et non recalculé : c'est ce que la détection a conclu au moment où
+  // elle a lu le corps, avec la même durabilité qu'`attachmentsJson`.
+  bodyDocJson       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
