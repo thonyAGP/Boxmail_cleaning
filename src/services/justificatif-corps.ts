@@ -146,17 +146,38 @@ const DEVISES: Record<string, string> = {
 export function montantPaye(texte: string): { montant: number; devise: string; ligne: string } | null {
   const lignes = texte.replace(/\r\n?/g, '\n').split('\n');
   for (let i = 0; i < lignes.length; i++) {
-    const ligne = lignes[i];
-    const zone = sansAccents(`${i > 0 ? lignes[i - 1] : ''} ${ligne}`);
-    if (!contient(zone, MOTS_PAIEMENT)) continue;
-    RE_MONTANT.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = RE_MONTANT.exec(ligne)) !== null) {
-      const symbole = (m[1] || m[3] || '').toLowerCase();
-      if (!symbole) continue; // une somme sans devise n'est pas un montant
-      const valeur = montantDepuis(m[2]);
-      if (valeur === null) continue;
-      return { montant: valeur, devise: DEVISES[symbole] ?? 'EUR', ligne: ligne.trim() };
+    if (!contient(sansAccents(lignes[i]), MOTS_PAIEMENT)) continue;
+    /**
+     * ⚠️ LE MONTANT N'EST PAS SUR LA LIGNE DU LIBELLÉ (mesuré le 27/08 sur le
+     * corps réel d'une confirmation Volotea) :
+     *     175 | Montant payé avec MASTERCARD:
+     *     177 | 160,36€
+     * Une ligne d'écart. C'est la mise en page HTML ordinaire — libellé au
+     * dessus, valeur en dessous, parfois avec une cellule vide entre les deux.
+     * La première version ne regardait que la ligne courante et la précédente :
+     * elle rendait `null` sur les quatre billets d'Anthony.
+     *
+     * Fenêtre de trois lignes APRÈS le libellé, et on prend la PLUS PROCHE.
+     * Au-delà, le rapprochement redeviendrait de la devinette — un prix d'appel
+     * cinq lignes plus bas n'est pas ce qui a été réglé.
+     */
+    for (let k = i; k <= Math.min(i + 3, lignes.length - 1); k++) {
+      const ligne = lignes[k];
+      RE_MONTANT.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = RE_MONTANT.exec(ligne)) !== null) {
+        const symbole = (m[1] || m[3] || '').toLowerCase();
+        if (!symbole) continue; // une somme sans devise n'est pas un montant
+        const valeur = montantDepuis(m[2]);
+        if (valeur === null) continue;
+        return {
+          montant: valeur,
+          devise: DEVISES[symbole] ?? 'EUR',
+          // La citation garde le LIBELLÉ, pas seulement le chiffre : c'est lui
+          // qui prouve que la somme a été payée.
+          ligne: k === i ? ligne.trim() : `${lignes[i].trim()} ${ligne.trim()}`,
+        };
+      }
     }
   }
   return null;
