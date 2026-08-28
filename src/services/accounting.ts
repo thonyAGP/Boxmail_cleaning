@@ -59,6 +59,7 @@ import {
 } from './justificatif-corps.js';
 import { mailEnPdf } from './pdf.js';
 import { grouperPagesScannees } from './pages-scannees.js';
+import { tailleReelle } from './taille-piece.js';
 
 /**
  * Boîte → société par défaut. PROPOSITION, jamais « vérifiée » : Anthony a
@@ -97,16 +98,40 @@ interface CandidateAttachment {
   index: number;
   filename: string;
   contentType: string;
+  /**
+   * Taille TRANSMISE (encodée), telle que l'annonce le BODYSTRUCTURE — donc
+   * ~37 % au-dessus du fichier pour du base64. Conservée telle quelle : elle
+   * sert d'empreinte pour repérer un doublon, et la retoucher ferait diverger
+   * les candidats anciens des nouveaux. La taille du FICHIER se calcule à la
+   * lecture par `tailleReelle()`.
+   */
   sizeBytes: number;
+  /**
+   * Encodage de transfert MIME, depuis le 28/08. Absent sur les candidats
+   * détectés avant : `tailleReelle()` retombe alors sur le type de contenu.
+   */
+  encoding?: string | null;
 }
 
 function usableAttachments(
-  parts: { filename: string; contentType: string; sizeBytes: number; contentId: string | null }[],
+  parts: {
+    filename: string;
+    contentType: string;
+    sizeBytes: number;
+    encoding?: string | null;
+    contentId: string | null;
+  }[],
 ): CandidateAttachment[] {
   const out: CandidateAttachment[] = [];
   parts.forEach((p, index) => {
     if (!ALLOWED_TYPES.test(p.contentType)) return;
     const isImage = p.contentType.toLowerCase().startsWith('image/');
+    // ⚠️ CE SEUIL RESTE SUR LA TAILLE TRANSMISE, volontairement. Il sépare une
+    // décoration de signature d'un vrai document, et il a été calibré sur les
+    // valeurs du BODYSTRUCTURE. Le passer à la taille réelle le rendrait 37 %
+    // plus sévère : des images entre 30 et 41 Ko transmis cesseraient d'être
+    // des candidats — on PERDRAIT des justificatifs pour corriger une unité.
+    // Ce n'est pas un budget d'octets, c'est un discriminant empirique.
     if (isImage && (p.contentId || p.sizeBytes < MIN_IMAGE_BYTES)) return;
     out.push({
       attachmentId: `a${index + 1}`,
@@ -114,6 +139,7 @@ function usableAttachments(
       filename: p.filename,
       contentType: p.contentType,
       sizeBytes: p.sizeBytes,
+      ...(p.encoding ? { encoding: p.encoding } : {}),
     });
   });
   return out;
@@ -344,6 +370,10 @@ async function candidatDepuisLeCorps(
       index: -1, // pas une partie MIME : le corps
       filename: nomDeFichier(doc, m.id),
       contentType: 'application/pdf',
+      // Ce PDF est fabriqué ici : `pdf.length` EST déjà la taille du fichier,
+      // rien n'a été encodé. Sans ce `binary`, tailleReelle() la supposerait
+      // base64 et l'amputerait de 27 %.
+      encoding: 'binary',
       sizeBytes: pdf.length,
     },
     doc,
@@ -655,6 +685,8 @@ export async function sendMessageToAccounting(
         index: -1,
         filename: nomDeFichier(corpsDoc, m.id),
         contentType: 'application/pdf',
+        // Fabriqué ici : taille déjà réelle, jamais encodée (voir plus haut).
+        encoding: 'binary',
         sizeBytes: pdf.length,
       }];
     }
@@ -756,7 +788,26 @@ export interface CandidateView {
     attachmentId: string;
     filename: string;
     contentType: string;
+    /**
+     * ⚠️ CHANGÉ LE 28/08 — les octets du FICHIER, ceux qui seront téléchargés,
+     * et donc ceux sur lesquels se calcule une barre de progression.
+     *
+     * Avant, ce champ portait la taille TRANSMISE du BODYSTRUCTURE, ~37 % plus
+     * grande (base64 : 78 octets transportent 57 octets de fichier). Mesuré sur
+     * 8 pièces réelles, de 3 Ko à 4 Mo, PDF et JPEG : rapport 0,7308 constant.
+     * Un `Content-Length` de 1 017 248 était annoncé 1 392 026.
+     */
     sizeBytes: number;
+    /** Ce qui transite en IMAP — l'ancienne valeur de `sizeBytes`. */
+    sizeBytesTransfer: number;
+    /**
+     * D'où vient `sizeBytes` : `exacte` (encodage non transformant),
+     * `estimee-base64` (encodage connu), `supposee-base64` (encodage inconnu,
+     * type binaire — candidats détectés avant le 28/08), `transmise` (on ne
+     * sait pas : la valeur vaut `sizeBytesTransfer`). Une estimation ne doit
+     * jamais se faire passer pour une mesure.
+     */
+    sizeBasis: string;
     /**
      * PAGES D'UN MÊME DOCUMENT SCANNÉ (28/08) — champs ajoutés, jamais requis :
      * un consommateur qui les ignore se comporte exactement comme avant.
@@ -904,11 +955,22 @@ export async function listCandidates(
       },
       attachments: atts.map((a) => {
         const g = groupes.find((x) => x.attachmentIds.includes(a.attachmentId));
+        // La pièce SYNTHÉTIQUE (le corps rendu en PDF) porte déjà la taille du
+        // fichier : elle n'a jamais transité par MIME. Les candidats détectés
+        // avant le 28/08 n'ont pas d'`encoding` en base — sans ce garde-fou,
+        // le repli « type binaire donc base64 » leur retirerait 27 %.
+        const t = tailleReelle(
+          a.sizeBytes,
+          a.contentType,
+          a.attachmentId === PIECE_CORPS ? 'binary' : a.encoding,
+        );
         return {
           attachmentId: a.attachmentId,
           filename: a.filename,
           contentType: a.contentType,
-          sizeBytes: a.sizeBytes,
+          sizeBytes: t.bytes,
+          sizeBytesTransfer: t.transferBytes,
+          sizeBasis: t.basis,
           ...(g
             ? { pageGroup: g.groupId, page: g.attachmentIds.indexOf(a.attachmentId) + 1 }
             : {}),

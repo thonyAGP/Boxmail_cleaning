@@ -574,7 +574,15 @@ class ImapService {
     rec: AccountRecord,
     folder: string,
     uid: number,
-  ): Promise<{ filename: string; contentType: string; sizeBytes: number; contentId: string | null }[]> {
+  ): Promise<
+    {
+      filename: string;
+      contentType: string;
+      sizeBytes: number;
+      encoding: string | null;
+      contentId: string | null;
+    }[]
+  > {
     const client = await this.getClient(rec);
     const lock = await client.getMailboxLock(folder);
     try {
@@ -586,6 +594,7 @@ class ImapService {
         filename: p.filename,
         contentType: p.contentType,
         sizeBytes: p.sizeBytes,
+        encoding: p.encoding,
         contentId: p.contentId,
       }));
     } finally {
@@ -982,6 +991,12 @@ class ImapService {
 type BodyNode = {
   part?: string;
   type?: string; // 'text/plain', 'application/pdf'…
+  /**
+   * Encodage de transfert MIME ('base64', 'quoted-printable', '7bit'…). Déjà
+   * présent dans le BODYSTRUCTURE, donc gratuit — et indispensable : `size`
+   * est la taille TRANSMISE, pas celle du fichier (voir taille-piece.ts).
+   */
+  encoding?: string;
   size?: number;
   disposition?: string;
   dispositionParameters?: { filename?: string };
@@ -995,7 +1010,10 @@ interface AttachmentPart {
   part: string;
   filename: string;
   contentType: string;
+  /** Taille TRANSMISE (encodée). Passer par tailleReelle() pour le fichier. */
   sizeBytes: number;
+  /** Encodage de transfert MIME, null si le serveur ne l'annonce pas. */
+  encoding: string | null;
   /** Content-ID sans chevrons (null si la partie n'en a pas). */
   contentId: string | null;
 }
@@ -1021,6 +1039,7 @@ function listAttachmentParts(node: BodyNode | null | undefined): AttachmentPart[
         filename,
         contentType: (n.type ?? 'application/octet-stream').toLowerCase(),
         sizeBytes: n.size ?? 0,
+        encoding: n.encoding ? String(n.encoding).toLowerCase() : null,
         contentId: n.id ? n.id.replace(/^<|>$/g, '') : null,
       });
     }

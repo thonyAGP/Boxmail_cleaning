@@ -28,6 +28,7 @@ import {
 import { detectIntent } from './categorize.js';
 import { ocrPiece, ocrDisponible, pdfPageEnJpeg, OCR_PIPELINE_VERSION } from './ocr.js';
 import { recordOperation } from './oplog.js';
+import { tailleReelle } from './taille-piece.js';
 import type { AccountRecord } from './accounts.js';
 
 /** Plafond de téléchargement pour l'extraction de texte (le VPS est petit). */
@@ -260,13 +261,25 @@ export async function readOne(
   let sawImage = false;
   for (let i = 0; i < parts.length && total < MAX_STORED_TEXT; i++) {
     const p = parts[i];
-    // Une image « en ligne » (logo de signature) n'est pas un document.
+    // Une image « en ligne » (logo de signature) n'est pas un document. Seuil
+    // laissé sur la taille TRANSMISE : c'est un discriminant empirique, pas un
+    // budget d'octets — le corriger le rendrait 37 % plus sévère (voir la même
+    // remarque dans accounting.ts / usableAttachments).
     if (IMAGE.test(p.contentType)) {
       if (!p.contentId && p.sizeBytes >= 30_000) sawImage = true;
       continue;
     }
     const lisible = READABLE.test(p.contentType) || READABLE_NAME.test(p.filename ?? '');
-    if (!lisible || p.sizeBytes > MAX_FETCH_BYTES) continue;
+    // ⚠️ CE PLAFOND-LÀ, si : c'est un budget de téléchargement et de mémoire,
+    // il porte donc sur le FICHIER. Comparé à la taille TRANSMISE (~37 % au
+    // -dessus), il écartait de la lecture des documents parfaitement
+    // exploitables — mesuré sur la prod : **125 pièces** entre 8 Mo transmis
+    // et 8 Mo réels, dont les plans « SARL BRIMMO APD01 » du 46 rue de la
+    // République et le guide de l'appartement Au-marais. Un document non lu
+    // est INVISIBLE, pas « en attente ». Voir taille-piece.ts.
+    if (!lisible || tailleReelle(p.sizeBytes, p.contentType, p.encoding).bytes > MAX_FETCH_BYTES) {
+      continue;
+    }
     const dl = await imapService.downloadAttachment(rec, folder, uid, i);
     if (!dl) continue;
     digests.push({
