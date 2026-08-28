@@ -439,3 +439,93 @@ des deux, il ne devinera pas.
 **Côté moi : rien.** `3b437b6` (en-têtes) et le regroupement de pages sont
 déployés en production, vérifiés à l'écran.
 **Côté toi** : déployer ta résilience, puis consommer `pageGroups`.
+
+---
+
+## RÉPONSE BOXMAIL #3 — 28/08 : ton compteur avait raison de me rendre suspect
+
+Anthony : « c'est important de régler le problème des tailles car il y a
+maintenant un compteur de temps passé, de temps restant sur Fiscal-Manager. Il
+peut se baser sur la taille des pièces à récupérer. »
+
+**C'est corrigé et déployé en production.** Mesure de l'écart que tu subissais,
+sur les 287 pièces des candidats actifs :
+
+```
+ce que j'annonçais   103,0 Mo
+ce que tu télécharges 75,3 Mo      →  +36,8 %
+```
+
+Ton temps restant était donc faux d'un tiers, dans le sens qui décourage : la
+barre avançait « trop vite » et l'estimation ne tombait jamais juste.
+
+### ⚠️ CHANGEMENT DE SÉMANTIQUE — `sizeBytes` ne veut plus dire la même chose
+
+```jsonc
+{
+  "attachmentId": "a1",
+  "filename": "sosh 003.jpg",
+  "sizeBytes": 1867890,          // ← les octets que TU reçois (changé)
+  "sizeBytesTransfer": 2556060,  // ← l'ancienne valeur : ce qui transite en IMAP
+  "sizeBasis": "supposee-base64" // ← d'où vient le chiffre
+}
+```
+
+Contrôle sur la production, les trois pièces Sosh téléchargées après
+déploiement : **annoncé 1 867 890 / servi 1 867 889 — 1 octet d'écart.** Avant,
+688 171 octets d'écart sur la même pièce.
+
+**`sizeBasis`** vaut `exacte` (encodage non transformant), `estimee-base64`
+(encodage lu dans le BODYSTRUCTURE), `supposee-base64` (encodage inconnu, type
+binaire — les candidats détectés avant aujourd'hui, ils passeront en `estimee`
+à la prochaine resync) ou `transmise` (je ne sais pas, la valeur vaut
+`sizeBytesTransfer`). Je ne voulais pas qu'une estimation puisse se faire passer
+pour une mesure.
+
+### Ce que tu peux récupérer pour ton compteur — les deux nombres servent
+
+C'est le point non évident, et il vaut mieux que tu le saches avant de câbler
+l'estimation : **quand tu demandes une pièce, l'attente n'est pas que la tienne.**
+
+```
+   toi ──HTTP──> Boxmail ──IMAP──> Outlook
+        sizeBytes            sizeBytesTransfer   (+37 %, et c'est le lent)
+```
+
+Je vais chercher la pièce en IMAP (octets ENCODÉS, sur un lien Outlook lent et
+verrouillé par boîte), je la décode, puis je te la sers. Donc :
+
+- **barre de progression / octets reçus** → `sizeBytes`, c'est exactement ton
+  `Content-Length` ;
+- **temps restant** → `sizeBytesTransfer` est le meilleur proxy du coût réel,
+  parce que le trajet IMAP domine largement le trajet HTTP (Boxmail et toi êtes
+  en datacentre, Outlook non).
+
+Les deux sont dans la réponse de liste, donc **tu peux faire la somme AVANT de
+commencer** : pas besoin d'un appel supplémentaire, et le total est exact à
+l'octet près pour la barre.
+
+**Ma question en retour** : sur quoi ton compteur est-il branché aujourd'hui —
+octets reçus, nombre de pièces, ou temps par pièce mesuré ? Si c'est le nombre
+de pièces, l'écart de taille compte plus que le nombre (4 Mo contre 3 Ko dans le
+même lot) et je peux exposer autre chose. Dis-moi ce qui te manque, c'est peu
+coûteux à ajouter.
+
+### Un défaut de plus, trouvé en tirant le fil — il te concerne aussi
+
+Le même mélange d'unités trainait dans mon plafond de LECTURE des documents
+(8 Mo) : comparé à la taille transmise, il écartait de l'analyse **125 pièces**
+dont le fichier tient sous le plafond — notamment les plans `SARL BRIMMO APD01`
+du 46 rue de la République et le guide de l'appartement Au-marais. Elles vont
+donc devenir lisibles.
+
+Conséquence pour toi : certains candidats vont **gagner** un `document`
+(fournisseur, montant, référence) qu'ils n'avaient pas, sans que rien d'autre
+change chez eux. Si tu as déjà importé une pièce avec `document: null`, elle
+n'est pas perdue — elle sera simplement mieux renseignée à un prochain passage.
+
+### Ce qui reste
+
+**Côté moi : rien.** Déployé, vérifié à l'octet.
+**Côté toi** : `pageGroups` (message précédent — c'est lui qui évite les frais
+en double), puis basculer le compteur sur `sizeBytes` / `sizeBytesTransfer`.
