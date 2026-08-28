@@ -7918,6 +7918,11 @@ async function renderPiecesCompta() {
     return;
   }
   const corps = items.filter((i) => i.porteeParLeCorps);
+  // Les scans page par page : sous-ensemble de « avec pièce jointe », mais
+  // c'est LE cas où un frais peut être compté plusieurs fois. Il doit pouvoir
+  // les retrouver tous d'un clic pour vérifier mes regroupements.
+  const scans = items.filter((i) => (i.pageGroups ?? []).length > 0);
+  const pagesEnTrop = scans.reduce((n, i) => n + i.attachments.length - i.documentCount, 0);
   /**
    * FILTRER PAR BOÎTE — pas un confort, une nécessité comptable.
    *
@@ -7932,10 +7937,54 @@ async function renderPiecesCompta() {
   for (const i of items) parBoite.set(i.mailboxId, (parBoite.get(i.mailboxId) ?? 0) + 1);
   const boites = [...parBoite].sort((a, b) => b[1] - a[1]);
 
+  /**
+   * PAGES D'UN MÊME DOCUMENT — la colonne « Justificatif » le DIT.
+   *
+   * ⚠️ 28/08, signalé par lui : « Mylène me scanne les documents page par page
+   * et je viens de voir qu'ils sont envoyés comme 3 factures alors qu'il s'agit
+   * de la même. » Trois lignes, même fournisseur, même référence, même
+   * 23,61 € — soit 70,83 € déclarés pour une facture de 23,61 €.
+   *
+   * Le regroupement est une PROPOSITION, jamais une fusion : les pages restent
+   * listées et téléchargeables une par une dans le détail, avec la raison. S'il
+   * la trouve fausse, il le voit ici avant que ça devienne un frais.
+   */
+  const badgeScan = (i) => {
+    const g = i.pageGroups ?? [];
+    if (!g.length) return '';
+    const raisons = g.map((x) => x.reason).join(' · ');
+    const texte = g.length === 1 ? `${g[0].pageCount} pages` : `${i.documentCount} documents`;
+    return `<span class="badge orange" title="${esc(raisons)} — c'est UN seul frais, pas ${
+      i.attachments.length}.">📑 ${esc(texte)}</span>`;
+  };
+
+  /**
+   * Les pièces DANS L'ORDRE DE LECTURE : un groupe reste d'un bloc, ses pages
+   * dans l'ordre des pages. Le mail, lui, les livre dans le désordre (« sosh
+   * 003 » d'abord) — afficher « page 3 sur 3 » en tête rendrait le
+   * regroupement illisible, donc invérifiable.
+   */
+  const ordonnerPages = (i) => {
+    const atts = i.attachments ?? [];
+    const groupes = i.pageGroups ?? [];
+    const vus = new Set();
+    const sortie = [];
+    for (const a of atts) {
+      if (vus.has(a.attachmentId)) continue;
+      const g = groupes.find((x) => x.attachmentIds.includes(a.attachmentId));
+      if (!g) { sortie.push(a); vus.add(a.attachmentId); continue; }
+      for (const id of g.attachmentIds) {
+        const p = atts.find((x) => x.attachmentId === id);
+        if (p) { sortie.push(p); vus.add(id); }
+      }
+    }
+    return sortie;
+  };
+
   const ligne = (i, n) => {
     const doc = i.document ?? {};
-    const a = i.attachments?.[0];
     const preuve = (doc.reasons ?? []).find((r) => r.startsWith('montant')) ?? (doc.reasons ?? [])[0];
+    const groupeDe = (id) => (i.pageGroups ?? []).find((g) => g.attachmentIds.includes(id));
     return `<tr class="pc-l" data-n="${n}">
       <td class="muted nowrap">${esc(fmtDate(i.message?.receivedAt))}</td>
       <td class="nowrap">${accountChip(i.mailboxId)}</td>
@@ -7946,14 +7995,24 @@ async function renderPiecesCompta() {
         esc((i.message?.subject || '').trim() || '(sans objet)')}</td>
       <td class="nowrap">${i.porteeParLeCorps
         ? '<span class="badge blue" title="Ce mail n’a aucune pièce jointe : le message lui-même est le justificatif, rendu en PDF.">le mail</span>'
-        : '<span class="badge gray" title="Le justificatif est un fichier attaché au mail.">pièce jointe</span>'}</td>
+        : badgeScan(i)
+          || '<span class="badge gray" title="Le justificatif est un fichier attaché au mail.">pièce jointe</span>'}</td>
       <td class="nowrap"><button class="btn btn-sm pc-why" data-n="${n}" title="Pourquoi cette ligne ?">Pourquoi ?</button></td>
     </tr>
     <tr class="pc-detail hidden" data-d="${n}"><td colspan="8">
       ${preuve ? `<div class="pc-preuve">${esc(preuve)}</div>` : '<div class="muted">Aucune justification enregistrée.</div>'}
+      ${(i.pageGroups ?? []).map((g) => `<div class="pc-preuve">📑 ${esc(g.reason)} —
+        <strong>un seul frais</strong>, pas ${g.pageCount}.</div>`).join('')}
+      <div class="pc-fichiers">${ordonnerPages(i).map((a) => {
+        const g = groupeDe(a.attachmentId);
+        return `<div>📄 ${esc(a.filename)}${
+          g ? ` <span class="muted">— page ${a.page} sur ${g.pageCount}</span>` : ''
+        } <span class="muted">· ${fmtSize(a.sizeBytes)}</span></div>`;
+      }).join('')}</div>
       <div class="pc-meta">
-        ${a ? `📄 ${esc(a.filename)} · ${fmtSize(a.sizeBytes)}` : ''}
-        ${i.companyCandidate ? ` · société proposée : <strong>${esc(i.companyCandidate)}</strong>` : ' · société à qualifier dans Fiscal-Manager'}
+        <span>${i.companyCandidate
+          ? `société proposée : <strong>${esc(i.companyCandidate)}</strong>`
+          : 'société à qualifier dans Fiscal-Manager'}</span>
         ${i.source ? `<button class="btn btn-sm pc-open" data-account="${esc(i.source.account)}"
           data-folder="${esc(i.source.folder)}" data-uid="${i.source.uid}">Ouvrir le mail ↗</button>` : ''}
       </div>
@@ -7975,12 +8034,17 @@ async function renderPiecesCompta() {
       <strong>${fmtNum(corps.length)}</strong> où <strong>le mail lui-même est le justificatif</strong>
       (billets d'avion, confirmations de commande) — celles-là n'ont aucune pièce jointe et étaient
       perdues jusqu'ici.
+      ${scans.length ? `<div class="pc-scans">📑 <strong>${fmtNum(scans.length)}</strong> pièce(s)
+        sont des <strong>documents scannés page par page</strong> : je regroupe les pages, ce qui évite
+        <strong>${fmtNum(pagesEnTrop)}</strong> frais en double. Ouvre « Pourquoi ? » pour voir les pages
+        et me contredire si je me trompe.</div>` : ''}
     </div>
     <div class="pc-filtres">
       <span class="muted">Nature —</span>
       <button class="find-chip actif" data-filtre="tout">Tout · ${fmtNum(items.length)}</button>
       <button class="find-chip" data-filtre="corps">Le mail est le justificatif · ${fmtNum(corps.length)}</button>
       <button class="find-chip" data-filtre="jointe">Avec pièce jointe · ${fmtNum(items.length - corps.length)}</button>
+      ${scans.length ? `<button class="find-chip" data-filtre="scans">📑 Scans page par page · ${fmtNum(scans.length)}</button>` : ''}
     </div>
     <div class="pc-filtres">
       <span class="muted">Boîte —</span>
@@ -8012,6 +8076,7 @@ async function renderPiecesCompta() {
   const appliquer = () => {
     let liste = nature === 'corps' ? corps
       : nature === 'jointe' ? items.filter((i) => !i.porteeParLeCorps)
+      : nature === 'scans' ? scans
       : items;
     if (boite) liste = liste.filter((i) => i.mailboxId === boite);
     $('#pc-table').innerHTML = liste.length

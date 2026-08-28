@@ -35,3 +35,6 @@ ux-review/
 
 # Captures des bancs de preuve — jamais versionnées.
 preuve-*.png
+
+# Traces des tests navigateur (captures, snapshots, journaux console)
+.playwright-mcp/

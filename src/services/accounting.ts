@@ -58,6 +58,7 @@ import {
   type JustificatifCorps,
 } from './justificatif-corps.js';
 import { mailEnPdf } from './pdf.js';
+import { grouperPagesScannees } from './pages-scannees.js';
 
 /**
  * Boîte → société par défaut. PROPOSITION, jamais « vérifiée » : Anthony a
@@ -751,7 +752,33 @@ export interface CandidateView {
     fromAddress: string | null;
     subject: string | null;
   };
-  attachments: { attachmentId: string; filename: string; contentType: string; sizeBytes: number }[];
+  attachments: {
+    attachmentId: string;
+    filename: string;
+    contentType: string;
+    sizeBytes: number;
+    /**
+     * PAGES D'UN MÊME DOCUMENT SCANNÉ (28/08) — champs ajoutés, jamais requis :
+     * un consommateur qui les ignore se comporte exactement comme avant.
+     * Présents seulement sur les pièces regroupées. Voir `pageGroups`.
+     */
+    pageGroup?: string;
+    page?: number;
+  }[];
+  /**
+   * Les pièces qui ne font qu'UN document, avec la raison en français.
+   *
+   * ⚠️ À LIRE PAR QUI CRÉE DES FRAIS. Mylène scanne page par page : trois JPEG
+   * dans un mail, c'est UNE facture. Créer un frais par pièce a produit trois
+   * fois 23,61 € pour une facture de 23,61 €. Le bon compte de documents est
+   * `documentCount`, jamais `attachments.length`.
+   *
+   * Les pages restent téléchargeables une par une (les `attachmentId` ne
+   * bougent pas) : c'est un regroupement, pas une fusion.
+   */
+  pageGroups?: { groupId: string; attachmentIds: string[]; pageCount: number; reason: string }[];
+  /** Nombre de documents distincts = groupes de pages + pièces isolées. */
+  documentCount: number;
   /**
    * Ce que la pièce dit d'elle-même, pour pré-remplir le frais côté
    * Fiscal-Manager. Depuis le lot 4i, la source première est le VERDICT
@@ -806,6 +833,10 @@ export async function listCandidates(
 
   const items = page.map((r) => {
     const atts = JSON.parse(r.attachmentsJson) as CandidateAttachment[];
+    // Les pages d'un même document scanné (Mylène scanne page par page) : on
+    // les DÉSIGNE, on ne les fusionne pas. Voir pages-scannees.ts.
+    const groupes = grouperPagesScannees(atts);
+    const dansUnGroupe = new Set(groupes.flatMap((g) => g.attachmentIds));
     const doc = docs.get(r.messageId);
     // Le verdict d'abord ; la lecture heuristique du texte de la pièce ne
     // reprend la main que s'il ne dit rien (repli avoué dans les raisons).
@@ -871,12 +902,20 @@ export async function listCandidates(
         fromAddress: r.fromEmail,
         subject: r.subject,
       },
-      attachments: atts.map((a) => ({
-        attachmentId: a.attachmentId,
-        filename: a.filename,
-        contentType: a.contentType,
-        sizeBytes: a.sizeBytes,
-      })),
+      attachments: atts.map((a) => {
+        const g = groupes.find((x) => x.attachmentIds.includes(a.attachmentId));
+        return {
+          attachmentId: a.attachmentId,
+          filename: a.filename,
+          contentType: a.contentType,
+          sizeBytes: a.sizeBytes,
+          ...(g
+            ? { pageGroup: g.groupId, page: g.attachmentIds.indexOf(a.attachmentId) + 1 }
+            : {}),
+        };
+      }),
+      ...(groupes.length ? { pageGroups: groupes } : {}),
+      documentCount: groupes.length + atts.filter((a) => !dansUnGroupe.has(a.attachmentId)).length,
       ...(corpsDoc
         ? {
             document: {
