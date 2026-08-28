@@ -130,6 +130,11 @@ personnel » dans toute stratégie de nettoyage.
   silence) : l'échapper.
 
 **Connecteurs**
+- Plusieurs pièces dans un mail ne font PAS plusieurs documents — ni un seul.
+  Mylène scanne page par page (3 JPEG = 1 facture), mais un mail porte aussi
+  18 factures Amazon ou 7 relevés mensuels. Règle dans `pages-scannees.ts` :
+  images + même racine + numérotation contiguë, 2 cas sur 40. Ne l'élargir
+  qu'après l'avoir resimulée sur la prod, en relisant les NON touchés.
 - Un nom de fichier venu d'un mail ne se recopie JAMAIS dans un en-tête HTTP :
   `entete-fichier.ts` (repli ASCII + `filename*`). Un accent DÉCOMPOSÉ (`e` +
   U+0301, hors Latin-1) faisait lever `setHeader` → 500 → le pull comptable

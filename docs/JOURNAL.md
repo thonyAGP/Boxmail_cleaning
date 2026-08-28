@@ -5,6 +5,57 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 28/08 (59) — Un accent invisible, et trois pages prises pour trois factures
+
+Sa question : « on en est où dans le traitement de mes factures pour Expensya
+et Jump ? » La réponse honnête était : **bloqué depuis le 27/08, et pas pour la
+raison qu'on croyait.**
+
+**1. La panne était dans les journaux d'accès, pas dans le code de détection.**
+Trois pulls Fiscal-Manager d'affilée : `?cursor=0&limit=100` → 200, puis 500 sur
+**toujours la même pièce**, puis plus rien. Le curseur ne « prenait pas de
+retard », il était RÉINITIALISÉ par un plantage. La pièce : `Facture mars 2026
+république.pdf`, dont le « é » est un `e` suivi de l'accent COMBINANT U+0301 —
+Node tolère le Latin-1 dans un en-tête, pas au-dessus, et `setHeader` levait.
+Un accent invisible à l'œil gelait trois semaines de justificatifs.
+
+Le champ de mines complet a valu autant que le correctif : sur les 286 noms de
+pièces, **8 cassaient l'en-tête, 0 après** — sinon on retombait dessus au
+candidat n° 120. `entete-fichier.ts` sert les deux formes de la RFC 6266.
+Deux hypothèses avaient été formulées avant (branche non déployée, portillon
+sémantique) : les deux fausses. **Lire les journaux d'accès AVANT de relire le
+code.**
+
+**2. « Mylène me scanne les documents page par page. »** Trois lignes « facture
+sosh », Orange/Sosh, 23,61 € chacune — soit 70,83 € pour une facture de 23,61 €,
+la rechute exacte du billet compté trois fois de la veille. Un mail, trois JPEG :
+Boxmail en faisait correctement un candidat, Fiscal-Manager un frais par pièce.
+Mais c'est Boxmail qui LIT les documents : c'est à lui de dire lesquels n'en
+font qu'un.
+
+La valeur est dans l'ÉTROITESSE de la règle, et elle vient de la simulation sur
+les 213 candidats réels : 40 portent plusieurs pièces, elle n'en touche que 2 —
+seq 67 (3 pages → 1 document) et seq 237 (8 pièces → DEUX liasses de 4 pages
+dans le même mail, à ne fusionner ni en une ni en huit). 8 frais en double
+évités. Elle s'abstient sur les 18 factures Amazon d'un seul mail, les 7 relevés
+`01-25`…`07-25`, les paires Invoice+Receipt. D'où : images seulement, même
+racine, numérotation contiguë. Le contrat API est additif (`pageGroups`,
+`documentCount`) et rien n'est fusionné — l'écran affiche la raison en français
+et les pages numérotées, pour qu'il puisse contredire avant que ça devienne un
+frais. Un défaut trouvé en regardant la capture et pas le code : les pages
+sortaient dans l'ordre du mail, « page 3 sur 3 » en tête.
+
+**3. L'échange avec Fiscal-Manager, dans `ECHANGE-FISCAL-MANAGER.md`.** Il a
+corrigé le vrai défaut, plus grave que le bug : chez lui une pièce en échec
+arrêtait le pull ET figeait le curseur, sous un bandeau qui annonçait « la
+reprise reprendra où elle s'est arrêtée ». Sa frayeur sur les sauvegardes était
+infondée — le fichier de 516 Ko était la base de fixtures de son dépôt de dev,
+la prod fait 593 Mo. Sa question sur le plafond de 10 Mo : personne ne s'en
+approche (plus grosse pièce 3,94 Mo annoncés). Au passage, **mon `sizeBytes`
+ment de ~37 %** : c'est la taille ENCODÉE du BODYSTRUCTURE (1 392 026 annoncés
+pour 1 017 248 servis, rapport 0,7307). Non corrigé faute de connaître
+l'encodage de chaque partie ; dit plutôt que caché.
+
 ## 27/08 (58) — « Où je trouve le résumé ? » — et la leçon des cartes
 
 Trois retours d'affilée, tous justes, tous sur la même faille : **ce que je
