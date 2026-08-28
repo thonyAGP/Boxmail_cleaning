@@ -290,6 +290,75 @@ const CAPABILITIES: Capability[] = [
     },
   },
   {
+    id: 'attachment-size-decoded-v1',
+    label: 'Je relis les documents que je croyais trop gros',
+    link: null,
+    run: async () => {
+      /**
+       * LE RATTRAPAGE DES DOCUMENTS ÉCARTÉS PAR UNE ERREUR D'UNITÉ (28/08).
+       *
+       * Le plafond de lecture (8 Mo) était comparé à la taille TRANSMISE, ~37 %
+       * au-dessus du fichier (base64). Des documents de 6 ou 7 Mo étaient donc
+       * refusés en croyant qu'ils en faisaient 9 ou 10 — simulé à blanc sur la
+       * production : **46 mails déjà marqués comme lus**, dont 35 sans aucun
+       * texte. Les plans « SARL BRIMMO APD01 » du 46 rue de la République, les
+       * catalogues de ventes aux enchères de Colocar, des annonces de maisons
+       * (Location_Brest), le guide de l'appartement Au-marais.
+       *
+       * ⚠️ SANS CETTE ENTRÉE, LA CORRECTION NE SERT À RIEN sur l'existant : la
+       * passe de lecture ne retient que les mails jamais visités
+       * (`attachmentTextAt: null`). Un mail refusé a été marqué visité, donc il
+       * ne serait plus JAMAIS relu — la correction ne vaudrait que pour les
+       * mails à venir.
+       *
+       * Ce rattrapage ne lit rien lui-même : il RETIRE la marque « déjà vu »
+       * des seuls mails concernés, et la passe ordinaire fait le reste à son
+       * rythme. Réversible (la marque se repose toute seule), journalisé, et
+       * borné aux pièces dont le fichier tient réellement sous le plafond.
+       */
+      const { db } = await import('../db/client.js');
+      const { tailleReelle } = await import('./taille-piece.js');
+      const MAX_FETCH_BYTES = 8 * 1024 * 1024;
+      const rows = await db.message.findMany({
+        where: { attachmentMeta: { not: null }, attachmentTextAt: { not: null } },
+        select: { id: true, attachmentMeta: true },
+      });
+      const aRelire: number[] = [];
+      for (const m of rows) {
+        let meta: { n?: string; s?: number }[] = [];
+        try {
+          meta = JSON.parse(m.attachmentMeta as string);
+        } catch {
+          continue;
+        }
+        const concerne = meta.some((x) => {
+          const transmis = x.s ?? 0;
+          if (transmis <= MAX_FETCH_BYTES) return false; // n'a jamais été refusée
+          // Le type n'est pas dans la fiche : on se fie au nom. La passe de
+          // lecture refiltrera de toute façon sur le type réel.
+          const reel = tailleReelle(transmis, 'application/octet-stream', null).bytes;
+          return reel <= MAX_FETCH_BYTES;
+        });
+        if (concerne) aRelire.push(m.id);
+      }
+      for (let i = 0; i < aRelire.length; i += 200) {
+        await db.message.updateMany({
+          where: { id: { in: aRelire.slice(i, i + 200) } },
+          data: { attachmentTextAt: null },
+        });
+      }
+      logger.info('rattrapage taille des pièces : mails remis en lecture', {
+        examines: rows.length,
+        remisEnLecture: aRelire.length,
+      });
+      return aRelire.length > 0
+        ? `${aRelire.length} mail(s) portant un document que je refusais à tort ` +
+            `(taille encodée prise pour la taille du fichier) sont remis dans la file de lecture — ` +
+            `leur contenu deviendra cherchable au fil des prochaines passes.`
+        : 'Aucun document n’avait été refusé pour cette raison.';
+    },
+  },
+  {
     id: 'attachment-reading-v1',
     label: 'Je lis maintenant le contenu des pièces jointes',
     link: '#/attachments',

@@ -273,10 +273,13 @@ export async function readOne(
     // ⚠️ CE PLAFOND-LÀ, si : c'est un budget de téléchargement et de mémoire,
     // il porte donc sur le FICHIER. Comparé à la taille TRANSMISE (~37 % au
     // -dessus), il écartait de la lecture des documents parfaitement
-    // exploitables — mesuré sur la prod : **125 pièces** entre 8 Mo transmis
-    // et 8 Mo réels, dont les plans « SARL BRIMMO APD01 » du 46 rue de la
-    // République et le guide de l'appartement Au-marais. Un document non lu
-    // est INVISIBLE, pas « en attente ». Voir taille-piece.ts.
+    // exploitables — mesuré sur la prod : 125 occurrences de pièces entre
+    // 8 Mo transmis et 8 Mo réels, sur **46 mails déjà marqués comme lus**
+    // (dont 35 sans aucun texte). Les plans « SARL BRIMMO APD01 » du 46 rue de
+    // la République, les catalogues de ventes aux enchères de Colocar, le
+    // guide de l'appartement Au-marais. Un document non lu est INVISIBLE, pas
+    // « en attente ». Voir taille-piece.ts et le rattrapage
+    // `attachment-size-decoded-v1` dans whatsnew.ts.
     if (!lisible || tailleReelle(p.sizeBytes, p.contentType, p.encoding).bytes > MAX_FETCH_BYTES) {
       continue;
     }

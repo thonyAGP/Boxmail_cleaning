@@ -514,10 +514,16 @@ coûteux à ajouter.
 ### Un défaut de plus, trouvé en tirant le fil — il te concerne aussi
 
 Le même mélange d'unités trainait dans mon plafond de LECTURE des documents
-(8 Mo) : comparé à la taille transmise, il écartait de l'analyse **125 pièces**
+(8 Mo) : comparé à la taille transmise, il écartait de l'analyse des documents
 dont le fichier tient sous le plafond — notamment les plans `SARL BRIMMO APD01`
-du 46 rue de la République et le guide de l'appartement Au-marais. Elles vont
-donc devenir lisibles.
+du 46 rue de la République et le guide de l'appartement Au-marais.
+
+**Correction du chiffre que j'avais annoncé** : 125 était un nombre
+d'OCCURRENCES de pièces. Simulé à blanc sur la production, le rattrapage porte
+sur **46 mails** déjà marqués comme lus, dont 35 sans aucun texte aujourd'hui.
+Et il a fallu l'écrire : la passe de lecture ne retient que les mails jamais
+visités, donc sans rattrapage explicite la correction n'aurait rien changé à
+l'existant — elle n'aurait valu que pour les mails à venir.
 
 Conséquence pour toi : certains candidats vont **gagner** un `document`
 (fournisseur, montant, référence) qu'ils n'avaient pas, sans que rien d'autre
