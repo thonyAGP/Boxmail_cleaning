@@ -1,4 +1,10 @@
 {
+  "run": {
+    "command": "npm run dev",
+    "ready": "http://127.0.0.1:8799/health",
+    "url": "http://127.0.0.1:8799",
+    "readyTimeoutMs": 120000
+  },
   "checks": {
     "onEdit": "npm run typecheck",
     "onStop": "npm run typecheck"

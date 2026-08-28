@@ -1,0 +1,17 @@
+{
+  "name": "login-ecran-refus",
+  "description": "Un mauvais mot de passe doit afficher le message d'erreur et laisser l'application verrouillée (aucun secret : le scénario teste le REFUS).",
+  "route": "/admin",
+  "steps": [
+    { "waitFor": { "selector": "#login-password" } },
+    { "fill": { "selector": "#login-password", "value": "mauvais-mot-de-passe-scenario" } },
+    { "click": { "role": "button", "name": "Se connecter" } },
+    { "waitFor": { "selector": "#login-error:not(.hidden)" } }
+  ],
+  "assert": [
+    { "visible": { "text": "Mail Assistant" } },
+    { "visible": { "selector": "#login-error" } },
+    { "notVisible": { "selector": "#app-view" } },
+    { "noHorizontalOverflow": true }
+  ]
+}
