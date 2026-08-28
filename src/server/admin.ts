@@ -73,6 +73,7 @@ import {
   reflectRestoreInIndex,
 } from '../services/search.js';
 import { find, TRIS, type TriRecherche } from '../services/find.js';
+import { repondreRecherche } from '../services/answer.js';
 import { listeDoublons } from '../services/duplicates.js';
 import { correspondance, contexteDuMail } from '../services/correspondance.js';
 import { tiersConnus, suivreTiers } from '../services/argent.js';
@@ -1751,6 +1752,27 @@ export function buildAdminRouter(): Router {
             : undefined,
         }),
       );
+    }),
+  );
+
+  // Réponse conversationnelle : POST car la question et, bientôt, les tours
+  // précédents ne doivent pas finir dans les logs d'URL du reverse proxy.
+  router.post(
+    '/answer',
+    guard(async (req, res) => {
+      const question = String(req.body?.question ?? '').trim();
+      if (!question) {
+        res.status(400).json({ error: 'Pose-moi une question sur tes mails.' });
+        return;
+      }
+      if (question.length > 500) {
+        res.status(400).json({ error: 'Ta question est trop longue (500 caractères maximum).' });
+        return;
+      }
+      res.json(await repondreRecherche({
+        question,
+        account: String(req.body?.account ?? '').trim() || undefined,
+      }));
     }),
   );
 

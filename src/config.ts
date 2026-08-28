@@ -118,6 +118,13 @@ export const config = {
     // bearer MCP. Absent = API pièces comptables désactivée (503).
     readToken: process.env.ACCOUNTING_READ_TOKEN?.trim() || null,
   },
+  ai: {
+    // Synthèse conversationnelle de la recherche. Les preuves sont d'abord
+    // sélectionnées dans SQLite : jamais de boîte complète envoyée au modèle.
+    cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || null,
+    cloudflareApiToken: process.env.CLOUDFLARE_AI_API_TOKEN?.trim() || null,
+    cloudflareModel: optional('CLOUDFLARE_AI_MODEL', '@cf/qwen/qwen3-30b-a3b-fp8'),
+  },
   limits: {
     // Plafond dur par opération de suppression (SPEC §6.3).
     maxDeletePerCall: 200,

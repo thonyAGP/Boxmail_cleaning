@@ -199,6 +199,8 @@ export const api = {
     }
     return request('GET', `/find?${q}`);
   },
+  answer: (question, account) =>
+    request('POST', '/answer', { question, ...(account ? { account } : {}) }),
   correspondence: (email, account) =>
     request(
       'GET',

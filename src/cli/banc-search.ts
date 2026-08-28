@@ -3,6 +3,33 @@ import { db, ensureDbReady } from '../db/client.js';
 import { find } from '../services/find.js';
 import { decouperTermes } from '../services/termes.js';
 import { deplie } from '../services/accents.js';
+import { scorePreuve } from '../services/answer.js';
+import { MATCH_CONTENU_PIECE, MATCH_NOM_PIECE, MATCH_TEXTE } from '../services/search.js';
+
+// Régression du cas réel du 28/08 : « NIE Espagne » ne doit plus placer les
+// demandes envoyées devant le retour reçu qui porte le document et le numéro.
+const demandeNie = scorePreuve({
+  isOutbound: true,
+  hasAttachments: false,
+  mask: MATCH_TEXTE,
+  subject: 'Demande de NIE en Espagne',
+  attachmentNames: '',
+}, 'Bonjour, je sollicite un rendez-vous pour ma demande de NIE.');
+const retourNie = scorePreuve({
+  isOutbound: false,
+  hasAttachments: true,
+  mask: MATCH_NOM_PIECE | MATCH_CONTENU_PIECE,
+  subject: 'Consulado de España — documento adjunto',
+  attachmentNames: 'Mon NIE_FR.png',
+}, 'Se comunica la asignación del NIE X1234567L.');
+if (retourNie.score <= demandeNie.score) {
+  throw new Error(`Régression NIE : retour ${retourNie.score} <= demande ${demandeNie.score}`);
+}
+// Même sans le mot de contexte « Espagne », le document reçu doit rester une
+// meilleure preuve que la demande qui répète toute la requête.
+if (!retourNie.signaux.includes('numéro au format NIE détecté')) {
+  throw new Error('Régression NIE : le numéro présent dans le document n’est pas reconnu.');
+}
 
 /**
  * Le banc de la RECHERCHE (23/08) — `npm run banc:search`.
@@ -35,6 +62,7 @@ const RECHERCHES = [
   'avis imposition',
   'rib',
   'nimes',
+  'NIE Espagne',
 ];
 
 interface Ligne {

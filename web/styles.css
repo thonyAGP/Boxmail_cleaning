@@ -1458,3 +1458,11 @@ th.sortable:hover { color: var(--primary); }
 }
 .pc-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 11.5px; color: var(--text-muted); }
 .pc-meta .btn { margin-left: auto; }
+.answer-card { margin-bottom: 14px; border-color: color-mix(in srgb, var(--accent, #2563eb) 35%, var(--border)); }
+.answer-title { padding: 14px 16px 0; font-weight: 750; font-size: 16px; }
+.answer-text { padding: 10px 16px 14px; font-size: 15px; line-height: 1.55; }
+.answer-cite { color: var(--accent, #2563eb); white-space: nowrap; }
+.answer-sources { border-top: 1px solid var(--border); padding: 10px 12px 12px; display: grid; gap: 6px; }
+.answer-source { width: 100%; border: 1px solid var(--border); background: var(--surface, #fff); color: inherit; border-radius: 8px; padding: 8px 10px; text-align: left; cursor: pointer; display: grid; gap: 2px; }
+.answer-source:hover { border-color: var(--accent, #2563eb); background: var(--surface-hover, #f8fafc); }
+.answer-source span, .answer-source small { color: var(--muted, #64748b); }
