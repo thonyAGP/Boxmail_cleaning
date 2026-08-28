@@ -135,6 +135,15 @@ personnel » dans toute stratégie de nettoyage.
   18 factures Amazon ou 7 relevés mensuels. Règle dans `pages-scannees.ts` :
   images + même racine + numérotation contiguë, 2 cas sur 40. Ne l'élargir
   qu'après l'avoir resimulée sur la prod, en relisant les NON touchés.
+- La taille IMAP (`BODYSTRUCTURE.size`) est la taille TRANSMISE, +37 % sur du
+  base64 : passer par `tailleReelle()` dès qu'on la compare à un budget
+  d'octets. Elle faussait le compteur de Fiscal-Manager (103 Mo annoncés pour
+  75,3 réels) et refusait 46 mails à la lecture. MAIS laisser les seuils
+  EMPIRIQUES (30 Ko « décoration ou document ») sur la valeur transmise : les
+  corriger les rend 37 % plus sévères et fait perdre des justificatifs.
+- Corriger un filtre ne rattrape rien : les passes ne repassent pas sur ce
+  qu'elles ont marqué vu (`attachmentTextAt`, `attachmentNames`). Tout
+  élargissement veut une entrée `whatsnew.ts` qui démarque les mails visés.
 - Un nom de fichier venu d'un mail ne se recopie JAMAIS dans un en-tête HTTP :
   `entete-fichier.ts` (repli ASCII + `filename*`). Un accent DÉCOMPOSÉ (`e` +
   U+0301, hors Latin-1) faisait lever `setHeader` → 500 → le pull comptable

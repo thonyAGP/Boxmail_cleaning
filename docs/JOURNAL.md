@@ -5,6 +5,41 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 28/08 (60) — Le compteur de temps restant, et l'unité qui ment
+
+Sa remarque : « il y a maintenant un compteur de temps passé, de temps restant
+sur Fiscal-Manager. Il peut se baser sur la taille des pièces. » Mesuré : sur
+les 287 pièces des candidats actifs, j'annonçais **103,0 Mo pour 75,3 Mo
+réellement téléchargés**, +36,8 %. Son estimation était fausse d'un tiers.
+
+`BODYSTRUCTURE.size` est la taille TRANSMISE (RFC 3501), pas celle du fichier :
+en base64, 78 octets en portent 57. **Mesuré et non déduit** — 8 pièces réelles
+téléchargées, de 3 Ko à 4 Mo, PDF et JPEG : rapport 0,7308 constant, soit
+exactement 57/78. La correction est de l'arithmétique. Écart maximal ramené de
+36,8 % à 0,12 % ; vérifié après déploiement sur les trois pièces Sosh :
+**1 octet d'écart**. L'encodage était déjà dans la structure lue par la sync,
+donc gratuit ; `sizeBasis` dit toujours si la valeur est exacte, estimée ou
+supposée.
+
+**Deux pièges dans la même journée, et c'est là que le travail était.**
+
+1. **Ne pas « corriger » les seuils empiriques.** Le 30 Ko qui sépare une
+   décoration de signature d'un document a été calibré sur la valeur transmise.
+   Le passer en taille réelle le rendait 37 % plus sévère : on aurait PERDU des
+   justificatifs pour corriger une unité. Un budget d'octets se corrige, un
+   discriminant empirique non.
+2. **Corriger un filtre ne rattrape rien.** J'avais écrit à Fiscal-Manager que
+   les documents refusés « allaient devenir lisibles ». Faux — vérifié dans le
+   code : la passe ne retient que `attachmentTextAt: null`, un mail refusé est
+   marqué vu et n'est plus jamais relu. D'où l'entrée `whatsnew`
+   `attachment-size-decoded-v1`, qui démarque les seuls mails concernés.
+   Simulé à blanc puis exécuté au démarrage : **46 mails** remis en lecture,
+   dont 35 sans aucun texte — les plans « SARL BRIMMO APD01 » du 46 rue de la
+   République, les catalogues d'enchères de Colocar, le guide Au-marais.
+
+Chiffre corrigé au passage : les « 125 pièces » annoncées d'abord étaient des
+occurrences, pas des mails. 46 est le nombre actionnable.
+
 ## 28/08 (59) — Un accent invisible, et trois pages prises pour trois factures
 
 Sa question : « on en est où dans le traitement de mes factures pour Expensya
