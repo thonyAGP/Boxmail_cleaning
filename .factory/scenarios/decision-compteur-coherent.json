@@ -1,0 +1,27 @@
+{
+  "name": "decision-compteur-coherent",
+  "description": "Après une décision unitaire sur un mail (« 👁️ Vu »), la ligne disparaît de la liste — le compteur « N nouveau(x) mail(s) attendent une décision » doit décrémenter DANS LE MÊME GESTE. Constaté le 01/09/2026 : la ligne partait, le compteur restait à sa valeur d'avant, et ne se corrigeait qu'après un rechargement manuel. Le serveur était juste ; c'est l'écran qui mentait. Friction signalée par Anthony (« quand on touche aux mails, il faut un refresh automatique »), déjà écrite en juin dans les specs sous le nom « pas d'invalidation fine ». Le mot de passe vient de l'environnement (ADMIN_PASSWORD), jamais du fichier.",
+  "coutDonnees": "MUTATION — chaque exécution DÉCIDE réellement un mail (« vu ») et le retire de la file. Le scénario n'est donc pas rejouable indéfiniment : sans mail en attente, il échoue faute de bouton, pour une raison qui n'a rien à voir avec l'invariant testé. Restauration manuelle en attendant un mécanisme prévu : remettre reviewedAt et reviewDecision à null sur les décisions du jour. C'est le trou identifié le 01/09/2026 — les scénarios de mutation ont besoin d'une étape de restauration que la DSL ne sait pas encore exprimer.",
+  "route": "/admin/",
+  "steps": [
+    { "waitFor": { "selector": "#login-password" } },
+    { "fill": { "selector": "#login-password", "valueEnv": "ADMIN_PASSWORD" } },
+    { "click": { "role": "button", "name": "Se connecter" } },
+    { "waitFor": { "selector": "#app-view" } },
+    { "goto": "/admin/#/inbox/@inbox" },
+    { "waitFor": { "ms": 5000 } },
+    { "waitFor": { "selector": "[data-rv-seen]" } },
+    { "click": { "selector": "[data-rv-seen]" } },
+    { "waitFor": { "ms": 2000 } }
+  ],
+  "assert": [
+    {
+      "evalTrue": {
+        "description": "le compteur annoncé égale le nombre de lignes réellement présentes, sans rechargement",
+        "expression": "(() => { const m = document.body.innerText.match(/(\\d+)\\s+nouveau\\(x\\)\\s+mail\\(s\\)/); if (!m) return true; return Number(m[1]) === document.querySelectorAll('[data-rv-row]').length; })()"
+      }
+    },
+    { "consoleErrors": 0 },
+    { "noHorizontalOverflow": true }
+  ]
+}

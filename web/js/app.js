@@ -9777,7 +9777,14 @@ async function loadInboxReco() {
     btn.disabled = true;
     try {
       await api.reviewDecide([id], decision);
-      body.querySelector(`[data-rv-row="${id}"]`)?.remove();
+      // Retirer la ligne NE SUFFIT PAS : le compteur « N nouveau(x) mail(s)
+      // attendent une décision » vient du serveur et resterait à sa valeur
+      // d'avant — une liste à jour au-dessus d'un compteur périmé est un écran
+      // faux, et il ne se corrigeait qu'au rechargement manuel de la page.
+      // La décision en LOT rechargeait déjà (loadInbox), l'unitaire non :
+      // l'incohérence vivait à dix lignes d'écart dans ce fichier.
+      // Constaté et figé le 01/09/2026 — scénario decision-compteur-coherent.
+      loadInbox();
     } catch (err) {
       btn.disabled = false;
       alert(err.message);
