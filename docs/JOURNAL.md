@@ -5,6 +5,80 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/09 (62) — Le front sous contrôle : deux vrais bugs sortis du bois
+
+Suite directe du constat de la passe précédente : `web/js/app.js` concentre
+30 % des commits et n'avait aucun contrôle. Il en a un maintenant —
+`tsconfig.web.json`, TypeScript en lecture seule (`checkJs`, `noEmit`), le
+JavaScript reste du JavaScript vanilla servi tel quel. **`npm run typecheck`
+couvre désormais `src/` ET `web/`**, donc le contrat de l'usine aussi.
+
+**Ce que le contrôle a trouvé le premier jour.**
+
+1. **`api.health` était déclaré DEUX FOIS**, à 51 lignes d'écart : une sonde
+   publique `fetch('/health')` rendant un booléen, et une requête authentifiée
+   `/api/health` rendant l'état des boîtes. La seconde écrasait la première en
+   silence — la sonde publique était du code mort depuis sa naissance. Mesuré :
+   `/health` rend **200 sans session**, `/api/health` rend **401**. Or c'est la
+   boucle d'attente du redémarrage, après une mise à jour, qui l'appelait : elle
+   interrogeait donc une route authentifiée pendant que le serveur repart.
+   Renommée en `alive`, et c'est elle que l'attente appelle.
+
+2. **La garde du brouillon ne s'est jamais exécutée.** `#c-text` est un div
+   `contenteditable`, pas un champ : `draft.value` y vaut toujours `undefined`,
+   donc `.trim()` levait une TypeError. Conséquence, sur la modale de réponse
+   livrée le 27/08 : **Échap ne fermait rien**, et « Fermer sans envoyer ? Le
+   brouillon sera perdu. » n'a jamais pu s'afficher. Corrigé en `.textContent`.
+
+Les deux étaient invisibles à `node --check`, qui ne lit que la syntaxe.
+
+**Le plus instructif : `$` rendait `any`.** En annotant le sélecteur, le nombre
+d'écarts est passé de 53 à 394 — non parce que j'avais cassé quelque chose,
+mais parce que `document.querySelector(sel)` avec un `sel` non typé résout vers
+une surcharge générique et rend `any`. **Les ~340 usages du helper le plus
+appelé de l'interface n'étaient contrôlés par rien**, et le paraissaient.
+
+Ramené à zéro par une passe mécanique (123 `querySelectorAll` → `$$`, 59
+`e.target` → `elCible`, 7 `e.currentTarget` → `elCourant`) plus une trentaine
+d'annotations. Deux leçons payées comptant :
+- Un remplacement littéral de `e.target` a mangé le milieu de
+  `p.ruleTargetFolder`. **`node --check` l'a vu tout de suite** — tout
+  remplacement de masse veut une frontière d'identifiant.
+- Le même remplacement a rendu un `const cible = …` auto-référent. Syntaxe
+  valide, TypeError à l'exécution : c'est le **vérificateur** qui l'a vue, pas
+  `node --check`. Les deux filets attrapent des choses différentes.
+
+**Ce que je n'ai PAS élargi.** `querySelector` écrit en toutes lettres continue
+de rendre un `Element` strict. C'est cette sévérité qui a révélé le
+`draft.value` ; l'assouplir aurait effacé le seul vrai bug d'écran de la
+journée. Seuls les helpers (`$`, `$$`, `elCible`, `elCourant`) rendent la
+réunion tolérante `ElementEcran`.
+
+**Deux outils nouveaux, pour que la preuve existe.**
+- `npm run seed:dev` — deux boîtes synthétiques, douze mails. Sans données,
+  tous les écrans se rendaient « vide » : un scénario passait au vert sans
+  avoir exercé une seule ligne de liste.
+- `.factory/scenarios/tour-des-ecrans.json` — le premier scénario qui SE
+  CONNECTE. L'audit de socle s'arrête à la page publique ; c'est le seul
+  chemin par lequel les écrans quotidiens reçoivent un contrôle mécanique.
+  Lecture seule, rejouable.
+
+**Constat en chemin, non corrigé : `/api` est plafonné à 60 requêtes par minute
+et par IP** (`RATE_LIMIT_MAX`, valeur par défaut ET production), un écran en
+coûte environ six. Dix écrans enchaînés rendent des 429 — c'est ce qui a mis le
+tour au rouge la première fois. Un humain qui parcourt son assistant à un écran
+toutes les six secondes est dans la même zone. Le même limiteur couvre `/mcp` ;
+si les lots des tâches planifiées meurent près de 60, la piste mérite UNE
+mesure avant d'être écartée — ce n'est à ce stade qu'une hypothèse.
+
+**Preuves** : `npm run typecheck` (src + web) vert · faute témoin `corps.datset`
+injectée → `factory check onEdit` ROUGE avec la ligne et la suggestion, puis
+restaurée · `factory verify --all` : `tour-des-ecrans` VERT, `login-ecran-refus`
+VERT, `decision-compteur-coherent` toujours rouge (il lui faut une file de
+dépouillement que le seed ne remplit pas) · `factory audit /admin` inchangé,
+3 écarts sur 9. Non prouvé de bout en bout : l'Échap sur la modale de réponse,
+qui demande un vrai corps de mail donc un IMAP réel.
+
 ## 03/09 (61) — L'usine passée sur Boxmail : elle ne regardait pas le bon fichier
 
 Première fois que l'usine tourne **réellement** sur ce dépôt, et non sur l'idée

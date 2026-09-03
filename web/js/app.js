@@ -6,7 +6,56 @@ import { api, fmtSize, fmtDate, fmtDateTime, fmtNum, esc } from './api.js';
  * Pass 1 : login, tableau de bord, stats expéditeurs, sync avec progression.
  */
 
-const $ = (sel, root = document) => root.querySelector(sel);
+/**
+ * Ce que rendent les sélecteurs de cet écran : la réunion des éléments HTML
+ * qu'on y manipule vraiment. La plateforme rend un `Element`, qui ne porte ni
+ * `value`, ni `checked`, ni `dataset` — le vérificateur refusait alors des
+ * centaines d'appels parfaitement corrects. La réunion garde ce qui compte :
+ * une faute de frappe sur un nom de propriété reste une erreur.
+ *
+ * ATTENTION — cette tolérance ne s'applique QU'aux helpers ci-dessous. Un
+ * `querySelector` écrit en toutes lettres continue de rendre un `Element`
+ * strict, et c'est délibéré : c'est cette sévérité-là qui a révélé le
+ * `draft.value` sur un div contenteditable (03/09). Ne pas l'élargir.
+ * @typedef {HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement} ElementEcran
+ */
+
+/**
+ * Sélecteur unique. Pour une propriété propre à un seul type d'élément,
+ * annoter au point d'appel plutôt que d'élargir ce type.
+ * @param {string} sel
+ * @param {ParentNode} [root]
+ * @returns {ElementEcran}
+ */
+const $ = (sel, root = document) => /** @type {ElementEcran} */ (root.querySelector(sel));
+
+/**
+ * Pendant liste de `$`, à préférer à `querySelectorAll` dès qu'on lit une
+ * propriété HTML (`dataset`, `checked`) sur les éléments rendus. Une racine
+ * absente rend une liste vide plutôt que de lever : cela préserve le sens des
+ * anciens `racine?.querySelectorAll(...)` convertis ici.
+ * @param {string} sel
+ * @param {ParentNode} [root]
+ * @returns {ElementEcran[]}
+ */
+const $$ = (sel, root = document) => /** @type {ElementEcran[]} */ (root ? [...root.querySelectorAll(sel)] : []);
+
+/**
+ * L'élément qui a REÇU le clic. `Event.target` est un `EventTarget`, qui ne
+ * porte aucune propriété HTML ; l'écrire à la main coûtait une annotation par
+ * gestionnaire.
+ * @param {Event} e
+ * @returns {ElementEcran}
+ */
+const elCible = (e) => /** @type {ElementEcran} */ (e.target);
+
+/**
+ * L'élément SUR LEQUEL le gestionnaire est posé — différent de `elCible` dès
+ * qu'un enfant intercepte le clic.
+ * @param {Event} e
+ * @returns {ElementEcran}
+ */
+const elCourant = (e) => /** @type {ElementEcran} */ (e.currentTarget);
 let overviewCache = null;
 let serverVersion = null;
 
@@ -100,7 +149,7 @@ function installGlobalUx() {
   // sont réécrites à chaque rafraîchissement, un écouteur par ligne serait
   // reperdu à chaque fois.
   document.addEventListener('click', (e) => {
-    const a = e.target.closest?.('[data-op-open]');
+    const a = /** @type {HTMLElement} */ (elCible(e).closest?.('[data-op-open]'));
     if (!a) return;
     e.preventDefault();
     openReaderFor(
@@ -137,8 +186,11 @@ function installGlobalUx() {
     }
     const overlay = document.querySelector('.modal-overlay');
     if (!overlay) return;
+    // `#c-text` est un div contenteditable, pas un champ de saisie : `.value` y
+    // vaut toujours undefined, donc `.trim()` levait une TypeError et Échap ne
+    // fermait plus rien. La garde du brouillon ne s'est jamais exécutée.
     const draft = overlay.querySelector('#c-text');
-    if (draft && draft.value.trim() && !confirm('Fermer sans envoyer ? Le brouillon sera perdu.')) return;
+    if (draft && draft.textContent.trim() && !confirm('Fermer sans envoyer ? Le brouillon sera perdu.')) return;
     closeModal();
   });
 
@@ -171,7 +223,7 @@ function installTopLoader() {
   document.body.appendChild(loader);
   let showTimer = null;
   window.addEventListener('api-activity', (e) => {
-    if (e.detail.active) {
+    if (/** @type {CustomEvent} */ (e).detail.active) {
       if (!showTimer) showTimer = setTimeout(() => loader.classList.add('is-loading'), 120);
     } else {
       clearTimeout(showTimer);
@@ -363,7 +415,7 @@ async function pollJobs() {
         <span style="opacity:.7; font-size:11px">${esc((j.lastProgress ?? '').slice(0, 44))}</span></div>`,
       )
       .join('');
-    chip.querySelectorAll('.chip-line').forEach((el) => {
+    $$('.chip-line', chip).forEach((el) => {
       el.addEventListener('click', () => {
         const kind = el.dataset.kind;
         if (kind.startsWith('sync:') || kind.startsWith('cleanup:')) {
@@ -374,7 +426,7 @@ async function pollJobs() {
   }
 
   // Badge ⏳ sur les comptes occupés dans la sidebar.
-  document.querySelectorAll('#accounts-nav [data-account]').forEach((a) => {
+  $$('#accounts-nav [data-account]').forEach((a) => {
     const slug = a.dataset.account;
     const busy = running.some(
       (j) =>
@@ -472,7 +524,7 @@ function renderAccountsNav() {
     items.join('') ||
     '<div class="side-link disabled">Aucune boîte connectée</div>';
 
-  nav.querySelectorAll('[data-toggle]').forEach((btn) => {
+  $$('[data-toggle]', nav).forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -484,7 +536,7 @@ function renderAccountsNav() {
       loadSideFolders();
     });
   });
-  nav.querySelectorAll('[data-goto-folder]').forEach((el) => {
+  $$('[data-goto-folder]', nav).forEach((el) => {
     el.addEventListener('click', () => {
       const slug = el.dataset.gotoAccount;
       inboxState.account = slug;
@@ -559,14 +611,14 @@ const NAV_BY_ROUTE = {
 
 function highlightNav() {
   const hash = location.hash || '#/today';
-  document.querySelectorAll('.side-link').forEach((el) => el.classList.remove('active'));
+  $$('.side-link').forEach((el) => el.classList.remove('active'));
   if (hash.startsWith('#/account/')) {
     const slug = decodeURIComponent(hash.split('/')[2] ?? '');
     document.querySelector(`[data-account="${CSS.escape(slug)}"]`)?.classList.add('active');
     return;
   }
   if (hash.startsWith('#/inbox')) {
-    document.querySelectorAll('.side-folder.active').forEach((el) => el.classList.remove('active'));
+    $$('.side-folder.active').forEach((el) => el.classList.remove('active'));
     if (inboxState.account) {
       // Boîte précise : on allume le compte ET son dossier dans l'arborescence.
       document.querySelector(`[data-account="${CSS.escape(inboxState.account)}"]`)?.classList.add('active');
@@ -829,10 +881,10 @@ function bindTodayRows(root) {
     const item = todayReaderRefs[Number(idx)];
     if (item) openReaderFor(item, { onRemoved: () => renderToday() });
   };
-  root.querySelectorAll('.today-read').forEach((btn) => {
+  $$('.today-read', root).forEach((btn) => {
     btn.addEventListener('click', () => ouvrir(btn.dataset.idx));
   });
-  root.querySelectorAll('[data-today-open]').forEach((el) => {
+  $$('[data-today-open]', root).forEach((el) => {
     el.addEventListener('click', () => ouvrir(el.dataset.todayOpen));
   });
 }
@@ -861,12 +913,12 @@ async function renderToday() {
     <div id="today-body"><div class="empty"><span class="spinner"></span>Analyse de tes boîtes…</div></div>`;
   $('#refresh-btn').addEventListener('click', () => renderToday());
   $('#syncall-btn').addEventListener('click', async (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     try {
       await api.syncAll('recent');
       pollJobs();
     } catch (err) {
-      e.target.disabled = false;
+      elCible(e).disabled = false;
       alert(err.message);
     }
   });
@@ -1064,7 +1116,7 @@ async function renderToday() {
   // toujours, mais repliées — on ne les ouvre que si on veut fouiller.
   renderBriefing(t, $('#today-brief'));
   bindTodayRows($('#today-body'));
-  $('#today-body').querySelectorAll('.noise-btn').forEach((btn) => {
+  $$('.noise-btn', $('#today-body')).forEach((btn) => {
     btn.addEventListener('click', () => openNoiseModal(btn.dataset.bucket));
   });
   // Décision actée (confrontation ChatGPT 03/08) : le temps est une
@@ -1129,7 +1181,7 @@ async function todayFillWhatsNew() {
         ${it.link ? `<a class="btn btn-sm" href="${esc(it.link)}">Voir</a>` : ''}
         <button class="btn btn-sm" data-wn-ok="${esc(it.id)}">OK</button>
       </span></div>`;
-    el.querySelectorAll('[data-wn-ok]').forEach((b) => b.addEventListener('click', async () => {
+    $$('[data-wn-ok]', el).forEach((b) => b.addEventListener('click', async () => {
       b.disabled = true;
       try {
         await api.whatsNewSeen(b.dataset.wnOk);
@@ -1211,10 +1263,10 @@ function openRentilaCommandModal(item, bodyText = '') {
         </div>`;
     }
   };
-  overlay.querySelectorAll('[data-rc-kind]').forEach((x) => x.classList.toggle('active', x.dataset.rcKind === kind));
-  overlay.querySelectorAll('[data-rc-kind]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-rc-kind]', overlay).forEach((x) => x.classList.toggle('active', x.dataset.rcKind === kind));
+  $$('[data-rc-kind]', overlay).forEach((b) => b.addEventListener('click', () => {
     kind = b.dataset.rcKind;
-    overlay.querySelectorAll('[data-rc-kind]').forEach((x) => x.classList.toggle('active', x === b));
+    $$('[data-rc-kind]', overlay).forEach((x) => x.classList.toggle('active', x === b));
     renderFields();
   }));
   renderFields();
@@ -1340,7 +1392,7 @@ async function todayFillRentila() {
         ${o.tenantMessages.map((m, k) => `<span class="openable" data-rentila-msg="${k}">« ${esc(m.subject)} »</span>`).join(' · ')}
       </div>` : ''}
     </div></div>`;
-    el.querySelectorAll('[data-rentila-msg]').forEach((sp) => sp.addEventListener('click', () => {
+    $$('[data-rentila-msg]', el).forEach((sp) => sp.addEventListener('click', () => {
       const m = rentilaMsgRefs[Number(sp.dataset.rentilaMsg)];
       if (m) openReaderFor(m, {});
     }));
@@ -1361,7 +1413,7 @@ async function todayFillDeadlines() {
     todayDlRefs = [];
     const upcoming = d.items
       .filter((x) => (x.status === 'proposed' || x.status === 'confirmed') && x.inDays > 0 && x.inDays <= 30)
-      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 8);
     if (!upcoming.length) {
       el.innerHTML = '<div class="empty">Rien dans les 30 prochains jours.</div>';
@@ -1381,7 +1433,7 @@ async function todayFillDeadlines() {
           <td>${x.status === 'proposed' ? '<span class="badge orange">à confirmer</span>' : '<span class="badge blue">confirmée</span>'}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
-    el.querySelectorAll('[data-dl-open]').forEach((row) => {
+    $$('[data-dl-open]', el).forEach((row) => {
       row.addEventListener('click', () => {
         const item = todayDlRefs[Number(row.dataset.dlOpen)];
         if (item) openReaderFor(item, {});
@@ -1755,7 +1807,7 @@ function renderBriefing(t, el) {
         `${label}.`,
         undo ? async () => { await undo(resultat); renderToday(); } : null,
       );
-      const restants = el.querySelectorAll('.brief-card').length;
+      const restants = $$('.brief-card', el).length;
       const lead = el.querySelector('.brief-lead');
       if (lead) {
         lead.innerHTML = restants === 0
@@ -1768,7 +1820,7 @@ function renderBriefing(t, el) {
     }
   };
 
-  el.querySelectorAll('[data-do]').forEach((btn) => btn.addEventListener('click', () => {
+  $$('[data-do]', el).forEach((btn) => btn.addEventListener('click', () => {
     const c = cartes[Number(btn.dataset.do)];
     const a = briefAction(c);
     const node = btn.closest('.brief-card');
@@ -1783,13 +1835,13 @@ function renderBriefing(t, el) {
     }
     agir(c, a.annonce ?? a.label.replace(/^[^\s]+\s/, ''), a.run, node, a.undo);
   }));
-  el.querySelectorAll('[data-open]').forEach((s) => s.addEventListener('click', () => {
+  $$('[data-open]', el).forEach((s) => s.addEventListener('click', () => {
     openBriefReader(cartes[Number(s.dataset.open)]);
   }));
-  el.querySelectorAll('[data-more]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-more]', el).forEach((b) => b.addEventListener('click', () => {
     el.querySelector(`[data-menu="${b.dataset.more}"]`)?.classList.toggle('hidden');
   }));
-  el.querySelectorAll('[data-more-do]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-more-do]', el).forEach((b) => b.addEventListener('click', () => {
     const [i, k] = b.dataset.moreDo.split(':').map(Number);
     const c = cartes[i];
     const [label, fn] = briefMore(c)[k];
@@ -1958,7 +2010,7 @@ function todoEstimateLabel(t) {
     : `≈ ${fmtNum(mins)} min`;
 }
 
-function startTodoAssistant(t, { limit } = {}) {
+function startTodoAssistant(t, /** @type {{ limit?: number }} */ { limit } = {}) {
   // File de missions UNIFIÉE (Phase 3) : toutes catégories mélangées, triées
   // par le MÊME rang que l'accueil (`rangCandidat`) — une seule définition de
   // l'urgence pour tout le produit. Il y avait ici une COPIE du score additif,
@@ -2124,7 +2176,7 @@ function startTodoAssistant(t, { limit } = {}) {
       <span class="muted" style="font-size:12px; margin-right:auto">Toutes ces actions sont journalisées et réversibles.</span>
       ${buttons.map(([label, cls], k) => `<button class="btn btn-sm ${cls}" data-ta="${k}">${label}</button>`).join('')}
       <button class="btn btn-sm" id="ta-skip" title="Décision remise à plus tard — l'action reste dans la liste">⏭️ Passer</button>`;
-    $('#ta-foot').querySelectorAll('[data-ta]').forEach((btn) => {
+    $$('[data-ta]', $('#ta-foot')).forEach((btn) => {
       const [, , fn, direct] = buttons[Number(btn.dataset.ta)];
       btn.addEventListener('click', () => {
         if (direct) { direct(); return; } // ouvre le mail (répondre) : la file attend
@@ -2170,8 +2222,9 @@ function showUndoToast(message, onUndo, ms = 10000) {
   }, 1000);
   t.querySelector('#undo-btn')?.addEventListener('click', async (e) => {
     clearInterval(iv);
-    e.target.disabled = true;
-    e.target.textContent = '⏳ Restauration…';
+    const btnUndo = /** @type {HTMLButtonElement} */ (elCible(e));
+    btnUndo.disabled = true;
+    btnUndo.textContent = '⏳ Restauration…';
     try {
       await onUndo();
       t.remove();
@@ -2427,13 +2480,13 @@ function fillReviewLearning(el, learn, onChanged) {
           ${esc(p.fromName || p.fromEmail)}${esc(intentTxt(p))} — encore un geste identique et je te proposerai de l'appliquer en lot.</div>`;
       }).join('')}
     </div></div>`;
-  el.querySelectorAll('[data-lp-show]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-lp-show]', el).forEach((b) => b.addEventListener('click', () => {
     el.querySelector(`[data-lp-list="${b.dataset.lpShow}"]`)?.classList.toggle('hidden');
   }));
   // Un clic applique : la liste exacte est déjà sous les yeux (« Voir les N
   // mails ») et le bouton porte le geste. Pour la corbeille, le rattrapage
   // est le bandeau de 10 s — plus de question posée (retour 10/08).
-  el.querySelectorAll('[data-lp-apply]').forEach((b) => b.addEventListener('click', async () => {
+  $$('[data-lp-apply]', el).forEach((b) => b.addEventListener('click', async () => {
     const p = proposals[Number(b.dataset.lpApply)];
     b.disabled = true;
     try {
@@ -2448,7 +2501,7 @@ function fillReviewLearning(el, learn, onChanged) {
       onChanged?.();
     } catch (err) { b.disabled = false; alert(err.message); }
   }));
-  el.querySelectorAll('[data-lp-dismiss]').forEach((b) => b.addEventListener('click', async () => {
+  $$('[data-lp-dismiss]', el).forEach((b) => b.addEventListener('click', async () => {
     const p = proposals[Number(b.dataset.lpDismiss)];
     b.disabled = true;
     try {
@@ -2461,7 +2514,11 @@ function fillReviewLearning(el, learn, onChanged) {
 // ---------------------------------------------------------------- Moteur d'étapes
 // Une étape par groupe (mail important seul, ou lot homogène). Écrit dans
 // #rv-title / #rv-body / #rv-foot, quel que soit l'écran qui les héberge.
-function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
+function runReviewEngine(
+  initialQueue,
+  /** @type {{ stopEl?: HTMLElement, dockEl?: HTMLElement, onDone?: Function }} */
+  { stopEl, dockEl, onDone } = {},
+) {
   const queue = [...initialQueue];
   const counts = { seen: 0, later: 0, keep: 0, action: 0, trash: 0, skipped: 0, replied: 0, moved: 0, validated: 0 };
   let idx = 0;
@@ -2482,7 +2539,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       document.removeEventListener('keydown', keyHandler);
       return;
     }
-    const el = document.activeElement;
+    const el = /** @type {HTMLElement} */ (document.activeElement);
     const tag = el?.tagName?.toLowerCase();
     const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || el?.isContentEditable;
     if (editing) {
@@ -2527,7 +2584,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
   // bandeau de 10 s permet de la rappeler — le mail revient alors à sa place
   // ET reprend sa position dans le parcours, comme s'il n'avait rien subi.
   const decide = async (ids, decision, nMails) => {
-    $('#rv-foot').querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    $$('button', $('#rv-foot')).forEach((b) => { b.disabled = true; });
     const g0 = queue[idx];
     try {
       const r = await api.reviewDecide(ids, decision);
@@ -2692,7 +2749,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
     // traité, d'un seul geste (transaction serveur, une ligne de journal).
     const p = it.proposal;
     const doValidate = async () => {
-      $('#rv-foot')?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      $$('button', $('#rv-foot')).forEach((b) => { b.disabled = true; });
       const vb = $('#rv-validate');
       if (vb) vb.disabled = true;
       try {
@@ -2793,7 +2850,7 @@ function runReviewEngine(initialQueue, { stopEl, dockEl, onDone } = {}) {
       $('#rv-done')?.remove();
       $('#rv-p-done')?.focus();
     });
-    $('#rv-foot').querySelectorAll('[data-rv]').forEach((btn) => {
+    $$('[data-rv]', $('#rv-foot')).forEach((btn) => {
       btn.addEventListener('click', () => { B[Number(btn.dataset.rv)][2](); });
     });
     $('#rv-skip').addEventListener('click', () => { counts.skipped += 1; next(); });
@@ -2827,7 +2884,11 @@ function startNoiseTour(buckets) {
 
 // Modale « bruit » : liste exacte (cap 500) → corbeille par lots via les
 // endpoints bulk existants (journalisés), groupés par boîte + dossier.
-async function openNoiseModal(bucket, { tour } = {}) {
+async function openNoiseModal(
+  bucket,
+  /** @type {{ tour?: { index: number, total: number, onNext: Function } }} */
+  { tour } = {},
+) {
   closeModal();
   const [emoji, label] = NOISE_LABELS[bucket] ?? ['⚪', bucket];
   const overlay = document.createElement('div');
@@ -2843,7 +2904,7 @@ async function openNoiseModal(bucket, { tour } = {}) {
   </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.addEventListener('click', (e) => { if (elCible(e) === overlay) closeModal(); });
 
   let data;
   try {
@@ -2875,7 +2936,7 @@ async function openNoiseModal(bucket, { tour } = {}) {
     </div>`;
   // Lecture avant décision : le panneau s'ouvre au-dessus de la modale ;
   // un mail supprimé depuis le panneau recharge la liste.
-  $('#modal-body').querySelectorAll('[data-noise-open]').forEach((el) => {
+  $$('[data-noise-open]', $('#modal-body')).forEach((el) => {
     el.addEventListener('click', () => {
       const m = data.items[Number(el.dataset.noiseOpen)];
       if (m) openReaderFor(m, { onRemoved: () => openNoiseModal(bucket) });
@@ -2943,12 +3004,12 @@ async function renderDashboard() {
     renderDashboard();
   });
   $('#syncall-btn').addEventListener('click', async (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     try {
       await api.syncAll('recent');
       pollJobs();
     } catch (err) {
-      e.target.disabled = false;
+      elCible(e).disabled = false;
       alert(err.message);
     }
   });
@@ -3102,7 +3163,7 @@ async function renderDashboard() {
   // « Tout synchroniser » de l'en-tête (les Actions rapides qui doublonnaient
   // la navigation ont été retirées — revue UX).
   $('#never-sync-all')?.addEventListener('click', (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     $('#syncall-btn')?.click();
   });
 
@@ -3123,7 +3184,7 @@ async function renderDashboard() {
       ${lignes}. <a href="#/settings">Voir l'état du système</a>
       <button class="btn btn-sm" id="health-sync" style="margin-left:8px">Tout synchroniser</button></div>`;
     $('#health-sync')?.addEventListener('click', (e) => {
-      e.target.disabled = true;
+      elCible(e).disabled = true;
       $('#syncall-btn')?.click();
     });
   }).catch(() => { /* la santé ne doit jamais casser le tableau de bord */ });
@@ -3315,7 +3376,7 @@ function checkForUpdates(container) {
 // Relie tous les [data-open] d'un conteneur au panneau de lecture. `mapFn`
 // adapte l'élément (ex. relance → mail envoyé) avant ouverture.
 function bindOpenables(root, items, mapFn) {
-  root.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', root).forEach((el) => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
       const raw = items[Number(el.dataset.open)];
@@ -3499,7 +3560,7 @@ function renderBrief(b) {
     rep: { items: briefReplies },
     fu: { items: briefFollowups, map: (f) => ({ ...f, fromName: 'Toi (mail envoyé)', fromEmail: '', isSeen: true }) },
   };
-  body.querySelectorAll('[data-open-kind]').forEach((el) => {
+  $$('[data-open-kind]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const spec = kinds[el.dataset.openKind];
       const raw = spec?.items[Number(el.dataset.open)];
@@ -3566,7 +3627,7 @@ async function applyUpdateFlow(container, confirmed = false) {
       let patienceShown = false;
       const waitUp = setInterval(async () => {
         try {
-          if (await api.health()) {
+          if (await api.alive()) {
             clearInterval(waitUp);
             location.reload();
             return;
@@ -3599,7 +3660,7 @@ async function applyUpdateFlow(container, confirmed = false) {
 }
 
 function bindCleanupButtons(root) {
-  root.querySelectorAll('.cleanup-btn').forEach((btn) => {
+  $$('.cleanup-btn', root).forEach((btn) => {
     btn.addEventListener('click', () =>
       openCleanupModal(btn.dataset.account, btn.dataset.sender, btn.dataset.name),
     );
@@ -3926,7 +3987,7 @@ async function renderAccount(slug) {
     </div>
     <div id="account-cleanup"></div>`;
 
-  body.querySelectorAll('[data-folder]').forEach((el) => {
+  $$('[data-folder]', body).forEach((el) => {
     el.addEventListener('click', () => {
       inboxState.account = slug;
       localStorage.setItem('bm.inboxAccount', slug);
@@ -4044,7 +4105,7 @@ function renderStatsTable() {
       Coche des expéditeurs pour les exporter en contacts (.vcf/.csv). La catégorie sert à
       l'assistant (accueil, nettoyage) : corrige-la si elle est fausse — ton choix est conservé.</div>`;
 
-  el.querySelectorAll('th[data-sort]').forEach((thEl) => {
+  $$('th[data-sort]', el).forEach((thEl) => {
     thEl.addEventListener('click', () => {
       const key = thEl.dataset.sort;
       if (statsState.sortKey === key) statsState.sortDir *= -1;
@@ -4066,7 +4127,7 @@ function renderStatsTable() {
     }
     renderStatsTable();
   });
-  el.querySelectorAll('.stats-check').forEach((box) => {
+  $$('.stats-check', el).forEach((box) => {
     box.addEventListener('change', () => {
       if (box.checked) sel.set(box.dataset.address, box.dataset.name);
       else sel.delete(box.dataset.address);
@@ -4075,7 +4136,7 @@ function renderStatsTable() {
   });
 
   // Priorité par relation (A5) : ⭐ toujours important / 🔕 jamais urgent.
-  el.querySelectorAll('.stats-prio').forEach((select) => {
+  $$('.stats-prio', el).forEach((select) => {
     select.addEventListener('change', async () => {
       const slug = decodeURIComponent(location.hash.split('/')[2] ?? '');
       select.disabled = true;
@@ -4092,7 +4153,7 @@ function renderStatsTable() {
   });
 
   // Correction manuelle de la catégorie (A1) — « ↺ automatique » = recalcul.
-  el.querySelectorAll('.stats-cat').forEach((select) => {
+  $$('.stats-cat', el).forEach((select) => {
     select.addEventListener('change', async () => {
       const slug = decodeURIComponent(location.hash.split('/')[2] ?? '');
       select.disabled = true;
@@ -4249,7 +4310,7 @@ async function openCleanupModal(account, sender, senderName) {
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeModal();
+    if (elCible(e) === overlay) closeModal();
   });
 
   // Étape 1 : aperçu + liste complète classée (index local, ne touche à rien).
@@ -4338,7 +4399,7 @@ async function openCleanupModal(account, sender, senderName) {
   // <div>, et seule la case reste dans un <label>. Écouteur délégué parce que
   // la liste est écrite d'un bloc dans innerHTML.
   $('#mail-list').addEventListener('click', (e) => {
-    const el = e.target.closest('[data-clean-open]');
+    const el = /** @type {ElementEcran} */ (elCible(e).closest('[data-clean-open]'));
     if (!el) return;
     e.preventDefault();
     const m = list.messages[Number(el.dataset.cleanOpen)];
@@ -4350,7 +4411,7 @@ async function openCleanupModal(account, sender, senderName) {
     });
   });
 
-  const rowBoxes = [...overlay.querySelectorAll('.mail-row input[type=checkbox]')];
+  const rowBoxes = /** @type {HTMLInputElement[]} */ ([...$$('.mail-row input[type=checkbox]', overlay)]);
   const syncCategoryBox = (kind) => {
     const boxes = rowBoxes.filter((b) => b.dataset.kind === kind);
     const box =
@@ -4362,9 +4423,9 @@ async function openCleanupModal(account, sender, senderName) {
   const bindCategory = (boxId, kind) => {
     $(boxId).addEventListener('change', (e) => {
       for (const b of rowBoxes.filter((x) => x.dataset.kind === kind)) {
-        b.checked = e.target.checked;
+        b.checked = elCible(e).checked;
         const uid = Number(b.dataset.uid);
-        if (e.target.checked) selected.add(uid);
+        if (elCible(e).checked) selected.add(uid);
         else selected.delete(uid);
       }
       updateConfirm();
@@ -4463,7 +4524,7 @@ function openEnrollModal() {
     e.preventDefault();
     method = 'code';
     $('#enroll-form').querySelector('button').textContent = 'Obtenir le code';
-    e.target.remove();
+    elCible(e).remove();
   });
   $('#enroll-imap-method').addEventListener('click', (e) => {
     e.preventDefault();
@@ -4537,7 +4598,7 @@ function openEnrollModal() {
       e.preventDefault();
       const zone = $('#enroll-zone');
       const name = $('#imap-name').value.trim();
-      const btn = $('#imap-form').querySelector('button[type=submit]');
+      const btn = /** @type {ElementEcran} */ ($('#imap-form').querySelector('button[type=submit]'));
       btn.disabled = true;
       zone.innerHTML = `<div class="empty"><span class="spinner"></span>Test de la connexion
         (réception puis envoi)… jusqu'à 30 secondes.</div>`;
@@ -4679,7 +4740,7 @@ async function renderReplies() {
     </div></div>
     <div id="replies-body"><div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div></div>`;
   $('#replies-window').addEventListener('change', (e) => {
-    repliesState.sinceDays = Number(e.target.value);
+    repliesState.sinceDays = Number(elCible(e).value);
     loadReplies();
   });
   $('#replies-refresh').addEventListener('click', loadReplies);
@@ -4740,14 +4801,14 @@ function renderRepliesBody() {
       aux mails : simple marque-page local, journalisé, annulable depuis les onglets
       Reportés / Ignorés. Un fil ignoré réapparaît si un nouveau mail y arrive.</div>`;
 
-  body.querySelectorAll('.tab').forEach((btn) => {
+  $$('.tab', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       repliesState.tab = btn.dataset.tab;
       renderRepliesBody();
     });
   });
 
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const i = items[Number(el.dataset.open)];
       openReaderFor(i, {
@@ -4767,19 +4828,19 @@ function renderRepliesBody() {
       btn.disabled = false;
     }
   };
-  body.querySelectorAll('.reply-snooze').forEach((sel) => {
+  $$('.reply-snooze', body).forEach((sel) => {
     sel.addEventListener('change', () => {
       const days = Number(sel.value);
       if (!days) return;
       act(sel, () => api.replySnooze(sel.dataset.account, Number(sel.dataset.thread), days));
     });
   });
-  body.querySelectorAll('.reply-dismiss').forEach((btn) => {
+  $$('.reply-dismiss', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.replyDismiss(btn.dataset.account, Number(btn.dataset.thread))),
     );
   });
-  body.querySelectorAll('.reply-restore').forEach((btn) => {
+  $$('.reply-restore', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.replyRestore(btn.dataset.account, Number(btn.dataset.thread))),
     );
@@ -4855,7 +4916,7 @@ async function renderFollowups() {
     </div></div>
     <div id="followups-body"><div class="empty"><span class="spinner"></span>Analyse des fils de discussion…</div></div>`;
   $('#followups-window').addEventListener('change', (e) => {
-    followupsState.sinceDays = Number(e.target.value);
+    followupsState.sinceDays = Number(elCible(e).value);
     loadFollowups();
   });
   $('#followups-refresh').addEventListener('click', loadFollowups);
@@ -4916,14 +4977,14 @@ function renderFollowupsBody() {
       ne touchent pas aux mails : simple marque-page local, journalisé, annulable depuis les
       onglets Reportées / Traitées. Un fil marqué traité réapparaît si un nouveau message y arrive.</div>`;
 
-  body.querySelectorAll('.tab').forEach((btn) => {
+  $$('.tab', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       followupsState.tab = btn.dataset.tab;
       renderFollowupsBody();
     });
   });
 
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const i = items[Number(el.dataset.open)];
       const selfEmail = overviewCache?.enrolled.find((e) => e.account === i.account)?.username ?? '';
@@ -4945,7 +5006,7 @@ function renderFollowupsBody() {
     }
   };
   // ✍️ Relancer (A5) : brouillon pré-rempli — rien ne part sans ton clic.
-  body.querySelectorAll('.followup-draft').forEach((btn) => {
+  $$('.followup-draft', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       const i = items[Number(btn.dataset.draft)];
       if (!smtpEnabled) {
@@ -4964,19 +5025,19 @@ function renderFollowupsBody() {
       });
     });
   });
-  body.querySelectorAll('.followup-snooze').forEach((sel) => {
+  $$('.followup-snooze', body).forEach((sel) => {
     sel.addEventListener('change', () => {
       const days = Number(sel.value);
       if (!days) return;
       act(sel, () => api.followupSnooze(sel.dataset.account, Number(sel.dataset.thread), days));
     });
   });
-  body.querySelectorAll('.followup-dismiss').forEach((btn) => {
+  $$('.followup-dismiss', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.followupDismiss(btn.dataset.account, Number(btn.dataset.thread))),
     );
   });
-  body.querySelectorAll('.followup-restore').forEach((btn) => {
+  $$('.followup-restore', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.followupRestore(btn.dataset.account, Number(btn.dataset.thread))),
     );
@@ -5066,15 +5127,15 @@ async function renderImportant() {
     </div></div>
     <div id="important-body"><div class="empty"><span class="spinner"></span>Calcul des scores…</div></div>`;
   $('#important-minscore').addEventListener('change', (e) => {
-    importantState.minScore = Number(e.target.value);
+    importantState.minScore = Number(elCible(e).value);
     loadImportant();
   });
   $('#important-window').addEventListener('change', (e) => {
-    importantState.sinceDays = Number(e.target.value);
+    importantState.sinceDays = Number(elCible(e).value);
     loadImportant();
   });
   $('#important-read').addEventListener('change', (e) => {
-    importantState.includeRead = e.target.value === '1';
+    importantState.includeRead = elCible(e).value === '1';
     loadImportant();
   });
   $('#important-refresh').addEventListener('click', loadImportant);
@@ -5147,13 +5208,13 @@ function renderImportantBody() {
       📖 Clique un sujet pour lire le mail ici (et agir : corbeille, déplacer, lu/non lu).
       « Non traités » = importants restés sans réponse ni tâche : c'est là que se cachent les oublis.</div>`;
 
-  body.querySelectorAll('.important-more').forEach((btn) => {
+  $$('.important-more', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       importantState.expanded[btn.dataset.group] = true;
       renderImportantBody();
     });
   });
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const i = d.items[Number(el.dataset.open)];
       openReaderFor(i, {
@@ -5379,7 +5440,7 @@ function renderDeadlinesBody() {
       📖 Clique le sujet pour lire le mail d'origine et vérifier la date avant de confirmer.
       🛟 Aucun événement calendrier n'est créé automatiquement. Tout est journalisé et réversible.</div>`;
 
-  body.querySelectorAll('.tab').forEach((btn) => {
+  $$('.tab', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       deadlinesState.tab = btn.dataset.tab;
       renderDeadlinesBody();
@@ -5391,7 +5452,7 @@ function renderDeadlinesBody() {
     renderDeadlinesBody();
   });
 
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const x = items[Number(el.dataset.open)];
       openReaderFor(
@@ -5411,7 +5472,7 @@ function renderDeadlinesBody() {
       btn.disabled = false;
     }
   };
-  body.querySelectorAll('[data-dl-action]').forEach((btn) => {
+  $$('[data-dl-action]', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, async () => {
         await api.deadlineAction(btn.dataset.account, Number(btn.dataset.id), btn.dataset.dlAction);
@@ -5604,21 +5665,21 @@ function renderRulesBody() {
     }
   };
 
-  body.querySelectorAll('[data-rule-validate]').forEach((btn) => {
+  $$('[data-rule-validate]', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.ruleUpdate(btn.dataset.account, Number(btn.dataset.id), { status: 'active' })));
   });
-  body.querySelectorAll('[data-rule-pause]').forEach((btn) => {
+  $$('[data-rule-pause]', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.ruleUpdate(btn.dataset.account, Number(btn.dataset.id), { status: 'paused', autoApply: false })));
   });
-  body.querySelectorAll('[data-rule-delete]').forEach((btn) => {
+  $$('[data-rule-delete]', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!confirm('Supprimer cette règle ? (Les mails déjà rangés ne bougent pas.)')) return;
       act(btn, () => api.ruleDelete(btn.dataset.account, Number(btn.dataset.id)));
     });
   });
-  body.querySelectorAll('[data-rule-auto]').forEach((box) => {
+  $$('[data-rule-auto]', body).forEach((box) => {
     box.addEventListener('change', () =>
       act(box, async () => {
         await api.ruleUpdate(box.dataset.account, Number(box.dataset.id), { autoApply: box.checked });
@@ -5627,7 +5688,7 @@ function renderRulesBody() {
           : '<div class="notice">Règle repassée en manuel.</div>');
       }));
   });
-  body.querySelectorAll('[data-rule-apply]').forEach((btn) => {
+  $$('[data-rule-apply]', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!confirm(`Déplacer ${btn.dataset.count} mail(s) vers « ${btn.dataset.folder} » ?\n(Déplacement uniquement — récupérable en re-déplaçant ; tout est journalisé.)`)) return;
       act(btn, async () => {
@@ -5636,7 +5697,7 @@ function renderRulesBody() {
       });
     });
   });
-  body.querySelectorAll('[data-rule-preview]').forEach((btn) => {
+  $$('[data-rule-preview]', body).forEach((btn) => {
     btn.addEventListener('click', () => openRulePreview(btn.dataset.account, Number(btn.dataset.id)));
   });
 }
@@ -5656,7 +5717,7 @@ async function openRulePreview(slug, id) {
   </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.addEventListener('click', (e) => { if (elCible(e) === overlay) closeModal(); });
   try {
     const p = await api.rulePreview(slug, id);
     $('#modal-body').innerHTML = `
@@ -5675,7 +5736,7 @@ async function openRulePreview(slug, id) {
       </div>`}`;
     // Écouteur délégué : le corps de la modale est réécrit d'un bloc ci-dessus.
     $('#modal-body').addEventListener('click', (e) => {
-      const el = e.target.closest('[data-rule-open]');
+      const el = /** @type {ElementEcran} */ (elCible(e).closest('[data-rule-open]'));
       if (!el) return;
       const m = p.items[Number(el.dataset.ruleOpen)];
       if (m) openReaderFor(m);
@@ -5685,14 +5746,14 @@ async function openRulePreview(slug, id) {
       ${p.total > 0 ? `<button class="btn btn-primary" id="rule-preview-apply">▶️ Déplacer ${fmtNum(p.total)} mail(s) vers 📂 ${esc(p.rule.targetFolder)}</button>` : ''}`;
     $('#rule-preview-close').addEventListener('click', closeModal);
     $('#rule-preview-apply')?.addEventListener('click', async (e) => {
-      e.target.disabled = true;
+      elCible(e).disabled = true;
       try {
         const r = await api.ruleApply(slug, id);
         closeModal();
         $('#rules-notice').innerHTML = `<div class="notice">✅ ${fmtNum(r.moved)} mail(s) rangés dans « ${esc(r.targetFolder)} ». La règle est validée.</div>`;
         await loadRules();
       } catch (err) {
-        e.target.disabled = false;
+        elCible(e).disabled = false;
         alert(err.message);
       }
     });
@@ -5747,7 +5808,7 @@ function openRuleModal() {
   $('#nr-value').focus();
 
   $('#nr-create').addEventListener('click', async (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     try {
       await api.ruleCreate($('#nr-account').value, {
         matchType: $('#nr-type').value,
@@ -5758,7 +5819,7 @@ function openRuleModal() {
       $('#rules-notice').innerHTML = '<div class="notice">✅ Règle créée (active). Utilise 👁️ Aperçu puis ▶️ Ranger pour l\'appliquer.</div>';
       await loadRules();
     } catch (err) {
-      e.target.disabled = false;
+      elCible(e).disabled = false;
       $('#nr-error').innerHTML = `<div class="notice warn" style="margin-top:8px">⚠️ ${esc(err.message)}</div>`;
     }
   });
@@ -5807,7 +5868,7 @@ async function renderUnsubscribe() {
     <div id="unsub-body"><div class="empty"><span class="spinner"></span>Chargement…</div></div>`;
 
   $('#unsub-refresh').addEventListener('click', async (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     try {
       await api.unsubscribeRefresh();
       pollJobs();
@@ -5815,7 +5876,7 @@ async function renderUnsubscribe() {
         suis l'avancement via la pastille d'activité, puis reviens sur cet écran.</div>`;
     } catch (err) {
       alert(err.message);
-      e.target.disabled = false;
+      elCible(e).disabled = false;
     }
   });
   $('#unsub-done').addEventListener('change', loadUnsubscribe);
@@ -5872,7 +5933,7 @@ async function loadUnsubscribe() {
         <br>Se désinscrire n'efface aucun mail : passe ensuite par <a href="#/cleanup">🧹 Nettoyage rapide</a> pour le stock déjà reçu.</div>
     </div></div>`;
 
-  el.querySelectorAll('[data-unsub]').forEach((btn) => {
+  $$('[data-unsub]', el).forEach((btn) => {
     btn.addEventListener('click', async () => {
       const s = data.senders[Number(btn.dataset.unsub)];
       if (!confirm(`Se désinscrire de « ${s.displayName || s.email} » ?\n\n${UNSUB_METHOD[s.method]?.[2] ?? ''}`)) return;
@@ -5982,7 +6043,7 @@ async function loadRetention() {
         isolé ne bloque plus le nettoyage.</div>
     </div></div>`;
 
-  el.querySelectorAll('.ret-enable').forEach((box) => {
+  $$('.ret-enable', el).forEach((box) => {
     box.addEventListener('change', async () => {
       try {
         await api.retentionUpdate(Number(box.dataset.id), { enabled: box.checked });
@@ -5992,7 +6053,7 @@ async function loadRetention() {
       loadRetention();
     });
   });
-  el.querySelectorAll('.ret-auto').forEach((box) => {
+  $$('.ret-auto', el).forEach((box) => {
     box.addEventListener('change', async () => {
       if (box.checked && !confirm(
         'Passer cette stratégie en AUTOMATIQUE ?\n\nElle s\'appliquera seule après chaque synchronisation (corbeille, journalisée). Tu peux revenir en arrière à tout moment.',
@@ -6008,10 +6069,10 @@ async function loadRetention() {
       loadRetention();
     });
   });
-  el.querySelectorAll('.ret-preview').forEach((btn) => {
+  $$('.ret-preview', el).forEach((btn) => {
     btn.addEventListener('click', () => openRetentionPreview(Number(btn.dataset.id)));
   });
-  el.querySelectorAll('.ret-apply').forEach((btn) => {
+  $$('.ret-apply', el).forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm(
         `Lancer « ${btn.dataset.label} » ?\n\n≈ ${btn.dataset.count} mails partiront à la corbeille (récupérables ~30 jours). L'opération tourne en arrière-plan et est journalisée.`,
@@ -6067,7 +6128,7 @@ function ouvrirModale(titre, corpsHtml, piedHtml = '', classe = '') {
   </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.addEventListener('click', (e) => { if (elCible(e) === overlay) closeModal(); });
   return overlay;
 }
 
@@ -6167,7 +6228,7 @@ function carteAffaire(a) {
 }
 
 function brancherAffaires() {
-  document.querySelectorAll('#aff-body [data-act]').forEach((b) => {
+  $$('#aff-body [data-act]').forEach((b) => {
     b.addEventListener('click', async () => {
       const id = Number(b.dataset.id);
       const a = _affaires.find((x) => x.id === id);
@@ -6351,7 +6412,7 @@ function modaleBrouillon(br, a, opts = {}) {
   $('#br-close').addEventListener('click', closeModal);
   $('#br-dest-plus')?.addEventListener('click', (e) => {
     $('#br-dest-reste')?.classList.remove('hidden');
-    e.currentTarget.remove();
+    elCourant(e).remove();
   });
 
   // LE FIL, À CÔTÉ DU BROUILLON. Même composant que « Voir l'histoire » : les
@@ -6370,11 +6431,11 @@ function modaleBrouillon(br, a, opts = {}) {
   // le destinataire ». Le champ arrivait vide dès que l'attente n'était
   // rattachée à aucun fil. On ne devine pas une adresse — on présente les
   // candidats, et c'est lui qui tranche en un clic.
-  document.querySelectorAll('.br-dest').forEach((b) => {
+  $$('.br-dest').forEach((b) => {
     b.addEventListener('click', () => {
-      const champ = $('#br-to');
+      const champ = /** @type {HTMLInputElement} */ ($('#br-to'));
       champ.value = b.dataset.email;
-      document.querySelectorAll('.br-dest').forEach((x) => x.classList.remove('actif'));
+      $$('.br-dest').forEach((x) => x.classList.remove('actif'));
       b.classList.add('actif');
     });
   });
@@ -6554,9 +6615,9 @@ async function chargerSuivi() {
          au fil des jours plutôt que de tout afficher d'un coup.</div>`
       : ''}`;
 
-  body.querySelectorAll('[data-att]').forEach((carte) => {
+  $$('[data-att]', body).forEach((carte) => {
     const id = Number(carte.dataset.att);
-    carte.querySelectorAll('[data-act]').forEach((b) =>
+    $$('[data-act]', carte).forEach((b) =>
       b.addEventListener('click', () => gesteAttente(id, b.dataset.act, carte)),
     );
   });
@@ -6776,7 +6837,7 @@ async function renderArgent() {
              <span class="arg-chip-n">${fmtNum(t.nbPieces)}</span></button>`,
         )
         .join('');
-    z.querySelectorAll('[data-tiers]').forEach((b) =>
+    $$('[data-tiers]', z).forEach((b) =>
       b.addEventListener('click', () => {
         $('#arg-q').value = b.dataset.tiers;
         chercherArgent(b.dataset.tiers);
@@ -6849,7 +6910,7 @@ async function chercherArgent(q) {
       </div>
     </div>`;
 
-  body.querySelectorAll('.arg-piece').forEach((b) =>
+  $$('.arg-piece', body).forEach((b) =>
     b.addEventListener('click', () => {
       const p = d.pieces[Number(b.dataset.i)];
       openReaderFor(
@@ -6881,7 +6942,7 @@ async function renderDossiers() {
     <div id="dos-body"><div class="empty"><span class="spinner"></span>Chargement des dossiers…</div></div>`;
   $('#dos-refresh').addEventListener('click', loadDossiers);
   $('#dos-spread').addEventListener('click', async (e) => {
-    e.target.disabled = true;
+    elCible(e).disabled = true;
     try {
       await api.dossiersPropager();
       pollJobs();
@@ -6890,7 +6951,7 @@ async function renderDossiers() {
         actualise cet écran.</div>`;
     } catch (err) {
       alert(err.message);
-      e.target.disabled = false;
+      elCible(e).disabled = false;
     }
   });
   await loadDossiers();
@@ -6963,7 +7024,7 @@ async function loadDossiers() {
 
   $('#dos-fusion-annuler')?.addEventListener('click', () => { _fusionSource = null; loadDossiers(); });
 
-  body.querySelectorAll('.dos-ren').forEach((b) => b.addEventListener('click', async () => {
+  $$('.dos-ren', body).forEach((b) => b.addEventListener('click', async () => {
     const x = _dossiers[Number(b.dataset.i)];
     const nom = prompt('Nouveau nom du dossier :', x.label);
     if (nom === null || nom.trim() === x.label) return;
@@ -6973,12 +7034,12 @@ async function loadDossiers() {
     } catch (err) { alert(err.message); }
   }));
 
-  body.querySelectorAll('.dos-fus').forEach((b) => b.addEventListener('click', () => {
+  $$('.dos-fus', body).forEach((b) => b.addEventListener('click', () => {
     _fusionSource = _dossiers[Number(b.dataset.i)];
     loadDossiers();
   }));
 
-  body.querySelectorAll('.dos-cible').forEach((b) => b.addEventListener('click', async () => {
+  $$('.dos-cible', body).forEach((b) => b.addEventListener('click', async () => {
     const cible = _dossiers[Number(b.dataset.i)];
     if (!_fusionSource) return;
     if (!confirm(`Fusionner « ${_fusionSource.label} » dans « ${cible.label} » ?\n\n`
@@ -6991,7 +7052,7 @@ async function loadDossiers() {
     } catch (err) { alert(err.message); }
   }));
 
-  body.querySelectorAll('.dos-hide').forEach((b) => b.addEventListener('click', async () => {
+  $$('.dos-hide', body).forEach((b) => b.addEventListener('click', async () => {
     const x = _dossiers[Number(b.dataset.i)];
     if (!confirm(`Masquer « ${x.label} » ?\n\nIl disparaît de cette liste. Aucun mail n'est touché.`)) return;
     try {
@@ -7083,29 +7144,29 @@ async function loadSuggestions() {
       btn.disabled = false;
     }
   };
-  body.querySelectorAll('.sugg-rule-ok').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-rule-ok', body).forEach((btn) => btn.addEventListener('click', () => {
     const r = s.rules[Number(btn.dataset.i)];
     act(btn, () => api.ruleUpdate(r.account, r.rule.id, { status: 'active' }));
   }));
-  body.querySelectorAll('.sugg-rule-no').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-rule-no', body).forEach((btn) => btn.addEventListener('click', () => {
     const r = s.rules[Number(btn.dataset.i)];
     if (!confirm('Refuser cette règle ? Elle sera supprimée (elle pourra être re-suggérée plus tard si l\'habitude continue).')) return;
     act(btn, () => api.ruleDelete(r.account, r.rule.id));
   }));
-  body.querySelectorAll('.sugg-ret-ok').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-ret-ok', body).forEach((btn) => btn.addEventListener('click', () => {
     const r = s.retentionAuto[Number(btn.dataset.i)];
     if (!confirm(`Passer « ${r.label} » en AUTOMATIQUE après chaque synchronisation ?\n\nCorbeille uniquement, journalisé, désactivable dans 🧹 Nettoyage rapide.`)) return;
     act(btn, () => api.retentionUpdate(r.policyId, { autoApply: true }));
   }));
-  body.querySelectorAll('.sugg-ret-no').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-ret-no', body).forEach((btn) => btn.addEventListener('click', () => {
     const r = s.retentionAuto[Number(btn.dataset.i)];
     act(btn, () => api.suggestionDismiss('retention_auto', `retention:${r.key}`));
   }));
-  body.querySelectorAll('.sugg-prio-ok').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-prio-ok', body).forEach((btn) => btn.addEventListener('click', () => {
     const p = s.priorities[Number(btn.dataset.i)];
     act(btn, () => api.senderSetPriority(p.account, p.email, p.priority));
   }));
-  body.querySelectorAll('.sugg-prio-no').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.sugg-prio-no', body).forEach((btn) => btn.addEventListener('click', () => {
     const p = s.priorities[Number(btn.dataset.i)];
     act(btn, () => api.suggestionDismiss('priority', `priority:${p.account}|${p.email}|${p.priority}`));
   }));
@@ -7305,7 +7366,7 @@ function renderVerifyGuided() {
 
     const zone = $('#vg-actions');
     const guard = (fn) => async () => {
-      zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      $$('button', zone).forEach((b) => { b.disabled = true; });
       try { await fn(); } catch (err) { alert(err.message); actions(); }
     };
     const actions = () => {
@@ -7322,7 +7383,7 @@ function renderVerifyGuided() {
           ${reasons.map((r, ri) => `<button class="btn btn-sm vg-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
           <button class="btn btn-sm" id="vg-cancel" title="Annuler">↩</button>`;
         $('#vg-cancel').addEventListener('click', actions);
-        zone.querySelectorAll('.vg-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
+        $$('.vg-reason', zone).forEach((btn) => btn.addEventListener('click', guard(async () => {
           const r = reasons[Number(btn.dataset.ri)];
           const doAction = r.action && (!r.confirm || confirm(r.confirm)) &&
             !(r.action === 'dismissReply' && !it.threadId);
@@ -7364,7 +7425,7 @@ function renderVerifyList() {
     </div></div>`).join('');
 
   verifySample.engines.forEach((e, ei) => e.items.forEach((it, i) => renderVerifyZone(ei, i)));
-  body.querySelectorAll('.verify-read').forEach((btn) => btn.addEventListener('click', () => {
+  $$('.verify-read', body).forEach((btn) => btn.addEventListener('click', () => {
     const it = verifySample.engines[Number(btn.dataset.e)]?.items[Number(btn.dataset.i)];
     if (it) openReaderFor(it, {});
   }));
@@ -7397,7 +7458,7 @@ function renderVerifyZone(ei, i) {
     renderVerifyZone(ei, i);
   };
   const guard = (fn) => async () => {
-    zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    $$('button', zone).forEach((b) => { b.disabled = true; });
     try {
       await fn();
     } catch (err) {
@@ -7413,7 +7474,7 @@ function renderVerifyZone(ei, i) {
       ${reasons.map((r, ri) => `<button class="btn btn-sm v-reason" data-ri="${ri}">${esc(r.label)}</button>`).join('')}
       <button class="btn btn-sm v-cancel" title="Annuler">↩</button>`;
     zone.querySelector('.v-cancel').addEventListener('click', () => renderVerifyZone(ei, i));
-    zone.querySelectorAll('.v-reason').forEach((btn) => btn.addEventListener('click', guard(async () => {
+    $$('.v-reason', zone).forEach((btn) => btn.addEventListener('click', guard(async () => {
       const r = reasons[Number(btn.dataset.ri)];
       // La correction réelle (catégorie / priorité / retirer de la liste)
       // n'est appliquée que si l'utilisateur confirme — le verdict, lui,
@@ -7555,11 +7616,11 @@ async function loadBigClean() {
       </div>
     </div>`;
 
-  body.querySelectorAll('.gm-preview').forEach((btn) => {
+  $$('.gm-preview', body).forEach((btn) => {
     btn.addEventListener('click', () => openRetentionPreview(Number(btn.dataset.id)));
   });
   $('#gm-launch')?.addEventListener('click', async () => {
-    const checked = [...body.querySelectorAll('.gm-check:checked')];
+    const checked = [...$$('.gm-check:checked', body)];
     if (checked.length === 0) {
       alert('Coche au moins une stratégie.');
       return;
@@ -7595,7 +7656,7 @@ async function openRetentionPreview(id) {
   </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('.modal-close').addEventListener('click', closeModal);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.addEventListener('click', (e) => { if (elCible(e) === overlay) closeModal(); });
   let data;
   try {
     data = await api.retentionPreview(id);
@@ -7631,7 +7692,7 @@ async function openRetentionPreview(id) {
   // Écouteur délégué : le corps de la modale est réécrit d'un bloc ci-dessus,
   // des écouteurs posés ligne par ligne seraient perdus.
   $('#modal-body').addEventListener('click', (e) => {
-    const a = e.target.closest('[data-prev-open]');
+    const a = /** @type {ElementEcran} */ (elCible(e).closest('[data-prev-open]'));
     if (!a) return;
     e.preventDefault();
     openReaderFor(data.items[Number(a.dataset.prevOpen)]);
@@ -7797,13 +7858,13 @@ async function chargerDoublons() {
         </div>
       </div>`).join('')}`;
 
-  el.querySelectorAll('.dup-open').forEach((b) => {
+  $$('.dup-open', el).forEach((b) => {
     b.addEventListener('click', () => {
       const occ = el.querySelector(`[data-occ="${b.dataset.i}"]`);
       occ.classList.toggle('hidden');
     });
   });
-  el.querySelectorAll('.dup-occ .result-row').forEach((row) => {
+  $$('.dup-occ .result-row', el).forEach((row) => {
     row.addEventListener('click', () => {
       const o = d.groups[Number(row.dataset.g)].occurrences[Number(row.dataset.o)];
       // Le lecteur attend la forme d'un résultat de recherche.
@@ -7866,7 +7927,7 @@ function renderAttachResults() {
         </div>`).join('')}
     </div></div>`;
 
-  el.querySelectorAll('.result-row').forEach((row) => {
+  $$('.result-row', el).forEach((row) => {
     row.addEventListener('click', () => {
       const item = attachState.data.items[Number(row.dataset.idx)];
       if (item) openReader(item, row, { onSeen: () => renderAttachResults(), onRemoved: () => runAttachSearch() });
@@ -8054,13 +8115,13 @@ async function renderPiecesCompta() {
     <div id="pc-table">${rendre(items)}</div>`;
 
   const brancher = () => {
-    $('#pc-body').querySelectorAll('.pc-why').forEach((b) => {
+    $$('.pc-why', $('#pc-body')).forEach((b) => {
       b.addEventListener('click', () => {
         const d = $('#pc-body').querySelector(`[data-d="${b.dataset.n}"]`);
         if (d) d.classList.toggle('hidden');
       });
     });
-    $('#pc-body').querySelectorAll('.pc-open').forEach((b) => {
+    $$('.pc-open', $('#pc-body')).forEach((b) => {
       b.addEventListener('click', () => openReaderFor({
         account: b.dataset.account, folder: b.dataset.folder, uid: Number(b.dataset.uid),
       }));
@@ -8084,17 +8145,17 @@ async function renderPiecesCompta() {
       : '<div class="empty">Aucune pièce pour ce filtre.</div>';
     brancher();
   };
-  $('#pc-body').querySelectorAll('[data-filtre]').forEach((b) => {
+  $$('[data-filtre]', $('#pc-body')).forEach((b) => {
     b.addEventListener('click', () => {
-      $('#pc-body').querySelectorAll('[data-filtre]').forEach((x) => x.classList.remove('actif'));
+      $$('[data-filtre]', $('#pc-body')).forEach((x) => x.classList.remove('actif'));
       b.classList.add('actif');
       nature = b.dataset.filtre;
       appliquer();
     });
   });
-  $('#pc-body').querySelectorAll('[data-boite]').forEach((b) => {
+  $$('[data-boite]', $('#pc-body')).forEach((b) => {
     b.addEventListener('click', () => {
-      $('#pc-body').querySelectorAll('[data-boite]').forEach((x) => x.classList.remove('actif'));
+      $$('[data-boite]', $('#pc-body')).forEach((x) => x.classList.remove('actif'));
       b.classList.add('actif');
       boite = b.dataset.boite;
       appliquer();
@@ -8655,7 +8716,7 @@ function renderSettingsBody() {
             <span><button class="btn btn-sm" data-backup-dl="${esc(b.file)}"
               title="Télécharger cette sauvegarde sur ton PC">⬇️ Télécharger</button></span></div>`).join('')
         : '<div class="muted">Aucune sauvegarde pour l’instant — la première sera faite automatiquement.</div>';
-      el.querySelectorAll('[data-backup-dl]').forEach((btn) => {
+      $$('[data-backup-dl]', el).forEach((btn) => {
         btn.addEventListener('click', () => {
           const file = btn.dataset.backupDl;
           downloadWithFeedback(btn, api.backupDownloadUrl(file), file, '⬇️ Télécharger');
@@ -8788,8 +8849,8 @@ function renderSettingsBody() {
       notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
     }
   };
-  $('#snip-recent')?.addEventListener('click', (e) => startSnippets('recent', e.currentTarget));
-  $('#snip-all')?.addEventListener('click', (e) => startSnippets('all', e.currentTarget));
+  $('#snip-recent')?.addEventListener('click', (e) => startSnippets('recent', elCourant(e)));
+  $('#snip-all')?.addEventListener('click', (e) => startSnippets('all', elCourant(e)));
 
   // OCR des scans (13/08) : état de la chaîne tesseract/poppler + accélérateur.
   // Le worker de fond avance tout seul ; ce bouton sert quand il veut le stock
@@ -8823,7 +8884,7 @@ function renderSettingsBody() {
   };
   loadOcr();
   $('#ocr-start')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
+    const btn = elCourant(e);
     btn.disabled = true;
     try {
       await api.ocrBackfill();
@@ -8863,7 +8924,7 @@ function renderSettingsBody() {
     }
   });
 
-  body.querySelectorAll('.set-color').forEach((input) => {
+  $$('.set-color', body).forEach((input) => {
     input.addEventListener('change', async () => {
       try {
         await api.accountSetColor(input.dataset.account, input.value);
@@ -8875,7 +8936,7 @@ function renderSettingsBody() {
       }
     });
   });
-  body.querySelectorAll('.set-color-reset').forEach((btn) => {
+  $$('.set-color-reset', body).forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
         await api.accountSetColor(btn.dataset.account, null);
@@ -8904,16 +8965,16 @@ function renderSettingsBody() {
       notice(`<div class="notice warn">⚠️ ${esc(err.message)}</div>`);
     }
   };
-  body.querySelectorAll('.set-order-up').forEach((btn) => {
+  $$('.set-order-up', body).forEach((btn) => {
     btn.addEventListener('click', () => reorder(Number(btn.dataset.index), -1));
   });
-  body.querySelectorAll('.set-order-down').forEach((btn) => {
+  $$('.set-order-down', body).forEach((btn) => {
     btn.addEventListener('click', () => reorder(Number(btn.dataset.index), +1));
   });
 
   // Relecture du quota à la demande : montre le résultat OU la raison de
   // l'échec (avant, « quota inconnu » restait muet).
-  body.querySelectorAll('.set-quota').forEach((btn) => {
+  $$('.set-quota', body).forEach((btn) => {
     btn.addEventListener('click', async () => {
       const slug = btn.dataset.account;
       btn.disabled = true;
@@ -8933,7 +8994,7 @@ function renderSettingsBody() {
     });
   });
 
-  body.querySelectorAll('.set-rename').forEach((btn) => {
+  $$('.set-rename', body).forEach((btn) => {
     btn.addEventListener('click', async () => {
       const slug = btn.dataset.account;
       const to = prompt(
@@ -8958,7 +9019,7 @@ function renderSettingsBody() {
     });
   });
 
-  body.querySelectorAll('.set-remove').forEach((btn) => {
+  $$('.set-remove', body).forEach((btn) => {
     btn.addEventListener('click', async () => {
       const slug = btn.dataset.account;
       if (!confirm(
@@ -9060,7 +9121,7 @@ function calViewTabs() {
 }
 
 function bindCalViewTabs(root) {
-  root.querySelectorAll('[data-cal-view]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-cal-view]', root).forEach((b) => b.addEventListener('click', () => {
     calState.view = b.dataset.calView;
     try { localStorage.setItem('cal-view', calState.view); } catch { /* privé */ }
     renderCalendarBody();
@@ -9136,7 +9197,7 @@ function renderCalendarUpcoming(body) {
       depuis <a href="#/deadlines">📅 Dates à confirmer</a>.</div>`;
 
   bindCalViewTabs(body);
-  body.querySelectorAll('[data-cal-up]').forEach((el) => {
+  $$('[data-cal-up]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const x = flat[Number(el.dataset.calUp)]?.item;
       if (!x) return;
@@ -9231,7 +9292,7 @@ function renderCalendarBody() {
     calState.selected = todayKey;
     renderCalendarBody();
   });
-  body.querySelectorAll('.cal-cell').forEach((cell) => {
+  $$('.cal-cell', body).forEach((cell) => {
     cell.addEventListener('click', () => {
       calState.selected = cell.dataset.day;
       renderCalendarBody();
@@ -9287,7 +9348,7 @@ function renderCalendarSide(events) {
     </div>
   </div>`;
 
-  side.querySelectorAll('[data-cal-open]').forEach((el) => {
+  $$('[data-cal-open]', side).forEach((el) => {
     el.addEventListener('click', () => {
       const x = deadlines[Number(el.dataset.calOpen)]?.item;
       if (!x) return;
@@ -9361,7 +9422,7 @@ function renderTasksBody() {
         : items.map(taskRow).join('')}
     </div></div>`;
 
-  body.querySelectorAll('.tab').forEach((btn) => {
+  $$('.tab', body).forEach((btn) => {
     btn.addEventListener('click', () => {
       tasksState.tab = btn.dataset.tab;
       renderTasksBody();
@@ -9378,12 +9439,12 @@ function renderTasksBody() {
       btn.disabled = false;
     }
   };
-  body.querySelectorAll('[data-task-action]').forEach((btn) => {
+  $$('[data-task-action]', body).forEach((btn) => {
     btn.addEventListener('click', () =>
       act(btn, () => api.taskAction(Number(btn.dataset.id), btn.dataset.taskAction)),
     );
   });
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const t = items[Number(el.dataset.open)];
       openReaderFor(
@@ -9591,7 +9652,7 @@ async function renderInbox(slugFromHash) {
     </div>`;
 
   $('#inbox-account').addEventListener('change', async (e) => {
-    inboxState.account = e.target.value;
+    inboxState.account = elCible(e).value;
     localStorage.setItem('bm.inboxAccount', inboxState.account);
     // Changer de boîte remet au dossier par défaut : un chemin de dossier n'a
     // pas de sens d'une boîte à l'autre.
@@ -9605,11 +9666,11 @@ async function renderInbox(slugFromHash) {
     loadInbox();
   });
   $('#inbox-folder').addEventListener('change', (e) => {
-    if (e.target.value.startsWith('@')) {
-      inboxState.role = e.target.value.slice(1);
+    if (elCible(e).value.startsWith('@')) {
+      inboxState.role = elCible(e).value.slice(1);
       inboxState.folder = '';
     } else {
-      inboxState.folder = e.target.value;
+      inboxState.folder = elCible(e).value;
     }
     // Mémorisé, comme le compte : c'est ce qui fait qu'un F5 te ramène ICI.
     localStorage.setItem('bm.inboxRole', inboxState.role);
@@ -9619,19 +9680,19 @@ async function renderInbox(slugFromHash) {
     loadInbox();
   });
   $('#inbox-unseen').addEventListener('change', (e) => {
-    inboxState.unseen = e.target.checked;
+    inboxState.unseen = elCible(e).checked;
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
   });
   $('#inbox-attachments').addEventListener('change', (e) => {
-    inboxState.attachments = e.target.checked;
+    inboxState.attachments = elCible(e).checked;
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
   });
   $('#inbox-q').addEventListener('search', (e) => {
-    inboxState.q = e.target.value.trim();
+    inboxState.q = elCible(e).value.trim();
     inboxState.offset = 0;
     inboxState.selected.clear();
     loadInbox();
@@ -9639,7 +9700,7 @@ async function renderInbox(slugFromHash) {
   $('#inbox-q').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      inboxState.q = e.target.value.trim();
+      inboxState.q = elCible(e).value.trim();
       inboxState.offset = 0;
       inboxState.selected.clear();
       loadInbox();
@@ -9791,10 +9852,10 @@ async function loadInboxReco() {
     }
   };
   $('#rv-inbox-start')?.addEventListener('click', () => startReviewFlow());
-  body.querySelectorAll('[data-rv-seen]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvSeen), 'seen')));
-  body.querySelectorAll('[data-rv-later]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvLater), 'later')));
-  body.querySelectorAll('[data-rv-act]').forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvAct), 'action')));
-  body.querySelectorAll('[data-rv-lot-seen]').forEach((b) => b.addEventListener('click', async () => {
+  $$('[data-rv-seen]', body).forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvSeen), 'seen')));
+  $$('[data-rv-later]', body).forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvLater), 'later')));
+  $$('[data-rv-act]', body).forEach((b) => b.addEventListener('click', () => decideRow(b, Number(b.dataset.rvAct), 'action')));
+  $$('[data-rv-lot-seen]', body).forEach((b) => b.addEventListener('click', async () => {
     const lot = lots[Number(b.dataset.rvLotSeen)];
     b.disabled = true;
     try {
@@ -9805,7 +9866,7 @@ async function loadInboxReco() {
       alert(err.message);
     }
   }));
-  body.querySelectorAll('[data-rv-open]').forEach((el) => el.addEventListener('click', () => {
+  $$('[data-rv-open]', body).forEach((el) => el.addEventListener('click', () => {
     const it = reviewRefs.find((r) => r.id === Number(el.dataset.rvOpen));
     if (it) openReaderFor(it, { dock: $('#inbox-dock') });
   }));
@@ -9837,7 +9898,7 @@ async function loadInbox() {
   if (tabs) {
     tabs.classList.toggle('hidden', !recoAvailable);
     if (recoAvailable) {
-      tabs.querySelectorAll('[data-iv]').forEach((b) => {
+      $$('[data-iv]', tabs).forEach((b) => {
         b.classList.toggle('active', b.dataset.iv === inboxView());
         b.onclick = () => {
           try { localStorage.setItem('inbox-view', b.dataset.iv); } catch { /* privé */ }
@@ -9957,7 +10018,7 @@ function renderInboxBody() {
       🛟 Les actions en masse passent par la corbeille (soft delete, récupérable ~30 j), par lots
       de 200, et sont journalisées avec la liste exacte des mails.</div>`;
 
-  body.querySelectorAll('[data-legend-account]').forEach((el) => {
+  $$('[data-legend-account]', body).forEach((el) => {
     el.addEventListener('click', async () => {
       inboxState.account = el.dataset.legendAccount;
       localStorage.setItem('bm.inboxAccount', inboxState.account);
@@ -9972,7 +10033,7 @@ function renderInboxBody() {
     });
   });
 
-  body.querySelectorAll('[data-open]').forEach((el) => {
+  $$('[data-open]', body).forEach((el) => {
     el.addEventListener('click', () => {
       const i = d.items[Number(el.dataset.open)];
       openReaderFor(i, {
@@ -10003,7 +10064,7 @@ function renderInboxBody() {
       renderInboxBody();
     });
   }
-  body.querySelectorAll('[data-star]').forEach((el) => {
+  $$('[data-star]', body).forEach((el) => {
     el.addEventListener('click', async () => {
       const i = d.items[Number(el.dataset.star)];
       if (!i) return;
@@ -10020,7 +10081,7 @@ function renderInboxBody() {
       }
     });
   });
-  body.querySelectorAll('th.sortable').forEach((th) => {
+  $$('th.sortable', body).forEach((th) => {
     th.addEventListener('click', () => {
       const key = th.dataset.sort;
       if (inboxState.sort === key) {
@@ -10033,7 +10094,7 @@ function renderInboxBody() {
       loadInbox();
     });
   });
-  body.querySelectorAll('.inbox-check').forEach((box) => {
+  $$('.inbox-check', body).forEach((box) => {
     box.addEventListener('change', () => {
       if (box.checked) sel.add(box.dataset.key);
       else sel.delete(box.dataset.key);
@@ -10132,8 +10193,8 @@ function renderInboxBulkbar() {
   };
   $('#bulk-delete').addEventListener('click', () => run('delete'));
   $('#bulk-move')?.addEventListener('change', (e) => {
-    if (e.target.value) run('move', e.target.value);
-    e.target.value = '';
+    if (elCible(e).value) run('move', elCible(e).value);
+    elCible(e).value = '';
   });
   $('#bulk-seen').addEventListener('click', () => run('seen'));
   $('#bulk-unseen').addEventListener('click', () => run('unseen'));
@@ -10306,7 +10367,7 @@ async function renderSearch(lancerToutDeSuite = false) {
     ordreAdapte();
     runSearch();
   });
-  main.querySelectorAll('.find-chip').forEach((b) => {
+  $$('.find-chip', main).forEach((b) => {
     b.addEventListener('click', () => {
       searchState.q = b.dataset.q;
       $('#s-q').value = searchState.q;
@@ -10432,7 +10493,7 @@ function renderSearchResults() {
       🛟 Rien n'est déplacé ni rangé : je retrouve tes mails là où ils sont.
       Clique une ligne pour lire le mail ici.</div>`;
 
-  el.querySelectorAll('.find-more').forEach((b) => {
+  $$('.find-more', el).forEach((b) => {
     b.addEventListener('click', () => {
       const k = b.dataset.key;
       if (searchState.open.has(k)) searchState.open.delete(k);
@@ -10440,7 +10501,7 @@ function renderSearchResults() {
       renderSearchResults();
     });
   });
-  el.querySelectorAll('.result-row').forEach((row) => {
+  $$('.result-row', el).forEach((row) => {
     row.addEventListener('click', () => {
       const g = searchState.data.groups.find((x) => x.key === row.dataset.key);
       const item = g?.items[Number(row.dataset.idx)];
@@ -10551,14 +10612,14 @@ function renderReaderAttachments(az, item, attachments) {
 
   // 👁️ Voir : ouvre l'URL inline dans un nouvel onglet (le navigateur affiche
   // et met en cache). L'onglet est ouvert AVANT (évite le blocage popup).
-  az.querySelectorAll('[data-att-view]').forEach((btn) => {
+  $$('[data-att-view]', az).forEach((btn) => {
     btn.addEventListener('click', () => {
       const ai = Number(btn.dataset.attView);
       window.open(api.attachmentInlineUrl(item.account, item.folder, item.uid, ai), '_blank', 'noopener');
     });
   });
   // ⬇️ Télécharger une pièce, avec retour visuel.
-  az.querySelectorAll('[data-att-dl]').forEach((btn) => {
+  $$('[data-att-dl]', az).forEach((btn) => {
     btn.addEventListener('click', () => {
       const ai = Number(btn.dataset.attDl);
       downloadWithFeedback(
@@ -10928,11 +10989,11 @@ function basculerAgrandissement(panel, force) {
 document.addEventListener(
   'click',
   (e) => {
-    const cible = e.target instanceof Element
-      ? e.target.closest('.openable, [data-open], [data-clean-open]')
+    const cible = elCible(e) instanceof Element
+      ? elCible(e).closest('.openable, [data-open], [data-clean-open]')
       : null;
     if (!cible) return;
-    document.querySelectorAll('.vient-d-ouvrir').forEach((x) => x.classList.remove('vient-d-ouvrir'));
+    $$('.vient-d-ouvrir').forEach((x) => x.classList.remove('vient-d-ouvrir'));
     (cible.closest('.reply-row, .mail-row, .todo-row, .find-msg, tr, li') || cible.parentElement)
       ?.classList.add('vient-d-ouvrir');
   },
@@ -10957,8 +11018,7 @@ async function marquerLu(account, folder, uid, item) {
     // visait un attribut qui n'existe nulle part et ne retirait aucun badge.
     // On nettoie donc ce qu'on sait situer : le lecteur ouvert, et la ligne
     // marquée courante par la liste elle-même.
-    document
-      .querySelectorAll('.reader .badge, .inbox-dock .badge, .vient-d-ouvrir .badge')
+    $$('.reader .badge, .inbox-dock .badge, .vient-d-ouvrir .badge')
       .forEach((b) => {
         if (b.textContent.trim() === 'non lu') b.remove();
       });
@@ -10987,11 +11047,11 @@ function closeReader() {
   document.querySelector('.reader-overlay')?.remove();
   document.querySelector('.reader')?.remove();
   // Lecture ancrée (Boîte de réception) : on referme aussi la colonne.
-  document.querySelectorAll('.inbox-dock').forEach((d) => { d.classList.add('hidden'); d.replaceChildren(); });
+  $$('.inbox-dock').forEach((d) => { d.classList.add('hidden'); d.replaceChildren(); });
   // TOUTES les colonnes, pas seulement la première : depuis le 20/08 la Vue du
   // jour et la Recherche en ont une elles aussi, et une page pourrait en
   // porter plusieurs — n'en refermer qu'une laisserait un écran de travers.
-  document.querySelectorAll('.inbox-layout').forEach((layout) => {
+  $$('.inbox-layout').forEach((layout) => {
     layout.classList.remove('with-reader');
     layout.style.gridTemplateColumns = ''; // la largeur choisie revit à la prochaine ouverture
   });
@@ -11111,13 +11171,14 @@ async function openReader(item, row, opts = {}) {
   panel.querySelector('#reader-details-btn')?.addEventListener('click', (e) => {
     const d = panel.querySelector('#reader-details');
     const ferme = d.classList.toggle('hidden');
-    e.currentTarget.setAttribute('aria-expanded', String(!ferme));
+    /** @type {HTMLElement} */ (elCourant(e)).setAttribute('aria-expanded', String(!ferme));
   });
   panel.querySelector('#reader-all-actions')?.addEventListener('click', (e) => {
     const m = panel.querySelector('#reader-menu');
     const ouvert = m.classList.toggle('hidden');
-    e.currentTarget.setAttribute('aria-expanded', String(!ouvert));
-    e.currentTarget.textContent = ouvert ? 'Toutes les actions ▾' : 'Toutes les actions ▴';
+    const btnActions = /** @type {HTMLElement} */ (elCourant(e));
+    btnActions.setAttribute('aria-expanded', String(!ouvert));
+    btnActions.textContent = ouvert ? 'Toutes les actions ▾' : 'Toutes les actions ▴';
   });
   // Fermer VIDE la pile : on quitte la lecture, il n'y a plus de « retour ».
   panel.querySelector('.modal-close').addEventListener('click', () => {
@@ -11280,20 +11341,20 @@ async function openReader(item, row, opts = {}) {
 
   $('#reader-toggle-seen').addEventListener('click', async (e) => {
     const toSeen = !item.isSeen;
-    if (await doAction(e.target, toSeen ? 'seen' : 'unseen')) {
+    if (await doAction(elCible(e), toSeen ? 'seen' : 'unseen')) {
       setSeen(toSeen);
-      e.target.disabled = false;
+      elCible(e).disabled = false;
     }
   });
 
   $('#reader-move').addEventListener('change', async (e) => {
-    const destination = e.target.value;
+    const destination = elCible(e).value;
     if (!destination) return;
     if (!confirm(`Déplacer ce mail vers « ${destination} » ?`)) {
-      e.target.value = '';
+      elCible(e).value = '';
       return;
     }
-    if (await doAction(e.target, 'move', destination)) {
+    if (await doAction(elCible(e), 'move', destination)) {
       // Refermer AVANT de prévenir l'écran appelant : dans le dépouillement,
       // onRemoved avance au mail suivant et ouvre SON aperçu — le refermer
       // après coup laissait la carte suivante sans lecture (bug 06/08).
@@ -11307,7 +11368,7 @@ async function openReader(item, row, opts = {}) {
   // posée avant, mais un bandeau « Annuler » de 10 s après : le mail est
   // seulement déplacé en corbeille, et le bandeau le ramène vraiment.
   $('#reader-delete').addEventListener('click', async (e) => {
-    const res = await doActionResult(e.target, 'delete');
+    const res = await doActionResult(elCible(e), 'delete');
     if (!res) return;
     closeReader(); // même ordre que « Déplacer » : refermer puis avancer
     onRemoved(item, 'delete');
@@ -11340,7 +11401,7 @@ async function openReader(item, row, opts = {}) {
   // pouvoir envoyer une facture depuis le mail qu'on a sous les yeux
   // (demande 10/08). Idempotent : renvoyer deux fois ne double rien.
   $('#reader-accounting')?.addEventListener('click', async (e) => {
-    const btn = e.target;
+    const btn = elCible(e);
     btn.disabled = true;
     const before = btn.textContent;
     btn.textContent = '⏳ Envoi…';
@@ -11435,7 +11496,7 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
   };
   // Poids déjà engagé : fichiers joints + images en ligne (base64 ≈ ×4/3).
   const inlineBytes = () =>
-    [...editor.querySelectorAll('img')].reduce((sum, img) => {
+    [...$$('img', editor)].reduce((sum, img) => {
       const m = /^data:[^;]*;base64,(.*)$/.exec(img.getAttribute('src') || '');
       return sum + (m ? Math.floor(m[1].length * 0.75) : 0);
     }, 0);
@@ -11444,7 +11505,7 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
     $('#c-atts').innerHTML = atts.map((a, i) =>
       `<span class="att-chip">📎 ${esc(a.name)} <span class="muted">${fmtSize(a.size)}</span>
         <button data-rm="${i}" title="Retirer cette pièce jointe">✕</button></span>`).join('');
-    $('#c-atts').querySelectorAll('[data-rm]').forEach((b) =>
+    $$('[data-rm]', $('#c-atts')).forEach((b) =>
       b.addEventListener('click', () => { atts.splice(Number(b.dataset.rm), 1); renderAtts(); }));
   };
   const readAsDataUrl = (file) => new Promise((resolveRead, rejectRead) => {
@@ -11466,7 +11527,7 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
     renderAtts();
   };
   $('#c-attach').addEventListener('click', () => $('#c-attach-input').click());
-  $('#c-attach-input').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
+  $('#c-attach-input').addEventListener('change', (e) => { addFiles([...elCible(e).files]); elCible(e).value = ''; });
 
   // --- Images en ligne (au fil du texte) ------------------------------------
   const insertInlineImage = async (file) => {
@@ -11492,8 +11553,8 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
   };
   $('#c-image').addEventListener('click', () => $('#c-image-input').click());
   $('#c-image-input').addEventListener('change', async (e) => {
-    for (const f of [...e.target.files]) await insertInlineImage(f);
-    e.target.value = '';
+    for (const f of [...elCible(e).files]) await insertInlineImage(f);
+    elCible(e).value = '';
   });
   // Coller une capture (Ctrl+V) : l'image atterrit dans le texte, au curseur.
   editor.addEventListener('paste', (e) => {
@@ -11533,16 +11594,18 @@ function openComposeModal({ account, to = '', cc = '', subject = '', text = '', 
     }
     const nbDest = toVal.split(/[,;]/).filter((s) => s.trim()).length +
       ccVal.split(/[,;]/).filter((s) => s.trim()).length;
-    const nbPieces = atts.length + editor.querySelectorAll('img[src^="data:"]').length;
+    const nbPieces = atts.length + $$('img[src^="data:"]', editor).length;
     if (!confirm(`Envoyer ce mail à ${nbDest} destinataire(s) depuis ${account}` +
       `${nbPieces ? `, avec ${nbPieces} pièce(s) jointe(s) / image(s)` : ''} ?`)) return;
 
     // Les images en ligne deviennent des pièces jointes « cid: » référencées
     // par le HTML ; le texte brut reste la version de secours du mail.
-    const clone = editor.cloneNode(true);
+    const clone = /** @type {ElementEcran} */ (editor.cloneNode(true));
+    // `querySelectorAll('img')` est déjà typé par la plateforme (HTMLImageElement) :
+    // ici l'écriture directe dit plus que le helper, on la garde.
     const origImgs = [...editor.querySelectorAll('img')];
     const inlineAtts = [];
-    clone.querySelectorAll('img').forEach((img, i) => {
+    $$('img', clone).forEach((img, i) => {
       const src = img.getAttribute('src') || '';
       const m = /^data:([^;]+);base64,(.*)$/.exec(src);
       if (!m) {
@@ -11697,7 +11760,7 @@ function renderReaderActions(actions, item, opts = {}) {
       title="${esc(a.evidence || phraseAction(a))}">${esc(LIBELLES_ACTION[a.kind])}${montant}</button>`;
   }).join('');
 
-  lead.querySelectorAll('[data-todo]').forEach((b) => {
+  $$('[data-todo]', lead).forEach((b) => {
     b.addEventListener('click', async () => {
       const a = utiles[Number(b.dataset.todo)];
       // « Répondre » est la seule action que Boxmail sait vraiment EXÉCUTER.
@@ -11875,7 +11938,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
   $('#ra-intent')?.addEventListener('change', async (e) => {
     try {
       const oldIntent = c?.intent ?? null;
-      const newIntent = e.target.value || null;
+      const newIntent = elCible(e).value || null;
       const r = await api.setMessageIntent(item.account, {
         folder: item.folder,
         uid: item.uid,
@@ -11883,7 +11946,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
       });
       const n = $('#ra-intent-note');
       if (n) {
-        n.textContent = e.target.value
+        n.textContent = elCible(e).value
           ? (r.replyDismissed
             ? '✓ corrigé — le fil sort aussi de « À traiter » (plus de réponse attendue)'
             : '✓ corrigé pour ce mail — jamais écrasé')
@@ -11918,7 +11981,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
   // explicite « Ouvrir ce mail ↗ ».
   $('#ra-echanges')?.addEventListener('click', async (e) => {
     const zone = $('#ra-echanges-body');
-    const bouton = e.currentTarget;
+    const bouton = elCourant(e);
     if (!zone) return;
     if (!zone.classList.contains('hidden')) {
       zone.classList.add('hidden');
@@ -11946,15 +12009,15 @@ function renderReaderAnalysis(a, item, opts = {}) {
 
   $('#ra-cat')?.addEventListener('change', async (e) => {
     try {
-      await api.senderSetCategory(item.account, c.sender.email, e.target.value || null);
-      note(e.target.value
+      await api.senderSetCategory(item.account, c.sender.email, elCible(e).value || null);
+      note(elCible(e).value
         ? '✓ corrigé — tous les mails de cet expéditeur suivent'
         : '✓ repassé en calcul automatique');
     } catch (err) { alert(err.message); }
   });
   $('#ra-prio')?.addEventListener('change', async (e) => {
     try {
-      await api.senderSetPriority(item.account, c.sender.email, e.target.value);
+      await api.senderSetPriority(item.account, c.sender.email, elCible(e).value);
       note('✓ priorité enregistrée — jamais recalculée');
     } catch (err) { alert(err.message); }
   });
@@ -11982,7 +12045,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
    *    AVANT de cliquer — exactement la charge qu'on prétend lui retirer.
    *    Le bandeau « Fait · Annuler » rend le clic gratuit.
    */
-  el.querySelectorAll('.ra-propose').forEach((btn) => {
+  $$('.ra-propose', el).forEach((btn) => {
     btn.addEventListener('click', async () => {
       const d = a.deadlines.detected[Number(btn.dataset.k)];
       btn.disabled = true;
@@ -12018,7 +12081,7 @@ function renderReaderAnalysis(a, item, opts = {}) {
 
   // « Rétablir » une proposition que l'arbitrage avait écartée : elle
   // repasse dans les dates à confirmer, et l'utilisateur tranche.
-  el.querySelectorAll('.ra-unveto').forEach((btn) => {
+  $$('.ra-unveto', el).forEach((btn) => {
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
@@ -12093,7 +12156,7 @@ async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
             </div>
           </div>`).join('')
       : '<div class="empty">Aucun autre échange retrouvé.</div>');
-    zone.querySelectorAll('[data-conv]').forEach((b) => b.addEventListener('click', () => {
+    $$('[data-conv]', zone).forEach((b) => b.addEventListener('click', () => {
       zone.querySelector(`[data-convbody="${b.dataset.conv}"]`)?.classList.toggle('hidden');
     }));
   } else if (!d.messages.filter((m) => !m.estCourant).length) {
@@ -12115,7 +12178,7 @@ async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
   }
 
   // Changement de focale : on recharge la même zone, le mail reste intact.
-  zone.querySelectorAll('[data-focale]').forEach((b) => b.addEventListener('click', () => {
+  $$('[data-focale]', zone).forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.focale === d.focale) return;
     // `ctx` est reconduit : sans lui, changer d'onglet dans la modale
     // d'historique lui ferait perdre de quoi se refermer avant d'ouvrir un mail.
@@ -12123,12 +12186,12 @@ async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
   }));
 
   // UN CLIC DÉPLIE SUR PLACE. Le mail courant n'est jamais remplacé.
-  zone.querySelectorAll('.ctx-msg-head').forEach((h) => h.addEventListener('click', async () => {
-    const corps = h.parentElement.querySelector('.ctx-msg-body');
+  $$('.ctx-msg-head', zone).forEach((h) => h.addEventListener('click', async () => {
+    const corps = /** @type {ElementEcran} */ (h.parentElement.querySelector('.ctx-msg-body'));
     if (!corps) return;
     if (!corps.classList.contains('hidden')) { corps.classList.add('hidden'); return; }
     // Un seul déplié à la fois : quinze corps ouverts seraient illisibles.
-    zone.querySelectorAll('.ctx-msg-body').forEach((c) => c.classList.add('hidden'));
+    $$('.ctx-msg-body', zone).forEach((c) => c.classList.add('hidden'));
     corps.classList.remove('hidden');
     if (corps.dataset.charge) return;
     corps.innerHTML = '<div class="empty"><span class="spinner"></span>Lecture…</div>';
@@ -12187,7 +12250,16 @@ function ligneContexte(m, midCourant) {
 // Ouvre le panneau de lecture depuis un élément « intelligence » (importants,
 // réponses, relances, échéances, brief) : construit l'item minimal et branche
 // les callbacks de rafraîchissement de l'écran appelant.
-function openReaderFor(src, { onSeen, onRemoved, dock, onReplied, onReclassified, serie } = {}) {
+function openReaderFor(
+  src,
+  /**
+   * `dock` est tantôt l'élément d'accueil, tantôt `true` (« accroche-toi où tu
+   * peux ») : le lecteur ne fait que le transmettre. Le type dit ce contrat réel.
+   * @type {{ onSeen?: Function, onRemoved?: Function, dock?: HTMLElement | boolean,
+   *          onReplied?: Function, onReclassified?: Function, serie?: object }}
+   */
+  { onSeen, onRemoved, dock, onReplied, onReclassified, serie } = {},
+) {
   if (!src || !src.folder || !src.uid) {
     alert('Ce mail n\'est plus dans l\'index (supprimé ou déplacé) — resynchronise la boîte.');
     return;
@@ -12288,7 +12360,7 @@ function renderOpsList() {
   $('#ops-tabs').innerHTML = filters
     .map(([key, label]) => `<button class="tab ${opsState.filter === key ? 'active' : ''}" data-ops-filter="${key}">${label}</button>`)
     .join('');
-  document.querySelectorAll('[data-ops-filter]').forEach((b) =>
+  $$('[data-ops-filter]').forEach((b) =>
     b.addEventListener('click', () => { opsState.filter = b.dataset.opsFilter; renderOpsList(); }));
 
   const ops = groupOps(

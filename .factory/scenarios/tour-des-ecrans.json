@@ -1,0 +1,34 @@
+{
+  "name": "tour-des-ecrans",
+  "description": "Traversée des écrans quotidiens, une fois CONNECTÉ. L'audit de socle n'atteint que la page publique ; ce scénario est le seul chemin par lequel les vrais écrans reçoivent un contrôle mécanique. Il n'affirme rien sur le contenu (la base locale est vide) : il exige qu'aucun écran ne lève d'erreur en console et qu'aucun ne déborde horizontalement. C'est exactement le filet qui manquait le 03/09, quand 206 réécritures mécaniques de web/js/app.js (querySelectorAll, e.target) n'avaient que le typecheck pour preuve.",
+  "coutDonnees": "AUCUN — lecture seule, aucune décision, aucun mail touché. Rejouable indéfiniment, y compris sur une base vide (`node scripts/seed-dev.mjs` remplit deux boîtes de démonstration pour que les listes aient de quoi se rendre).",
+  "borne": "Le tour s'arrête à six écrans À CAUSE DU PRODUIT : `/api` est limité à 60 requêtes par minute et par IP (RATE_LIMIT_MAX), et un écran en coûte environ six. Dix écrans enchaînés rendent des 429 — mesuré le 03/09. Ne pas rallonger ce tour sans avoir tranché la question de la limite.",
+  "route": "/admin/",
+  "steps": [
+    { "waitFor": { "selector": "#login-password" } },
+    { "fill": { "selector": "#login-password", "valueEnv": "ADMIN_PASSWORD" } },
+    { "click": { "role": "button", "name": "Se connecter" } },
+    { "waitFor": { "selector": "#app-view" } },
+    { "goto": "/admin/#/today" },
+    { "waitFor": { "ms": 900 } },
+    { "goto": "/admin/#/dashboard" },
+    { "waitFor": { "ms": 900 } },
+    { "goto": "/admin/#/suivi" },
+    { "waitFor": { "ms": 900 } },
+    { "goto": "/admin/#/pieces-compta" },
+    { "waitFor": { "ms": 900 } },
+    { "goto": "/admin/#/operations" },
+    { "waitFor": { "ms": 900 } },
+    { "waitFor": { "selector": "[data-ops-filter]" } },
+    { "click": { "selector": "[data-ops-filter]" } },
+    { "waitFor": { "ms": 500 } },
+    { "goto": "/admin/#/settings" },
+    { "waitFor": { "ms": 900 } }
+  ],
+  "assert": [
+    { "visible": { "selector": "#app-view" } },
+    { "notVisible": { "selector": "#login-password" } },
+    { "consoleErrors": 0 },
+    { "noHorizontalOverflow": true }
+  ]
+}

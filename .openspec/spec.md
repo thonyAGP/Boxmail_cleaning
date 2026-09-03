@@ -47,15 +47,17 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 *Constats mécaniques de l'audit d'usine du 03/09 (détail : `docs/JOURNAL.md`).*
 
-- [ ] **Le front échappe au check du contrat.** `.factory.json` déclare
-      `npm run typecheck`, borné à `src/**/*.ts` par `tsconfig.json`. Or
-      `web/js/app.js` (12 303 lignes, 238 fonctions) est le fichier n°1 en
-      churn : **57 commits sur 193** en 30 jours, plus 25 sur `styles.css` et
-      19 sur `api.js`. ~30 % des commits sans autre contrôle que `node --check`
-      (syntaxe seule).
+- [ ] **`/api` plafonné à 60 requêtes/minute et par IP** (`RATE_LIMIT_MAX`, la
+      valeur par défaut ET celle de production), pour ~6 requêtes par écran :
+      dix écrans enchaînés rendent des 429 (mesuré le 03/09 — c'est ce qui a mis
+      le tour des écrans au rouge). Un humain à un écran toutes les six secondes
+      est dans la même zone. Le même limiteur couvre `/mcp` : **hypothèse à
+      mesurer une fois**, pas une conclusion — les lots des tâches planifiées
+      meurent vers 60, ce qui est aussi le plafond.
 - [ ] **L'audit de socle ne franchit pas l'écran de connexion** : il n'atteint
-      qu'une route publique, soit 1 écran sur ~15. Les écrans réels de
-      Mail Assistant ne sont jamais contrôlés mécaniquement.
+      qu'une route publique. Contourné pour les écrans quotidiens par
+      `.factory/scenarios/tour-des-ecrans.json` (qui se connecte, lui), mais
+      l'audit §6/§7 lui-même ne juge toujours que la page publique.
 - [ ] **3 écarts de socle sur l'écran de connexion** : champ mot de passe sans
       `<label>`, bouton « Se connecter » à 31 px (44 attendus) et police 13 px
       (14 minimum) sur mobile.
@@ -79,6 +81,24 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 ### Terminées
 
+- [x] **Le front sous vérification** (03/09) — `tsconfig.web.json` (`checkJs`,
+      `noEmit` : le JS reste du JS vanilla servi tel quel), `npm run typecheck`
+      couvre désormais `src/` ET `web/`, donc le contrat de l'usine aussi.
+      Deux vrais bugs au premier jour : **`api.health` déclaré deux fois** (la
+      sonde publique était du code mort ; l'attente de redémarrage interrogeait
+      une route qui rend 401 sans session) et **`draft.value` sur un div
+      contenteditable** (Échap ne fermait pas la modale de réponse, et la garde
+      « brouillon perdu » n'a jamais tourné). Découverte de fond : **`$` rendait
+      `any`** — ses ~340 usages n'étaient contrôlés par rien. Ramené de 394 à 0
+      par une passe mécanique (123 `querySelectorAll` → `$$`, 66 `e.target` /
+      `e.currentTarget` → `elCible` / `elCourant`) et une trentaine
+      d'annotations. Barrage prouvé par faute témoin.
+- [x] **`npm run seed:dev`** (03/09) — deux boîtes synthétiques, douze mails.
+      Sans données, un scénario passait au vert sans exercer une ligne de liste.
+- [x] **`.factory/scenarios/tour-des-ecrans.json`** (03/09) — le premier
+      scénario qui SE CONNECTE : six écrans quotidiens, 0 erreur console,
+      pas de débordement. Lecture seule, rejouable.
+
 - [x] **Recherche par MOTS** (23/08) — la phrase entière était cherchée comme un
       seul motif `LIKE` : « facture électricité miron » = une chaîne de 25
       caractères, donc écran vide. Valait pour toute recherche de plus d'un mot.
@@ -97,6 +117,9 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 | Date | Décision | Contexte | Alternatives rejetées |
 |------|----------|----------|----------------------|
+| 03/09 | Vérifier le front avec TypeScript **en lecture seule** (`checkJs`, `noEmit`), sans rien compiler | Le JS vanilla servi tel quel est un choix du projet ; le contrôle ne doit pas le remettre en cause pour être utile | Migrer `web/` en TypeScript (change la livraison) ; ESLint seul (n'aurait vu ni le `draft.value` ni le doublon `health`) ; ne rien faire (30 % des commits sans filet) |
+| 03/09 | Tolérer le type **uniquement dans les helpers** (`$`, `$$`, `elCible`, `elCourant`) ; laisser `querySelector` écrit en toutes lettres rendre un `Element` strict | La sévérité sur `Element` est précisément ce qui a montré que `draft.value` était `undefined` sur un div contenteditable. L'élargir partout aurait effacé le seul vrai bug d'écran trouvé | Élargir `ParentNode.querySelector` par fusion d'interface (efface le bug) ; annoter les ~340 appels un par un (churn massif sur le fichier le plus disputé) |
+| 03/09 | Borner le tour des écrans à six routes | `/api` plafonne à 60 requêtes/minute et un écran en coûte ~6 : au-delà, le scénario échoue sur des 429 qui ne disent rien du produit | Rallonger le tour (rouge trompeur) ; relever la limite pour le test (le scénario ne mesurerait plus la réalité) |
 | 23/08 | Déplier les accents **à l'écriture**, dans des colonnes tenues par des déclencheurs SQLite | Plus de dix fichiers écrivent ces textes : un branchement TypeScript en oublierait un et la colonne mentirait en silence | Déplier à chaque requête (**mesuré 25× plus lent**) ; brancher chaque écriture en TS |
 | 23/08 | Ne PAS déplier le corps des mails | Les noms accentués qui servent à retrouver vivent dans les sujets et les entités | Recopier le corps (**+71 % de base, recherche doublée**) ; borner à 3 000 car. (n'a presque rien rendu : la plupart des mails tiennent déjà sous cette taille) |
 | 23/08 | Garder la recherche par **sous-chaîne** | « RIB » doit continuer de trouver « Ribéroux » — l'utilisateur dirait « avant ça marchait » | **FTS5** (change la sémantique, exige un index reconstruit) — écarté aussi par Codex |
@@ -116,6 +139,16 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
   Windows). Le MCP Codex remplace le second.
 
 ## Changelog
+
+- 2026-09-03 (3) : **le front passe au vérificateur.** Deux vrais bugs sortis le
+  premier jour (doublon `api.health`, `draft.value` sur un contenteditable), et
+  une découverte plus large : `$` rendait `any`, donc ses ~340 usages étaient
+  hors contrôle **en le paraissant**. Leçons : un remplacement de masse veut une
+  frontière d'identifiant (`e.target` avait mangé `p.ruleTargetFolder`) et une
+  vérification des noms déjà pris ; `node --check` et le vérificateur attrapent
+  des fautes DIFFÉRENTES, garder les deux. Décision de fond : **ne pas élargir
+  le `querySelector` écrit en toutes lettres** — c'est sa sévérité qui a révélé
+  le seul bug d'écran de la journée.
 
 - 2026-09-03 (2) : **l'usine passée sur Boxmail pour de vrai.** `playwright-core`
   n'était résolvable nulle part sur ce poste → `observe`/`audit`/`verify` en

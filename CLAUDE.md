@@ -70,10 +70,12 @@ personnel » dans toute stratégie de nettoyage.
 - Interface en français, tutoiement. **Ne jamais retirer d'emojis existants**
   (il tient à l'identité chaleureuse) ; réduire seulement les cumuls
   emoji+pastille+badge, et lister les changements AVANT une telle passe.
-- Avant de pousser : `npx tsc --noEmit`, `node --check web/js/*.js`, seeds
-  synthétiques, serveur local `PORT=8799`, clic réel via playwright-core.
+- Avant de pousser : **`npm run typecheck`** (couvre `src/` ET `web/`),
+  `node --check web/js/*.js`, `npm run seed:dev`, serveur local `PORT=8799`,
+  clic réel — `factory verify --all` rejoue les scénarios de `.factory/`.
 - Pas d'IMAP réel en dev : DB/API/UI sur seeds, l'utilisateur valide l'IMAP.
-  Le `.env` de test est déjà là (sinon `npm run genkey` pour la clé).
+  `.env` absent sur un poste neuf : le copier de `.env.example`, `npm run
+  genkey` pour les clés, `npm run db:setup` puis `npm run seed:dev`.
 - Client ID Entra : `00449d9d-90ad-4891-939b-7e55f4d4d816` (public, comptes
   perso, redirect `http://localhost:8787/api/enroll/callback`).
 - **Fin de session : REMPLACER « État courant » (~20 lignes max) et déplacer le
@@ -114,6 +116,15 @@ personnel » dans toute stratégie de nettoyage.
 - **Capture obligatoire avant de livrer un écran** : aucun test automatique ne
   voit les onglets en double ni les champs écrasés. Un pictogramme se vérifie
   au rendu (⛶ U+26F6 = carré vide sous Windows).
+- Le front passe au vérificateur (`tsconfig.web.json`). Sélectionner par les
+  helpers — `$`, `$$`, `elCible(e)`, `elCourant(e)` — qui rendent le type
+  tolérant `ElementEcran`. **Un `querySelector` écrit en toutes lettres rend un
+  `Element` STRICT, et c'est voulu** : c'est cette sévérité qui a montré que
+  `draft.value` était `undefined` sur un div contenteditable. Ne pas l'élargir.
+- Un remplacement de masse veut une **frontière d'identifiant** (`e.target` a
+  mangé `p.ruleTargetFolder`) et un contrôle des noms déjà pris (un
+  `const cible` local est devenu auto-référent — syntaxe valide, TypeError à
+  l'exécution). `node --check` voit la première, le vérificateur la seconde.
 - Attendre la RÉPONSE RÉSEAU, jamais un spinner : au clic la page porte encore
   l'écran précédent, on relirait l'ancien DOM.
 - Deux rendus concurrents posent leurs écouteurs en DOUBLE : jeton de rendu

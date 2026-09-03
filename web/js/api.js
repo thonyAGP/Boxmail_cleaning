@@ -1,5 +1,11 @@
 // Client API minimal — toutes les requêtes passent par /api (session cookie).
 
+/**
+ * Une `Error` ordinaire à laquelle on accroche le code HTTP et le corps de la
+ * réponse : les écrans lisent `status` pour distinguer un 401 d'un 500.
+ * @typedef {Error & { status?: number, data?: any }} ErreurApi
+ */
+
 // Indicateur d'activité réseau global : chaque requête (ou téléchargement)
 // incrémente un compteur ; l'interface affiche une barre de chargement tant
 // qu'il est > 0. Un seul branchement → un loader sur TOUS les écrans.
@@ -29,7 +35,7 @@ async function request(method, path, body) {
       /* réponse vide */
     }
     if (!res.ok) {
-      const err = new Error(data?.error || `Erreur ${res.status}`);
+      const err = /** @type {ErreurApi} */ (new Error(data?.error || `Erreur ${res.status}`));
       err.status = res.status;
       err.data = data;
       throw err;
@@ -238,7 +244,11 @@ export const api = {
     if (q) p.set('q', q);
     return request('GET', `/accounts/${encodeURIComponent(slug)}/messages?${p}`);
   },
-  bulkAction: (slug, { folder, uids, action, destination }) =>
+  bulkAction: (
+    slug,
+    /** @type {{ folder: string, uids: number[], action: string, destination?: string }} */
+    { folder, uids, action, destination },
+  ) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/bulk`, {
       folder,
       uids,
@@ -259,7 +269,11 @@ export const api = {
       'GET',
       `/accounts/${encodeURIComponent(slug)}/messages/${encodeURIComponent(folder)}/${uid}`,
     ),
-  messageAction: (slug, { folder, uid, action, destination }) =>
+  messageAction: (
+    slug,
+    /** @type {{ folder: string, uid: number, action: string, destination?: string }} */
+    { folder, uid, action, destination },
+  ) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/messages/actions`, {
       folder,
       uid,
@@ -288,7 +302,12 @@ export const api = {
   version: () => request('GET', '/version'),
   updateCheck: () => request('GET', '/update/check'),
   updateApply: () => request('POST', '/update/apply'),
-  health: () => fetch('/health').then((r) => r.ok),
+  // Sonde de vie PUBLIQUE (route racine `/health`, sans session) : le seul
+  // appel qui reste valable pendant un redémarrage. Elle s'appelait `health`
+  // comme la santé des boîtes plus bas — la seconde écrasait celle-ci en
+  // silence, et l'attente de redémarrage interrogeait donc une route
+  // authentifiée qui rend 401 sans session (mesuré le 03/09). Renommée.
+  alive: () => fetch('/health').then((r) => r.ok),
   job: (id) => request('GET', `/jobs/${encodeURIComponent(id)}`),
   jobs: () => request('GET', '/jobs'),
   syncAll: (mode = 'recent') => request('POST', '/sync-all', { mode }),
@@ -322,6 +341,7 @@ export const api = {
   replyRestore: (slug, threadId) =>
     request('POST', `/accounts/${encodeURIComponent(slug)}/attention/replies/${threadId}/restore`),
   // Désinscriptions (P2.2)
+  /** @param {{ account?: string, done?: boolean }} [filtres] */
   unsubscribeList: ({ account, done } = {}) => {
     const q = new URLSearchParams();
     if (account) q.set('account', account);

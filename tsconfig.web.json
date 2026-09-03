@@ -1,0 +1,32 @@
+{
+  // Vérification du FRONT (03/09/2026). `tsconfig.json` s'arrête à `src/**/*.ts`
+  // et laissait donc `web/js/` sans aucun contrôle — or c'est le fichier le plus
+  // modifié du dépôt (57 commits sur 193 en 30 jours). `node --check` ne voyait
+  // que la syntaxe : une faute de frappe sur un nom de champ passait.
+  //
+  // Ce n'est PAS une migration vers TypeScript. Le code reste du JavaScript
+  // vanilla chargé tel quel par le navigateur ; TypeScript ne fait que le LIRE
+  // (`noEmit`). Rien n'est compilé, rien n'est produit, `web/` est servi
+  // statiquement comme avant.
+  //
+  // Sévérité choisie : celle qui attrape les fautes RÉELLES sans exiger
+  // d'annoter 12 303 lignes. `noImplicitAny` reste éteint (sinon chaque
+  // paramètre de fonction devient une erreur) ; `strictNullChecks` aussi
+  // (le code teste déjà ses nullités à la main, l'allumer rendrait des
+  // milliers d'écarts sans défaut derrière).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["web/js/**/*.js"]
+}
