@@ -1,0 +1,479 @@
+# Audit Boxmail — 03/09/2026 — plan de traitement
+
+## Contexte
+
+Anthony demande un audit complet de Boxmail, à traiter ensuite **point par point,
+chacun dans une session Opus séparée**. Ce document est donc un CARNET DE TICKETS :
+chaque point doit être autoporteur (constat, preuve, fichiers, action, preuve
+attendue) pour qu'une session neuve puisse le prendre sans relire celle-ci.
+
+État au moment de l'audit : `main` à `17e8530`. Livré aujourd'hui : usine
+exécutable sur ce poste (playwright-core), front sous `checkJs` (2 bugs sortis),
+`seed:dev`, scénario connecté `tour-des-ecrans`, socle de l'écran de connexion
+à 0 écart. Ce qui suit est ce qui RESTE.
+
+Mesures de référence : 42 366 lignes TS (107 fichiers), `admin.ts` 4 030 lignes /
+143 routes, `app.js` 12 303 lignes / 238 fonctions, 0 test, 193 commits sur 30 jours
+(57 sur `app.js`, 49 sur `CLAUDE.md`).
+
+## Règles pour chaque session de traitement
+
+- Une session = un ticket. Commencer par relire le ticket, puis `git pull`.
+- Cadrer (`/usine:cadrer`) si le ticket est marqué **moyen**/**élevé**.
+- Preuves obligatoires avant commit : `npm run typecheck`, `node --check web/js/*.js`,
+  `factory verify --all` (démarre l'app, joue les 3 scénarios ; `decision-compteur-coherent`
+  est rouge par construction tant que le seed ne remplit pas la file de dépouillement).
+- Poste neuf : `.env` depuis `.env.example` (`npm run genkey`), `npm run db:setup`, `npm run seed:dev`.
+- Appeler l'usine depuis PowerShell, pas Git Bash (`--route /x` est mangé) avec
+  `NODE_PATH=<projet>\node_modules`.
+
+---
+
+## Tickets
+
+(**[gravité]** = ce que ça coûte à Anthony si on ne fait rien)
+
+### Ordre recommandé (une session Opus par ligne)
+
+| # | Ticket | Pourquoi maintenant | Durée estimée |
+|---|---|---|---|
+| 1 | **D1** brancher les 175 assertions + **E3** | 30 min, filet immédiat pour tout le reste | ½ h |
+| 2 | **C1** `esc()` et le guillemet | XSS depuis un sujet de mail, correction en un point | 1 h |
+| 3 | **D2** vulnérabilités (d'abord `npm update` dans la plage) | 8 HIGH connus, audit désactivé — avant l'anonymisation (contre-revue) | 1-2 h |
+| 4 | **D4** adresses de tiers dans le code | RGPD, dépôt public — décision d'historique à prendre | 1 h |
+| 5 | **A1** un seul chemin de suppression avec cap | garde-fou « 0 mail perso » contourné par l'UI ; testable par `curl`, n'attend pas C3 (contre-revue) | 3 h, cadrage élevé |
+| 6 | **D3** rollback du supervisor Windows | boucle infinie chez un utilisateur non technique | 2 h, cadrage moyen |
+| 7 | **A7** + **B5** TLS exigé, écritures `accounts.json`, pool IMAP | mot de passe/jeton en clair possible, perte de compte possible (contre-revue) | 2 h |
+| 8 | **B1** jobs persistants, verrou, timeout | l'auto-sync peut geler pour toujours | 3 h, cadrage moyen |
+| 9 | **C3** remplacer `alert/confirm/prompt` | rend les chemins de suppression rejouables à l'écran | 2-3 h |
+| 10 | **C2** jeton de rendu hissé dans le routeur | 3 écrans plantent, mauvais mail ouvert | 2 h |
+| 11 | **A2** + **A3** validation Zod + erreurs | ensemble, avant B3 | 3 h |
+| 12 | **A5** puis **A4** CSRF/en-têtes, puis rate limit par façade | A5 protège les mutations et l'export des jetons ; A4 ensuite (contre-revue) | 2 h |
+| 13 | **D6** + **D7** + **D8** docs, lanceur, git | une session « hygiène », docs seulement | 2 h |
+| 14 | **C4** + **C5** + **C8** écouteurs, fuites, état | session front unique | 2 h |
+| 15 | **B2** index (mesurer SUR LE SERVEUR d'abord) | chrono avant/après obligatoire | 2 h |
+| 16 | **E1** + **E2** usine : audit connecté, seed de dépouillement | rend C4/A1 mesurables à l'écran | 2 h |
+| 17 | **C6** écrans inatteignables (décision par écran) | −864 lignes | 1 h |
+| 18 | **B3** découper `buildAdminRouter` | APRÈS 11 | 3 h |
+| 19 | **A6**, **B4**, **C7**, **D5**, **D9** | au fil de l'eau | — |
+
+Dépendances dures : A2/A3 avant B3 · D1 avant E3 · E2 avant tout scénario de mutation · C3 avant
+tout scénario d'écran sur une suppression (pas avant A1 lui-même).
+
+### Contre-revue (Codex, 03/09, lecture seule du dépôt)
+8 constats-clés vérifiés dans le code : **7 confirmés**, 1 nuancé (D1 : le script existe dans
+`package.json`, c'est la doc et l'usine qui l'ignorent — reformulé). **4 oublis** ajoutés : A7
+(STARTTLS non exigé sur IMAP 143 et SMTP OAuth), B5 (lost update sur `accounts.json`, course du pool
+IMAP). **3 inversions** retenues : D2 avant D4, A1 sans attendre C3, A5 avant A4. Trois pièges
+d'exécution consignés dans A1, B1, C3.
+
+### A. Garde-fous et sécurité (backend)
+
+#### A1. La route bulk de l'interface contourne le plafond « 200 par appel » — **[élevé]**
+- **Constat** : le tool MCP `delete_emails` plafonne à 200 UIDs, dry-run par défaut, `confirm` exigé
+  (`src/mcp/tools/write.ts:172-187`, `src/config.ts:123` « plafond dur SPEC §6.3 »). La route
+  `POST /accounts/:slug/messages/bulk` accepte **20 000 UIDs** (`src/server/admin.ts:2492`
+  `.slice(0, 20_000)`), sans dry-run ni confirmation ; le 200 n'y est qu'une taille de lot
+  (`admin.ts:2554`). `applyPolicy` (`src/services/retention.ts:633`) commente « pas de cap ici ».
+  Trois implémentations de « lots + moveToTrash + journal » coexistent : `write.ts:164-229`
+  `runDelete`, `services/cleanup.ts:449-462`, `retention.ts:623-655`.
+- **Action** : une seule fonction de suppression en lots dans `services/` (cap, dry-run, journal),
+  appelée par les trois. La route bulk exige `confirm:true` et rend un aperçu sinon.
+- **Preuve** : test unitaire du cap ; `curl` bulk sans confirm → aperçu, avec confirm → journal
+  `logs/operations.jsonl` ; scénario usine.
+- **Piège (contre-revue)** : la route bulk construit l'**undo** à partir des `newUids` rendus par
+  `moveToTrash` (`admin.ts:2557-2569`) puis appelle `reflectBulkInIndex` (`:2596`). Une factorisation
+  « cap + delete » naïve perd cette sémantique : la fonction commune doit RENDRE les `newUids` et
+  laisser chaque façade gérer son undo/son index.
+- Niveau cadrage : **élevé** (chemin de suppression).
+
+#### A7. Transport chiffré non exigé sur IMAP 143 et SMTP OAuth — **[moyen]** *(oubli relevé en contre-revue)*
+- **Constat** : l'enrôlement IMAP accepte le port 143 et dérive `imapSecure = port === 993`
+  (`admin.ts:3753,3778`), puis `ImapFlow({ secure: imapSecure })` avec le mot de passe (`:3783-3787`) ;
+  le runtime fait pareil (`services/imap.ts:122-126`) — **aucune exigence de STARTTLS** : sur 143 le
+  mot de passe peut partir en clair si le serveur ne l'impose pas. Côté SMTP, le chemin mot de passe
+  pose `requireTLS` quand `secure` est faux (`services/smtp.ts:94-101`) mais le chemin **OAuth** force
+  `secure:false` SANS `requireTLS` tout en envoyant l'`accessToken` (`smtp.ts:104-113`).
+- **Action** : `requireTLS: true` dès que `secure` est faux, sur les deux chemins ; refuser 143 sans
+  STARTTLS à l'enrôlement (message clair).
+- **Preuve** : enrôlement d'un compte de test sur 143 vers un serveur sans STARTTLS → refus explicite ;
+  envoi réel validé par Anthony (Outlook impose TLS, donc pas de régression attendue).
+
+#### A2. Validation des entrées : Zod absent des 143 routes admin — **[moyen]**
+- **Constat** : 0 `z.` dans `admin.ts` (Zod n'est utilisé que côté MCP) ; 149 lectures brutes de
+  `req.body`, 68 de `req.query` ; 26 routes d'écriture sur 74 sans aucun `400`. Cas prouvés :
+  `POST /engagements` et `PATCH /engagements/:id` passent le body entier au service
+  (`admin.ts:2034`, `:2065`) → `services/engagements.ts:291-292` écrit `status` **sans énumération** ;
+  `POST /declarations` (`admin.ts:2247-2253`) `kind` libre, `messageId` sans contrôle ;
+  `PATCH /dossiers/:id` (`admin.ts:2365,2376`) sans longueur max. Bon modèle existant :
+  `PATCH /messages/intent` (`admin.ts:3154`), `POST /send` (`admin.ts:3273-3345`).
+- **Action** : un helper `valider(schema)(req)` ; commencer par les routes d'ÉCRITURE (74),
+  schémas Zod à côté des services. Ne pas toucher aux GET dans un premier temps.
+- **Preuve** : `curl` avec `status:"nimporte"` → 400 ; typecheck ; `factory verify --all`.
+
+#### A3. Messages d'exception bruts renvoyés au client, pas de middleware d'erreur — **[moyen]**
+- **Constat** : aucun handler `(err, req, res, next)` ; `guard` (`admin.ts:456-463`) renvoie
+  `err.message` en 500 sur 127 routes ; 22 renvois explicites du message brut ; message IMAP
+  distant en 502 (`admin.ts:2722`). Le routeur comptable fait juste (`src/server/accounting.ts:55,87`
+  « Erreur interne. »). Deux `guard` homonymes de sens opposé (`src/mcp/util.ts:37-45`).
+- **Action** : `AppError` (statut + message sûr) ; middleware final ; `guard` admin loggue et rend
+  un message générique sauf `AppError`. Renommer un des deux `guard`.
+- **Preuve** : route qui lève → 500 générique + ligne de log ; typecheck.
+
+#### A4. Rate limit : budget partagé, fuite mémoire, dépendance à TRUST_PROXY — **[moyen]**
+- **Constat** : un seul `Map hits` (`src/index.ts:105`) pour `/api`, `/mcp`,
+  `/api/v1/accounting-candidates` ; jamais purgé (`index.ts:110-111`) ; 60/min en local,
+  **120 en prod** (`deploy/env.production.example:50`) ; un écran coûte ~6 requêtes (mesuré 03/09 :
+  10 écrans → 429). Si `TRUST_PROXY=0` derrière nginx, tout le monde est `127.0.0.1` : quota ET
+  les 10 essais de login / 15 min (`admin.ts:236-243`, Map jamais purgée non plus) deviennent globaux.
+- **Action** : un limiteur PAR FAÇADE (admin / mcp / compta) avec purge périodique ; l'admin
+  compte par SESSION plutôt que par IP ; documenter `TRUST_PROXY=1` comme obligatoire derrière nginx.
+  **Décision d'Anthony** sur les valeurs.
+- **Preuve** : tour des écrans rallongé à 26 routes sans 429 ; test unitaire du limiteur.
+
+#### A5. CSRF et en-têtes de sécurité absents — **[moyen]**
+- **Constat** : 78 routes mutantes sans CSRF ni contrôle `Origin` ; seule défense `SameSite=Strict`
+  (`admin.ts:396`). Ni helmet, ni CSP, ni `X-Frame-Options` (nginx : HSTS + nosniff seulement,
+  `deploy/nginx.conf.example:37-38`). `POST /accounts/export` rend les jetons OAuth chiffrés
+  (`admin.ts:3542-3552`) derrière ce seul cookie. TTL session **30 jours glissants**, prolongé à
+  chaque requête (`src/config.ts:87`, `admin.ts:267`), pas de rotation après login.
+  Dérive : nginx de référence n'expose pas `/api/enroll/callback` (`nginx.conf.example:41,59` vs
+  `admin.ts:3661`).
+- **Action** : contrôle `Origin`/`Sec-Fetch-Site` sur les mutations ; `X-Frame-Options: DENY` +
+  CSP minimale (la SPA n'a aucun script externe) ; rotation du jeton au login ; nginx aligné.
+- **Preuve** : `curl -X POST` avec `Origin` étranger → 403 ; `factory verify --all` toujours vert.
+
+#### A6. Fuites d'information par les réponses — **[faible]**
+- **Constat** : chemins absolus du serveur dans `GET/POST /api/backups` (`admin.ts:3585,3600`,
+  `services/backup.ts:30,87`) ; `GET /api/jobs/:id` rend le job entier avec `error` brut
+  (`admin.ts:3975`) ; repli `?token=` sur `/mcp` documenté comme finissant dans les logs nginx
+  (`index.ts:81-89`) — le routeur compta le refuse (`accounting.ts:24-28`).
+- **Action** : ne rendre que le nom de fichier ; `error` résumé ; supprimer le repli `?token=`
+  (vérifier d'abord que le connecteur claude.ai n'en dépend pas — grep dans `docs/`).
+
+### B. Robustesse (backend)
+
+#### B1. Jobs perdus au redémarrage, sans verrou ni timeout — **[élevé]**
+- **Constat** : `Map` en mémoire (`src/services/jobs.ts:23`), plafond 50 mais `gc()` ne
+  filtre que les non-`running` (`jobs.ts:26-32`) ; seuls 2 jobs sur ~15 reprennent
+  (`index.ts:28-63`) ; `hasRunningJob()` est un check-then-act (`jobs.ts:91-93`) ; aucun timeout,
+  et l'auto-sync saute son tick tant qu'un job tourne (`services/autosync.ts:53-56`) → **un job
+  bloqué gèle la synchronisation pour toujours**. L'arrêt propre n'attend aucun job (`index.ts:262-276`).
+  Le code le sait : « une mise à jour tuait un rattrapage de plusieurs heures, en silence » (`index.ts:24-26`).
+- **Action** : table `Job` en base (statut, début, dernier battement) ; au boot, marquer
+  `interrompu` ce qui était `running` et le montrer à l'écran ; timeout par type ; verrou par clé.
+- **Preuve** : lancer une sync, tuer le serveur, redémarrer → le job apparaît « interrompu » dans
+  `#/operations` ; test unitaire du verrou.
+- **Piège (contre-revue)** : `startJob()` rend un objet VIVANT muté par fermeture (`progress`, `meta`,
+  `status`, `result`, `error` — `jobs.ts:41-70`) et `/api/jobs/:id` le sert tel quel. Le passage en
+  base doit garder ce contrat côté API (écrire en base ET dans l'objet), sinon l'écran de progression
+  se fige.
+- Niveau cadrage : **moyen** (migration Prisma → règle du boot).
+
+#### B5. Écritures concurrentes sur `accounts.json` et course du pool IMAP — **[moyen]** *(oubli relevé en contre-revue)*
+- **Constat** : toutes les mutations d'`accounts.json` font `load()` puis `save()` sans verrou
+  (`services/accounts.ts:80,97,105,117,150,178`) ; un rafraîchissement OAuth refait `load()` puis
+  réécrit (`:257-275`). Deux écritures croisées (sync + enrôlement, ou deux refresh) → **lost update**
+  sur le fichier chiffré des comptes — un compte peut disparaître. Pool IMAP : `getClient()` lit la
+  `Map`, `await connect()`, puis écrit (`services/imap.ts:105-150`) ; deux appels concurrents ouvrent
+  deux connexions pour le même compte (limite Outlook).
+- **Action** : une file d'écriture (promesse chaînée) dans `accounts.ts` ; dans le pool, stocker la
+  PROMESSE de connexion dans la `Map` avant l'`await`.
+- **Preuve** : test unitaire : 10 `updateAccount` concurrents → 10 modifications présentes ; deux
+  `getClient` simultanés → une seule connexion.
+
+#### B2. Index manquants sur des colonnes chaudes — **[moyen]**
+- **Constat** : `analysisConfidence` (15 usages) sans index → `services/health.ts:98-102` balaie
+  toute la table `Message` **à chaque `/api/health`** ; `snippet` (51), `aiVerdictAt`
+  (`analysis.ts:322`, clause du vivier), `hasAttachments` (`search.ts:344`), `attachmentKind`,
+  `isOutbound` (69, absent du composite `[accountSlug,isDeleted,date]`). `admin.ts:492-495` filtre
+  sans `accountSlug` : le composite ne sert pas. `ensureDbReady()` fait un `SELECT 1` à chacun de
+  ses 147 appels (`db/client.ts:119-130`). Le tout sous `connection_limit=1`.
+- **Action** : `EXPLAIN QUERY PLAN` sur la prod (règle : chronométrer avant) ; ajouter les index
+  partiels qui gagnent ; mémoïser `ensureDbReady`.
+- **Preuve** : chrono avant/après sur `/api/health` et sur le vivier d'analyse, sur le serveur.
+- Piège : migrations au boot uniquement ; le nom du dossier de migration est son identité.
+
+#### B3. `buildAdminRouter` : 3 636 lignes dans une seule fonction — **[moyen]**
+- **Constat** : `admin.ts:360-3995`, 90 % du fichier, 143 routes dans une portée unique. Autres
+  géants : `ImapService` 926 l. (`imap.ts:96`), `syncAccount` 544 (`sync.ts:189`),
+  `registerAssistTools` 464 (`mcp/tools/assist.ts:47`), `resoudre` 431 (`semantique.ts:507`).
+- **Action** : découper par domaine en routeurs montés (`routes/messages.ts`, `routes/dossiers.ts`…),
+  sans changer une URL. À faire APRÈS A2/A3 (sinon on déplace deux fois).
+- **Preuve** : liste des 143 routes avant/après identique (script qui les énumère) ; `factory verify --all`.
+
+#### B4. Code mort ciblé — **[faible]**
+- **Constat** : 10 exports de services jamais référencés, dont `isCleanupProtected`
+  (`services/semantique.ts:1439`) — une protection anti-suppression **jamais appelée** ; `aDesAccents`,
+  `sqlDeplie` (`accents.ts:87,96`), `nombreDeDocuments` (`pages-scannees.ts:125`),
+  `rattacherDepuisTexte` (`liaisons.ts:178`)… 4 CLI de rattrapage ponctuel conservés
+  (`attentes-seed`, `attentes-dedoublonner`, `compta-rattrapage`, `dossiers`).
+- **Action** : pour `isCleanupProtected`, d'abord comprendre POURQUOI elle n'est pas branchée
+  (c'est peut-être un trou de garde-fou, pas du code mort) ; supprimer le reste.
+
+### C. Interface (`web/`)
+
+#### C1. `esc()` n'échappe pas le guillemet : XSS par attribut depuis un sujet de mail — **[élevé]**
+- **Constat (vérifié)** : `web/js/api.js:398-402` — `div.textContent = s; return div.innerHTML` n'encode
+  que `& < >` (la sérialisation d'un nœud texte n'échappe jamais `"`). Or `esc()` est utilisé
+  **145 fois en valeur d'attribut**, dont **22 sur une donnée pilotée par l'expéditeur** :
+  `title="${esc(i.snippet)}"` (`app.js:10001`, liste de la boîte — l'extrait du corps),
+  `title="${esc(m.subject)}"` (`:2931`, `:4367`), `data-subject="${esc(i.subject)}"` (`:3861`),
+  `data-att-name="${esc(name)}"` (`:10597`, nom de pièce jointe), `value="${esc(subject)}"` (`:11452`),
+  `data-folder="${esc(f.path)}"` (`:494`, `:3966`). Un sujet `" onmouseover="…` sort de l'attribut et
+  exécute du script **dans l'origine de l'app** (cookie de session). L'iframe bac à sable protège le
+  corps (`sandbox` sans `allow-scripts`, `app.js:10822`) — pas la liste, les titres, les noms de fichiers.
+  Plus un site **sans aucun `esc()`** : `app.js:12208-12209` (`data-folder="${h.dataset.folder}"`, relit
+  une valeur décodée et la réinjecte brute).
+- **Action** : `esc()` encode aussi `"` et `'` (`&quot;`, `&#39;`) — un seul changement, 520 appels
+  couverts ; corriger `:12208`. Puis ajouter un scénario usine avec un mail seedé au sujet
+  `"><img src=x onerror=…>` qui affirme l'absence d'exécution.
+- **Preuve** : `npm run seed:dev` enrichi d'un mail piégé ; `factory verify` : 0 erreur console, aucun
+  élément injecté (`evalTrue: !document.querySelector('img[src=x]')`).
+- Niveau cadrage : **moyen** (sécurité, touche 520 sites par un seul point).
+
+#### C2. Jeton de rendu sur UN écran sur 27 ; trois écrans plantent sur navigation pendant l'attente — **[moyen]**
+- **Constat** : seul `renderToday` porte `_renduToday` (`app.js:900-936`). **35 fonctions** font un
+  `await` puis écrivent le DOM sans jeton, ni `isConnected`, ni contrôle de hash. Trois déréférencent
+  `null` si on change d'écran pendant la requête : `app.js:3017-3019` (`#dash-body`), `:7971,7978`
+  (`#pc-body`), `:9098` (`#cal-body`, dans le `catch`). Les tableaux d'index par position
+  (`todayReaderRefs :845`, `reviewRefs :9874`, `_dossiers :6109`, `_affaires :6140`, `_attentes :6573`…)
+  réécrits par un rendu concurrent font **ouvrir le mauvais mail** — le défaut que `_renduToday`
+  corrige pour un seul écran. Règle CLAUDE.md déjà écrite, appliquée une fois.
+- **Action** : hisser le jeton dans le routeur (`route()` incrémente un jeton global ; un helper
+  `encoreAffiche(jeton)` avant chaque écriture après `await`), plutôt que 26 copies.
+- **Preuve** : scénario usine : `goto #/dashboard` puis `goto #/today` à 50 ms → 0 erreur console.
+
+#### C3. 100 dialogues natifs bloquants (`alert` 71, `confirm` 25, `prompt` 4) — **[moyen]**
+- **Constat** : `app.js:7629` (grand ménage), `:5678` (suppression), `:6459` (envoi), `:7045`
+  (fusion), `prompt()` à `:6244`, `:7029`, `:9000`. Ils figent tout scénario Playwright/usine sur la
+  première action dangereuse — donc **les chemins de suppression sont précisément ceux qu'on ne peut
+  pas rejouer**. 71 `alert(err.message)` = gestion d'erreur par interruption.
+- **Action** : un `confirmer(texte)` et un `signaler(texte)` maison (modale/toast, promesse) ; migration
+  mécanique des 100 sites ; garder le texte des messages (identité chaleureuse).
+- **Preuve** : `grep -cE "\b(alert|confirm|prompt)\(" web/js/app.js` → 0 ; scénario de suppression
+  rejouable (avec restauration).
+- **Piège (contre-revue)** : plusieurs `confirm()` sont dans une expression ou un `return` de garde
+  (`app.js:193`, `:7388`, `:7482`, `:10139`). Une modale à promesse impose de rendre ces
+  gestionnaires `async` et de CONSERVER l'ordre exact désactivation du bouton → appel réseau →
+  réactivation. Pas de remplacement mécanique : relire chaque site.
+- A1 n'en dépend pas (testable par `curl`) ; C3 rend seulement le scénario d'écran possible.
+
+#### C4. Écouteur en double sur « PLUS », menu inatteignable au clavier — **[moyen]**
+- **Constat** : `installSideToggles` (`app.js:660-679`) sans drapeau, appelée par `showApp()` (`:272`)
+  qui l'est au boot (`:240`) ET après login (`:454`) ; `logout` ne recharge pas (`:461-465`) → après
+  déconnexion/reconnexion, deux `toggle('hidden')` : **le menu ne s'ouvre plus**. Ce menu porte 15 des
+  20 entrées et est un `<div>` sans `role`/`tabindex` (`index.html:56`) ; « ＋ Ajouter un compte » est
+  un `<a>` sans `href` (`index.html:76`). 3 `aria-label` pour 283 boutons ; boutons muets `:5641,5643,7422`.
+- **Action** : drapeau comme `globalUxInstalled` (`:142-145`) ; `<button>` pour PLUS et Ajouter ;
+  `aria-label` sur les 3 boutons emoji.
+- **Preuve** : scénario login → logout → login → clic PLUS → menu visible ; `factory audit` sur un écran
+  connecté (voir E1).
+
+#### C5. Fuites : intervalles et écouteurs jamais arrêtés — **[moyen]**
+- **Constat** : `app.js:4678` sonde `/api/jobs/:id` toutes les 1,5 s **après** `closeModal()` (`:4293`
+  ne fait que `overlay.remove()`) ; `:4662` un `window.addEventListener('message')` par enrôlement
+  abandonné ; `:4258` un intervalle par synchronisation, jamais arrêté au changement de page.
+  Contre-exemple correct : `:5322-5326` (`zone.isConnected`). Aggrave A4 (chaque sonde compte dans
+  le quota 60/min).
+- **Action** : `closeModal()` exécute une liste de `nettoyages` enregistrés par la modale ; les
+  intervalles testent `isConnected`.
+
+#### C6. ≈ 864 lignes d'écrans inatteignables (7 % de `app.js`) — **[faible, gain net]**
+- **Constat** : `#/dossiers`, `#/suggestions`, `#/verify` : **0 lien** dans tout le front ; `#/rules` :
+  un seul lien (`:7112`) sur `#/suggestions`, elle-même injoignable. Vestiges du hub retiré
+  (commentaire `:686-700`). Blocs : `:5526-5827`, `:6932-7063`, `:7065-7173`, `:7175-7495`.
+  CSS orphelin : 21 classes (dont les 9 `.ech-*`, `styles.css:1180+`). `api.js` : 6 méthodes jamais
+  appelées (`rentilaCommandApprove/Cancel :76-77`, `brouillonReponse :127`, `correspondence :208`,
+  `attachmentNamesBackfill/TextBackfill :214-215`).
+- **Action** : **demander à Anthony** écran par écran (`#/rules` a peut-être un avenir) ; supprimer le
+  reste ; les routes serveur correspondantes restent (le MCP peut les utiliser — vérifier).
+- **Preuve** : `factory verify --all` ; `typecheck:web` (attrape les références restantes).
+
+#### C7. Duplication et géants — **[faible, à traiter au fil des tickets]**
+- **Constat** : même ligne de mail dans `replyRow :4850`, `followupRow :5047`, `importantRow :5228`,
+  `deadlineRow :5485` (bloc `ident` copié 3×) ; barre d'onglets copiée 4× (`:4791`, `:4967`, `:5426`,
+  `:9416`) ; `loadAccountCleanup :4007` ⇄ `loadCleanupGlobal :7702` (0,41) ; 5 modales reconstruisent
+  leur overlay à la main (`:1210`, `:4494`, `:5770`, `:9500`, `:11444`) alors que `ouvrirModale :6119`
+  existe ; 3 modales en `style="width:…px"` (`:1211`, `:5771`, `:11445`) contre la règle
+  `styles.css:476-480` ; `fmtSize` local (`:11493`) masque l'import avec un autre arrondi.
+  Géants : `renderSettingsBody` 613 l. (`:8433`), `openReader` 373, `renderDashboard` 354,
+  `runReviewEngine` 344 — 25 % du fichier en 10 fonctions.
+- **Action** : ne PAS lancer un refactor global. Chaque ticket qui touche une zone y applique
+  `ouvrirModale`, `ligneMail()`, `barreOnglets()`. Passer les 3 modales en `min(px, vw)` tout de suite (10 min).
+
+#### C8. État global jamais libéré — **[faible]**
+- **Constat** : 38 variables de module ; `inboxState.data` (`:9550`), `statsState.selected` (`:3876`,
+  cases cochées qui survivent au changement de compte), 7 jeux `*.data` retenus en même temps ;
+  `_pileLecture` (`:10903`) sans plafond ; `_fusionSource` (`:6110`) armée pour toute la session.
+  Bien fait : `readBodyCache` LRU 20 (`:11042`), `sideFoldersCache` vidé (`:576`).
+- **Action** : `route()` appelle `quitterEcran()` qui remet les états de l'écran quitté à zéro ;
+  `statsState.selected` vidé au changement de compte.
+
+### E. Usine et preuve
+
+#### E1. L'audit de socle ne franchit pas le login — **[moyen]**
+- **Constat** : `factory audit --route` juge la page publique seulement (1 écran sur 27). C4/C1 ne
+  sont donc mesurables qu'à la main. Contournement actuel : `tour-des-ecrans.json` (0 erreur console,
+  pas de débordement) — mais sans les 9 règles §6/§7.
+- **Action** (dans le plugin usine, pas dans Boxmail) : `audit --preambule <scenario>` qui rejoue
+  les steps de connexion avant de mesurer ; ou `audit` accepte un scénario et audite à sa fin.
+- **Preuve** : `factory audit --preambule tour-des-ecrans` rend le bilan §6/§7 sur `#/today`.
+
+#### E2. Scénarios de mutation non rejouables, seed insuffisant — **[moyen]**
+- **Constat** : `decision-compteur-coherent` rouge : il lui faut `[data-rv-seen]` sur `#/inbox/@inbox`,
+  donc une file de dépouillement (`candidateWhere` d'`analysis.ts` : `snippet` non nul, verdict…)
+  que `seed-dev.mjs` ne remplit pas ; et rien ne restaure après mutation (limite de la DSL, notée 01/09).
+- **Action** : seed qui produit des mails « à décider » (snippet + analysisInput) ; un `npm run
+  seed:dev --reset` en `steps[0]` du scénario (ou une étape `restore` dans la DSL).
+- **Preuve** : `factory verify --all` 3/3 VERT, rejouable deux fois de suite.
+
+#### E3. Brancher ce qui existe déjà — **[faible, 30 min]**
+- `.factory.json` `checks.onStop` = `npm run typecheck && npm test` (après D1) ; `.gitattributes`
+  `docs/banc-etiquettes.json -diff` ; supprimer `start-boxmail.bat` (D7).
+
+### D. Qualité, outillage, exploitation
+
+#### D1. Une suite de 175 assertions existe et rien ne la lance — **[élevé, gain immédiat]**
+- **Constat** : `src/cli/verdict-check.ts` (1 524 lignes) — `verifier(quoi, attendu, obtenu)` l.46,
+  compteur `echecs` l.43, `process.exit(1)` l.1523, **zéro import de base** (fonctions pures), couvre
+  `verdict`, `semantique`, `deadlines`, `attention`, `importance`, `review`, `today`, `search`, `find`,
+  `dossiers`, `accounting`, `learning`. Câblée dans `package.json:29` (`verdict:check`), mais
+  `grep verdict:check docs/ CLAUDE.md README.md .openspec/ .factory*` → **0 résultat** : aucune doc,
+  aucun barrage ne la connaît ; `.factory.json` ne lance que `typecheck`. Le prémisse « 0 test »
+  était faux : les tests existent, ils sont hors de tout dispositif.
+- **Vérifié le 03/09** : `npm run verdict:check` → « ✅ 175 vérifications passées », exit 0. Elle est VERTE.
+- **Action** : `npm test` = `verdict:check` ;
+  `.factory.json` `checks.onStop` = `typecheck && test`. Ensuite seulement : Vitest, en migrant ce
+  patron plutôt qu'en le réécrivant. Modules purs à couvrir en priorité (aucun mock) :
+  `server/entete-fichier.ts` (50 l.), `services/taille-piece.ts`, `pages-scannees.ts`, `termes.ts`,
+  `accents.ts` (`sqlDeplie` engendre la plus grosse migration : test de non-régression de la chaîne),
+  `mojibake.ts`, `justificatif-corps.ts` (7 fonctions de parsing de montants — meilleur ratio bug/effort).
+- **Preuve** : `npm test` vert ; faute injectée → rouge via `factory check onStop`.
+
+#### D2. Vulnérabilités connues, audit désactivé sur les deux chemins d'installation — **[élevé]**
+- **Constat** : `npm audit` → **8 HIGH, 7 MODERATE**. Directes : `nodemailer ≤9.0.0` (HIGH, fix 9.1.1
+  majeure), `mailparser 3.9.14` (HIGH — **le fix 3.9.20 est DANS la plage `^` déclarée**, seul le lock
+  le retient ; idem `imapflow` 1.4.6 → 1.7.8), `prisma` (HIGH via `@prisma/config`→`deepmerge-ts`,
+  parce que `prisma` CLI est en `dependencies` — justifié par `src/db/migrate.ts:85`), `@azure/msal-node`
+  (MODERATE, fix 6.0.0 majeure), `express` (MODERATE via `qs`). `supervisor.mjs:79` et
+  `deploy/update.sh:88` passent `--no-audit`. Pas de `.github/`, pas de Dependabot.
+- **Action** : (1) `npm update mailparser imapflow express` (dans la plage, sans risque) ; (2) majeures
+  une par une avec `factory verify` et l'utilisateur pour l'IMAP réel ; (3) `npm audit --audit-level=high`
+  dans `checks.onStop` ou un workflow GitHub hebdo.
+- **Preuve** : `npm audit` 0 high ; sync réelle validée par Anthony.
+
+#### D3. Le poste Windows n'a aucun rollback : boucle infinie sur commit cassé — **[élevé]**
+- **Constat** : `scripts/supervisor.mjs:79-83, 91-95, 108-115` — échec de `npm install` /
+  `db:generate` / `build` → `sleep(15 s)` puis `continue` dans un `for(;;)`, **sans limite, sans
+  message actionnable**. `deploy/update.sh:123-133` (Linux) fait l'inverse : `git reset --hard $PREV`,
+  rebuild, `write_status "échec"` lu par ⚙️ Paramètres. L'utilisateur est « non technique, PowerShell
+  banni » (`CLAUDE.md:27`) : un commit cassé = fenêtre noire qui boucle.
+- **Action** : porter le rollback de `update.sh` dans le supervisor (mémoriser `PREV`, 2 tentatives,
+  puis revenir au commit précédent et écrire le statut que l'interface affiche déjà).
+- **Preuve** : commit volontairement cassé sur une branche de test → le supervisor revient au
+  précédent et le bandeau dit « mise à jour échouée, version précédente relancée ».
+- Niveau cadrage : **moyen** (chemin de livraison).
+
+#### D4. Adresses e-mail de TIERS RÉELS en dur dans le code commité — **[élevé, RGPD]**
+- **Constat** : `services/correspondance.ts:62,79` (`elisa.s@comptastar.fr` — prénom + initiale d'une
+  personne physique, contexte « approbation des comptes » Brimmo) ; `services/categorize.ts:377-406`
+  (`compta@secoba-bet.fr`, `agence-cs.brest@partedis.com`, `brest@resilians.fr`,
+  `bnpp-epargne-entreprise@s2e-net.com`, `legal@mail.lolivier.fr`…) ; `services/brouillons.ts:271`,
+  `correspondance.ts:101,576,594` (`litiges@sider.biz` + détail du contentieux, 34 mails) ;
+  `cli/verdict-check.ts:1048-1053` (cas `comptastar`, montant 850,00). Dépôt distant GitHub, prod publique.
+- **Action** : remplacer par des adresses `.invalid` équivalentes en forme (les commentaires gardent leur
+  valeur pédagogique sans le nom) ; **l'historique git les garde** — décision d'Anthony : réécriture
+  d'historique (`git filter-repo`) ou acceptation. `docs/banc-etiquettes.json` (3,8 Mo) est sain
+  (0 adresse, 0 sujet ; seulement les 7 noms de boîtes).
+- **Preuve** : `grep -rE "[a-z0-9._-]+@[a-z0-9.-]+\.(fr|com|biz)" src/ web/ scripts/` → uniquement `.invalid`/`example`.
+
+#### D5. `logs/operations.jsonl` : ni rotation, ni plafond, relu entier à chaque écran — **[moyen]**
+- **Constat** : `services/oplog.ts:66,100` → `readFile` complet + `split('\n')` ; appelants
+  `admin.ts:3985` (à chaque affichage de `#/operations`), `learning.ts:118` (`readOperations(5000)`) ;
+  une entrée peut porter **20 000 sujets** sur une ligne (`oplog.ts:124`) ; `mkdir` à chaque `append`.
+  Aucune rotation dans le dépôt (seulement `backup.ts`). Sujets en clair, sans rétention, quand
+  `accounts.json` est chiffré. Secrets : correctement masqués (`oplog.ts:53-62`).
+- **Action** : lecture par la fin (`tail` en flux) ; rotation par taille (ex. 20 Mo, N fichiers) ;
+  `items` tronqué à 200 dans l'entrée + lien vers un fichier de détail. **Rétention** : décision d'Anthony.
+- **Preuve** : journal de 100 Mo synthétique → `#/operations` s'ouvre en < 200 ms.
+
+#### D6. Documentation : trois documents « de référence » périmés, et une doc qui revendique des tests disparus — **[moyen]**
+- **Constat** : `README.md` (21 Ko, 28/07) annonce **12 tools** (l.264) ; `CLAUDE.md:19` dit 52 ;
+  `registerTool(` compte **61**. Structure du dépôt : 1 CLI sur 17, 9 services sur 65, `web/` et
+  `admin.ts` absents ; procédure d'install (l.114-118) contraire à `CLAUDE.md:77-78`. `docs/ROADMAP.md`
+  (89 Ko, 29/07) = « le plan » selon `CLAUDE.md:8`, prescrit `npx tsc --noEmit` (obsolète), renvoie à
+  `seed-followups.mts` (inexistant), décrit ~70 assertions Playwright (`ui-unified.mjs`, `ui-calendar.mjs`…)
+  dont **aucun fichier n'existe**. `docs/DEPLOY-ORACLE.md` (28/07) ignore `install-updater.sh`/`update.sh`/
+  `update-boot.sh` nés le lendemain, et documente `AUTO_UPDATE_HOUR` que `install-updater.sh:10-11` désactive.
+  `CLAUDE.md:29-30` dit « db:setup » là où `supervisor.mjs:91` fait `db:generate` (l.96-98 expliquent
+  pourquoi) — faux sur le point exact de la panne du 28/07. `CLAUDE.md` = 15,8 Ko (+32 %).
+  Orphelins (0 référence) : `PROMPT-AUDIT.md`, `PLAN-ARCHIVE.md`, `REPRISE-2026-08-27-compta.md`,
+  `change-qualification.md` ; `PLAN-NETTOYAGE.md` cité par le seul journal ; `ECHANGE-FISCAL-MANAGER.md`
+  (27 Ko) à la racine au lieu de `docs/archives-chatgpt/`. `docs/audit-findings.json` : 48 constats `todo`
+  gelés au 30/07.
+- **Action** (une session, docs seulement) : README réécrit court et VRAI (chiffres tirés de commandes) ;
+  ROADMAP : garder ce qui reste à faire, archiver le reste ; DEPLOY-ORACLE aligné sur les scripts ;
+  `CLAUDE.md` corrigé (db:generate) et « État courant » sorti vers `docs/ETAT.md` ; orphelins → archives.
+  Un seul chiffre de tools, tiré de `grep -c registerTool`.
+- **Preuve** : `verifie-claude-md.mjs` de l'usine ; taille `CLAUDE.md` < 12 Ko.
+
+#### D7. Lanceur déprécié toujours double-cliquable, ports contradictoires — **[moyen]**
+- **Constat** : `start-boxmail.bat` (racine) fait `git pull` de lui-même (corruption documentée
+  `MailAssistant.bat:3-4`) et `npm run db:setup` = `migrate deploy` hors chemin sûr (la panne
+  « database is locked » du 28/07, `src/db/migrate.ts:9-18`) ; affiche `:8787` en dur (l.27).
+  Ports : `8787` dans README ×6, `.env.example`, `env.production.example`, nginx, `config.ts:38,90`,
+  `CLAUDE.md:80` (redirect OAuth) ; `8799` dans `.env` local, `.factory.json`, `CLAUDE.md:74`.
+  **Piège** : `.factory.json` attend `:8799` mais `npm run dev` lit `PORT` du `.env` — sur une machine
+  neuve qui copie `.env.example` (8787), `factory verify` attend 120 s puis échoue muet.
+- **Action** : supprimer `start-boxmail.bat` ; `.factory.json` `command: "cross-env PORT=8799 npm run dev"`
+  (ou `PORT` forcé dans `run.env` si le contrat le permet) ; une seule table des ports dans CLAUDE.md.
+- **Preuve** : clone frais → `.env.example` copié → `factory verify --all` vert sans toucher au port.
+
+#### D8. Git : `origin/HEAD` sur une branche en retard, branches mortes, une branche oubliée — **[faible]**
+- **Constat** : `origin/HEAD` → `claude/new-session-gutt6f` (4 derrière `main`) : un clone frais part
+  en retard — le piège déjà consigné dans `.openspec/spec.md` sans correction de la cause.
+  `base-avant-refonte-analyse` et `refonte-analyse-lots-0-2` : 0 commit propre, à supprimer.
+  `feature/recherche-conversationnelle` : **3 commits non fusionnés** (29/08), non mentionnée nulle part —
+  `76bc014` « Répondre aux recherches à partir de preuves sourcées », `a6d3b71` « Préserver les fins de
+  ligne de l'interface », `16c977e` « Réparer le transfert complet de l'interface ».
+  `docs/banc-etiquettes.json` (3,8 Mo, 55 % du volume suivi) sans `-diff` dans `.gitattributes`.
+- **Action** : branche par défaut GitHub = `main` ; supprimer les 2 mortes ; **Anthony décide** du sort
+  de `recherche-conversationnelle` (fusionner / jeter) ; `docs/banc-etiquettes.json -diff`.
+
+#### D9. `scripts/db-setup.mjs` muet sur le verrou — **[faible]**
+- **Constat** : `DATABASE_URL` vide → repli silencieux sur `file:../data/boxmail.db` (l.15-18) ; base
+  verrouillée → `exit 1` sans message ni détection du serveur en cours (l.40). Le conseil « `pm2 stop`
+  d'abord » n'existe que dans `DEPLOY-ORACLE.md:241`, la doc la plus périmée.
+- **Action** : détecter `database is locked` et afficher « le serveur tourne : arrête-le d'abord
+  (MailAssistant.bat / pm2 stop) » ; refuser le repli si `NODE_ENV=production`.
+
+### Points sains mesurés — à ne PAS « améliorer »
+0 `TODO/FIXME` · 0 `console.*` hors CLI (174 appels logger) · 0 injection SQL sur 41 sites de SQL
+brut (tout paramétré) · garde SSRF complète sur l'enrôlement (`admin.ts:283-335`) · secrets masqués
+dans le journal (`oplog.ts:52-60`) · comparaisons de jetons en temps constant · `PRAGMA optimize`
+au boot justifié par chiffres (`db/client.ts:102`). Front : 0 `console.*`, 520 `esc()` sur le contenu
+(le trou est le guillemet en attribut, pas l'oubli d'échapper), corps de mail en iframe `sandbox` sans
+`allow-scripts` (`app.js:10822`), `readBodyCache` LRU. Ops : `.gitignore` complet (aucun secret ni base
+suivis), ordre `db:generate` → `build` respecté partout, `update.sh` Linux avec rollback, `.gitattributes`
+LF sur `*.sh`, dépôt 5,5 Mo.
+
+---
+
+## Vérification de bout en bout (à chaque ticket)
+
+1. `npm run typecheck` (src + web) → exit 0 ; `node --check web/js/*.js`.
+2. `npm run verdict:check` (puis `npm test` dès D1) → « 175 vérifications passées ».
+3. Serveur local : `.env` (PORT=8799), `npm run db:setup`, `npm run seed:dev`.
+4. Usine, depuis PowerShell : `factory audit --route /admin` (0 écart), `factory verify --all`
+   (2 VERT + `decision-compteur-coherent` rouge tant que E2 n'est pas fait).
+5. Tout ticket qui touche un écran : capture réelle (règle CLAUDE.md), et un scénario `.factory/`
+   qui le rejoue si le geste est reproductible.
+6. Drapeau de preuve puis commit (deux commandes séparées), push `main`. OpenSpec + journal.
+7. Ce qui exige l'IMAP réel (envoi, sync, enrôlement) : Anthony valide dans l'app après le pull.
+
+## Ce que ce plan ne décide pas (à Anthony)
+- Réécrire l'historique git pour D4, ou l'accepter.
+- Les valeurs de rate limit (A4) et la durée de rétention du journal (D5).
+- Le sort de `feature/recherche-conversationnelle` (3 commits) et des 4 écrans inatteignables (C6).
+- Les sauts de majeure (`nodemailer` 9, `msal-node` 6, `prisma` 7, `express` 5) — un par un, avec test IMAP réel.

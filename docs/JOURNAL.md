@@ -5,6 +5,53 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/09 (63) — L'audit complet : trois prémisses renversés
+
+Anthony a voulu « tout ce qu'il y a à voir », en plan, pour traiter chaque point
+dans une session séparée. Trois explorations en parallèle (backend, front,
+qualité/ops), puis une contre-revue Codex en lecture seule du dépôt : **7 constats
+sur 8 confirmés fichier:ligne**, 4 oublis réels ajoutés, 3 inversions de priorité
+retenues. Le carnet est dans **`docs/AUDIT-2026-09-03.md`** : 32 tickets, chacun
+autoporteur, avec l'ordre recommandé en tête.
+
+**Trois choses que je croyais et qui étaient fausses.**
+
+1. **« Zéro test. »** `src/cli/verdict-check.ts` porte 175 assertions pures sur
+   douze services ; exécutée ce soir : **175 vérifications passées, exit 0**. Elle
+   est câblée dans `package.json` mais aucune doc, aucun barrage, ni `.factory.json`
+   ne la connaît. Le filet existait, débranché.
+2. **« 52 tools. »** `registerTool(` en compte 61. Le README en annonce 12. Trois
+   chiffres, trois valeurs — aucune tirée d'une commande.
+3. **« `esc()` protège. »** Il passe par `textContent → innerHTML`, qui n'échappe
+   que `& < >`, jamais le guillemet. Il est utilisé 145 fois en valeur d'attribut,
+   dont 22 sur des données venues d'un mail (`title="${esc(i.snippet)}"`, la liste
+   de la boîte). Un sujet `" onmouseover="…` exécute du script dans l'origine de
+   l'application. Le corps du mail est bien en iframe bac à sable ; la liste, non.
+
+**Ce que l'audit a mesuré de plus grave, en un mot chacun.** La route bulk de
+l'interface accepte 20 000 UIDs sans confirmation là où le tool MCP plafonne à 200
+avec dry-run — le garde-fou « 0 mail personnel » est contourné par l'écran. Les
+jobs vivent en mémoire, sans verrou ni timeout, et l'auto-sync saute son tick tant
+qu'un job tourne : un job bloqué gèle la synchronisation pour toujours. Le
+supervisor Windows boucle toutes les 15 s sur un commit cassé, sans limite ni
+message, quand `update.sh` côté Linux sait revenir en arrière. Huit vulnérabilités
+HIGH connues, et `--no-audit` sur les deux chemins d'installation — dont
+`mailparser`, dont le correctif est déjà dans la plage `^` déclarée. Des adresses
+de tiers réels, nominatives, en commentaire de code de production, sur un dépôt
+distant. Un seul `Map` de rate limit partagé entre l'interface et le MCP.
+
+**Ce que la contre-revue a apporté et que je n'avais pas vu** : STARTTLS non
+exigé sur IMAP 143 et sur le chemin SMTP OAuth (le chemin mot de passe, lui, pose
+`requireTLS`) ; `accounts.json` réécrit par `load()` puis `save()` sans verrou —
+deux écritures croisées et un compte disparaît ; le pool IMAP ouvre deux
+connexions pour le même compte si deux appels arrivent pendant le `connect()`.
+
+**Ce qui est sain et qu'il ne faut pas « améliorer »** : zéro injection SQL sur 41
+sites de SQL brut, garde SSRF complète à l'enrôlement, secrets masqués dans le
+journal, comparaisons de jetons en temps constant, aucun secret ni base commis.
+
+Rien d'implémenté ce soir : le carnet est la livraison. CHG-001 en OpenSpec.
+
 ## 03/09 (62) — Le front sous contrôle : deux vrais bugs sortis du bois
 
 Suite directe du constat de la passe précédente : `web/js/app.js` concentre

@@ -243,7 +243,8 @@ citation du mail et le filtre par boîte — seul LB2I part en note de frais) ;
 « Voir l'histoire » branché sur les 3 focales ; modale de réponse en plan de
 travail (message + appuis + fil, largeurs en `min(px, vw)` et jamais en pixels).
 
-**À faire** :
+**À faire** — **d'abord le carnet `docs/AUDIT-2026-09-03.md`** (32 tickets sourcés, ordre en tête,
+un par session ; les 5 premiers : D1, C1, D2, D4, A1). Puis :
 - **Gardé dans un coin** (ses mots) : voir le FIL d'un sujet sous la carte et
   pouvoir ouvrir ces mails ; joindre au brouillon les copies des mails cités,
   **uniquement au besoin**.

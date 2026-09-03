@@ -45,6 +45,13 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 ### À traiter
 
+**Carnet de l'audit complet du 03/09 — `docs/AUDIT-2026-09-03.md` (CHG-001, APPROVED).**
+32 tickets sourcés, ordre recommandé en tête, un ticket par session. Les 5 premiers :
+D1 brancher `verdict:check` (175 assertions vertes, ignorées de tout barrage) · C1 `esc()` n'échappe
+pas le guillemet (XSS par attribut depuis un sujet de mail) · D2 8 vulnérabilités HIGH, audit désactivé
+· D4 adresses de tiers réels dans le code · A1 la route bulk contourne le plafond de 200 suppressions.
+Les constats ci-dessous sont **absorbés** par le carnet et n'y sont plus suivis qu'à travers lui.
+
 *Constats mécaniques de l'audit d'usine du 03/09 (détail : `docs/JOURNAL.md`).*
 
 - [ ] **`/api` plafonné à 60 requêtes/minute et par IP** (`RATE_LIMIT_MAX`, la
@@ -139,6 +146,11 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
   Windows). Le MCP Codex remplace le second.
 
 ## Changelog
+
+- 2026-09-03 (4) : **audit complet** — trois explorations (backend, front, qualité/ops) + contre-revue
+  Codex (7 constats sur 8 confirmés, 4 oublis ajoutés, 3 inversions de priorité). Carnet de 32 tickets
+  dans `docs/AUDIT-2026-09-03.md`, CHG-001. Trois prémisses renversés : « 0 test » (175 assertions
+  existent, vertes, débranchées), « 52 tools » (61 enregistrés), et « `esc()` protège » (pas en attribut).
 
 - 2026-09-03 (3) : **le front passe au vérificateur.** Deux vrais bugs sortis le
   premier jour (doublon `api.health`, `draft.value` sur un contenteditable), et
