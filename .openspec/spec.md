@@ -96,5 +96,12 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 ## Changelog
 
+- 2026-09-03 : audit de l'usine mené depuis ce projet → usine 1.8.2 (trois faux positifs
+  corrigés : EIP sur `cat`/`sed`, garde sur le message de commit, drapeau de preuve consommé
+  au succès du commit). Aucun code Boxmail modifié. Branche remise au niveau de `main`
+  (12 commits de l'autre poste, dont `.factory.json` et le contrat `run`). Leçon : un clone
+  local en retard m'a fait conclure à tort à l'absence de `.factory.json` — `git fetch`
+  avant tout constat d'absence.
+
 - 2026-08-23 : Recherche par mots + accents ignorés + banc de recherche ;
   `main` synchronisée ; index OpenSpec renseigné (pointe vers la doc existante).
