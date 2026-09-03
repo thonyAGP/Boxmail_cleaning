@@ -98,6 +98,15 @@ body {
   font-size: 14px; background: var(--surface-raised);
 }
 .login-card input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+/* Socle §7 (audit d'usine du 03/09) : au doigt, 44 px minimum et 14 px de texte.
+   Borné à la carte de connexion — le reste de l'interface n'est pas touché. */
+.login-card .btn-block { min-height: 44px; font-size: 14px; }
+/* Étiquette lue par les lecteurs d'écran, invisible à l'œil : un placeholder
+   disparaît à la saisie, il ne tient pas lieu de label (socle §6). */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 /* ---------- Layout ---------- */
 .app { display: flex; min-height: 100vh; }
