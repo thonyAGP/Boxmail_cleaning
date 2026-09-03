@@ -5,6 +5,57 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 03/09 (61) — L'usine passée sur Boxmail : elle ne regardait pas le bon fichier
+
+Première fois que l'usine tourne **réellement** sur ce dépôt, et non sur l'idée
+qu'on s'en faisait. Trois de ses quatre étages étaient morts sur ce poste.
+
+**`playwright-core` n'existait nulle part.** Ni dans le plugin usine, ni dans
+`node_modules`, ni en global. Donc `factory observe`, `factory audit` et
+`factory verify` tombaient tous les trois sur `Cannot find module`. Or
+`CLAUDE.md` fait de la capture d'écran une étape OBLIGATOIRE avant de livrer un
+écran (« aucun test automatique ne voit les onglets en double ») : **la règle la
+plus chèrement payée du projet était inapplicable sur une machine neuve**, parce
+que l'outil qu'elle exige n'était pas déclaré dans `package.json`. Il l'est
+maintenant (`devDependencies`). L'usine, elle, le `require` depuis SON dossier :
+sur ce poste il faut lui passer `NODE_PATH` vers les modules du projet — à
+remonter au plugin.
+
+**Le contrat de l'usine donne un feu vert qui ne regarde pas le fichier le plus
+modifié.** `.factory.json` déclare `checks.onEdit = npm run typecheck`, et
+`tsconfig.json` porte `include: ["src/**/*.ts"]`. Or sur 30 jours :
+
+| Fichier | Commits (sur 193) | Couvert par le check |
+|---|---|---|
+| `web/js/app.js` (12 303 lignes, 238 fonctions) | **57** | non |
+| `web/styles.css` | 25 | non |
+| `web/js/api.js` | 19 | non |
+| `src/server/admin.ts` (4 030 lignes, 143 routes) | 29 | oui |
+
+**Le front concentre ~30 % des commits et zéro contrôle mécanique** au-delà de
+`node --check`, qui ne vérifie que la syntaxe. Le seul garde-fou réel sur
+`app.js`, c'est l'œil — et l'œil est précisément ce que les règles du projet
+disent de ne pas croire.
+
+**Audit du socle sur l'écran de connexion** (le seul que l'audit sache atteindre,
+il ne franchit pas le login) : 3 écarts sur 9 règles. Champ mot de passe sans
+`<label>` (un placeholder disparaît à la saisie) ; bouton « Se connecter » de
+31 px de haut sur mobile pour 44 attendus ; police de 13 px pour 14 minimum.
+Petits, réels, jamais vus jusqu'ici.
+
+**Scénarios : 1 vert, 1 rouge.** `login-ecran-refus` passe (4 asserts).
+`decision-compteur-coherent` échoue faute de mails en attente dans la base
+locale — pas un défaut du produit, la limite déjà écrite le 01/09 : un scénario
+de MUTATION n'est pas rejouable, et rien ne sait encore le restaurer.
+
+**Le cadrage a été abandonné en route.** Dernier `.chantier/` : 18/08. Depuis,
+une centaine de commits sans artefact de changement. Le barrage de preuve, lui,
+tient parfaitement : 18 décisions sur 30 jours, 0 skip.
+
+Reste sur la table, par ordre de ce que ça rattrape : couvrir le front,
+franchir le login à l'audit, les 3 écarts du socle, `CLAUDE.md` à 14,8 Ko pour
+une limite auto-imposée de 12.
+
 ## 28/08 (60) — Le compteur de temps restant, et l'unité qui ment
 
 Sa remarque : « il y a maintenant un compteur de temps passé, de temps restant

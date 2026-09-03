@@ -45,6 +45,26 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 
 ### À traiter
 
+*Constats mécaniques de l'audit d'usine du 03/09 (détail : `docs/JOURNAL.md`).*
+
+- [ ] **Le front échappe au check du contrat.** `.factory.json` déclare
+      `npm run typecheck`, borné à `src/**/*.ts` par `tsconfig.json`. Or
+      `web/js/app.js` (12 303 lignes, 238 fonctions) est le fichier n°1 en
+      churn : **57 commits sur 193** en 30 jours, plus 25 sur `styles.css` et
+      19 sur `api.js`. ~30 % des commits sans autre contrôle que `node --check`
+      (syntaxe seule).
+- [ ] **L'audit de socle ne franchit pas l'écran de connexion** : il n'atteint
+      qu'une route publique, soit 1 écran sur ~15. Les écrans réels de
+      Mail Assistant ne sont jamais contrôlés mécaniquement.
+- [ ] **3 écarts de socle sur l'écran de connexion** : champ mot de passe sans
+      `<label>`, bouton « Se connecter » à 31 px (44 attendus) et police 13 px
+      (14 minimum) sur mobile.
+- [ ] **Cadrage abandonné depuis le 18/08** : dernier `.chantier/` à cette date,
+      une centaine de commits depuis sans artefact de changement. (Le barrage de
+      preuve, lui, tient : 18 décisions, 0 skip sur 30 jours.)
+- [ ] **Un scénario de mutation n'est pas rejouable** : `decision-compteur-`
+      `coherent` échoue faute de données et faute d'étape de restauration —
+      limite de la DSL, déjà notée le 01/09.
 - [ ] **Écart accentué résiduel** : le corps des mails n'est pas déplié.
       Mesuré : l'étendre coûterait +71 % de base et doublerait la recherche.
       `npm run banc:search` **sur le serveur** chiffrera l'écart réel — à
@@ -54,7 +74,8 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 - [ ] Vue documentaire (Factures · Banque · Fiscal · Immobilier · Contrats).
 - [ ] Lot 6 : retrait des colonnes plates et de la projection de compatibilité.
 - [ ] Boîtes à enrôler : jojo56, techni-soft ×2, **location-miron**.
-- [ ] `CLAUDE.md` encore à 13,1 Ko pour une limite auto-imposée de 10 Ko.
+- [ ] `CLAUDE.md` à **14,86 Ko** (mesuré le 03/09) pour une limite auto-imposée
+      de ~12 Ko — et 49 commits en 30 jours dessus : l'historique y remonte.
 
 ### Terminées
 
@@ -95,6 +116,18 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
   Windows). Le MCP Codex remplace le second.
 
 ## Changelog
+
+- 2026-09-03 (2) : **l'usine passée sur Boxmail pour de vrai.** `playwright-core`
+  n'était résolvable nulle part sur ce poste → `observe`/`audit`/`verify` en
+  `Cannot find module`, et donc la règle « capture obligatoire avant de livrer un
+  écran » inapplicable sur une machine neuve. Ajouté en `devDependencies`.
+  Mesures obtenues : typecheck vert, socle 3 écarts sur 9 règles (login),
+  scénarios 1 vert / 1 rouge (mutation non rejouable), barrage de preuve 18/18.
+  Leçon : **un contrat d'usine peut rendre vert en ne regardant pas le fichier le
+  plus modifié** — ici les 12 303 lignes de `web/js/app.js`. Deux pièges de poste
+  à remonter au plugin : `require('playwright-core')` résolu depuis le dossier du
+  plugin (passer `NODE_PATH`), et `--route /x` mangé par la conversion de chemins
+  de Git Bash (`/admin` → `C:/Program Files/Git/admin`).
 
 - 2026-09-03 : audit de l'usine mené depuis ce projet → usine 1.8.2 (trois faux positifs
   corrigés : EIP sur `cat`/`sed`, garde sur le message de commit, drapeau de preuve consommé

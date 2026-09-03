@@ -65,7 +65,8 @@ personnel » dans toute stratégie de nettoyage.
 
 ## Conventions de travail
 
-- Branche `claude/new-session-gutt6f` ; commits en français, descriptifs.
+- Branche **`main`** (03/09 : `claude/new-session-gutt6f` l'avait rejointe au
+  même commit, on travaille désormais dessus) ; commits en français, descriptifs.
 - Interface en français, tutoiement. **Ne jamais retirer d'emojis existants**
   (il tient à l'identité chaleureuse) ; réduire seulement les cumuls
   emoji+pastille+badge, et lister les changements AVANT une telle passe.
