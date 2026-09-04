@@ -227,9 +227,9 @@ les mises à jour, installe, compile, démarre le serveur **et le relance
 automatiquement** s'il s'arrête (ex. après une mise à jour depuis l'interface).
 
 - Créer un raccourci du `.bat` sur le Bureau pour un accès direct.
-- (`start-boxmail.bat`, l'ancien lanceur, est déprécié : il pouvait se corrompre
-  quand une mise à jour le modifiait en cours d'exécution — utiliser
-  `MailAssistant.bat`.)
+- (`start-boxmail.bat`, l'ancien lanceur, a été SUPPRIMÉ le 04/09 : il pouvait
+  se corrompre quand une mise à jour le modifiait en cours d'exécution. Si un
+  raccourci pointe encore dessus, le refaire vers `MailAssistant.bat`.)
 - Démarrage automatique avec Windows : `Win+R` → `shell:startup` → glisser le
   raccourci dans le dossier qui s'ouvre.
 - **Mises à jour** : un bandeau apparaît sur le tableau de bord quand une mise à

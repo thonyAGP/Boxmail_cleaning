@@ -7,6 +7,6 @@
   },
   "checks": {
     "onEdit": "npm run typecheck",
-    "onStop": "npm run typecheck"
+    "onStop": "npm run typecheck && npm test"
   }
 }

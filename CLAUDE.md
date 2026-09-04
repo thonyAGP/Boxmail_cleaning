@@ -28,7 +28,9 @@ serveur + analyse fine par Claude via MCP. Prod : `https://boxmail.lb2i.com`.
   ligne de commande (PowerShell explicitement banni).
 - Lanceur : double-clic sur **`MailAssistant.bat`** (`scripts/supervisor.mjs` :
   pull → install → db:setup → build → serveur → relance auto).
-  `start-boxmail.bat` est déprécié : ne plus y toucher.
+  `start-boxmail.bat` a été SUPPRIMÉ le 04/09 (il se mettait à jour lui-même en
+  cours d’exécution) : si un raccourci pointe encore dessus, le refaire vers
+  `MailAssistant.bat`.
 - **Son canal de livraison, c'est git** : bandeau sur le tableau de bord → il
   clique → pull + redémarrage. Donc **commiter et pousser à chaque passe**.
 - 7 boîtes : `thony56_gtr` (perso, ~20 000 mails), `Brimmo` (SARL), `Colocar`,
@@ -71,6 +73,7 @@ personnel » dans toute stratégie de nettoyage.
   (il tient à l'identité chaleureuse) ; réduire seulement les cumuls
   emoji+pastille+badge, et lister les changements AVANT une telle passe.
 - Avant de pousser : **`npm run typecheck`** (couvre `src/` ET `web/`),
+  **`npm test`** (175 assertions pures, `src/cli/verdict-check.ts`),
   `node --check web/js/*.js`, `npm run seed:dev`, serveur local `PORT=8799`,
   clic réel — `factory verify --all` rejoue les scénarios de `.factory/`.
 - Pas d'IMAP réel en dev : DB/API/UI sur seeds, l'utilisateur valide l'IMAP.

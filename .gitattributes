@@ -4,3 +4,6 @@
 # Ne dépend d'aucun réglage local (core.autocrlf) : la règle est dans le dépôt.
 * text=auto
 *.sh text eol=lf
+
+# Un banc de mesure figé : le diff ligne à ligne est illisible et inutile.
+docs/banc-etiquettes.json -diff

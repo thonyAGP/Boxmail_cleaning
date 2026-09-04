@@ -27,6 +27,7 @@
     "banc": "tsx src/cli/banc.ts",
     "banc:search": "tsx src/cli/banc-search.ts",
     "verdict:check": "tsx src/cli/verdict-check.ts",
+    "test": "npm run verdict:check",
     "ocr:banc": "tsx src/cli/ocr-banc.ts",
     "db:setup": "node scripts/db-setup.mjs",
     "db:generate": "node scripts/db-setup.mjs generate",
