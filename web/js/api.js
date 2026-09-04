@@ -395,8 +395,37 @@ export function fmtNum(n) {
   return (n ?? 0).toLocaleString('fr-FR');
 }
 
+/**
+ * Table d'échappement HTML. Le GUILLEMET et l'apostrophe en font partie :
+ * c'est tout l'objet de cette table.
+ */
+const ECHAPPEMENTS_HTML = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * Échappe une valeur pour l'insérer dans du HTML — texte OU valeur d'attribut.
+ *
+ * L'ancienne version passait par `textContent` → `innerHTML`. La sérialisation
+ * d'un nœud TEXTE n'a jamais besoin d'encoder `"` ni `'` : elle ne le fait donc
+ * pas. Or `esc()` sert 145 fois en VALEUR D'ATTRIBUT, dont une vingtaine sur
+ * une donnée pilotée par l'expéditeur (`title="${esc(i.snippet)}"`,
+ * `data-subject="${esc(i.subject)}"`, nom de pièce jointe…). Un sujet de mail
+ * contenant `" onmouseover="…` sortait alors de son attribut et exécutait du
+ * script DANS L'ORIGINE de l'application — celle qui porte le cookie de
+ * session. L'iframe bac à sable ne protège que le corps du mail, pas la liste.
+ *
+ * Les cinq caractères sont donc encodés en toutes lettres. En position de
+ * texte, `&quot;` et `&#39;` sont redécodés par le navigateur : le rendu à
+ * l'écran est identique, accents et emojis compris (ils ne sont pas touchés).
+ *
+ * @param {unknown} s
+ * @returns {string}
+ */
 export function esc(s) {
-  const div = document.createElement('div');
-  div.textContent = s ?? '';
-  return div.innerHTML;
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ECHAPPEMENTS_HTML[c]);
 }

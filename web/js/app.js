@@ -12205,8 +12205,8 @@ async function chargerContexte(zone, ref, focale, sujetCourant, ctx = {}) {
         `<div class="ctx-corps">${esc(texte.slice(0, 4000) || '(corps vide)').replace(/\n/g, '<br>')}</div>` +
         (pj.length ? `<div class="ctx-pj">📎 ${pj.map((n) => esc(n)).join(' · ')}</div>` : '') +
         `<div class="ctx-msg-actions">
-           <button class="btn btn-sm ctx-ouvrir" data-account="${h.dataset.account}"
-             data-folder="${h.dataset.folder}" data-uid="${h.dataset.uid}">Ouvrir ce mail ↗</button>
+           <button class="btn btn-sm ctx-ouvrir" data-account="${esc(h.dataset.account)}"
+             data-folder="${esc(h.dataset.folder)}" data-uid="${esc(h.dataset.uid)}">Ouvrir ce mail ↗</button>
          </div>`;
       corps.querySelector('.ctx-ouvrir')?.addEventListener('click', () => {
         // SEUL endroit qui change réellement de document. Depuis le lecteur,
