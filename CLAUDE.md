@@ -246,8 +246,19 @@ citation du mail et le filtre par boîte — seul LB2I part en note de frais) ;
 « Voir l'histoire » branché sur les 3 focales ; modale de réponse en plan de
 travail (message + appuis + fil, largeurs en `min(px, vw)` et jamais en pixels).
 
-**À faire** — **d'abord le carnet `docs/AUDIT-2026-09-03.md`** (32 tickets sourcés, ordre en tête,
-un par session ; les 5 premiers : D1, C1, D2, D4, A1). Puis :
+**LE DÉPÔT EST PUBLIC** (`thonyAGP/Boxmail_cleaning`, vérifié le 04/09 : `"private": false`).
+Rien de nominatif ne doit entrer dans le code ni dans `docs/` : ni adresse, ni nom de personne, ni
+raison sociale d'une maison en litige. Les données réelles vivent dans `data/` (gitignoré) — patron :
+`src/cli/attentes-seed.ts`, qui charge `data/attentes-reelles.json` et se replie sur des graines
+fictives sans lui. **Le passer en privé est bloqué** tant qu'une clé de déploiement n'est pas posée
+sur la VM (sinon le `git pull` de 04:00 et le bandeau de mise à jour cessent) — la clé n'est pas sur
+le poste `thony`.
+
+**À faire** — **le carnet `docs/AUDIT-2026-09-03.md`** (32 tickets sourcés, ordre en tête, un par
+session). Faits le 04/09 : D1+E3, C1, D3, D4, A1 cadré. Suite : **D2** (8 vulnérabilités HIGH) ·
+**A8** (l'annulation tronque à 500 en silence : annuler 800 mails en restaure 500 et affiche un
+succès) · **A1** (cadré ; deux décisions t'attendent : le seuil d'aperçu, un plafond ou deux) ·
+**A7+B5** · **B1**. Puis :
 - **Gardé dans un coin** (ses mots) : voir le FIL d'un sujet sous la carte et
   pouvoir ouvrir ces mails ; joindre au brouillon les copies des mails cités,
   **uniquement au besoin**.

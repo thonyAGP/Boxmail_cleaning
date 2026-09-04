@@ -46,10 +46,17 @@ Détail des services et de leurs contraintes non devinables : `CLAUDE.md`.
 ### À traiter
 
 **Carnet de l'audit complet du 03/09 — `docs/AUDIT-2026-09-03.md` (CHG-001, APPROVED).**
-32 tickets sourcés, ordre recommandé en tête, un ticket par session. Les 5 premiers :
-D1 brancher `verdict:check` (175 assertions vertes, ignorées de tout barrage) · C1 `esc()` n'échappe
-pas le guillemet (XSS par attribut depuis un sujet de mail) · D2 8 vulnérabilités HIGH, audit désactivé
-· D4 adresses de tiers réels dans le code · A1 la route bulk contourne le plafond de 200 suppressions.
+32 tickets sourcés, ordre recommandé en tête, un ticket par session.
+
+**Faits le 04/09 : D1+E3, C1, D3, D4, et A1 cadré** (détail dans « Terminées »).
+Reste, dans l'ordre : **D2** 8 vulnérabilités HIGH et audit désactivé sur les deux chemins
+d'installation · **A8** l'annulation d'une suppression tronque à 500 en silence · **A1** un seul
+chemin de suppression (déjà cadré, deux décisions t'attendent : le seuil d'aperçu, un plafond ou
+deux) · **A7+B5** TLS exigé, écritures `accounts.json`, pool IMAP · **B1** jobs persistants.
+Hors carnet et bloqué faute d'accès à la VM depuis ce poste : **passer le dépôt en privé** — il
+faut d'abord poser une clé de déploiement sur le serveur, sinon le `git pull` de 04:00 et le
+bandeau de mise à jour cessent de fonctionner.
+
 Les constats ci-dessous sont **absorbés** par le carnet et n'y sont plus suivis qu'à travers lui.
 
 *Constats mécaniques de l'audit d'usine du 03/09 (détail : `docs/JOURNAL.md`).*
@@ -87,6 +94,44 @@ Les constats ci-dessous sont **absorbés** par le carnet et n'y sont plus suivis
       de ~12 Ko — et 49 commits en 30 jours dessus : l'historique y remonte.
 
 ### Terminées
+
+- [x] **D1 + E3 — le filet de 175 assertions branché** (04/09) — `npm test` =
+      `verdict:check`, `.factory.json` `checks.onStop` = `typecheck && test`,
+      CLAUDE.md le nomme. `.gitattributes` : le banc figé passe en `-diff`.
+      `start-boxmail.bat` supprimé (il se mettait à jour lui-même en cours
+      d'exécution ; un raccourci qui pointerait dessus est à refaire vers
+      `MailAssistant.bat`). *175 vérifications, exit 0.*
+
+- [x] **C1 — `esc()` n'échappait pas le guillemet** (04/09) — table
+      d'échappement explicite des cinq caractères dans `web/js/api.js:398-430`,
+      plus trois `data-*` réinjectés bruts (`app.js:12208-12209`). Prouvé au
+      navigateur : un sujet de mail créait un gestionnaire `onmouseover`
+      FONCTIONNEL avant, `null` après. **La preuve que le carnet prescrivait ne
+      prouvait rien** (l'ancien `esc()` échappait déjà `<` et `>`) : un scénario
+      d'usine doit nier la création d'un gestionnaire, pas la présence d'une balise.
+
+- [x] **D3 — le poste Windows sait revenir en arrière** (04/09) —
+      `scripts/supervisor.mjs` : commit d'avant mémorisé, deux tentatives, retour
+      à cette version, recompilation, statut écrit dans `logs/update-status.json`
+      (celui que ⚙️ Paramètres affiche). Refus nommé si un fichier suivi est
+      modifié localement. *Banc jetable hors dépôt, 5 scénarios.* Ouvre trois
+      tickets (libellé « minuteur du serveur » faux sur le poste, commit cassé
+      re-tiré à chaque relance, plantage runtime encore en boucle).
+
+- [x] **D4 — le dépôt public cessait de publier des personnes réelles** (04/09) —
+      59 lignes de commentaires anonymisées dans `src/`, 46 autres hors `src/`
+      (web, docs, CLAUDE.md, openspec, chantier). Surtout :
+      `src/cli/attentes-seed.ts` portait **14 affaires réelles** (noms, montants,
+      litiges en cours) — les données vivent désormais dans
+      `data/attentes-reelles.json` (gitignoré), le script se replie sur trois
+      graines fictives sans lui. *Le dépôt est public : vérifié `"private": false`.*
+
+- [x] **A1 cadré** (04/09, aucun code) —
+      `.chantier/2026-09-04-suppression-un-seul-chemin/change.md`, niveau élevé,
+      7 invariants en condition avec preuve positive. Recommande un noyau PUR
+      (`planifierSuppression`) + exécuteur à mouvement injecté, seule option
+      testable par `verdict:check` (une fonction qui importe `imap.ts` tire
+      `config.ts`, qui jette sans `.env`).
 
 - [x] **Le front sous vérification** (03/09) — `tsconfig.web.json` (`checkJs`,
       `noEmit` : le JS reste du JS vanilla servi tel quel), `npm run typecheck`
@@ -146,6 +191,23 @@ Les constats ci-dessous sont **absorbés** par le carnet et n'y sont plus suivis
   Windows). Le MCP Codex remplace le second.
 
 ## Changelog
+
+- 2026-09-04 : **cinq tickets du carnet traités en parallèle** (D1+E3, C1, D3, D4, plus le cadrage
+  de A1) — trois agents à périmètres de fichiers disjoints, aucun ne commitant, le pilote vérifiant
+  et commitant. Cinq commits poussés. **Le dépôt est PUBLIC** (`"private": false`, 0 fork,
+  0 observateur) : c'est le fait qui a réordonné la journée. `attentes-seed.ts` publiait 14 affaires
+  réelles — sorties vers `data/` (gitignoré). Deux tickets nouveaux : **A8** (l'annulation d'une
+  suppression tronque à 500 en silence et affiche un succès — annuler 800 mails en restaure 500) et
+  la bascule du dépôt en privé, **bloquée** : la clé de la VM n'est pas sur ce poste, et basculer
+  sans elle couperait le `git pull` de 04:00 et le bandeau de mise à jour.
+
+  *Leçons d'outillage, payées comptant.* `grep -f <fichier>` rend **zéro silencieusement** dans cet
+  environnement : un « rien à signaler » entièrement faux, sur lequel on peut conclure à tort. Un
+  remplacement sans frontière d'identifiant a produit `const acme-compta = …` — rattrapé par
+  `npm test`, branché une heure plus tôt. Un banc de hooks comptait « le barrage n'a pas tourné »
+  comme « conforme », y compris sur une suppression récursive. Et le garde `PATH_INJECTION` de
+  l'usine alertait sur **toute variable quotée de deux caractères ou plus** (le moteur rognait la
+  dernière lettre du nom pour échapper au lookahead) : corrigé, banc à 7 cas.
 
 - 2026-09-03 (4) : **audit complet** — trois explorations (backend, front, qualité/ops) + contre-revue
   Codex (7 constats sur 8 confirmés, 4 oublis ajoutés, 3 inversions de priorité). Carnet de 32 tickets

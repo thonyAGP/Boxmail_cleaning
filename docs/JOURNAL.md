@@ -5,6 +5,81 @@
 > Claude, ce qui faisait planter les sessions — voir CLAUDE.md § Conventions).
 > Ordre : du plus récent au plus ancien. Ajouter les nouveaux comptes rendus EN TÊTE.
 
+## 04/09 (64) — Cinq tickets en parallèle, et le fait qui a réordonné la journée
+
+Anthony a demandé de lancer des agents « puisque les tâches ont été découpées ».
+Trois agents à **périmètres de fichiers disjoints** (`web/`, `src/`, `scripts/`),
+aucun n'ayant le droit de commiter, le pilote vérifiant chaque diff et commitant.
+Cinq commits poussés : D1+E3, C1, D3, D4, plus le cadrage de A1.
+
+**Le fait qui a tout réordonné : le dépôt est PUBLIC.** Vérifié à la source
+(`"private": false`, 0 fork, 0 observateur, créé le 08/07). L'agent D4 l'a
+découvert en traitant les adresses de tiers — et a trouvé bien pire que le
+ticket : **`src/cli/attentes-seed.ts` publiait 14 affaires RÉELLES**, noms d'une
+avocate, d'un géomètre, d'un assuré, montants, dates, récits de litiges en cours.
+Son propre en-tête l'assumait (« ces attentes sont RÉELLES et vérifiées »). Ce
+n'était pas un commentaire maladroit : un dossier client publié. Les données
+vivent maintenant dans `data/attentes-reelles.json` (gitignoré) ; sans le
+fichier, le script se replie sur trois graines fictives — les deux chemins sont
+prouvés. Au total 105 lignes d'identités retirées (59 dans `src/`, 46 ailleurs).
+
+**Ce qui reste bloqué** : passer le dépôt en privé. La clé de la VM n'est pas sur
+ce poste (elle est sur la machine `leberan`), et basculer sans avoir posé une clé
+de déploiement couperait le `git pull` de 04:00 — donc le bandeau de mise à jour,
+son canal de livraison. Anthony a choisi : nettoyer d'abord, basculer ensuite.
+
+**Ce que les agents ont trouvé et que l'audit d'hier ne voyait pas.**
+- **A8, nouveau ticket** : l'annulation d'une suppression **tronque à 500 en
+  silence** (`admin.ts:2893-2901`) et le front ignore le compteur `restored` —
+  annuler 800 mails en restaure 500 et affiche un succès. C'est le plafond réel
+  de la seule promesse de réversibilité du produit.
+- **La preuve prescrite pour C1 ne prouvait rien.** Un sujet piégé par BALISE ne
+  peut rien créer à travers `esc()`, qui échappait déjà `<` et `>` : l'assertion
+  aurait été verte avant comme après. L'exploit sort par l'ATTRIBUT. Le scénario
+  d'usine doit nier la création d'un gestionnaire (`onmouseover`), pas la
+  présence d'une balise. Ticket corrigé.
+- **Quatre chemins de suppression, pas trois** (`review.ts:1204-1225`, plafond
+  500), et deux autres routes portent le trou de 20 000 dont `retention/apply`,
+  sans aucun plafond.
+- **« Exiger une confirmation » ne peut pas être inconditionnel** : l'absence de
+  double clic sur la boîte de réception est un CHOIX d'Anthony daté du 10/08
+  (« j'en ai marre de cliquer 2 fois »). Corriger en aveugle lui aurait rendu une
+  gêne qu'il avait explicitement refusée. Le cadrage propose un seuil.
+
+**Quatre leçons d'outillage, toutes payées comptant.**
+1. **`grep -f <fichier>` rend zéro silencieusement** dans cet environnement. J'ai
+   conclu « aucune identité hors de `src/` » sur ce zéro — il y en avait 46. Un
+   outil qui ne tourne pas ressemble trait pour trait à un outil qui ne trouve rien.
+2. **Un remplacement sans frontière d'identifiant** a produit
+   `const acme-compta = …` dans la suite de tests. Rattrapé par `npm test`,
+   branché une heure plus tôt — le filet a servi le jour même.
+3. **Mon banc de hooks comptait « le barrage n'a pas tourné » comme conforme**,
+   y compris sur une suppression récursive : le chemin passé à Node était
+   illisible et l'échec ressemblait à un succès. Même famille que la leçon 1.
+4. **J'ai cassé un hook en le corrigeant** : un `` $` `` dans une chaîne de
+   remplacement est un motif spécial de `String.replace` qui insère tout le texte
+   précédant le match — le fichier a absorbé son propre début. Restauré depuis la
+   sauvegarde prise avant. Toujours passer une FONCTION de remplacement.
+
+**Le garde `PATH_INJECTION` de l'usine alertait à tort sur toute variable quotée**
+de deux caractères ou plus : le moteur revenait en arrière pour échapper au
+lookahead et rognait la dernière lettre du nom (`"$RE"` signalé comme `$R`,
+`"$CHEMIN_LONG"` comme `$CHEMIN_LON`). Trois demandes de confirmation en deux
+minutes chez Anthony, « insupportable » — à juste titre. Corrigé (`\b` + cas de
+la variable assignée dans la même commande), banc à 7 cas sur les deux copies :
+les faux positifs passent, suppression récursive et poussée forcée toujours
+refusées. Une autre session Claude Code a commité ce correctif dans
+`D:\reprise-config` sans savoir d'où il venait : **deux sessions travaillent en
+parallèle sur ce clone**, à coordonner.
+
+**Coût du parallélisme, mesuré** : un agent a tourné **9 h 37**, l'essentiel
+bloqué en attente de confirmations, sans que rien ne le signale — les agents ne
+remontent qu'à la fin. Et l'usine a tourné 25 minutes à vide parce que
+`tsx watch` redémarrait l'app à chaque fichier touché par un agent : **ne pas
+lancer l'usine tant qu'un agent écrit dans `src/`**. Le barrage de preuve, lui,
+regarde tout l'arbre de travail et pas seulement l'index : un commit de
+documentation est refusé tant qu'un agent a du front en cours.
+
 ## 03/09 (63) — L'audit complet : trois prémisses renversés
 
 Anthony a voulu « tout ce qu'il y a à voir », en plan, pour traiter chaque point
