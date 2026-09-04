@@ -292,11 +292,11 @@ Pas seulement l'email exact.
 
 Un nouveau :
 
-marie.dupont@comptastar.fr
+marie.dupont@comptexa.fr
 
 peut être inconnu personnellement alors que :
 
-@comptastar.fr
+@comptexa.fr
 
 a 400 messages historiques.
 

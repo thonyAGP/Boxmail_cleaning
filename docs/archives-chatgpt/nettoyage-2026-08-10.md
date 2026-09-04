@@ -1627,7 +1627,7 @@ CE QUE J'AI DÉCOUVERT EN SIMULANT TON MODÈLE SUR LES VRAIES DONNÉES
 Soit 966 mails réellement nettoyables, 137 Mo — sur 7 471 Mo. **Moins de 2 % du volume.**
 Regroupés, ça donne 16 cartes d'au moins 10 mails (444 mails, 64 Mo) : Leroy Merlin rendez-vous 83, Airbnb rappels 69, LeBonBail 39, Calendrier Outlook 38, Airbnb OTP 34, Assurance Maladie OTP 32… plus un résidu de 298 groupes minuscules (522 mails).
 
-3) La catégorie « info » représente 43 % de la boîte de réception (7 716 mails). J'ai regardé qui l'alimente : Mylène LE BERRE 411 mails, Alizé 270, Nathalie (son agent immobilier) 222, soraya 120, Sandrine 102, Yves 75… Ce sont des ÊTRES HUMAINS. Le plus gros tas de la boîte, c'est sa vie, pas du bruit. Ton UNKNOWN y est parfaitement à sa place.
+3) La catégorie « info » représente 43 % de la boîte de réception (7 716 mails). J'ai regardé qui l'alimente : Mylène DURAND 411 mails, Alizé 270, Nathalie (son agent immobilier) 222, soraya 120, Sandrine 102, Yves 75… Ce sont des ÊTRES HUMAINS. Le plus gros tas de la boîte, c'est sa vie, pas du bruit. Ton UNKNOWN y est parfaitement à sa place.
 
 4) J'ai testé ton idée « sujet répété = suspect ». 6 088 mails ont un sujet strictement répété, dont 2 097 avec pièce jointe. Et quand on regarde lesquels : 24 « ajout de compte bénéficiaire » du Crédit Agricole, 13 « votre déclaration de revenus a bien été enregistrée » de la DGFiP, 12 télépaiements de taxe d'habitation, 21 avis de remboursement de sa mutuelle avec pièce jointe. La répétition n'est pas un signe d'inutilité, c'est la signature d'un PROCESSUS RÉCURRENT — qui peut être trivial ou fiscal. Critère inutilisable.
 

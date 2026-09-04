@@ -50,7 +50,7 @@ j'avais vérifié le mail marketing « Réservation confirmée » (`thony56_gtr`
 France étaient sans pièce jointe. C'est faux. Le mail qui compte est l'autre :
 
 ```
-thony56_gtr, uid 77308 — « Cher Monsieur Anthony Le Berre : Billet et
+thony56_gtr, uid 77308 — « Cher Monsieur Anthony Durand : Billet et
 informations pour votre voyage du 21/08/2026 », de admin@ticket-airfrance.com
 attachments : [ Ajouter_à_votre_agenda.ics (application/ics, 1 626 o),
                 Billet_électronique.pdf  (application/pdf, 186 934 o) ]
@@ -411,7 +411,7 @@ les 213 candidats réels — 40 portent plusieurs pièces, elle n'en touche que
 
 ```
 seq  67  3 pièces -> 1 document  (sosh 001..003)
-seq 237  8 pièces -> 2 documents (001..004  ET  « ACIAJURIS MECHACHE » 001..004)
+seq 237  8 pièces -> 2 documents (001..004  ET  « ACIAJURIS NADIR » 001..004)
          → même mail, deux liasses de 4 pages : les fusionner aurait été aussi faux
            que de n'en faire que 8 frais
 === 8 frais en double évités

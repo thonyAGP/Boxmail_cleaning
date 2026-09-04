@@ -1375,8 +1375,8 @@ d'une intuition — chacune est adossée à des exemples réels :
    `notification`, `notif`, `first_reminder`, `alerte`, `service.`,
    `ne-pas-repondre`, `postmaster`) OU le domaine est celui d'une plateforme,
    ALORS que le nom affiché ressemble à un prénom+nom. Exemples relevés :
-   `Yao Eve <member@hi5.com>`, `alexandre oudot <noreply@fr.facebox.com>`,
-   `Morgane Mahe <first_reminder@whereareyounow.net>`, `Elise YOUINOU
+   `Ana Dubois <member@hi5.com>`, `alexandre oudot <noreply@fr.facebox.com>`,
+   `Claire Martin <first_reminder@whereareyounow.net>`, `Elise MARTIN
    <service.copainsdavant@…>`, « Florian de Meilleurtaux », « Valentine
    d'Indy », « Marc De Diego Ferrer » (MCA Andorra, ~30 mails), « Alerte
    PERCHE David », « Emilie de Youse », « Tibot de Indy », « Operator de

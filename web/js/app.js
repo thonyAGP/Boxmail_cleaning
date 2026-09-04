@@ -6345,10 +6345,10 @@ function modaleBrouillon(br, a, opts = {}) {
    * À QUI ÉCRIRE — une LISTE, plus une volée de pastilles.
    *
    * ⚠️ Deuxième correction du même bloc (27/08). La liste des destinataires
-   * était juste — c'est bien `litiges@sider.biz` qui est proposé — mais
+   * était juste — c'est bien `litiges@acme.example.com` qui est proposé — mais
    * illisible : « bien les différents destinataires, mais pas très pratique ».
-   * Huit pastilles identiques, certaines montrant un NOM (« Encours Sider »),
-   * d'autres une ADRESSE (« contact@sider.biz ») : impossible de comparer ce
+   * Huit pastilles identiques, certaines montrant un NOM (« Encours Acme »),
+   * d'autres une ADRESSE (« contact@acme.example.com ») : impossible de comparer ce
    * qu'on ne voit pas au même endroit.
    *
    * Ici : une ligne par adresse, l'ADRESSE toujours visible puisque c'est elle
@@ -6685,11 +6685,11 @@ async function gesteAttente(id, code, carte) {
    * l'interlocuteur entier. Dans cet ordre, et jamais tout d'un coup.
    *
    * ⚠️ CE QUE FAISAIT CE BOUTON JUSQU'AU 27/08 : une recherche par mot-clé sur
-   * le nom du correspondant. Sur « Comptabilité Client SIDER » — un
+   * le nom du correspondant. Sur « Comptabilité Client ACME » — un
    * remboursement de 1 000 € — elle rendait 153 mails chez 42 interlocuteurs,
    * dont aucun ne concernait l'affaire. Sa demande, mot pour mot : « tu
    * devrais avoir la liste définie des emails qui traitent ce dossier,
-   * potentiellement ceux qui traitent du dossier et en plus ceux de SIDER,
+   * potentiellement ceux qui traitent du dossier et en plus ceux de ACME,
    * mais tu vas me noyer sinon […] sans te limiter dans un 1er temps aux
    * vrais emails qui sont l'historique du sujet ».
    *
@@ -6728,13 +6728,13 @@ async function gesteAttente(id, code, carte) {
     /**
      * ⚠️ LE MOT LE PLUS LONG N'EST PAS LE PLUS DISTINCTIF (corrigé le 27/08).
      *
-     * Mesuré à l'écran sur le dossier « Comptabilité Client SIDER » — un
+     * Mesuré à l'écran sur le dossier « Comptabilité Client ACME » — un
      * remboursement de 1 000 € : le mot le plus long est « Comptabilite »
      * (12 lettres), et la recherche rendait 153 mails chez 42 interlocuteurs,
      * dont aucun ne concernait l'affaire. Son verdict : « c'est n'importe quoi,
      * tu donnes l'impression d'avoir créé un truc solide mais c'est du vent ».
      *
-     * Le mot qui désigne quelqu'un ici est « SIDER » — 5 lettres. On écarte
+     * Le mot qui désigne quelqu'un ici est « ACME » — 5 lettres. On écarte
      * donc d'abord tout le vocabulaire de service (client, compta, relation,
      * litiges…), puis on prend le PREMIER mot restant : dans un libellé, le
      * nom propre vient en général après la fonction.
@@ -12105,10 +12105,10 @@ function renderReaderAnalysis(a, item, opts = {}) {
  * ⚠️ HISSÉE HORS DU LECTEUR LE 27/08. Ce panneau vivait à l'intérieur de
  * `renderReaderAnalysis`, donc il n'existait QUE quand un mail était ouvert.
  * Résultat : « Voir l'histoire », depuis une attente, ne pouvait pas s'en
- * servir et retombait sur une recherche par mot-clé. Sur le dossier SIDER
+ * servir et retombait sur une recherche par mot-clé. Sur le dossier ACME
  * — un remboursement de 1 000 € — cela rendait 153 mails chez 42
  * interlocuteurs. Son verdict : « tu vas me noyer sinon sur la liste des
- * emails de SIDER sans te limiter dans un 1er temps aux vrais emails qui
+ * emails de ACME sans te limiter dans un 1er temps aux vrais emails qui
  * sont l'historique du sujet ».
  *
  * Les trois focales SONT cette gradation, et elles existaient déjà :

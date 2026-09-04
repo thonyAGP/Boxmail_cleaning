@@ -54,7 +54,7 @@ de conception, pas un manque de discipline.
 8 185 échanges où il a répondu (délai moyen **6 jours**), 24 295 verdicts IA
 déjà payés, 17 188 extraits de texte, 10 191 mails à pièce jointe.
 Ses vrais correspondants ressortent seuls : sa femme (566 mails), 3 conseillers
-du Crédit Agricole du Morbihan, 2 notaires, 2 comptables (Comptastar), un
+du Crédit Agricole du Morbihan, 2 notaires, 2 comptables (Comptexa), un
 architecte, un service juridique d'assurance, des agences immobilières.
 
 ### Le classement actuel ne discrimine pas

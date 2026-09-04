@@ -376,12 +376,12 @@ d'exécution consignés dans A1, B1, C3.
 - Niveau cadrage : **moyen** (chemin de livraison).
 
 #### D4. Adresses e-mail de TIERS RÉELS en dur dans le code commité — **[élevé, RGPD]**
-- **Constat** : `services/correspondance.ts:62,79` (`elisa.s@comptastar.fr` — prénom + initiale d'une
+- **Constat** : `services/correspondance.ts:62,79` (`elisa.s@comptexa.fr` — prénom + initiale d'une
   personne physique, contexte « approbation des comptes » Brimmo) ; `services/categorize.ts:377-406`
-  (`compta@secoba-bet.fr`, `agence-cs.brest@partedis.com`, `brest@resilians.fr`,
-  `bnpp-epargne-entreprise@s2e-net.com`, `legal@mail.lolivier.fr`…) ; `services/brouillons.ts:271`,
-  `correspondance.ts:101,576,594` (`litiges@sider.biz` + détail du contentieux, 34 mails) ;
-  `cli/verdict-check.ts:1048-1053` (cas `comptastar`, montant 850,00). Dépôt distant GitHub, prod publique.
+  (`compta@batisco-bet.fr`, `agence-cs.brest@fourniplus.com`, `brest@assurex.fr`,
+  `bnpp-epargne-entreprise@reseaupro.com`, `legal@mail.prudentia.fr`…) ; `services/brouillons.ts:271`,
+  `correspondance.ts:101,576,594` (`litiges@acme.example.com` + détail du contentieux, 34 mails) ;
+  `cli/verdict-check.ts:1048-1053` (cas `comptexa`, montant 850,00). Dépôt distant GitHub, prod publique.
 - **Action** : remplacer par des adresses `.invalid` équivalentes en forme (les commentaires gardent leur
   valeur pédagogique sans le nom) ; **l'historique git les garde** — décision d'Anthony : réécriture
   d'historique (`git filter-repo`) ou acceptation. `docs/banc-etiquettes.json` (3,8 Mo) est sain

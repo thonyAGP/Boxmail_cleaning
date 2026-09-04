@@ -97,7 +97,7 @@ et il s'explique en une phrase : « Leroy Merlin t'a envoyé 40 offres depuis. �
   bénéficiaire Crédit Agricole, ses 21 avis de remboursement mutuelle. La
   répétition signe un **processus récurrent**, trivial ou fiscal.
 - **La catégorie `info` (43 % de la réception) n'est pas du bruit** : ses plus
-  gros expéditeurs sont Mylène LE BERRE (411), Alizé (270), son agent
+  gros expéditeurs sont Mylène DURAND (411), Alizé (270), son agent
   immobilier (222), soraya (120), Sandrine (102). C'est sa vie.
 - **Des êtres humains sont classés « promotion/newsletter »** :
   nathalie@agencedesenfantsrouges.com (166 mails, 136 lus), ashley_keira@,

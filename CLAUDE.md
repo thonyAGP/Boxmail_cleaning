@@ -238,7 +238,7 @@ fonction d'arbitrage tant que la charge n'a pas baissé À COUVERTURE CONSTANTE.
   budgets de copropriété, pesos chiliens mêlés).
 - Le **silence ne prouve rien hors d'une demande d'argent**.
 - **Un mot de service n'identifie personne** : chercher « Comptabilité Client
-  SIDER » sur son mot le plus LONG rendait 153 mails hors sujet. Le nom propre
+  ACME » sur son mot le plus LONG rendait 153 mails hors sujet. Le nom propre
   est court — écarter compta/client/service/litiges d'abord.
 
 **Écrans livrés le 27/08** : `#/pieces-compta` (ce qui part à la compta, avec la

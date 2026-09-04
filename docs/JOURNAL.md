@@ -358,22 +358,22 @@ le serait resté — il testait des corps que j'avais écrits moi-même. Il rejo
 désormais la mise en page réelle, avec ses pièges (« à partir de 2 € »,
 « économisé 39.42€ » dans le même corps).
 
-## 27/08 (56) — SIDER : ce qui donnait « l'impression d'un truc solide »
+## 27/08 (56) — ACME : ce qui donnait « l'impression d'un truc solide »
 
 Trois défauts signalés depuis l'écran, sur un remboursement de 1 000 € au
-dossier « Comptabilité Client SIDER ». Son verdict : « tu donnes l'impression
+dossier « Comptabilité Client ACME ». Son verdict : « tu donnes l'impression
 d'avoir créé un truc solide mais en fait c'est du vent. Rien n'est
 exploitable. »
 
 **1. Le brouillon proposait n'importe qui.** `motsDuNom()` retenait tout mot de
-≥ 4 lettres hors civilités : « comptabilite », « client » et « sider ». Les deux
+≥ 4 lettres hors civilités : « comptabilite », « client » et « acme ». Les deux
 premiers désignent une FONCTION de boîte aux lettres, pas quelqu'un — d'où IKEA
 Service client, TotalEnergies service.client, Vis Express service.client
 proposés comme destinataires. Pire, le pré-rempli était devenu
-`compta.client@qerys.com` au lieu de `litiges@sider.biz`, pourtant dans le fil.
+`compta.client@verso.com` au lieu de `litiges@acme.example.com`, pourtant dans le fil.
 Correctif : une liste de vocabulaire de service (compta, client, litiges,
 service, agence, formes juridiques, civilités) écartée AVANT le choix. Il ne
-reste que « sider ». Et s'il ne reste rien, on ne cherche pas par nom : les
+reste que « acme ». Et s'il ne reste rien, on ne cherche pas par nom : les
 correspondants du fil suffisent.
 
 **2. « Voir l'histoire » renvoyait 153 mails.** Le bouton cherchait le mot le
@@ -632,13 +632,13 @@ distinctif commun sur le correspondant ET deux sur l'objet, *ou* la même
 échéance. Ce dernier critère a été ajouté sur le doublon qu'il ne fallait pas
 manquer : les **deux seules urgences critiques de l'écran étaient la même dette
 URSSAF**, et elles ne partagent que le mot « urssaf ». Garde-fou vérifié sur
-données réelles : les deux attentes Comptastar (le bilan 2025, le juriste pour
-l'AG) partagent « comptastar » et « econom » et restent bien séparées.
+données réelles : les deux attentes Comptexa (le bilan 2025, le juriste pour
+l'AG) partagent « comptexa » et « econom » et restent bien séparées.
 `npm run attentes:dedoublonner` rejoue la règle sur l'existant.
 
 En rapprochant, l'urgence, l'importance et le risque prennent **le maximum des
-deux** : mesuré dans les deux sens — l'audit voyait Zanitti « haute » quand la
-relecture disait « faible », et l'inverse sur Comptastar.
+deux** : mesuré dans les deux sens — l'audit voyait Rossi « haute » quand la
+relecture disait « faible », et l'inverse sur Comptexa.
 
 **La rubrique « urgences » débordait.** Sa règle était `urgence === 'critique'
 || !!risque` — tenable tant que `risque` restait rare et écrit à la main.
@@ -1095,10 +1095,10 @@ ligne** — et les deux premières étaient à jeter :
 
 1. **Fusionner sur le nom affiché** : 107 collisions, dont « Équipe des comptes
    Microsoft » qui aurait réuni `microsoft.com` avec `daum.net` (usurpation),
-   « Comptastar » trois sociétés différentes, « Mail Delivery System » trois
+   « Comptexa » trois sociétés différentes, « Mail Delivery System » trois
    serveurs, « fr » un fournisseur de propreté avec Bosch. **Écarté.**
 2. **Nom entier + garde « le nom se lit dans le domaine »** : 48 réunions,
-   toutes correctes — mais « Air France pour ANTHONY LE BERRE » et « Airbnb
+   toutes correctes — mais « Air France pour ANTHONY DURAND » et « Airbnb
    Photo Team » restaient à part, alors que leurs domaines
    (`service-airfrance.com`, `photography.airbnb.com`) disent qui écrit.
 3. **Plus long DÉBUT du nom confirmé par le domaine** : 73 réunions… dont
@@ -1772,7 +1772,7 @@ minutes de retard, ce qu'un seul relevé antérieur (11:15 parti à 11:19) suffi
 comparer.
 
 **Ce que l'analyse a rapporté** (~280 mails relus) : convention d'honoraires
-d'avocat à parapher, justificatifs 2024 réclamés par Comptastar bloquant deux
+d'avocat à parapher, justificatifs 2024 réclamés par Comptexa bloquant deux
 bilans, analyses légionelles imposées par l'ARS sur le 33 rue François Miron,
 comptes 2022/2023 non validés (risque de mandataire judiciaire), plusieurs
 factures échues depuis 2023-2024, et un règlement de 25 000 € portant DEUX IBAN
@@ -2941,7 +2941,7 @@ une coïncidence.
    admis là, sous DEUX conditions : enveloppe marketing (`hasListUnsubscribe`,
    ce qui la distingue d'un contrat mentionnant « -20 % ») et aucun marqueur
    d'obligation. Mesure : +147 mails reconnus.
-2. **VETO D'OBLIGATION** (`OBLIGATION_RE`) : `bonjour@comptastar.fr` envoie le
+2. **VETO D'OBLIGATION** (`OBLIGATION_RE`) : `bonjour@comptexa.fr` envoie le
    parrainage ET « [ACTION REQUISE] – Mise en conformité », dont l'enjeu est la
    dissolution. Sans ce veto la règle 1 aurait balayé le second avec le premier.
 3. **BOÎTE DE FONCTION ⇒ `company`, jamais `person`** (`compta@`, `agence-…@`,
@@ -3105,7 +3105,7 @@ CAUSE réelle différait de ce que la première passe laissait croire :
    JUSTESSE : ma première version n'acceptait la marque que dans l'adresse —
    la simulation sur les 2 996 expéditeurs réels a montré qu'elle déclassait
    23 organismes AUTHENTIQUES passant par un prestataire (`no-reply@xoom.com`
-   pour PayPal, `bnpp-epargne-entreprise@s2e-net.com`, une agence AXA).
+   pour PayPal, `bnpp-epargne-entreprise@reseaupro.com`, une agence AXA).
    Le bon critère était ailleurs : `team_execsales@accountant.com` est un
    webmail gratuit (famille mail.com) — une banque n'écrit jamais de là.
    **TOUJOURS simuler sur les données réelles avant de déployer une règle de
@@ -3133,8 +3133,8 @@ Actions proposées : archive 2 023 / read 1 162 / reply 74 / pay 44.
 **CE QUE L'ANALYSE DE CONTENU A RÉVÉLÉ — matière brute pour C4.** Un motif
 domine, confirmé sur les 7 boîtes : **les robots dont le nom affiché est un
 nom humain étaient classés `person`**, donc protégés à vie par la garantie
-« 0 mail personnel » et INNETTOYABLES. Exemples réels : `Yao Eve
-<member@hi5.com>`, `Morgane Mahe <first_reminder@whereareyounow.net>`,
+« 0 mail personnel » et INNETTOYABLES. Exemples réels : `Ana Dubois
+<member@hi5.com>`, `Claire Martin <first_reminder@whereareyounow.net>`,
 « Florian de Meilleurtaux », « Marc De Diego Ferrer » (MCA Andorra, ~30
 mails), « Alerte PERCHE David » (agences immo), et `postmaster@outlook.com`
 DANS CHAQUE BOÎTE. Règle à coder : nom affiché humain + adresse de service

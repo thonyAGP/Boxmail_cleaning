@@ -112,7 +112,7 @@
 │ Payé 50 % · procédure non terminée                           │
 ├──────────────────────────────────────────────────────────────┤
 │ 🕐 EN COURS     Mise en demeure URSSAF — 418 €               │
-│ À régler avant le 29/08 · 2 mails · Mylène LE BERRE          │
+│ À régler avant le 29/08 · 2 mails · Mylène DURAND          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
