@@ -969,8 +969,8 @@ console.log('\n=== 15. Importance — ouverture, échéance, conséquence ===\n'
 
 {
   const mails: Record<number, LigneMessage> = {
-    // Comptastar : paiement échoué, action `pay` ouverte, 850 €, due le 15/08.
-    1001: msg(1001, { subject: 'Votre paiement à Comptastar a échoué' }),
+    // ACME Compta : paiement échoué, action `pay` ouverte, 850 €, due le 15/08.
+    1001: msg(1001, { subject: 'Votre paiement à ACME Compta a échoué' }),
     // Air France en août : sujet alarmant, mais fenêtre passée et rien à faire.
     1002: msg(1002, { subject: 'Dernier rappel : enregistrez-vous pour votre voyage' }),
     // Réservation : action reply ouverte, mail récent, rien d'autre.
@@ -989,12 +989,12 @@ console.log('\n=== 15. Importance — ouverture, échéance, conséquence ===\n'
         verdictDe(1003, { attentionMode: 'while_action_open' }),
       ],
       actions: [
-        actionDe(1001, { kind: 'pay', label: 'Régler le paiement Comptastar', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(1001, { kind: 'pay', label: 'Régler le paiement ACME Compta', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
         actionDe(1002, { kind: 'confirm', expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
         actionDe(1003, { label: 'Répondre à la demande de réservation' }),
       ],
       documents: [
-        { messageId: 1001, kind: 'invoice', label: null, issuer: 'Comptastar', issueDate: null, dueDate: null, amount: 850, currency: 'EUR', reference: null, certainty: 'explicit' },
+        { messageId: 1001, kind: 'invoice', label: null, issuer: 'ACME Compta', issueDate: null, dueDate: null, amount: 850, currency: 'EUR', reference: null, certainty: 'explicit' },
       ],
     }),
     { maintenant: MAINTENANT },
@@ -1045,12 +1045,12 @@ console.log('\n=== 15. Importance — ouverture, échéance, conséquence ===\n'
   );
 
   // Conséquence : l'argent en jeu vient de l'ANALYSE, pas d'une regex de sujet.
-  const comptastar = scoreMessage(entree(1001), contexte(1001));
+  const acmeCompta = scoreMessage(entree(1001), contexte(1001));
   verifier('l’argent en jeu est cité (850,00 EUR, lu par l’analyse)', true,
-    comptastar.reasons.some((r) => r.includes('850,00')));
+    acmeCompta.reasons.some((r) => r.includes('850,00')));
   verifier('échéance proche (le 15/08) : citée aussi', true,
-    comptastar.reasons.some((r) => r.includes('à faire avant le')));
-  verifier('paiement échoué + montant + document : niveau HIGH', 'high', comptastar.level);
+    acmeCompta.reasons.some((r) => r.includes('à faire avant le')));
+  verifier('paiement échoué + montant + document : niveau HIGH', 'high', acmeCompta.level);
 
   // Les choix de l'utilisateur restent souverains — un acte, pas une analyse.
   const etoile = scoreMessage(entree(1003), contexte(1003, { senderPriority: 'always_important' }));
@@ -1244,7 +1244,7 @@ console.log('\n=== 17. Aujourd’hui — consommer, pas interpréter ===\n');
     lignes({
       messages: [msg(1701), msg(1702), msg(1703), msg(1704), msg(1705), msg(1706)],
       verdicts: [
-        // Paiement ouvert (Comptastar, 850 €, dû le 15/08).
+        // Paiement ouvert (ACME Compta, 850 €, dû le 15/08).
         verdictDe(1701, { attentionMode: 'while_action_open' }),
         // Paiement SOLDÉ : la tâche liée est faite.
         verdictDe(1702, { attentionMode: 'while_action_open' }),
@@ -1260,7 +1260,7 @@ console.log('\n=== 17. Aujourd’hui — consommer, pas interpréter ===\n');
         verdictDe(1706, { attentionMode: 'while_action_open' }),
       ],
       actions: [
-        actionDe(1701, { kind: 'pay', label: 'Régler Comptastar', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
+        actionDe(1701, { kind: 'pay', label: 'Régler ACME Compta', amount: 850, currency: 'EUR', dueAt: new Date('2026-08-15T00:00:00Z'), duePrecision: 'date' }),
         actionDe(1702, { kind: 'pay', label: 'Payer la facture' }),
         actionDe(1704, { kind: 'pay', expiresAt: new Date('2026-06-16T00:00:00Z'), expiresPrecision: 'date' }),
         actionDe(1706, { kind: 'pay', label: 'Payer la taxe', dueAt: new Date('2026-01-15T00:00:00Z'), duePrecision: 'date' }),

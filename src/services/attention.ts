@@ -14,9 +14,9 @@ import {
  * C'est ce moteur qui cachait le plus : le banc du 11/08 a compté 115 mails
  * qui méritaient d'être vus et n'apparaissaient NULLE PART — des demandes de
  * réservation Airbnb, une relance de facture impayée répétée cinq mois,
- * « Votre paiement à Comptastar a échoué » resté 334 jours sans suite. Cause
- * commune : des listes fermées (adresses no-reply, intentions « sans
- * réponse ») avaient le dernier mot sur ce que l'analyse avait compris.
+ * « Votre paiement au cabinet comptable a échoué » resté 334 jours sans
+ * suite. Cause commune : des listes fermées (adresses no-reply, intentions
+ * « sans réponse ») avaient le dernier mot sur ce que l'analyse avait compris.
  *
  * LA RÈGLE DU LOT 4D, tenue dans `evaluerReponseAttendue` :
  *

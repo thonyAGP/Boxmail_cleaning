@@ -11,9 +11,10 @@ import {
  *
  * POURQUOI CE CLI EXISTE. Les 14 attentes établies à la main le 26/08 n'ont
  * pas de `threadId` : la boucle de qualification, qui dédoublonne par fil, les
- * a donc recréées. Mesuré à la première exécution : la convention Zanitti, le
- * sinistre MECHACHE, et surtout l'URSSAF — dont les DEUX cartes étaient les
- * seules urgences critiques de l'écran. Deux rouges pour une seule dette.
+ * a donc recréées. Mesuré à la première exécution : la convention d'honoraires
+ * de l'avocate, le sinistre d'assurance, et surtout l'URSSAF — dont les DEUX
+ * cartes étaient les seules urgences critiques de l'écran. Deux rouges pour
+ * une seule dette.
  *
  * Le service applique désormais la règle à la création. Ce CLI la rejoue sur
  * ce qui existe déjà, et servira encore chaque fois qu'une vague aura tourné
@@ -25,8 +26,8 @@ import {
  * nouvelle, ce qui rend enfin la carte ouvrable. Mais l'urgence, l'importance
  * et le risque prennent le MAXIMUM des deux : rapprocher ne doit jamais faire
  * disparaître une alarme. Mesuré dans les deux sens — la relecture classait la
- * convention Zanitti « faible » là où l'audit voyait « haute », et à l'inverse
- * elle jugeait le dossier Comptastar plus grave que l'audit.
+ * convention d'honoraires « faible » là où l'audit voyait « haute », et à
+ * l'inverse elle jugeait le dossier du cabinet comptable plus grave que l'audit.
  *
  *   npm run attentes:dedoublonner            # aperçu, ne touche à rien
  *   npm run attentes:dedoublonner -- --oui   # applique

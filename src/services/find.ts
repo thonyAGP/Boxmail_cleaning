@@ -258,9 +258,9 @@ export function labelDuGroupe(
  * MAIS fusionner sur le nom affiché seul serait catastrophique. Simulé sur les
  * 1 819 interlocuteurs réels avant d'écrire une ligne : 107 noms sont portés
  * par plusieurs domaines, et parmi eux « Équipe des comptes Microsoft »
- * regroupait `microsoft.com` avec `daum.net` (usurpation), « Isabelle LE
- * CALLOCH » trois domaines de spam sans rapport, « Comptastar » trois
- * sociétés différentes, « fr » un fournisseur de propreté avec Bosch.
+ * regroupait `microsoft.com` avec `daum.net` (usurpation), un nom de personne
+ * physique trois domaines de spam sans rapport, un nom de cabinet comptable
+ * trois sociétés différentes, « fr » un fournisseur de propreté avec Bosch.
  *
  * D'où la GARDE : on ne réunit que si le nom se retrouve DANS le domaine.
  * `voloteahelp.zendesk.com` contient « volotea » — c'est bien Volotea ;

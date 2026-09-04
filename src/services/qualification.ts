@@ -143,10 +143,10 @@ export const RANG_IMPORTANCE = ['faible', 'moyenne', 'haute'];
  * De deux jugements sur la même attente, on garde LE PLUS SÉVÈRE.
  *
  * Rapprocher deux cartes ne doit jamais faire disparaître une alarme. Mesuré :
- * l'audit voyait le dossier Comptastar « moyenne », la relecture automatique
- * « haute » — et inversement sur la convention Zanitti, « haute » à l'audit et
- * « faible » à la relecture. Prendre le maximum est le seul choix qui ne perde
- * rien dans les deux sens.
+ * l'audit voyait le dossier du cabinet comptable « moyenne », la relecture
+ * automatique « haute » — et inversement sur la convention d'honoraires de
+ * l'avocate, « haute » à l'audit et « faible » à la relecture. Prendre le
+ * maximum est le seul choix qui ne perde rien dans les deux sens.
  */
 export function plusSevere(a: string, b: string, echelle: string[]): string {
   return echelle.indexOf(b) > echelle.indexOf(a) ? b : a;
@@ -167,10 +167,11 @@ interface Signature {
  * deux signaux suivants doit confirmer :
  *
  *  · DEUX mots communs sur l'objet. Un seul ne suffit pas : les deux attentes
- *    Comptastar (« Le bilan 2025 de la SARL ECONOM » et « Le juriste annoncé
- *    pour l'AG et le dépôt des comptes 2024 d'ECONOM ») partagent « econom »
- *    et doivent rester séparées. La convention Zanitti en partage deux
- *    (« convention », « honoraires »), le sinistre MECHACHE aussi.
+ *    du cabinet comptable (« Le bilan 2025 de la SARL ECONOM » et « Le
+ *    juriste annoncé pour l'AG et le dépôt des comptes 2024 d'ECONOM »)
+ *    partagent « econom » et doivent rester séparées. La convention
+ *    d'honoraires de l'avocate en partage deux (« convention », « honoraires »),
+ *    le sinistre d'assurance aussi.
  *
  *  · ou LA MÊME ÉCHÉANCE, au jour près. Ajouté sur un doublon mesuré que le
  *    seul critère de mots ratait : « Régler 418 € à l'URSSAF avant le 29 août »
@@ -402,13 +403,15 @@ export async function enregistrerQualifications(
 
     // DOUBLON AVEC L'AUDIT (mesuré à la première exécution, 26/08). Les 14
     // attentes établies à la main n'ont PAS de threadId : la boucle a donc
-    // recréé la convention Zanitti et le sinistre MECHACHE une seconde fois.
+    // recréé la convention d'honoraires et le sinistre d'assurance une
+    // seconde fois.
     // Deux cartes pour une même affaire, et il cesse de faire confiance.
     //
     // On ne rapproche qu'avec TROIS signaux concordants — même compte, même
     // côté, ET un mot distinctif commun dans le correspondant ET dans l'objet.
-    // Les deux derniers sont indispensables : Comptastar porte à lui seul deux
-    // attentes bien distinctes (le bilan 2025, le juriste pour l'AG), qu'un
+    // Les deux derniers sont indispensables : le cabinet comptable porte à lui
+    // seul deux attentes bien distinctes (le bilan 2025, le juriste pour l'AG),
+    // qu'un
     // rapprochement sur le seul nom aurait fusionnées à tort.
     if (!existante) {
       // ⚠️ SEULEMENT LES ATTENTES SANS FIL — celles de l'audit. J'ai essayé
@@ -440,7 +443,7 @@ export async function enregistrerQualifications(
         // le lecteur pourra ouvrir la conversation depuis la carte — mais on
         // ne TOUCHE À RIEN D'AUTRE : l'attente d'origine a été écrite en
         // relisant le dossier entier, elle est mieux jugée. Mesuré : la boucle
-        // classait la convention Zanitti « faible/faible » quand l'audit la
+        // classait la convention d'honoraires « faible/faible » quand l'audit la
         // voyait « haute/haute », à raison — sans cette signature, son action
         // contre le maître d'œuvre n'a jamais démarré.
         await db.attente.update({

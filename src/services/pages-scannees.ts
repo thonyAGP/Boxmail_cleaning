@@ -17,7 +17,7 @@
  *     seq 284  01-25.pdf … 07-25.pdf — SEPT relevés mensuels, pas sept pages
  *     seq 134  Invoice-….pdf + Receipt-….pdf — deux documents, un seul achat
  *     seq  67  sosh 001/002/003.jpg — TROIS PAGES d'une seule facture
- *     seq 237  001…004.jpg ET « ACIAJURIS MECHACHE » 001…004.jpg — DEUX
+ *     seq 237  001…004.jpg ET « DOSSIER JURIDIQUE » 001…004.jpg — DEUX
  *              documents de quatre pages chacun, dans le même mail
  *
  * Les fusionner par mail aurait détruit les quatre premiers cas ; ne rien

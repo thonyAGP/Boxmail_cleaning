@@ -59,15 +59,16 @@ export interface VoisinDomaine {
 /**
  * Interlocuteur d'une AUTRE maison relié par une ENTITÉ commune (lot 4h).
  * Le cas déclencheur du 11/08 dépasse le domaine : le dossier « approbation
- * des comptes » passe par elisa.s@comptastar.fr ET par Yousign — deux domaines
- * sans rapport, reliés parce que leurs verdicts nomment les mêmes entités.
+ * des comptes » passe par contact@cabinet-compta.example.com ET par le
+ * prestataire de signature — deux domaines sans rapport, reliés parce que
+ * leurs verdicts nomment les mêmes entités.
  */
 export interface VoisinEntite {
   email: string;
   displayName: string;
   count: number;
   lastAt: string | null;
-  /** Les entités partagées qui font le lien (« Comptastar », « 46 rue… »). */
+  /** Les entités partagées qui font le lien (« ACME », « 46 rue… »). */
   entites: string[];
 }
 
@@ -76,10 +77,11 @@ export interface Correspondance {
   displayName: string;
   /**
    * Autres interlocuteurs du même domaine (11/08). Cas déclencheur : le
-   * dossier « approbation des comptes » passe par elisa.s@comptastar.fr ET
-   * par Yousign, et chercher une seule adresse rate la moitié du dossier.
-   * Vide pour les domaines grand public : deux adresses gmail sont deux
-   * personnes sans rapport.
+   * dossier « approbation des comptes » passe par
+   * contact@cabinet-compta.example.com ET par le prestataire de signature, et
+   * chercher une seule adresse rate la moitié du dossier. Vide pour les
+   * domaines grand public : deux adresses gmail sont deux personnes sans
+   * rapport.
    */
   alsoFromDomain: VoisinDomaine[];
   /**
@@ -98,8 +100,9 @@ export interface Correspondance {
 
 /**
  * LES DOMAINES QUI N'IDENTIFIENT PERSONNE. Chez un fournisseur, le domaine EST
- * l'interlocuteur : `litiges@sider.biz` et `relationclient@sider.biz` sont la
- * même maison. Chez un fournisseur de messagerie, le domaine ne désigne rien —
+ * l'interlocuteur : `litiges@acme.example.com` et
+ * `relationclient@acme.example.com` sont la même maison. Chez un fournisseur
+ * de messagerie, le domaine ne désigne rien —
  * regrouper par `hotmail.com` fusionnerait toute sa vie privée en un seul
  * « correspondant ». C'est le garde-fou qui rend l'élargissement sûr.
  */
@@ -115,7 +118,7 @@ const DOMAINES_PUBLICS = new Set([
  * Les autres adresses de la MÊME MAISON, quand la maison est identifiable.
  *
  * ⚠️ CE QUI A RENDU CETTE FONCTION NÉCESSAIRE (mesuré le 27/08 sur la base
- * réelle). Le dossier « remboursement SIDER » vit sur **10 adresses**
+ * réelle). Le dossier « remboursement ACME » vit sur **10 adresses**
  * (`litiges@`, `relationclient@`, `encours@`, `contact@`, `devis@`,
  * `nepasrepondre@`…) et **34 fils**. Le panneau « Voir l'histoire », calqué
  * sur UNE adresse, en montrait 3. Anthony : « tu donnes l'impression d'avoir
@@ -131,7 +134,7 @@ export async function adressesDeLOrganisation(
 ): Promise<{ domaine: string; adresses: string[] } | null> {
   const domaine = (email.split('@')[1] ?? '').toLowerCase();
   if (!domaine || DOMAINES_PUBLICS.has(domaine)) return null;
-  // Un sous-domaine de service (`contact@service.sider.biz`) appartient à la
+  // Un sous-domaine de service (`contact@service.acme.example.com`) appartient à la
   // même maison : on remonte au domaine enregistrable, deux étiquettes.
   const parts = domaine.split('.');
   const racine = parts.length > 2 ? parts.slice(-2).join('.') : domaine;
@@ -496,7 +499,8 @@ export interface ContexteMail {
   messageIdCourant: number;
   focale: Focale;
   /**
-   * Le domaine de l'organisation quand l'interlocuteur en est une (`sider.biz`),
+   * Le domaine de l'organisation quand l'interlocuteur en est une
+   * (`acme.example.com`),
    * null pour une adresse personnelle. C'est le libellé du troisième onglet.
    */
   organisation: string | null;
@@ -566,16 +570,17 @@ export async function contexteDuMail(opts: {
    *
    * ⚠️ IL NE SE RÉDUIT PLUS À UNE ADRESSE (corrigé le 27/08, sur données
    * RÉELLES). Il l'a été pendant neuf jours, et ça donnait ceci sur le dossier
-   * « remboursement SIDER » : « Ce sujet · 0 », alors que le fil comptait
+   * « remboursement ACME » : « Ce sujet · 0 », alors que le fil comptait
    * trois messages, et « Tout · 2 » pour une affaire de 34 mails.
    *
    * Deux causes, toutes deux ici :
    *  1. LE FIL ÉTAIT AMPUTÉ. Une conversation appartient à ses participants,
    *     pas à une boîte aux lettres : le mail d'ancrage venait de
-   *     `compta.client@qerys.com` (2 mails en tout), ses deux frères de fil de
-   *     `litiges@sider.biz` — donc invisibles. Un fil est désormais pris
+   *     `compta.client@intermediaire.example.net` (2 mails en tout), ses deux
+   *     frères de fil de `litiges@acme.example.com` — donc invisibles. Un fil
+   *     est désormais pris
    *     ENTIER, quel que soit l'expéditeur.
-   *  2. L'INTERLOCUTEUR ÉTAIT UNE ADRESSE. SIDER écrit depuis dix boîtes
+   *  2. L'INTERLOCUTEUR ÉTAIT UNE ADRESSE. ACME écrit depuis dix boîtes
    *     différentes selon le service. On élargit à la maison — sauf domaine
    *     public, voir `adressesDeLOrganisation`.
    *
@@ -589,11 +594,12 @@ export async function contexteDuMail(opts: {
    * seulement celle de l'expéditeur du mail ouvert.
    *
    * ⚠️ MESURÉ APRÈS UNE PREMIÈRE CORRECTION INSUFFISANTE (27/08). Élargir au
-   * domaine de l'ancre faisait passer le dossier SIDER de 2 à 4 mails — mieux,
-   * mais toujours faux : le mail d'ancrage vient de `compta.client@qerys.com`,
-   * et les 34 mails de l'affaire sont chez `sider.biz`. Le dossier traverse
+   * domaine de l'ancre faisait passer le dossier ACME de 2 à 4 mails — mieux,
+   * mais toujours faux : le mail d'ancrage vient de
+   * `compta.client@intermediaire.example.net`, et les 34 mails de l'affaire sont
+   * chez `acme.example.com`. Le dossier traverse
    * DEUX maisons, et le fil est précisément ce qui les relie — il contient un
-   * message de `litiges@sider.biz` de juin 2024.
+   * message de `litiges@acme.example.com` de juin 2024.
    *
    * La règle qui en sort : les interlocuteurs d'un dossier sont les
    * PARTICIPANTS de son fil. Plafonné à trois maisons — au-delà, on n'a plus
@@ -697,9 +703,10 @@ export async function contexteDuMail(opts: {
 
   /**
    * QUELLE MAISON NOMME L'ONGLET. Pas celle du mail ouvert : celle qui PORTE
-   * le dossier. Mesuré sur SIDER — le mail d'ancrage vient de
-   * `compta.client@qerys.com`, mais 28 des 36 mails de l'affaire sont chez
-   * `sider.biz`. Écrire « Tout avec qerys.com » désignerait l'intermédiaire et
+   * le dossier. Mesuré sur ACME — le mail d'ancrage vient de
+   * `compta.client@intermediaire.example.net`, mais 28 des 36 mails de l'affaire
+   * sont chez `acme.example.com`. Écrire « Tout avec intermediaire.example.net »
+   * désignerait l'intermédiaire et
    * pas l'interlocuteur. On prend donc celle qui pèse le plus dans l'univers.
    */
   const poids = new Map<string, number>();
@@ -725,7 +732,7 @@ export async function contexteDuMail(opts: {
     displayName: nom,
     // Le nom de la MAISON quand l'élargissement s'applique : c'est lui que
     // l'onglet doit afficher. « Tout avec Comptabilité » désignait la boîte aux
-    // lettres qui avait écrit ce jour-là ; « Tout avec sider.biz » désigne
+    // lettres qui avait écrit ce jour-là ; « Tout avec acme.example.com » désigne
     // l'interlocuteur réel.
     organisation: maisonPrincipale,
     accounts: [...new Set(tous.map((m) => m.accountSlug))],

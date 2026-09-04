@@ -261,18 +261,19 @@ export interface Destinataire {
  * LE VOCABULAIRE QUI N'IDENTIFIE PERSONNE.
  *
  * ⚠️ MESURÉ À L'ÉCRAN LE 27/08, et c'est le défaut qui a fait dire à Anthony
- * « rien n'est exploitable ». Le dossier « Comptabilité Client SIDER » — un
+ * « rien n'est exploitable ». Le dossier « Comptabilité Client ACME » — un
  * remboursement de 1 000 € — proposait d'écrire à IKEA Service **client**, à
- * TotalEnergies service.**client**, à Vis Express service.**client** et à un
+ * TotalEnergies service.**client**, à un imprimeur service.**client** et à un
  * notaire pour sa **comptabilité**. Trois mots dans le libellé, dont DEUX qui
  * ne désignent que la fonction d'une boîte aux lettres.
  *
- * Pire : le destinataire pré-rempli était devenu `compta.client@qerys.com`
- * plutôt que `litiges@sider.biz`, pourtant présent dans le fil — parce que
+ * Pire : le destinataire pré-rempli était devenu
+ * `compta.client@intermediaire.example.net` plutôt que
+ * `litiges@acme.example.com`, pourtant présent dans le fil — parce que
  * « compta » et « client » matchaient. L'amélioration censée choisir le bon
  * interlocuteur choisissait le mauvais.
  *
- * Après filtrage il ne reste que « sider » : le nom propre, celui qui désigne
+ * Après filtrage il ne reste que « acme » : le nom propre, celui qui désigne
  * quelqu'un. Et s'il ne reste RIEN, on ne cherche pas par nom du tout — les
  * correspondants du fil suffisent. Mieux vaut deux adresses justes que huit
  * dont six absurdes.
@@ -320,7 +321,7 @@ function motsDuNom(qui: string): string[] {
  *
  * Deux sources, dans cet ordre : les correspondants DU FIL quand il y en a un,
  * puis ceux dont le nom recoupe celui du correspondant attendu — c'est ainsi
- * qu'on retrouve le comptable d'une attente qui ne porte que « Comptastar ».
+ * qu'on retrouve le comptable d'une attente qui ne porte que le nom du cabinet.
  */
 export async function destinatairesPossibles(attenteId: number): Promise<Destinataire[]> {
   await ensureDbReady();
@@ -462,9 +463,9 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
     const mieux = candidats.find(porteLeNom);
     if (mieux) {
       to = mieux.email;
-      // Le nom SUIT l'adresse, sans repli sur l'ancien : garder « Mylène LE
-      // BERRE » en changeant pour dcl.bretagne@urssaf.fr produisait un mail
-      // qui saluait sa mère et partait à l'URSSAF.
+      // Le nom SUIT l'adresse, sans repli sur l'ancien : garder le nom d'une
+      // personne du fil en changeant l'adresse pour celle d'un organisme
+      // produisait un mail qui saluait un proche et partait à l'URSSAF.
       toName = mieux.nom ?? null;
     }
   }
@@ -528,7 +529,7 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
   /**
    * SALUTATION NOMMÉE quand on parle à QUELQU'UN. « Bonjour, » à un
    * interlocuteur connu depuis des années sonne comme un publipostage — mais
-   * « Bonjour Insured — service juridique, » ou « Bonjour Comptastar, » sonne
+   * « Bonjour ACME — service juridique, » ou « Bonjour ACME, » sonne
    * pire encore (mesuré le 26/08). On ne nomme donc que ce qui ressemble à
    * une personne : deux ou trois mots, sans tiret de libellé, sans forme
    * juridique, sans mot de service.
@@ -536,13 +537,13 @@ export async function brouillonAttente(attenteId: number): Promise<Brouillon> {
   const SOCIETE =
     /\b(sarl|sasu?|sci|scp|eurl|selarl|sa|sas|service|agence|cabinet|assurances?|banque|groupe|societe|société|direction|support|contact|comptabilit)/i;
   // PAS DE REPLI sur le nom du fil : `toName` suit déjà le destinataire
-  // retenu. Le repli faisait saluer « Mylène LE BERRE » un mail adressé à
-  // dcl.bretagne@urssaf.fr, parce qu'elle était le dernier entrant du fil.
+  // retenu. Le repli faisait saluer une personne du fil sur un mail adressé à
+  // la boîte régionale de l'URSSAF, parce qu'elle était le dernier entrant.
   const civil = (toName || '').trim();
   const nu = civil.split(/[<(]/)[0].replace(/["']/g, '').trim();
   const motsCivil = nu.split(/\s+/).filter(Boolean);
   // DEUX MOTS AU MOINS — un prénom et un nom. Un mot seul est presque
-  // toujours une raison sociale : « Bonjour Comptastar, » est passé à travers
+  // toujours une raison sociale : « Bonjour ACME, » est passé à travers
   // le filtre des formes juridiques, parce qu'aucune liste ne contiendra
   // jamais le nom de son cabinet comptable.
   const personne =

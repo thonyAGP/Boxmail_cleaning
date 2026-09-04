@@ -74,3 +74,31 @@ GIVEN le carnet docs/AUDIT-2026-09-03.md
 WHEN une session prend un ticket
 THEN elle relit le ticket, pull, cadre si moyen/élevé, implémente, prouve, commite, coche le ticket
 ```
+
+---
+
+## Avancement — 04/09/2026 (status : IMPLEMENTING)
+
+| Req | État | Où |
+|---|---|---|
+| R1 | **SATISFAIT** | `npm test` = `verdict:check` ; `.factory.json` `checks.onStop` = `typecheck && test`. Preuve : 175 vérifications, exit 0. |
+| R2 | **SATISFAIT** | `web/js/api.js:398-430` (table d'échappement, `"` et `'` compris) ; `app.js:12208-12209`. Preuve navigateur : `onmouseover` créé AVANT, `null` APRÈS. |
+| R5 | **SATISFAIT** | `scripts/supervisor.mjs` : 2 tentatives puis retour au commit précédent + statut lu par ⚙️ Paramètres. Banc à 5 scénarios. |
+| R3 | **CADRÉ, non implémenté** | `.chantier/2026-09-04-suppression-un-seul-chemin/change.md` (niveau élevé, 7 invariants). Deux décisions attendent Anthony : le seuil d'aperçu, un plafond ou deux. |
+| R6 | en cours | passe du 04/09 |
+| R4, R7-R10 | non commencés | — |
+
+**Requirement ajouté le 04/09 — R11** : une annulation de suppression SHALL restaurer tous les mails
+qu'elle annonce, ou SHALL dire exactement ce qu'elle a restauré et ce qui reste. Motif : la route
+d'annulation tronque à 500 en silence (`admin.ts:2893-2901`) et le front ignore le compteur `restored`
+— une annulation de 800 mails en restaure 500 et affiche un succès. Ticket **A8** du carnet.
+
+**Correction apportée à R3 par le cadrage** : le constat parlait de trois implémentations, il y en a
+**quatre** (`services/review.ts:1204-1225`, plafond 500), et deux autres routes portent le même trou
+de 20 000 (`cleanup/execute`, `retention/apply` — cette dernière sans aucun plafond). Par ailleurs
+« exiger une confirmation explicite » ne peut pas être inconditionnel : l'absence de double clic sur
+le chemin boîte de réception est un choix d'Anthony daté du 10/08. R3 se lit donc **avec un seuil**.
+
+**Correction apportée à R2 par l'implémentation** : la preuve écrite au carnet le 03/09 (« aucune
+`<img>` injectée ») ne prouvait rien — l'ancien `esc()` échappait déjà `<` et `>`. La preuve valable
+nie la **création d'un gestionnaire** (`onmouseover`), pas la présence d'une balise.

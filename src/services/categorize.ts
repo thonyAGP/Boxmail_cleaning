@@ -113,8 +113,8 @@ const ADMIN_RE =
 
 // C4 — les réseaux des années 2000 manquaient, et c'est le fond le plus
 // volumineux de la boîte personnelle (2006-2008). Leurs robots signent du nom
-// d'un vrai contact (`Yao Eve <member@hi5.com>`, `Elise YOUINOU
-// <service.copainsdavant@…>`, `Morgane Mahe <first_reminder@whereareyounow.net>`),
+// d'un vrai contact (`Prénom Nom <member@hi5.com>`, `Prénom Nom
+// <service.copainsdavant@…>`, `Prénom Nom <first_reminder@whereareyounow.net>`),
 // ce qui les faisait passer pour des personnes — donc protégés à vie.
 const SOCIAL_RE =
   /(facebook|facebookmail|instagram|twitter|\bx\.com$|linkedin|tiktok|snapchat|pinterest|whatsapp|\bmeta\b|youtube|discord|reddit|twitch|strava|\bhi5\b|meetic|badoo|skyrock|copainsdavant|copains ?d'avant|whereareyounow|\bwayn\b|facebox|viadeo|myspace|netlog|trombi)/i;
@@ -138,8 +138,9 @@ const PERSONAL_DOMAIN_RE =
  * protection à `Paymentconfirmation @paypalservice
  * <team_execsales@accountant.com>` (relevé en base, classé « banque » en
  * confiance haute) sans pour autant déclasser les vrais organismes qui
- * passent par un prestataire — `no-reply@xoom.com` (PayPal),
- * `bnpp-epargne-entreprise@s2e-net.com` (BNP), `legal@mail.lolivier.fr`.
+ * passent par un prestataire — une banque qui écrit depuis le domaine de son
+ * teneur de compte (`epargne-entreprise@prestataire.example.com`), un assureur
+ * depuis un sous-domaine de routage (`legal@mail.assureur.example.com`).
  */
 const FREE_MAILBOX_RE = new RegExp(
   PERSONAL_DOMAIN_RE.source.replace(/\$$/, '') +
@@ -176,10 +177,11 @@ export function categorizeSender(s: SenderSignals): CategoryResult {
   //
   // La première version de ce correctif n'acceptait QUE l'adresse. La
   // simulation sur les 2 996 expéditeurs réels a montré qu'elle déclassait
-  // 23 organismes authentiques passant par un prestataire (Xoom pour PayPal,
-  // s2e-net.com pour BNP, une agence AXA sur son propre domaine) : leur retirer
-  // la protection pour neutraliser un seul hameçonneur était le mauvais
-  // échange. D'où ce critère plus fin.
+  // 23 organismes authentiques passant par un prestataire (le routeur de
+  // paiement d'une banque, le prestataire d'épargne salariale d'une autre, une
+  // agence d'assurance sur son propre domaine) : leur retirer la protection
+  // pour neutraliser un seul hameçonneur était le mauvais échange. D'où ce
+  // critère plus fin.
   if (!FREE_MAILBOX_RE.test(s.email)) {
     if ((m = ADMIN_RE.exec(text))) return { category: 'admin', reason: `administration (« ${m[0]} »)` };
     if ((m = BANK_RE.exec(text))) return { category: 'bank', reason: `banque / argent (« ${m[0]} »)` };
@@ -374,10 +376,11 @@ const INTENT_RULES: { intent: MessageIntent; re: RegExp; label: string }[] = [
 /**
  * Marqueurs d'OBLIGATION qui interdisent le classement « promotion ».
  *
- * Trouvé sur Brimmo : `bonjour@comptastar.fr` sert à la fois au parrainage ET à
- * « [ACTION REQUISE] – Mise en conformité de votre société », un mail dont
- * l'enjeu est la dissolution de plein droit. Une règle « adresse de diffusion +
- * marqueur commercial ⇒ promo » aurait balayé le second avec le premier.
+ * Trouvé sur Brimmo : `bonjour@cabinet-compta.example.com` sert à la fois au
+ * parrainage ET à « [ACTION REQUISE] – Mise en conformité de votre société »,
+ * un mail dont l'enjeu est la dissolution de plein droit. Une règle « adresse
+ * de diffusion + marqueur commercial ⇒ promo » aurait balayé le second avec le
+ * premier.
  */
 const OBLIGATION_RE =
   /(\[?action requise\]?|mise en (demeure|conformit[ée])|dissolution|p[ée]nalit[ée]s|obligation l[ée]gale|sous peine|d[ée]lai l[ée]gal|greffe|tribunal|huissier|recouvrement|saisie|avis tiers d[ée]tenteur|appel de fonds)/i;
@@ -385,25 +388,26 @@ const OBLIGATION_RE =
 /**
  * Boîtes de FONCTION : un service, pas une personne.
  *
- * Relevé sur Brimmo : ~20 expéditeurs comme `compta@secoba-bet.fr`,
- * `agence-cs.brest@partedis.com`, `tcs@urmet.fr`, `recouvrement@…` étaient
- * classés « personne » — la catégorie la PLUS protégée — parce qu'un fil
- * contenait un échange. Ils échappaient donc à la fois au nettoyage ET à
- * l'analyse. « entreprise » est le bon classement : il n'ouvre aucune stratégie
- * de suppression (aucun preset ne cible `company`), il lève seulement la
- * sur-protection.
+ * Relevé sur Brimmo : ~20 expéditeurs comme `compta@bureau-etudes.example.com`,
+ * `agence-cs.brest@negoce.example.com`, `tcs@interphonie.example.com`,
+ * `recouvrement@…` étaient classés « personne » — la catégorie la PLUS
+ * protégée — parce qu'un fil contenait un échange. Ils échappaient donc à la
+ * fois au nettoyage ET à l'analyse. « entreprise » est le bon classement : il
+ * n'ouvre aucune stratégie de suppression (aucun preset ne cible `company`),
+ * il lève seulement la sur-protection.
  *
  * PÉRIMÈTRE VOLONTAIREMENT ÉTROIT : uniquement des noms de FONCTION sans
  * ambiguïté. On n'y met ni `contact@`, ni `info@`, ni `service@` (adresses
  * ordinaires des artisans avec qui on correspond vraiment), et on ne cherche
- * PAS à reconnaître les boîtes nommées d'après une ville (`brest@resilians.fr`)
- * — rien ne les distingue mécaniquement d'un surnom.
+ * PAS à reconnaître les boîtes nommées d'après une ville
+ * (`brest@prestataire.example.com`) — rien ne les distingue mécaniquement
+ * d'un surnom.
  */
 const FUNCTION_MAILBOX_RE = new RegExp(
   '^(' +
     // Mots COURTS ou ambigus : exigent une frontière derrière (séparateur ou fin
     // de la partie locale), sinon « sav » attraperait « savoie » et « rh »
-    // « rhodes ». `agence-cs.brest@partedis.com` passe par ici.
+    // « rhodes ». `agence-cs.brest@negoce.example.com` passe par ici.
     '(compta|agence|adv|sav|rh|tcs|devis|gestion|syndic|accueil|direction|planning|booking|commandes?)([-_.]|$)' +
     '|' +
     // Mots LONGS sans ambiguïté : le préfixe suffit.
@@ -451,7 +455,7 @@ export function detectIntent(s: IntentSignals): IntentResult {
 
   // Un mail porteur d'une OBLIGATION n'est jamais une promotion, même quand il
   // arrive par la même adresse de diffusion que le démarchage (relevé sur
-  // Brimmo : `bonjour@comptastar.fr` envoie le parrainage ET
+  // Brimmo : `bonjour@cabinet-compta.example.com` envoie le parrainage ET
   // « [ACTION REQUISE] – Mise en conformité », dont l'enjeu est la dissolution).
   const obligation = OBLIGATION_RE.exec(subject) ?? OBLIGATION_RE.exec((s.snippet ?? '').slice(0, 400));
 

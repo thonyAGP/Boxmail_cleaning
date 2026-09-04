@@ -184,8 +184,8 @@ export function scoreMessage(
     // ------------------------------------------------ le socle (lot 4e)
     // +35 > +30 : une action ouverte pèse PLUS qu'un expéditeur connu. Ce
     // qu'il y a à FAIRE passe avant qui l'envoie — c'est ce qui fait remonter
-    // « Votre paiement à Comptastar a échoué » (334 jours sans suite) devant
-    // la newsletter de la banque.
+    // « Votre paiement au cabinet comptable a échoué » (334 jours sans suite)
+    // devant la newsletter de la banque.
     if (ouvertes.length > 0) {
       const a = ouvertes[0];
       add(
@@ -203,7 +203,8 @@ export function scoreMessage(
           add(10, `à faire avant le ${prochaine.toLocaleDateString('fr-FR')} (moins de 7 jours)`);
         }
       }
-      // Plus une action ouverte attend, plus elle compte (le cas Comptastar).
+      // Plus une action ouverte attend, plus elle compte (le cas du cabinet
+      // comptable).
       const waitingDays = Number.isFinite(ageMs) ? ageMs / 86_400_000 : 0;
       if (waitingDays >= 14) add(10, `sans traitement depuis ${Math.round(waitingDays)} jours`);
       else if (waitingDays >= 7) add(5, `sans traitement depuis ${Math.round(waitingDays)} jours`);

@@ -19,7 +19,7 @@
  *     application/pdf   4 133 836 → 3 020 878   0,7308   « Facture août à novembre.pdf »
  *     image/jpeg        2 556 060 → 1 867 889   0,7308   « sosh 003.jpg »
  *     image/jpeg        2 125 506 → 1 553 251   0,7308   « 003.jpg »
- *     image/jpeg        1 351 708 →   987 784   0,7308   « ACIAJURIS MECHACHE 002.jpg »
+ *     image/jpeg        1 351 708 →   987 784   0,7308   « DOSSIER JURIDIQUE 002.jpg »
  *     application/pdf     663 226 →   484 665   0,7308   « FACTURE LE BERRE.pdf »
  *     application/pdf     138 934 →   101 527   0,7308   « …SNCFCONNECT.pdf »
  *     application/pdf      49 154 →    35 919   0,7307   « Facture_FR77079426.pdf »
